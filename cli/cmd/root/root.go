@@ -78,7 +78,7 @@ ______              _
 	ctxWithCancel, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	c.output.Stdout(fmt.Sprintf("Interactive mode. Type %q to exit.\n", exitPrompt))
+	c.output.Stdout(fmt.Sprintf("Type %q or press Ctrl+C to exit.\n", exitPrompt))
 
 	scanner := bufio.NewScanner(os.Stdin)
 
