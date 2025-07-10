@@ -35,3 +35,10 @@ Thumbs.db
 
 tmp/
 temp/
+
+# Supabase
+.env
+.env.local
+.env.*.local
+supabase/.branches
+supabase/.temp
