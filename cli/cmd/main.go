@@ -1,16 +1,16 @@
 package main
 
-import "fmt"
+import (
+	"log"
 
-const banner = `
-______              _ 
-| ___ \            | |
-| |_/ / __ ___   __| |
-|  __/ '__/ _ \ / _` + "`" + ` |
-| |  | | | (_) | (_| |
-\_|  |_|  \___/ \__,_|
-`
+	"github.com/conduitio/ecdysis"
+	"github.com/meroxa/prod/cli/cmd/root"
+)
 
 func main() {
-	fmt.Print(banner)
+	e := ecdysis.New()
+	cmd := e.MustBuildCobraCommand(&root.RootCommand{})
+	if err := cmd.Execute(); err != nil {
+		log.Fatal(err)
+	}
 }
