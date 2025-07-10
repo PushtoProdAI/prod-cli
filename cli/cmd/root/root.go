@@ -70,7 +70,7 @@ ______              _
 	c.output.Stdout(fmt.Sprintf("%s\n", banner))
 
 	if c.args.prompt != "" {
-		c.output.Stdout(fmt.Sprintf("DO SOMETHING WITH THIS PROMPT %s\n", c.args.prompt))
+		c.processPrompt(c.args.prompt)
 		return nil
 	}
 
@@ -142,20 +142,32 @@ ______              _
 			}
 
 			// Process the command here
-			c.output.Stdout(fmt.Sprintf("You entered: %s\n", input))
-
-			// You can add command processing logic here
-			// For example, if you want to support different commands:
-			// switch {
-			// case strings.HasPrefix(input, "help"):
-			//     displayHelp()
-			// case strings.HasPrefix(input, "run"):
-			//     runSomething()
-			// }
+			c.processPrompt(input)
 		}
 	}
 
 	return nil
+}
+
+// processPrompt handles the business logic for processing prompts
+// This method is called both when a prompt is provided as an argument
+// and when input is captured from interactive mode
+func (c *RootCommand) processPrompt(prompt string) {
+	// TODO: Add your business logic here
+	// For now, just echoing the prompt
+	c.output.Stdout(fmt.Sprintf("Processing prompt: %s\n", prompt))
+	
+	// Example of where you might add different logic based on the prompt:
+	// switch {
+	// case strings.HasPrefix(prompt, "help"):
+	//     c.displayHelp()
+	// case strings.HasPrefix(prompt, "generate"):
+	//     c.generateSomething(strings.TrimPrefix(prompt, "generate "))
+	// case strings.HasPrefix(prompt, "analyze"):
+	//     c.analyzeSomething(strings.TrimPrefix(prompt, "analyze "))
+	// default:
+	//     c.handleDefaultPrompt(prompt)
+	// }
 }
 
 func (c *RootCommand) Usage() string { return "prod" }
