@@ -34,3 +34,66 @@ build-cli-darwin-arm64:
 clean:
 	@echo "Cleaning build artifacts..."
 	@rm -rf $(BUILD_DIR)
+
+# Supabase commands
+.PHONY: supabase-start
+supabase-start:
+	@echo "Starting Supabase local development..."
+	@supabase start
+
+.PHONY: supabase-stop
+supabase-stop:
+	@echo "Stopping Supabase local development..."
+	@supabase stop
+
+.PHONY: supabase-status
+supabase-status:
+	@echo "Checking Supabase status..."
+	@supabase status
+
+.PHONY: supabase-reset
+supabase-reset:
+	@echo "Resetting Supabase local development..."
+	@supabase db reset
+
+.PHONY: supabase-migration-new
+supabase-migration-new:
+	@echo "Creating new migration..."
+	@read -p "Enter migration name: " name; supabase migration new $$name
+
+.PHONY: supabase-migration-up
+supabase-migration-up:
+	@echo "Applying migrations..."
+	@supabase db push
+
+.PHONY: supabase-seed
+supabase-seed:
+	@echo "Seeding database..."
+	@supabase db seed
+
+.PHONY: supabase-studio
+supabase-studio:
+	@echo "Opening Supabase Studio..."
+	@open http://localhost:54323
+
+.PHONY: supabase-init-force
+supabase-init-force:
+	@echo "Force initializing Supabase project..."
+	@supabase init --force
+
+.PHONY: supabase-setup
+supabase-setup:
+	@echo "Setting up Supabase for local development..."
+	@if ! command -v supabase &> /dev/null; then \
+		echo "Installing Supabase CLI..."; \
+		brew install supabase/tap/supabase; \
+	fi
+	@echo "Initializing Supabase project..."
+	@if [ -f "supabase/config.toml" ]; then \
+		echo "Supabase config already exists, skipping init..."; \
+	else \
+		supabase init; \
+	fi
+	@echo "Starting Supabase..."
+	@supabase start
+	@echo "Supabase is ready! Studio available at: http://localhost:54323"
