@@ -69,9 +69,8 @@ ______              _
 
 	c.output.Stdout(fmt.Sprintf("%s\n", banner))
 
-	// Handle the provided prompt argument
 	if c.args.prompt != "" {
-		c.output.Stdout(fmt.Sprintf("Prompt: %s\n", c.args.prompt))
+		c.output.Stdout(fmt.Sprintf("DO SOMETHING WITH THIS PROMPT %s\n", c.args.prompt))
 		return nil
 	}
 
@@ -98,37 +97,62 @@ ______              _
 
 		c.output.Stdout("> ")
 
-		if !scanner.Scan() {
-			if err := scanner.Err(); err != nil {
-				return fmt.Errorf("error reading input: %w", err)
+		// Use a goroutine to handle scanning with context cancellation
+		inputChan := make(chan string, 1)
+		errChan := make(chan error, 1)
+
+		go func() {
+			if scanner.Scan() {
+				inputChan <- scanner.Text()
+			} else {
+				if err := scanner.Err(); err != nil {
+					errChan <- fmt.Errorf("error reading input: %w", err)
+				} else {
+					// EOF reached (e.g., Ctrl+D)
+					inputChan <- "EOF"
+				}
 			}
-			// EOF reached (e.g., Ctrl+D)
-			c.output.Stdout("\nEOF detected, exiting...\n")
-			break
-		}
+		}()
 
-		input := strings.TrimSpace(scanner.Text())
-
-		if input == "" {
-			continue
-		}
-
-		if input == exitPrompt {
-			c.output.Stdout("Exiting...\n")
+		select {
+		case <-ctxWithCancel.Done():
+			// Check if it was canceled by parent context or by signal
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			c.output.Stdout("\nInterrupted, exiting...\n")
 			return nil
+		case err := <-errChan:
+			return err
+		case input := <-inputChan:
+			if input == "EOF" {
+				c.output.Stdout("\nEOF detected, exiting...\n")
+				return nil
+			}
+
+			input = strings.TrimSpace(input)
+
+			if input == "" {
+				continue
+			}
+
+			if input == exitPrompt {
+				c.output.Stdout("Exiting...\n")
+				return nil
+			}
+
+			// Process the command here
+			c.output.Stdout(fmt.Sprintf("You entered: %s\n", input))
+
+			// You can add command processing logic here
+			// For example, if you want to support different commands:
+			// switch {
+			// case strings.HasPrefix(input, "help"):
+			//     displayHelp()
+			// case strings.HasPrefix(input, "run"):
+			//     runSomething()
+			// }
 		}
-
-		// Process the command here
-		c.output.Stdout(fmt.Sprintf("You entered: %s\n", input))
-
-		// You can add command processing logic here
-		// For example, if you want to support different commands:
-		// switch {
-		// case strings.HasPrefix(input, "help"):
-		//     displayHelp()
-		// case strings.HasPrefix(input, "run"):
-		//     runSomething()
-		// }
 	}
 
 	return nil
