@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/conduitio/ecdysis"
+	"github.com/meroxa/prod/cli/baml_client"
 )
 
 var (
@@ -156,7 +157,12 @@ func (c *RootCommand) processPrompt(prompt string) {
 	// TODO: Add your business logic here
 	// For now, just echoing the prompt
 	c.output.Stdout(fmt.Sprintf("Processing prompt: %s\n", prompt))
-	
+	intent, err := baml_client.ExtractIntent(context.Background(), prompt)
+	if err != nil {
+		c.output.Stderr(fmt.Sprintf("Error extracting intent: %v\n", err))
+	}
+	c.output.Stdout(fmt.Sprintf("Extracted intent: %+v\n", intent))
+
 	// Example of where you might add different logic based on the prompt:
 	// switch {
 	// case strings.HasPrefix(prompt, "help"):

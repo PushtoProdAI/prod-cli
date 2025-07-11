@@ -97,3 +97,7 @@ supabase-setup:
 	@echo "Starting Supabase..."
 	@supabase start
 	@echo "Supabase is ready! Studio available at: http://localhost:54323"
+
+.PHONY: generate
+generate:
+	cd cli && go tool baml-cli generate
