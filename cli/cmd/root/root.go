@@ -10,7 +10,7 @@ import (
 	"syscall"
 
 	"github.com/conduitio/ecdysis"
-	"github.com/meroxa/prod/cli/baml_client"
+	"github.com/meroxa/prod/cli/internal/agent"
 )
 
 var (
@@ -35,6 +35,7 @@ type RootCommand struct {
 	flags  RootFlags
 	args   RootArgs
 	output ecdysis.Output
+	Agent  *agent.Agent
 }
 
 func (c *RootCommand) Args(args []string) error {
@@ -146,34 +147,15 @@ ______              _
 			c.processPrompt(input)
 		}
 	}
-
-	return nil
 }
 
 // processPrompt handles the business logic for processing prompts
 // This method is called both when a prompt is provided as an argument
 // and when input is captured from interactive mode
 func (c *RootCommand) processPrompt(prompt string) {
-	// TODO: Add your business logic here
-	// For now, just echoing the prompt
+	ctx := context.Background()
 	c.output.Stdout(fmt.Sprintf("Processing prompt: %s\n", prompt))
-	intent, err := baml_client.ExtractIntent(context.Background(), prompt)
-	if err != nil {
-		c.output.Stderr(fmt.Sprintf("Error extracting intent: %v\n", err))
-	}
-	c.output.Stdout(fmt.Sprintf("Extracted intent: %+v\n", intent))
-
-	// Example of where you might add different logic based on the prompt:
-	// switch {
-	// case strings.HasPrefix(prompt, "help"):
-	//     c.displayHelp()
-	// case strings.HasPrefix(prompt, "generate"):
-	//     c.generateSomething(strings.TrimPrefix(prompt, "generate "))
-	// case strings.HasPrefix(prompt, "analyze"):
-	//     c.analyzeSomething(strings.TrimPrefix(prompt, "analyze "))
-	// default:
-	//     c.handleDefaultPrompt(prompt)
-	// }
+	c.Agent.Process(ctx, prompt, c)
 }
 
 func (c *RootCommand) Usage() string { return "prod" }
@@ -187,4 +169,12 @@ func (c *RootCommand) Docs() ecdysis.Docs {
 		Short: "Prod",
 		Long:  `Prod starts an interactive session by default.`,
 	}
+}
+
+func (c *RootCommand) Write(p []byte) (n int, err error) {
+	if c.output != nil {
+		c.output.Stdout(string(p))
+		return len(p), nil
+	}
+	return 0, fmt.Errorf("output not set")
 }

@@ -51,7 +51,7 @@ var analyzers = []func(fs.FS) Analyzer{
 	// TODO add more analyzers here
 }
 
-func GetAnalyzer(projectPath string) (*Analyzer, error) {
+func GetAnalyzer(projectPath string) (Analyzer, error) {
 	projectFS := os.DirFS(projectPath)
 
 	for _, newAnalyzer := range analyzers {
@@ -62,9 +62,9 @@ func GetAnalyzer(projectPath string) (*Analyzer, error) {
 		}
 
 		if canHandle {
-			return &analyzer, nil
+			return analyzer, nil
 		}
 	}
 
-	return nil, errors.New("No supported project type found")
+	return nil, errors.New("no supported project type found")
 }
