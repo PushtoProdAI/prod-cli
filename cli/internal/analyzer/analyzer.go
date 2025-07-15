@@ -47,6 +47,7 @@ var (
 
 var analyzers = []func(fs.FS) Analyzer{
 	NewNodeAnalyzer,
+	NewPythonAnalyzer,
 	// TODO add more analyzers here
 }
 
