@@ -25,7 +25,7 @@ func main() {
 	}
 
 	// Analyze the project
-	spec, err := (*analyzerPtr).Analyze()
+	spec, err := analyzerPtr.Analyze()
 	if err != nil {
 		log.Fatalf("Failed to analyze project: %v", err)
 	}
