@@ -23,6 +23,7 @@ import (
 type Intent struct {
 	Action   *string `json:"action"`
 	Platform *string `json:"platform"`
+	Source   *string `json:"source"`
 }
 
 func (c *Intent) Decode(holder *cffi.CFFIValueClass) {
@@ -63,6 +64,18 @@ func (c *Intent) Decode(holder *cffi.CFFIValueClass) {
 				}(decoded)
 			}(valueHolder)
 
+		case "source":
+			c.Source = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
 		default:
 			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
@@ -77,6 +90,8 @@ func (c Intent) Encode() (*cffi.CFFIValueHolder, error) {
 
 	fields["platform"] = c.Platform
 
+	fields["source"] = c.Source
+
 	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
 }
 
@@ -88,5 +103,61 @@ func (u Intent) BamlEncodeName() *cffi.CFFITypeName {
 	return &cffi.CFFITypeName{
 		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
 		Name:      "Intent",
+	}
+}
+
+type IntentSummary struct {
+	Summary *string `json:"summary"`
+}
+
+func (c *IntentSummary) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "IntentSummary" {
+		panic(fmt.Sprintf("expected IntentSummary, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "summary":
+			c.Summary = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c IntentSummary) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["summary"] = c.Summary
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c IntentSummary) BamlTypeName() string {
+	return "IntentSummary"
+}
+
+func (u IntentSummary) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "IntentSummary",
 	}
 }

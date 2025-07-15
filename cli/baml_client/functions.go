@@ -58,3 +58,42 @@ func ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) 
 
 	return casted, nil
 }
+
+func SummarizeIntent(ctx context.Context, intent types.Intent, name string, language string, opts ...CallOptionFunc) (types.IntentSummary, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"intent": intent, "name": name, "language": language},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	encoded, err := baml.EncodeArgs(args)
+	if err != nil {
+		panic(err)
+	}
+
+	result, err := bamlRuntime.CallFunction(ctx, "SummarizeIntent", encoded)
+	if err != nil {
+		return types.IntentSummary{}, err
+	}
+
+	if result.Error != nil {
+		return types.IntentSummary{}, result.Error
+	}
+
+	casted := *(result.Data).(*types.IntentSummary)
+
+	return casted, nil
+}
