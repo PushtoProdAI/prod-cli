@@ -1,0 +1,19 @@
+# Web framework
+django==4.2.5
+gunicorn==21.2.0
+
+# Database
+psycopg2-binary==2.9.7
+django-redis==5.4.0
+
+# Search
+elasticsearch==8.10.0
+
+# Email
+sendgrid==6.10.0
+
+# Monitoring
+sentry-sdk==1.32.0
+
+# Development
+django-debug-toolbar==4.2.0 
