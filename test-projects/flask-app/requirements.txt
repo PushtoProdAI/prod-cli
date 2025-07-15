@@ -1,0 +1,17 @@
+# Web framework
+flask==2.3.3
+gunicorn==21.2.0
+
+# Database
+psycopg2-binary==2.9.7
+sqlalchemy==2.0.21
+
+# Cache
+redis==5.0.0
+
+# Environment and config
+python-dotenv==1.0.0
+
+# Development
+pytest==7.4.2
+black==23.9.1 
