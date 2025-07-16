@@ -33,7 +33,8 @@ func main() {
 		Logger:         logger,
 		BackendOptions: []backend.BackendOption{},
 	}
-	provider, err := workflowext.InitWorkflows(context.Background(), cfg, mux, agent.NewWorkflows())
+	ctx, cancel := context.WithCancel(context.Background())
+	provider, err := workflowext.InitWorkflows(ctx, cfg, mux, agent.NewWorkflows())
 	if err != nil {
 		log.Fatalf("failed to initialize workflows: %v", err)
 	}
@@ -55,6 +56,8 @@ func main() {
 	if err := cmd.Execute(); err != nil {
 		log.Fatal(err)
 	}
+	// this will shout down the workflow provider gracefully
+	cancel()
 }
 
 func initLogFile() (*os.File, error) {

@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"log"
+	"os"
 
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/baml_client"
@@ -30,6 +32,15 @@ func (a *Activities) determineIntent(ctx context.Context, prompt string) (types.
 	intent, err := baml_client.ExtractIntent(ctx, prompt)
 	if err != nil {
 		return types.Intent{}, errors.Errorf("failed to extract intent: %w", err)
+	}
+	if intent.Source == "pwd" {
+		path, err := os.Getwd()
+		if err != nil {
+			intent.Source = ""
+			log.Printf("failed to get current working directory: %v", err)
+			return intent, nil
+		}
+		intent.Source = path
 	}
 	return intent, nil
 }
