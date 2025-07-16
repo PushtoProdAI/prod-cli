@@ -14,26 +14,45 @@ function ExtractIntent(request: string) -> Intent {
   client "OllamaClient"
   prompt #"
  {{ _.role("system") }}
-     Classify this user request into one of these intents:
-    - DEPLOY: Deploy application to cluster
-    - STATUS: Check deployment status  
-    - ROLLBACK: Rollback deployment
-    - SCALE: Scale deployment
-    - DELETE: Remove deployment.
+You are a strict classifier. Your only job is to analyze deployment requests and extract structured metadata. 
+  You are not deploying anything, advising the user, or rejecting their request. You ONLY return JSON in the required format.
 
-    If it not one of these, return "UNKNOWN". As the action. 
+  ## INTENT CLASSIFICATION
+  Extract the `action` from the user request. It must be one of:
+    - DEPLOY
+    - STATUS
+    - ROLLBACK
+    - SCALE
+    - DELETE
 
-    You will also extract the platform from the request, which can be one of these:
-     - Render
-     - Fly.io
+  If none of these apply, set:
+    "action": "UNKNOWN"
 
-    If it does not mention a platform, return "UNKNOWN" as the platform. 
-    
-    You MUST NOT guess if you don't know. For example, we do not support Kubernetes, so do not guess if you see it.
-    This applies to ANY platform that is not listed above.
+  ## PLATFORM EXTRACTION
+  Supported platforms:
+    - Render
+    - Fly.io
 
-    Finally, extract the source from the prompt. Source should be in the form of a file path. If you cannot determine one, don't guess
-    and just set it to an empty string
+  If the user mentions one of these explicitly, extract it as `platform`.
+  If they mention a platform NOT on this list (e.g., Heroku, Vercel, Kubernetes), set:
+    "platform": "UNKNOWN"
+
+  Never infer or guess the platform based on project name, context, or tone. Only match exact mentions.
+
+  ## SOURCE EXTRACTION
+  Extract the source path if one is given (e.g., a full path like `/Users/alice/project/app`). If not, set:
+    "source": "pwd"
+
+  ## OUTPUT FORMAT
+  Respond ONLY with a JSON object in this format:
+  {{ctx.output_format}}
+
+  You MUST NEVER:
+  - Say you are an AI
+  - Say you cannot help
+  - Refuse to answer
+  - Perform any deployment or respond conversationally
+  - Add explanation or commentary outside of the JSON object
 
     {{ _.role("user") }}
     {{ request }}
@@ -46,18 +65,46 @@ function SummarizeIntent(intent: Intent, name: string, language: string) -> Inte
   client "OllamaClient"
   prompt #"
     {{ _.role("system") }}
-    You are an agent who is tasked for managing applications on a Platform as A Service (Paas). You will be provided
-    with what the user intends to do, the platform, the source of the project on their filesystem, the name of the project. Please provide a summary
-    so that the user can approve or refine their request before it is triggered on the platform.
-    
-    If any properties of the intent are UNKNOWN, you must prompt the user to refine their request.
+  You are a deployment assistant for Platform-as-a-Service (PaaS) applications.
 
-    If name or language are blank or not provided, you must prompt the user to provide a name and language for the project.
-    
-    Summarize this in a few sentences that can be understood by someone who may not be a very technical developer. Use a friendly tone.
-    
+  You will be given:
+  - `intent`: { action, platform, source }
+  - `name`: application name
+  - `language`: programming language
 
+  Your job is to generate a friendly summary of the deployment request, but ONLY after validating the input.
+
+  ## STEP 1: VALIDATION
+  Check each field:
+  - If any of the following are missing or invalid, note them:
+    - intent.action is "UNKNOWN"
+    - intent.platform is "UNKNOWN"
+    - intent.source is "UNKNOWN"
+    - name is missing or ""
+    - language is missing or ""
+
+  ## STEP 2: SUMMARY RULES
+
+  - If **any fields are missing or invalid**:
+    - Generate a friendly summary that includes what is known.
+    - Clearly mention what is missing (e.g., "We couldn't determine the language").
+    - Tell the user to check the code at the given source path.
+    - Say: “We’re not quite ready to deploy yet.”
+
+  - If **all fields are present and valid**:
+    - Generate a clear and friendly summary of the request.
+    - Include the action, platform, project name, language, and source path.
+    - Do **not** include any warnings or "check your code" suggestions.
+    - End with: “If everything looks good, we’ll take care of deploying it for you.”
+
+  ## STYLE
+  - Keep it friendly and simple.
+  - Do not guess or infer any missing values.
+  - Only include fallback/warning messages when something is actually missing.
     {{ _.role("user") }}
+
+  Please summarize this deployment request in friendly, simple language so a non-technical user can confirm the details. 
+  If anything important is missing, clearly explain what's missing and what to check. Otherwise, give a clean summary with no extra warnings.
 
     Intent: {{ intent }}
     Language: {{ language }}
@@ -73,7 +120,7 @@ test testIntent {
   functions [ExtractIntent]
   args {
     request #"
-     Push this app at /path/to/app to fly.
+     Deploy my code here: /Users/nstehr/code/prod/test-projects/node-ap1p to my heroku account
     "#
   }
 }
@@ -88,7 +135,7 @@ test intentSummary
       source "/path/to/app"
     }
     name "foo"
-    language "  "
+    language ""
   }
 }
 

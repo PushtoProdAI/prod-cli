@@ -10,7 +10,8 @@ else
 endif
 
 .PHONY: build-cli
-build-cli: build-cli-linux build-cli-darwin build-cli-darwin-arm64
+build-cli: 
+	$(MAKE) -C cli build 
 
 .PHONY: build-cli-linux
 build-cli-linux:
@@ -98,6 +99,3 @@ supabase-setup:
 	@supabase start
 	@echo "Supabase is ready! Studio available at: http://localhost:54323"
 
-.PHONY: generate
-generate:
-	cd cli && go tool baml-cli generate

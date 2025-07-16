@@ -80,7 +80,10 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, 
 	}
 	spec := analyzer.ProjectSpec{}
 	if intent.Source != "" {
-		spec, err = workflow.ExecuteActivity[analyzer.ProjectSpec](ctx, ActivityOpts, AgentAnalyzeProject, intent).Get(ctx)
+		opts := ActivityOpts
+		opts.RetryOptions.MaxAttempts = 3
+		opts.RetryOptions.FirstRetryInterval = time.Second * 2
+		spec, err = workflow.ExecuteActivity[analyzer.ProjectSpec](ctx, opts, AgentAnalyzeProject, intent).Get(ctx)
 		if err != nil {
 			log.Println(errors.Errorf("failed to analyze project: %w", err))
 		}

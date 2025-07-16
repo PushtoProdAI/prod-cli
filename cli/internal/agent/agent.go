@@ -118,6 +118,9 @@ func (a *Agent) confirmWithPrompt(ctx context.Context, input string, out io.Writ
 			fmt.Fprintf(out, "Operation cancelled\n")
 			return a.plan, nil
 		}
+		if err == promptui.ErrAbort {
+			return a.plan, nil
+		}
 		return nil, errors.Errorf("prompt failed: %v", err)
 	}
 

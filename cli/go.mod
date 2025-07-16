@@ -9,6 +9,8 @@ require (
 	github.com/conduitio/ecdysis v0.4.2
 	github.com/cschleiden/go-workflows v0.0.0-00010101000000-000000000000
 	github.com/go-errors/errors v1.5.1
+	github.com/manifoldco/promptui v0.9.0
+	github.com/pelletier/go-toml/v2 v2.2.3
 	github.com/stretchr/testify v1.10.0
 )
 
@@ -29,9 +31,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jellydator/ttlcache/v3 v3.0.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
-	github.com/manifoldco/promptui v0.9.0 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect
-	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/sagikazarmark/locafero v0.7.0 // indirect
