@@ -90,6 +90,9 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 		Name:                pkgJson.Name,
 		Language:            "node",
 		ServiceRequirements: serviceRequirements,
+		// TODO Analyze for these
+		BuildCommand: "npm run build",
+		StartCommand: "npm run start",
 	}, nil
 }
 
