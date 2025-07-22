@@ -5,11 +5,13 @@ import {
 import {
   ECRClient,
   GetAuthorizationTokenCommand,
+  DescribeRepositoriesCommand
 } from "npm:@aws-sdk/client-ecr";
 
 export interface EcrTokenResp {
   dockerAuthToken: string;
   dockerAuthUsername: string;
+  dockerRepo: string;
   proxyEndpoint: string;
   expiresAt: Date;
 }
@@ -53,6 +55,15 @@ export async function ecrTokenRequest(tenantId: string, roleArn: string): Promis
       },
     });
 
+
+    const describe = await ecrClient.send(new DescribeRepositoriesCommand({}));
+    const allowedRepos = describe.repositories?.filter((repo) =>
+      repo.repositoryArn &&
+      repo.repositoryArn.includes("arn:aws:ecr") &&
+      repo.repositoryName &&
+      repo.repositoryName.startsWith(`tenant-${tenantId}`) // filtering by naming convention
+     ).map((repo) => repo.repositoryName);
+
     const authResult = await ecrClient.send(new GetAuthorizationTokenCommand({}));
 
     const authData = authResult.authorizationData?.[0];
@@ -67,6 +78,7 @@ export async function ecrTokenRequest(tenantId: string, roleArn: string): Promis
     return {
       dockerAuthToken: password,
       dockerAuthUsername: "AWS",
+      dockerRepo: allowedRepos?.length ? allowedRepos[0] : "",
       proxyEndpoint: authData.proxyEndpoint,
       expiresAt: authData.expiresAt,
     };
