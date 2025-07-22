@@ -15,6 +15,8 @@ type ProjectSpec struct {
 	Name                string
 	Language            string
 	ServiceRequirements []ServiceRequirement
+	BuildCommand        string
+	StartCommand        string
 }
 
 type ServiceRequirement struct {
