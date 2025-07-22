@@ -346,7 +346,7 @@ api_secret = ""
 # url = "https://appleid.apple.com" 
 [functions.push-token]
 enabled = true
-verify_jwt = true
+verify_jwt = false # MUST ENABLE THIS WHEN WE HAVE AUTH HOOKED UP!
 import_map = "./functions/push-token/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -357,7 +357,7 @@ entrypoint = "./functions/push-token/index.ts"
 
 [functions.pull-token]
 enabled = true
-verify_jwt = true
+verify_jwt = false # MUST ENABLE THIS WHEN WE HAVE AUTH HOOKED UP! 
 import_map = "./functions/pull-token/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
