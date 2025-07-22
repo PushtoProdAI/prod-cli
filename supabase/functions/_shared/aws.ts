@@ -9,6 +9,7 @@ import {
 
 export interface EcrTokenResp {
   dockerAuthToken: string;
+  dockerAuthUsername: string;
   proxyEndpoint: string;
   expiresAt: Date;
 }
@@ -65,6 +66,7 @@ export async function ecrTokenRequest(tenantId: string, roleArn: string): Promis
 
     return {
       dockerAuthToken: password,
+      dockerAuthUsername: "AWS",
       proxyEndpoint: authData.proxyEndpoint,
       expiresAt: authData.expiresAt,
     };
