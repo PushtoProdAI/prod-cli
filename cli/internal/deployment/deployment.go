@@ -10,8 +10,6 @@ import (
 type DeploymentStrategy string
 
 const (
-	StrategyDockerfile DeploymentStrategy = "dockerfile"
-	StrategyAPICall    DeploymentStrategy = "api_call"
 	// StrategyTerraform  DeploymentStrategy = "terraform"
 	// StrategyHelm       DeploymentStrategy = "helm"
 
@@ -37,9 +35,12 @@ type Service struct {
 }
 
 type DeploymentSpec struct {
-	ProjectID string
-	Services  []Service
-	Metadata  map[string]any
+	Name         string
+	Language     string
+	Services     []Service
+	Metadata     map[string]any
+	BuildCommand string
+	StartCommand string
 }
 
 func (ds *DeploymentSpec) ServiceCounts() map[string]int {
@@ -82,6 +83,8 @@ func (db *DeploymentBuilder) Build() (*DeploymentSpec, error) {
 	}
 
 	return &DeploymentSpec{
+		Name:     db.projectSpec.Name,
+		Language: db.projectSpec.Language,
 		Services: services,
 		Metadata: map[string]any{
 			"source": "project-analysis",
