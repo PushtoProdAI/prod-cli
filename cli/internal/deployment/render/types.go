@@ -57,15 +57,15 @@ type CreateProjectRequest struct {
 }
 
 type CreateWebServiceRequest struct {
-	Name         string                   `json:"name"`
-	Type         string                   `json:"type"` // "web_service"
-	OwnerID      string                   `json:"ownerId"`
-	Repo         string                   `json:"repo,omitempty"`
-	Branch       string                   `json:"branch,omitempty"`
-	BuildCommand string                   `json:"buildCommand,omitempty"`
-	StartCommand string                   `json:"startCommand,omitempty"`
-	EnvVars      []CreateServiceEnvVar    `json:"envVars,omitempty"`
-	ServiceDetails *WebServiceDetails     `json:"serviceDetails,omitempty"`
+	Name           string                `json:"name"`
+	Type           string                `json:"type"` // "web_service"
+	OwnerID        string                `json:"ownerId"`
+	Repo           string                `json:"repo,omitempty"`
+	Branch         string                `json:"branch,omitempty"`
+	BuildCommand   string                `json:"buildCommand,omitempty"`
+	StartCommand   string                `json:"startCommand,omitempty"`
+	EnvVars        []CreateServiceEnvVar `json:"envVars,omitempty"`
+	ServiceDetails *WebServiceDetails    `json:"serviceDetails,omitempty"`
 }
 
 type CreateServiceEnvVar struct {
@@ -74,15 +74,15 @@ type CreateServiceEnvVar struct {
 }
 
 type WebServiceDetails struct {
-	Env              string `json:"env,omitempty"`              // "docker", "node", "python3", etc.
-	BuildFilter      *BuildFilter `json:"buildFilter,omitempty"`
-	PublishPath      string `json:"publishPath,omitempty"`      // For static sites
-	PullRequestPreviewsEnabled *bool `json:"pullRequestPreviewsEnabled,omitempty"`
+	Env                        string       `json:"env,omitempty"` // "docker", "node", "python3", etc.
+	BuildFilter                *BuildFilter `json:"buildFilter,omitempty"`
+	PublishPath                string       `json:"publishPath,omitempty"` // For static sites
+	PullRequestPreviewsEnabled *bool        `json:"pullRequestPreviewsEnabled,omitempty"`
 }
 
 type BuildFilter struct {
-	Paths         []string `json:"paths,omitempty"`
-	IgnoredPaths  []string `json:"ignoredPaths,omitempty"`
+	Paths        []string `json:"paths,omitempty"`
+	IgnoredPaths []string `json:"ignoredPaths,omitempty"`
 }
 
 type CreatePostgresRequest struct {
@@ -131,14 +131,20 @@ type BlueprintService struct {
 }
 
 type RenderWorkspace struct {
+	Cursor string         `json:"cursor"`
+	Owner  WorkspaceOwner `json:"owner"`
+}
+
+type WorkspaceOwner struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
 	Email string `json:"email"`
+	Type  string `json:"type"`
 }
 
 type RenderClient interface {
 	// Workspaces
-	ListWorkspaces(ctx context.Context) ([]*RenderWorkspace, error)
+	ListWorkspaces(ctx context.Context) ([]RenderWorkspace, error)
 
 	// Projects
 	CreateProject(ctx context.Context, req CreateProjectRequest) (*RenderProject, error)
@@ -158,3 +164,4 @@ type RenderClient interface {
 	// Blueprint
 	DeployBlueprint(ctx context.Context, blueprint *RenderBlueprint) error
 }
+

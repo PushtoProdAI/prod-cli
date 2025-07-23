@@ -34,19 +34,18 @@ func (qd *QueuedDeployment) Deploy(ctx context.Context) error {
 		return fmt.Errorf("no workspaces found")
 	}
 
-	ownerID := workspaces[0].ID
-	fmt.Printf("Using workspace: %s (ID: %s)\n", workspaces[0].Name, ownerID)
+	ownerID := workspaces[0].Owner.ID
+	fmt.Printf("Using workspace: %s (ID: %s)\n", workspaces[0].Owner.Name, ownerID)
 
 	// Generate steps with the owner ID
-	steps := qd.generateAPISteps(ownerID)
+	steps := qd.GenerateAPISteps(ownerID)
 
 	// Execute steps with dependency resolution
 	stepExecutor := NewStepExecutor(qd.client)
 	return stepExecutor.ExecuteSteps(ctx, steps)
 }
 
-
-func (qd *QueuedDeployment) generateAPISteps(ownerID string) []RenderAPIStep {
+func (qd *QueuedDeployment) GenerateAPISteps(ownerID string) []RenderAPIStep {
 	var steps []RenderAPIStep
 	stepCounter := 1
 	serviceCount := make(map[string]int)
@@ -188,6 +187,6 @@ func (qd *QueuedDeployment) getNativeDeploymentConfig() (buildCommand, startComm
 	default:
 		env = "docker" // Default to docker for unsupported languages
 	}
-	
+
 	return buildCommand, startCommand, env
 }

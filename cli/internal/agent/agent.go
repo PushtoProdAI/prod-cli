@@ -17,6 +17,7 @@ type Agent struct {
 	sm          deploySM
 	wfClient    *client.Client
 	interactive bool
+	deployPlan  *deployPlan
 }
 
 func NewAgent(wfClient *client.Client, interactive bool) *Agent {
@@ -99,6 +100,7 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 	if !shouldProceed(plan) {
 		return a.plan, nil
 	}
+	a.deployPlan = &plan
 	if a.interactive {
 		// automatically advance the next state, don't need to wait for input here
 		return a.confirmWithPrompt(ctx, input, out)
@@ -138,6 +140,21 @@ func (a *Agent) confirm(ctx context.Context, input string, out io.Writer) (state
 }
 
 func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	wf, err := Workflows{}.Deploy(ctx, a.wfClient, *a.deployPlan)
+	if err != nil {
+		log.Printf("Workflow execution result: %v\n", err)
+		fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
+		return a.plan, nil
+	}
+
+	// give a generous timeout for the deployment to complete
+	_, err = client.GetWorkflowResult[deployPlan](ctx, a.wfClient, wf, 10*time.Minute)
+	if err != nil {
+		a.wfClient.CancelWorkflowInstance(ctx, wf)
+		fmt.Fprint(out, "Sorry that we had trouble deploying your project \n")
+		return a.plan, nil
+	}
+
 	io.WriteString(out, "Deployed...\n")
 	return a.plan, nil
 }
