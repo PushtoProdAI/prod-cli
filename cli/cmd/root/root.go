@@ -154,7 +154,6 @@ ______              _
 // and when input is captured from interactive mode
 func (c *RootCommand) processPrompt(prompt string) {
 	ctx := context.Background()
-	c.output.Stdout(fmt.Sprintf("Processing prompt: %s\n", prompt))
 	c.Agent.Process(ctx, prompt, c)
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -70,7 +71,7 @@ func (c *HTTPRenderClient) handleResponse(resp *http.Response, result interface{
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
-
+	log.Printf("Response from Render API: %s", string(body))
 	// Check for HTTP errors
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
@@ -82,7 +83,6 @@ func (c *HTTPRenderClient) handleResponse(resp *http.Response, result interface{
 			return fmt.Errorf("failed to parse response JSON: %w", err)
 		}
 	}
-
 	return nil
 }
 
@@ -104,17 +104,16 @@ func (c *HTTPRenderClient) CreateProject(ctx context.Context, req CreateProjectR
 
 // ListWorkspaces lists the workspaces that your API key has access to
 // Based on: https://api-docs.render.com/reference/list-owners
-func (c *HTTPRenderClient) ListWorkspaces(ctx context.Context) ([]*RenderWorkspace, error) {
+func (c *HTTPRenderClient) ListWorkspaces(ctx context.Context) ([]RenderWorkspace, error) {
 	resp, err := c.makeRequest(ctx, "GET", "/v1/owners", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list workspaces: %w", err)
 	}
 
-	var workspaces []*RenderWorkspace
+	var workspaces []RenderWorkspace
 	if err := c.handleResponse(resp, &workspaces); err != nil {
 		return nil, err
 	}
-
 	return workspaces, nil
 }
 

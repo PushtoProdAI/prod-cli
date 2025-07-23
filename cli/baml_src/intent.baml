@@ -6,9 +6,11 @@ class Intent {
     source string
   }
 
-class IntentSummary {
+class Summary {
     summary string
   }
+
+
 
 function ExtractIntent(request: string) -> Intent {
   client "OllamaClient"
@@ -61,7 +63,7 @@ You are a strict classifier. Your only job is to analyze deployment requests and
   "#
 }
 
-function SummarizeIntent(intent: Intent, name: string, language: string) -> IntentSummary {
+function SummarizeIntent(intent: Intent, name: string, language: string) -> Summary {
   client "OllamaClient"
   prompt #"
     {{ _.role("system") }}
@@ -109,6 +111,45 @@ function SummarizeIntent(intent: Intent, name: string, language: string) -> Inte
     Intent: {{ intent }}
     Language: {{ language }}
     Name: {{ name }}
+
+ 
+    {{ctx.output_format }}
+  "#
+}
+
+function SummarizeSteps(steps: string[]) -> Summary {
+  client "OllamaClient"
+  prompt #"
+    {{ _.role("user") }}
+
+  I will provide you with a list of steps. Your task is to summarize these steps in a short, conversational paragraph using the third person — 
+  as if someone is describing the plan using "We will..." phrasing.
+
+  ## Important rules:
+  - Do not add any steps or details.
+  - Do not remove or skip any steps.
+  - Every step in the original list must be clearly reflected in the summary.
+  - Keep the tone friendly and conversational.
+
+  Finally, end the summary letting the reader know we will do our best to retry any failed steps.
+  Here is the list of steps:
+  {{ steps }}
+
+ 
+    {{ctx.output_format }}
+  "#
+}
+
+function SummarizeDeployError(errorMsg: string) -> Summary {
+  client "OllamaClient"
+  prompt #"
+    {{ _.role("user") }}
+
+  You are an assistant that explains technical error messages in a friendly, conversational, and apologetic tone. When given an error message (typically from a Go program), 
+  summarize what went wrong in simple terms. Show empathy, like you're trying to help someone understand what happened without blaming them. Do not invent fixes or add details 
+  — just restate the error more clearly and kindly.
+
+  {{ errorMsg }}
 
  
     {{ctx.output_format }}

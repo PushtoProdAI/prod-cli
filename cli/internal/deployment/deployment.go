@@ -89,5 +89,7 @@ func (db *DeploymentBuilder) Build() (*DeploymentSpec, error) {
 		Metadata: map[string]any{
 			"source": "project-analysis",
 		},
+		BuildCommand: db.projectSpec.BuildCommand,
+		StartCommand: db.projectSpec.StartCommand,
 	}, nil
 }

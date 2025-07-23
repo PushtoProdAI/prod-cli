@@ -106,17 +106,17 @@ func (u Intent) BamlEncodeName() *cffi.CFFITypeName {
 	}
 }
 
-type IntentSummary struct {
+type Summary struct {
 	Summary *string `json:"summary"`
 }
 
-func (c *IntentSummary) Decode(holder *cffi.CFFIValueClass) {
+func (c *Summary) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
 	}
-	if typeName.Name != "IntentSummary" {
-		panic(fmt.Sprintf("expected IntentSummary, got %s", typeName.Name))
+	if typeName.Name != "Summary" {
+		panic(fmt.Sprintf("expected Summary, got %s", typeName.Name))
 	}
 
 	for _, field := range holder.Fields {
@@ -143,7 +143,7 @@ func (c *IntentSummary) Decode(holder *cffi.CFFIValueClass) {
 
 }
 
-func (c IntentSummary) Encode() (*cffi.CFFIValueHolder, error) {
+func (c Summary) Encode() (*cffi.CFFIValueHolder, error) {
 	fields := map[string]any{}
 
 	fields["summary"] = c.Summary
@@ -151,13 +151,13 @@ func (c IntentSummary) Encode() (*cffi.CFFIValueHolder, error) {
 	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
 }
 
-func (c IntentSummary) BamlTypeName() string {
-	return "IntentSummary"
+func (c Summary) BamlTypeName() string {
+	return "Summary"
 }
 
-func (u IntentSummary) BamlEncodeName() *cffi.CFFITypeName {
+func (u Summary) BamlEncodeName() *cffi.CFFITypeName {
 	return &cffi.CFFITypeName{
 		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
-		Name:      "IntentSummary",
+		Name:      "Summary",
 	}
 }
