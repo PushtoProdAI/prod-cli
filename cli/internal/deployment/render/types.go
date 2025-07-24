@@ -91,13 +91,15 @@ type BuildFilter struct {
 type CreatePostgresRequest struct {
 	Name         string `json:"name"`
 	OwnerID      string `json:"ownerId"`
-	DatabaseName string `json:"databaseName,omitempty"`
-	User         string `json:"user,omitempty"`
+	Plan         string `json:"plan"`
+	Version      string `json:"version"`
+	DatabaseName string `json:"databaseName"`
 }
 
 type CreateRedisRequest struct {
 	Name    string `json:"name"`
 	OwnerID string `json:"ownerId"`
+	Plan    string `json:"plan"`
 }
 
 type PostgresConnectionInfo struct {
