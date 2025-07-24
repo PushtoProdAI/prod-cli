@@ -22,23 +22,16 @@ func (se *StepExecutor) rollback(ctx context.Context) error {
 	return se.rollbackResources(ctx)
 }
 
-func (se *StepExecutor) rollbackResources(ctx context.Context) error {
+func (se *StepExecutor) rollbackResources(_ context.Context) error {
 	fmt.Println("🔄 Attempting resource-based rollback fallback...")
 	
 	// Rollback in reverse order
 	for i := len(se.createdResources) - 1; i >= 0; i-- {
 		resource := se.createdResources[i]
 		
-		switch resource.Type {
-		case "project":
-			if err := se.client.DeleteProject(ctx, resource.ID); err != nil {
-				fmt.Printf("⚠️  Failed to delete project %s: %v\n", resource.Name, err)
-			} else {
-				fmt.Printf("✓ Deleted project: %s\n", resource.Name)
-			}
-		default:
-			fmt.Printf("⚠️  No rollback handler for resource type: %s\n", resource.Type)
-		}
+		// Currently Render doesn't support programmatic deletion of services
+		// This is a placeholder for future implementation
+		fmt.Printf("⚠️  No rollback handler for resource type: %s (name: %s)\n", resource.Type, resource.Name)
 	}
 	
 	return nil

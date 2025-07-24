@@ -376,8 +376,13 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 		Dockerfile:     "Dockerfile",
 		Remove:         true,
 		ForceRemove:    true,
-		PullParent:     true,
+		PullParent:     false,
+		NoCache:        true,
 		SuppressOutput: false,
+		Platform:       "linux/amd64", // Ensure we build for the correct platform
+		BuildArgs: map[string]*string{
+			"TARGETPLATFORM": stringPtr("linux/amd64"),
+		},
 	}
 
 	// Build the image
@@ -416,7 +421,6 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 	if imageID == "" {
 		imageInfo, err := dg.client.ImageInspect(ctx, artifacts.ImageName+":latest")
 		if err != nil {
-			fmt.Printf("Warning: Failed to inspect built image %s: %v\n", artifacts.ImageName+":latest", err)
 			// If we can't inspect, just use the tag as fallback
 			imageID = artifacts.ImageName + ":latest"
 		} else {
@@ -424,7 +428,8 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 		}
 	}
 
-	fmt.Printf("Successfully built image %s with ID %s\n", artifacts.ImageName+":latest", imageID[:12])
+
+	fmt.Printf("✓ Successfully built image: %s\n", artifacts.ImageName+":latest")
 
 	return &DockerBuildResult{
 		ImageName:   artifacts.ImageName + ":latest",
@@ -437,14 +442,13 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 // GenerateAndBuild generates Dockerfile and builds the image in one step
 func (dg *DockerGenerator) GenerateAndBuild(ctx context.Context, spec *DeploymentSpec, buildContext string) (*DockerBuildResult, error) {
 	fmt.Printf("Generating Dockerfile for %s (%s)...\n", spec.Name, spec.Language)
-
+	
 	// Generate artifacts first
 	artifacts, err := dg.GenerateDockerfile(spec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate Dockerfile: %w", err)
 	}
 
-	fmt.Printf("Generated Dockerfile\n")
 
 	// Write docker-compose.yml if services are present (DISABLED)
 	// if len(artifacts.Services) > 1 { // More than just the app service
@@ -462,7 +466,6 @@ func (dg *DockerGenerator) GenerateAndBuild(ctx context.Context, spec *Deploymen
 	}
 
 	// If Docker is not available, just return the artifacts
-	fmt.Printf("Docker not available - generated Dockerfile only\n")
 	return &DockerBuildResult{
 		ImageName:   artifacts.ImageName,
 		Artifacts:   artifacts,
@@ -484,6 +487,7 @@ func createTarFromDir(dir string) (io.ReadCloser, error) {
 	tw := tar.NewWriter(buf)
 	defer tw.Close()
 
+	fileCount := 0
 	err := filepath.Walk(dir, func(file string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -499,6 +503,8 @@ func createTarFromDir(dir string) (io.ReadCloser, error) {
 		if err != nil {
 			return err
 		}
+
+		fileCount++
 
 		header, err := tar.FileInfoHeader(fi, "")
 		if err != nil {
@@ -602,8 +608,9 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 		sourceImage = sourceImage + ":latest"
 	}
 
-	fmt.Printf("Tagging image %s as %s...\n", sourceImage, registryImageTag)
 
+	fmt.Printf("Tagging image for registry...\n")
+	
 	// Tag the image for the registry
 	err := dg.client.ImageTag(ctx, sourceImage, registryImageTag)
 	if err != nil {
@@ -629,8 +636,9 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 		RegistryAuth: authStr,
 	}
 
-	fmt.Printf("Pushing image to registry %s...\n", creds.URL)
 
+	fmt.Printf("Pushing image to registry...\n")
+	
 	// Push the image
 	pushResponse, err := dg.client.ImagePush(ctx, registryImageTag, pushOptions)
 	if err != nil {
@@ -648,18 +656,72 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 		return nil, fmt.Errorf("docker push failed: %w", err)
 	}
 
-	fmt.Printf("Successfully pushed image to registry: %s\n", registryImageTag)
 
+	fmt.Printf("✓ Successfully pushed image: %s\n", registryImageTag)
+	
 	return &DockerPushResult{
 		PushedImageURL: registryImageTag,
 		PushOutput:     pushOutput.String(),
 	}, nil
 }
 
+// GetPullCredentials fetches registry credentials from the pull-token endpoint
+func (dg *DockerGenerator) GetPullCredentials(ctx context.Context, tenantId string) (*RegistryCredentials, error) {
+	// Prepare request payload
+	payload := map[string]string{
+		"tenantId": tenantId,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request payload: %w", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://127.0.0.1:54321/functions/v1/pull-token", bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// Make HTTP request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request to pull-token endpoint: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("pull-token endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// Parse response
+	var creds RegistryCredentials
+	if err := json.NewDecoder(resp.Body).Decode(&creds); err != nil {
+		return nil, fmt.Errorf("failed to decode pull-token response: %w", err)
+	}
+
+	// Validate required fields
+	if creds.Username == "" || creds.Token == "" || creds.URL == "" || creds.Repository == "" {
+		return nil, fmt.Errorf("incomplete credentials received: username=%s, token present=%t, url=%s, repository=%s",
+			creds.Username, creds.Token != "", creds.URL, creds.Repository)
+	}
+
+	// Strip https:// prefix as Docker doesn't accept it in image references
+	creds.URL = strings.TrimPrefix(creds.URL, "https://")
+	creds.URL = strings.TrimPrefix(creds.URL, "http://")
+
+	return &creds, nil
+}
+
 // BuildAndPush is a convenience method that generates, builds, and pushes a Docker image in one step
 func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpec, buildContext string, tenantId string) (*DockerBuildResult, *DockerPushResult, error) {
-	fmt.Printf("Building and pushing Docker image for %s...\n", spec.Name)
-
+	fmt.Printf("Starting Docker build and push for %s...\n", spec.Name)
+	
 	// Build the image first
 	buildResult, err := dg.GenerateAndBuild(ctx, spec, buildContext)
 	if err != nil {
@@ -672,7 +734,6 @@ func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpe
 	}
 
 	// Get push credentials
-	fmt.Printf("Getting registry credentials for tenant %s...\n", tenantId)
 	creds, err := dg.GetPushCredentials(ctx, tenantId)
 	if err != nil {
 		return buildResult, nil, fmt.Errorf("failed to get push credentials: %w", err)
@@ -684,6 +745,10 @@ func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpe
 		return buildResult, nil, fmt.Errorf("failed to push to registry: %w", err)
 	}
 
-	fmt.Printf("Successfully built and pushed image: %s\n", pushResult.PushedImageURL)
 	return buildResult, pushResult, nil
+}
+
+// stringPtr returns a pointer to a string
+func stringPtr(s string) *string {
+	return &s
 }

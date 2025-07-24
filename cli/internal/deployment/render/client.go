@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 )
@@ -71,7 +70,6 @@ func (c *HTTPRenderClient) handleResponse(resp *http.Response, result interface{
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
-	log.Printf("Response from Render API: %s", string(body))
 	// Check for HTTP errors
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
@@ -84,22 +82,6 @@ func (c *HTTPRenderClient) handleResponse(resp *http.Response, result interface{
 		}
 	}
 	return nil
-}
-
-// CreateProject creates a new project on Render
-// Based on: https://api-docs.render.com/reference/create-project
-func (c *HTTPRenderClient) CreateProject(ctx context.Context, req CreateProjectRequest) (*RenderProject, error) {
-	resp, err := c.makeRequest(ctx, "POST", "/v1/projects", req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create project: %w", err)
-	}
-
-	var project RenderProject
-	if err := c.handleResponse(resp, &project); err != nil {
-		return nil, err
-	}
-
-	return &project, nil
 }
 
 // ListWorkspaces lists the workspaces that your API key has access to
@@ -115,29 +97,6 @@ func (c *HTTPRenderClient) ListWorkspaces(ctx context.Context) ([]RenderWorkspac
 		return nil, err
 	}
 	return workspaces, nil
-}
-
-// Placeholder implementations for interface compliance - will be implemented later
-func (c *HTTPRenderClient) GetProject(ctx context.Context, projectID string) (*RenderProject, error) {
-	return nil, fmt.Errorf("GetProject not yet implemented")
-}
-
-func (c *HTTPRenderClient) ListProjects(ctx context.Context) ([]*RenderProject, error) {
-	resp, err := c.makeRequest(ctx, "GET", "/v1/projects", nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list projects: %w", err)
-	}
-
-	var projects []*RenderProject
-	if err := c.handleResponse(resp, &projects); err != nil {
-		return nil, err
-	}
-
-	return projects, nil
-}
-
-func (c *HTTPRenderClient) DeleteProject(ctx context.Context, projectID string) error {
-	return fmt.Errorf("DeleteProject not yet implemented")
 }
 
 // CreateWebService creates a new web service on Render
@@ -156,22 +115,101 @@ func (c *HTTPRenderClient) CreateWebService(ctx context.Context, req CreateWebSe
 	return &service, nil
 }
 
+// CreatePostgres creates a new PostgreSQL database service on Render
+// Based on: https://api-docs.render.com/reference/create-postgres
 func (c *HTTPRenderClient) CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*RenderService, error) {
-	return nil, fmt.Errorf("CreatePostgres not yet implemented")
+	resp, err := c.makeRequest(ctx, "POST", "/v1/postgres", req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create postgres service: %w", err)
+	}
+
+	var service RenderService
+	if err := c.handleResponse(resp, &service); err != nil {
+		return nil, err
+	}
+
+	return &service, nil
 }
 
+// CreateRedis creates a new Redis key-value store service on Render
+// Based on: https://api-docs.render.com/reference/create-redis
 func (c *HTTPRenderClient) CreateRedis(ctx context.Context, req CreateRedisRequest) (*RenderService, error) {
-	return nil, fmt.Errorf("CreateRedis not yet implemented")
+	resp, err := c.makeRequest(ctx, "POST", "/v1/redis", req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create redis service: %w", err)
+	}
+
+	var service RenderService
+	if err := c.handleResponse(resp, &service); err != nil {
+		return nil, err
+	}
+
+	return &service, nil
 }
 
+// GetPostgresConnectionInfo retrieves the connection strings for a PostgreSQL service
+// Based on: https://api-docs.render.com/reference/retrieve-postgres-connection-info
 func (c *HTTPRenderClient) GetPostgresConnectionInfo(ctx context.Context, serviceID string) (*PostgresConnectionInfo, error) {
-	return nil, fmt.Errorf("GetPostgresConnectionInfo not yet implemented")
+	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/postgres/%s/connection-info", serviceID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get postgres connection info: %w", err)
+	}
+
+	var connectionInfo PostgresConnectionInfo
+	if err := c.handleResponse(resp, &connectionInfo); err != nil {
+		return nil, err
+	}
+
+	return &connectionInfo, nil
 }
 
+// GetRedisConnectionInfo retrieves the connection strings for a Redis service
+// Based on: https://api-docs.render.com/reference/retrieve-redis-connection-info
 func (c *HTTPRenderClient) GetRedisConnectionInfo(ctx context.Context, serviceID string) (*RedisConnectionInfo, error) {
-	return nil, fmt.Errorf("GetRedisConnectionInfo not yet implemented")
+	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/redis/%s/connection-info", serviceID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get redis connection info: %w", err)
+	}
+
+	var connectionInfo RedisConnectionInfo
+	if err := c.handleResponse(resp, &connectionInfo); err != nil {
+		return nil, err
+	}
+
+	return &connectionInfo, nil
 }
 
 func (c *HTTPRenderClient) DeployBlueprint(ctx context.Context, blueprint *RenderBlueprint) error {
 	return fmt.Errorf("DeployBlueprint not yet implemented")
+}
+
+// ListRegistryCredentials lists all registry credentials for a given owner
+// Based on: https://api-docs.render.com/reference/list-registry-credentials
+func (c *HTTPRenderClient) ListRegistryCredentials(ctx context.Context, ownerID string) ([]*RegistryCredential, error) {
+	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/owners/%s/registrycredentials", ownerID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list registry credentials: %w", err)
+	}
+
+	var credentials []*RegistryCredential
+	if err := c.handleResponse(resp, &credentials); err != nil {
+		return nil, err
+	}
+
+	return credentials, nil
+}
+
+func (c *HTTPRenderClient) CreateRegistryCredential(ctx context.Context, req CreateRegistryCredentialRequest) (*RegistryCredential, error) {
+	resp, err := c.makeRequest(ctx, "POST", "/v1/registrycredentials", req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var registryCred RegistryCredential
+	if err := c.handleResponse(resp, &registryCred); err != nil {
+		return nil, err
+	}
+
+	return &registryCred, nil
 }

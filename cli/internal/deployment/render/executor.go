@@ -9,7 +9,6 @@ type StepExecutor struct {
 	client           RenderClient
 	stepResults      map[string]interface{}
 	createdResources []CreatedResource
-	existingProject  *RenderProject
 	executedSteps    []RenderAPIStep
 }
 
@@ -24,35 +23,13 @@ func NewStepExecutor(client RenderClient) *StepExecutor {
 		client:           client,
 		stepResults:      make(map[string]interface{}),
 		createdResources: make([]CreatedResource, 0),
-		existingProject:  nil,
 		executedSteps:    make([]RenderAPIStep, 0),
 	}
 }
 
-func NewStepExecutorWithProject(client RenderClient, existingProject *RenderProject) *StepExecutor {
-	executor := &StepExecutor{
-		client:           client,
-		stepResults:      make(map[string]interface{}),
-		createdResources: make([]CreatedResource, 0),
-		existingProject:  existingProject,
-		executedSteps:    make([]RenderAPIStep, 0),
-	}
-	
-	// Pre-populate the existing project in step results
-	if existingProject != nil {
-		executor.stepResults["existing-project"] = existingProject
-	}
-	
-	return executor
-}
 
 func (se *StepExecutor) ExecuteSteps(ctx context.Context, steps []RenderAPIStep) error {
 	executed := make(map[string]bool)
-	
-	// Mark existing project as already executed if it exists
-	if se.existingProject != nil {
-		executed["existing-project"] = true
-	}
 	
 	for len(executed) < len(steps) {
 		progress := false
@@ -110,12 +87,6 @@ func (se *StepExecutor) executeStep(ctx context.Context, step RenderAPIStep) err
 	// Track created resources for rollback (if the result is a resource)
 	if result != nil {
 		switch res := result.(type) {
-		case *RenderProject:
-			se.createdResources = append(se.createdResources, CreatedResource{
-				ID:   res.ID,
-				Type: "project",
-				Name: res.Name,
-			})
 		case *RenderService:
 			se.createdResources = append(se.createdResources, CreatedResource{
 				ID:   res.ID,
