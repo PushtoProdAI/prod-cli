@@ -51,6 +51,8 @@ func (s *CreatePostgresStep) Execute(ctx context.Context, client RenderClient, s
 		Name:         s.Name,
 		OwnerID:      s.OwnerID,
 		DatabaseName: s.DatabaseName,
+		Plan:         "starter",
+		Version:      "16",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create postgres: %w", err)
@@ -101,6 +103,7 @@ func (s *CreateRedisStep) Execute(ctx context.Context, client RenderClient, step
 	redis, err := client.CreateRedis(ctx, CreateRedisRequest{
 		Name:    s.Name,
 		OwnerID: s.OwnerID,
+		Plan:    "starter",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create redis: %w", err)
@@ -259,7 +262,6 @@ func (s *BuildAndPushStep) Rollback(ctx context.Context, client RenderClient, st
 	// The image will just remain in the registry unused
 	return nil
 }
-
 
 // CreateRegistryCredentialStepConfig holds configuration for creating registry credentials
 type CreateRegistryCredentialStepConfig struct {
