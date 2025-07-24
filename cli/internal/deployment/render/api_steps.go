@@ -3,46 +3,26 @@ package render
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
+
+	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
-// CreateProjectStep handles project creation
-type CreateProjectStep struct {
-	BaseStep
-	Name        string `json:"name"`
-	Environment string `json:"environment"`
-}
-
-func NewCreateProjectStep(id, description, name, environment string, dependsOn []string) *CreateProjectStep {
-	return &CreateProjectStep{
-		BaseStep: BaseStep{
-			ID:          id,
-			Description: description,
-			DependsOn:   dependsOn,
-		},
-		Name:        name,
-		Environment: environment,
-	}
-}
-
-func (s *CreateProjectStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]interface{}) (interface{}, error) {
-	project, err := client.CreateProject(ctx, CreateProjectRequest{
-		Name:        s.Name,
-		Environment: s.Environment,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create project: %w", err)
-	}
-	return project, nil
-}
-
-func (s *CreateProjectStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]interface{}) error {
-	if result, exists := stepResults[s.ID]; exists {
-		if project, ok := result.(*RenderProject); ok {
-			return client.DeleteProject(ctx, project.ID)
-		}
-	}
-	return nil
+// CreatePostgresStepConfig holds configuration for creating a PostgreSQL service
+type CreatePostgresStepConfig struct {
+	// ID is the unique identifier for this step (e.g., "step-1")
+	ID string
+	// Description is a human-readable description of what this step does
+	Description string
+	// Name is the name of the PostgreSQL service to create (e.g., "myapp-postgres-1")
+	Name string
+	// DatabaseName is the name of the database to create within the PostgreSQL instance
+	DatabaseName string
+	// OwnerID is the Render workspace/owner ID where the service will be created
+	OwnerID string
+	// DependsOn lists the step IDs that must complete before this step runs
+	DependsOn []string
 }
 
 // CreatePostgresStep handles PostgreSQL service creation
@@ -53,16 +33,16 @@ type CreatePostgresStep struct {
 	OwnerID      string `json:"ownerId"`
 }
 
-func NewCreatePostgresStep(id, description, name, databaseName, ownerID string, dependsOn []string) *CreatePostgresStep {
+func NewCreatePostgresStep(config CreatePostgresStepConfig) *CreatePostgresStep {
 	return &CreatePostgresStep{
 		BaseStep: BaseStep{
-			ID:          id,
-			Description: description,
-			DependsOn:   dependsOn,
+			ID:          config.ID,
+			Description: config.Description,
+			DependsOn:   config.DependsOn,
 		},
-		Name:         name,
-		DatabaseName: databaseName,
-		OwnerID:      ownerID,
+		Name:         config.Name,
+		DatabaseName: config.DatabaseName,
+		OwnerID:      config.OwnerID,
 	}
 }
 
@@ -84,6 +64,20 @@ func (s *CreatePostgresStep) Rollback(ctx context.Context, client RenderClient, 
 	return nil
 }
 
+// CreateRedisStepConfig holds configuration for creating a Redis service
+type CreateRedisStepConfig struct {
+	// ID is the unique identifier for this step (e.g., "step-1")
+	ID string
+	// Description is a human-readable description of what this step does
+	Description string
+	// Name is the name of the Redis service to create (e.g., "myapp-redis-1")
+	Name string
+	// OwnerID is the Render workspace/owner ID where the service will be created
+	OwnerID string
+	// DependsOn lists the step IDs that must complete before this step runs
+	DependsOn []string
+}
+
 // CreateRedisStep handles Redis service creation
 type CreateRedisStep struct {
 	BaseStep
@@ -91,15 +85,15 @@ type CreateRedisStep struct {
 	OwnerID string `json:"ownerId"`
 }
 
-func NewCreateRedisStep(id, description, name, ownerID string, dependsOn []string) *CreateRedisStep {
+func NewCreateRedisStep(config CreateRedisStepConfig) *CreateRedisStep {
 	return &CreateRedisStep{
 		BaseStep: BaseStep{
-			ID:          id,
-			Description: description,
-			DependsOn:   dependsOn,
+			ID:          config.ID,
+			Description: config.Description,
+			DependsOn:   config.DependsOn,
 		},
-		Name:    name,
-		OwnerID: ownerID,
+		Name:    config.Name,
+		OwnerID: config.OwnerID,
 	}
 }
 
@@ -119,6 +113,20 @@ func (s *CreateRedisStep) Rollback(ctx context.Context, client RenderClient, ste
 	return nil
 }
 
+// GetConnectionInfoStepConfig holds configuration for fetching service connection information
+type GetConnectionInfoStepConfig struct {
+	// ID is the unique identifier for this step (e.g., "step-1")
+	ID string
+	// Description is a human-readable description of what this step does
+	Description string
+	// ServiceType is the type of service ("postgresql" or "redis")
+	ServiceType string
+	// ServiceStepID is the ID of the step that created the service we're getting info for
+	ServiceStepID string
+	// DependsOn lists the step IDs that must complete before this step runs
+	DependsOn []string
+}
+
 // GetConnectionInfoStep handles fetching service connection information
 type GetConnectionInfoStep struct {
 	BaseStep
@@ -126,15 +134,15 @@ type GetConnectionInfoStep struct {
 	ServiceStepID string `json:"serviceStepId"`
 }
 
-func NewGetConnectionInfoStep(id, description, serviceType, serviceStepID string, dependsOn []string) *GetConnectionInfoStep {
+func NewGetConnectionInfoStep(config GetConnectionInfoStepConfig) *GetConnectionInfoStep {
 	return &GetConnectionInfoStep{
 		BaseStep: BaseStep{
-			ID:          id,
-			Description: description,
-			DependsOn:   dependsOn,
+			ID:          config.ID,
+			Description: config.Description,
+			DependsOn:   config.DependsOn,
 		},
-		ServiceType:   serviceType,
-		ServiceStepID: serviceStepID,
+		ServiceType:   config.ServiceType,
+		ServiceStepID: config.ServiceStepID,
 	}
 }
 
@@ -194,36 +202,217 @@ func (s *GetConnectionInfoStep) Rollback(ctx context.Context, client RenderClien
 	return nil
 }
 
+// BuildAndPushStepConfig holds configuration for building and pushing Docker images
+type BuildAndPushStepConfig struct {
+	// ID is the unique identifier for this step (e.g., "step-1")
+	ID string
+	// Description is a human-readable description of what this step does
+	Description string
+	// DeploymentSpec contains the deployment configuration including app name and metadata
+	DeploymentSpec *deployment.DeploymentSpec
+	// DockerGenerator handles Docker image building and registry operations
+	DockerGenerator *deployment.DockerGenerator
+	// BuildContext is the directory context for the Docker build (typically ".")
+	BuildContext string
+	// TenantID is used for multi-tenant Docker registry configurations
+	TenantID string
+	// DependsOn lists the step IDs that must complete before this step runs
+	DependsOn []string
+}
+
+// BuildAndPushStep handles Docker image building and pushing to registry
+type BuildAndPushStep struct {
+	BaseStep
+	DeploymentSpec  *deployment.DeploymentSpec
+	DockerGenerator *deployment.DockerGenerator
+	BuildContext    string
+	TenantID        string
+}
+
+func NewBuildAndPushStep(config BuildAndPushStepConfig) *BuildAndPushStep {
+	return &BuildAndPushStep{
+		BaseStep: BaseStep{
+			ID:          config.ID,
+			Description: config.Description,
+			DependsOn:   config.DependsOn,
+		},
+		DeploymentSpec:  config.DeploymentSpec,
+		DockerGenerator: config.DockerGenerator,
+		BuildContext:    config.BuildContext,
+		TenantID:        config.TenantID,
+	}
+}
+
+func (s *BuildAndPushStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]interface{}) (interface{}, error) {
+	// Build and push the Docker image
+	_, _, err := s.DockerGenerator.BuildAndPush(ctx, s.DeploymentSpec, s.BuildContext, s.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build and push Docker image: %w", err)
+	}
+
+	// We only care that it succeeded, return nil
+	return nil, nil
+}
+
+func (s *BuildAndPushStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]interface{}) error {
+	// No rollback needed for Docker build/push
+	// The image will just remain in the registry unused
+	return nil
+}
+
+
+// CreateRegistryCredentialStepConfig holds configuration for creating registry credentials
+type CreateRegistryCredentialStepConfig struct {
+	// ID is the unique identifier for this step (e.g., "step-1")
+	ID string
+	// Description is a human-readable description of what this step does
+	Description string
+	// Name is the name of the registry credential to create
+	Name string
+	// TenantID is used for multi-tenant Docker registry configurations
+	TenantID string
+	// OwnerID is the Render workspace/owner ID where the credential will be created
+	OwnerID string
+	// DependsOn lists the step IDs that must complete before this step runs
+	DependsOn []string
+}
+
+// CreateRegistryCredentialStep handles creating Docker registry credentials in Render
+type CreateRegistryCredentialStep struct {
+	BaseStep
+	Name     string `json:"name"`
+	TenantID string `json:"tenantId"`
+	OwnerID  string `json:"ownerId"`
+}
+
+func NewCreateRegistryCredentialStep(config CreateRegistryCredentialStepConfig) *CreateRegistryCredentialStep {
+	return &CreateRegistryCredentialStep{
+		BaseStep: BaseStep{
+			ID:          config.ID,
+			Description: config.Description,
+			DependsOn:   config.DependsOn,
+		},
+		Name:     config.Name,
+		TenantID: config.TenantID,
+		OwnerID:  config.OwnerID,
+	}
+}
+
+func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]interface{}) (interface{}, error) {
+	// First, check if a registry credential with this name already exists
+	existingCreds, err := client.ListRegistryCredentials(ctx, s.OwnerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list existing registry credentials: %w", err)
+	}
+
+	// Look for an existing credential with the same name
+	for _, cred := range existingCreds {
+		if cred.Name == s.Name {
+			return cred, nil
+		}
+	}
+
+	// No existing credential found, create a new one
+
+	// Get pull credentials from the Docker generator
+	dockerGenerator := deployment.NewDockerGenerator()
+	defer dockerGenerator.Close()
+
+	pullCreds, err := dockerGenerator.GetPullCredentials(ctx, s.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pull credentials: %w", err)
+	}
+
+	// Create registry credential in Render
+	registryCred, err := client.CreateRegistryCredential(ctx, CreateRegistryCredentialRequest{
+		Name:      s.Name,
+		Username:  pullCreds.Username,
+		AuthToken: pullCreds.Token,
+		Registry:  "AWS_ECR",
+		OwnerID:   s.OwnerID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create registry credential: %w", err)
+	}
+
+	return registryCred, nil
+}
+
+func (s *CreateRegistryCredentialStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]interface{}) error {
+	// TODO: Implement deletion of registry credential if needed
+	return nil
+}
+
+// CreateWebServiceStepConfig holds configuration for creating a web service step
+type CreateWebServiceStepConfig struct {
+	// ID is the unique identifier for this step (e.g., "step-1")
+	ID string
+	// Description is a human-readable description of what this step does
+	Description string
+	// Name is the name of the web service to create (e.g., "myapp-web")
+	Name string
+	// Type is the service type, typically "web_service"
+	Type string
+	// OwnerID is the Render workspace/owner ID where the service will be created
+	OwnerID string
+	// BuildCommand is the command to build the application (e.g., "npm run build")
+	BuildCommand string
+	// StartCommand is the command to start the application (e.g., "npm start")
+	StartCommand string
+	// Environment is the runtime environment (e.g., "node", "python3", "docker")
+	Environment string
+	// Dockerfile is the path to the Dockerfile for Docker deployments
+	Dockerfile string
+	// DockerImageStepID is the ID of the step that built/pushed the Docker image
+	DockerImageStepID string
+	// RegistryCredStepID is the ID of the step that created registry credentials
+	RegistryCredStepID string
+	// TenantID is used for multi-tenant Docker registry configurations
+	TenantID string
+	// EnvVars are the environment variables to set on the service
+	EnvVars map[string]string
+	// ConnectionStepIDs are the IDs of steps that provide connection info (e.g., database URLs)
+	ConnectionStepIDs []string
+	// DependsOn lists the step IDs that must complete before this step runs
+	DependsOn []string
+}
+
 // CreateWebServiceStep handles web service creation
 type CreateWebServiceStep struct {
 	BaseStep
-	Name              string            `json:"name"`
-	Type              string            `json:"type"`
-	OwnerID           string            `json:"ownerId"`
-	BuildCommand      string            `json:"buildCommand"`
-	StartCommand      string            `json:"startCommand"`
-	Environment       string            `json:"environment"`
-	Dockerfile        string            `json:"dockerfile,omitempty"`
-	EnvVars           map[string]string `json:"envVars"`
-	ConnectionStepIDs []string          `json:"connectionStepIds"` // IDs of connection info steps
+	Name               string            `json:"name"`
+	Type               string            `json:"type"`
+	OwnerID            string            `json:"ownerId"`
+	BuildCommand       string            `json:"buildCommand"`
+	StartCommand       string            `json:"startCommand"`
+	Environment        string            `json:"environment"`
+	Dockerfile         string            `json:"dockerfile,omitempty"`
+	DockerImageStepID  string            `json:"dockerImageStepId,omitempty"`  // ID of build & push step
+	RegistryCredStepID string            `json:"registryCredStepId,omitempty"` // ID of registry credential step
+	TenantID           string            `json:"tenantId,omitempty"`           // For Docker deployments
+	EnvVars            map[string]string `json:"envVars"`
+	ConnectionStepIDs  []string          `json:"connectionStepIds"` // IDs of connection info steps
 }
 
-func NewCreateWebServiceStep(id, description, name, serviceType, ownerID, buildCommand, startCommand, env, dockerfile string, envVars map[string]string, connectionStepIDs []string, dependsOn []string) *CreateWebServiceStep {
+func NewCreateWebServiceStep(config CreateWebServiceStepConfig) *CreateWebServiceStep {
 	return &CreateWebServiceStep{
 		BaseStep: BaseStep{
-			ID:          id,
-			Description: description,
-			DependsOn:   dependsOn,
+			ID:          config.ID,
+			Description: config.Description,
+			DependsOn:   config.DependsOn,
 		},
-		Name:              name,
-		Type:              serviceType,
-		OwnerID:           ownerID,
-		BuildCommand:      buildCommand,
-		StartCommand:      startCommand,
-		Environment:       env,
-		Dockerfile:        dockerfile,
-		EnvVars:           envVars,
-		ConnectionStepIDs: connectionStepIDs,
+		Name:               config.Name,
+		Type:               config.Type,
+		OwnerID:            config.OwnerID,
+		BuildCommand:       config.BuildCommand,
+		StartCommand:       config.StartCommand,
+		Environment:        config.Environment,
+		Dockerfile:         config.Dockerfile,
+		DockerImageStepID:  config.DockerImageStepID,
+		RegistryCredStepID: config.RegistryCredStepID,
+		TenantID:           config.TenantID,
+		EnvVars:            config.EnvVars,
+		ConnectionStepIDs:  config.ConnectionStepIDs,
 	}
 }
 
@@ -257,14 +446,65 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		})
 	}
 
-	webService, err := client.CreateWebService(ctx, CreateWebServiceRequest{
-		Name:         s.Name,
-		Type:         s.Type,
-		OwnerID:      s.OwnerID,
-		BuildCommand: s.BuildCommand,
-		StartCommand: s.StartCommand,
-		EnvVars:      envVarSlice,
-	})
+	req := CreateWebServiceRequest{
+		Name:    s.Name,
+		Type:    s.Type,
+		OwnerID: s.OwnerID,
+		EnvVars: envVarSlice,
+	}
+
+	// Check if we have a Docker image from a previous step
+	if s.DockerImageStepID != "" && s.RegistryCredStepID != "" {
+
+		// Get the registry credential from the previous step
+		registryCredResult, exists := stepResults[s.RegistryCredStepID]
+		if !exists {
+			return nil, fmt.Errorf("registry credential step %s not found", s.RegistryCredStepID)
+		}
+
+		registryCred, ok := registryCredResult.(*RegistryCredential)
+		if !ok {
+			return nil, fmt.Errorf("invalid registry credential result type")
+		}
+
+		// Get pull credentials to construct the image path
+		dockerGenerator := deployment.NewDockerGenerator()
+		defer dockerGenerator.Close()
+
+		pullCreds, err := dockerGenerator.GetPullCredentials(ctx, s.TenantID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get pull credentials: %w", err)
+		}
+
+		// Construct the Docker image path
+		imagePath := fmt.Sprintf("%s/%s:latest", strings.TrimSuffix(pullCreds.URL, "/"), pullCreds.Repository)
+
+		req.Image = &ImageDetails{
+			OwnerID:              s.OwnerID,
+			RegistryCredentialID: registryCred.ID,
+			ImagePath:            imagePath,
+		}
+
+		envSpecificDetails := &WebServiceEnvSpecificDetails{
+			RegistryCredentialID: registryCred.ID,
+		}
+
+		serviceDetails := &WebServiceDetails{
+			Runtime:            "image",
+			Plan:               "starter",
+			EnvSpecificDetails: envSpecificDetails,
+		}
+
+		req.ServiceDetails = serviceDetails
+
+		// Don't set build/start commands for Docker deployments
+	} else {
+		// Native deployment - set build and start commands
+		req.BuildCommand = s.BuildCommand
+		req.StartCommand = s.StartCommand
+	}
+
+	webService, err := client.CreateWebService(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create web service: %w", err)
 	}

@@ -20,4 +20,4 @@ RUN {{ .BuildCommand }}
 EXPOSE {{ .Port }}
 
 # Start the application
-CMD [{{ .StartCommand }}]
+CMD {{ .StartCommand }}
