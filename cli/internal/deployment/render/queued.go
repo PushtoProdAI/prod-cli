@@ -49,7 +49,6 @@ func (qd *QueuedDeployment) Deploy(ctx context.Context) error {
 	}
 
 	ownerID := workspaces[0].Owner.ID
-	fmt.Printf("Using workspace: %s (ID: %s)\n", workspaces[0].Owner.Name, ownerID)
 
 	// Generate steps with the owner ID
 	steps := qd.GenerateAPISteps(ownerID)
