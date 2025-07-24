@@ -359,6 +359,8 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 
 	// Write Dockerfile to build context
 	dockerfilePath := filepath.Join(buildContext, "Dockerfile")
+	fmt.Printf("Writing Dockerfile to: %s\n", dockerfilePath)
+	fmt.Printf("Dockerfile content:\n%s\n", artifacts.Dockerfile)
 	if err := os.WriteFile(dockerfilePath, []byte(artifacts.Dockerfile), 0644); err != nil {
 		return nil, fmt.Errorf("failed to write Dockerfile: %w", err)
 	}
@@ -376,8 +378,13 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 		Dockerfile:     "Dockerfile",
 		Remove:         true,
 		ForceRemove:    true,
-		PullParent:     true,
+		PullParent:     false,
+		NoCache:        true,
 		SuppressOutput: false,
+		Platform:       "linux/amd64", // Ensure we build for the correct platform
+		BuildArgs: map[string]*string{
+			"TARGETPLATFORM": stringPtr("linux/amd64"),
+		},
 	}
 
 	// Build the image
@@ -484,6 +491,8 @@ func createTarFromDir(dir string) (io.ReadCloser, error) {
 	tw := tar.NewWriter(buf)
 	defer tw.Close()
 
+	fmt.Printf("Creating tar archive from directory: %s\n", dir)
+	fileCount := 0
 	err := filepath.Walk(dir, func(file string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -499,6 +508,9 @@ func createTarFromDir(dir string) (io.ReadCloser, error) {
 		if err != nil {
 			return err
 		}
+
+		fileCount++
+		fmt.Printf("  Adding file to tar: %s\n", relPath)
 
 		header, err := tar.FileInfoHeader(fi, "")
 		if err != nil {
@@ -530,6 +542,8 @@ func createTarFromDir(dir string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Printf("Total files added to tar: %d\n", fileCount)
 
 	return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
 }
@@ -656,6 +670,59 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 	}, nil
 }
 
+// GetPullCredentials fetches registry credentials from the pull-token endpoint
+func (dg *DockerGenerator) GetPullCredentials(ctx context.Context, tenantId string) (*RegistryCredentials, error) {
+	// Prepare request payload
+	payload := map[string]string{
+		"tenantId": tenantId,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request payload: %w", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://127.0.0.1:54321/functions/v1/pull-token", bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// Make HTTP request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request to pull-token endpoint: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("pull-token endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// Parse response
+	var creds RegistryCredentials
+	if err := json.NewDecoder(resp.Body).Decode(&creds); err != nil {
+		return nil, fmt.Errorf("failed to decode pull-token response: %w", err)
+	}
+
+	// Validate required fields
+	if creds.Username == "" || creds.Token == "" || creds.URL == "" || creds.Repository == "" {
+		return nil, fmt.Errorf("incomplete credentials received: username=%s, token present=%t, url=%s, repository=%s",
+			creds.Username, creds.Token != "", creds.URL, creds.Repository)
+	}
+
+	// Strip https:// prefix as Docker doesn't accept it in image references
+	creds.URL = strings.TrimPrefix(creds.URL, "https://")
+	creds.URL = strings.TrimPrefix(creds.URL, "http://")
+
+	return &creds, nil
+}
+
 // BuildAndPush is a convenience method that generates, builds, and pushes a Docker image in one step
 func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpec, buildContext string, tenantId string) (*DockerBuildResult, *DockerPushResult, error) {
 	fmt.Printf("Building and pushing Docker image for %s...\n", spec.Name)
@@ -686,4 +753,9 @@ func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpe
 
 	fmt.Printf("Successfully built and pushed image: %s\n", pushResult.PushedImageURL)
 	return buildResult, pushResult, nil
+}
+
+// stringPtr returns a pointer to a string
+func stringPtr(s string) *string {
+	return &s
 }
