@@ -308,13 +308,11 @@ func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client Rende
 	// Look for an existing credential with the same name
 	for _, cred := range existingCreds {
 		if cred.Name == s.Name {
-			fmt.Printf("Found existing registry credential: %s (ID: %s)\n", cred.Name, cred.ID)
 			return cred, nil
 		}
 	}
 
 	// No existing credential found, create a new one
-	fmt.Printf("Creating new registry credential: %s\n", s.Name)
 
 	// Get pull credentials from the Docker generator
 	dockerGenerator := deployment.NewDockerGenerator()
@@ -457,7 +455,6 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 
 	// Check if we have a Docker image from a previous step
 	if s.DockerImageStepID != "" && s.RegistryCredStepID != "" {
-		fmt.Printf("\n🐳 Configuring Docker deployment...\n")
 
 		// Get the registry credential from the previous step
 		registryCredResult, exists := stepResults[s.RegistryCredStepID]
@@ -469,7 +466,6 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		if !ok {
 			return nil, fmt.Errorf("invalid registry credential result type")
 		}
-		fmt.Printf("  Registry credential ID: %s\n", registryCred.ID)
 
 		// Get pull credentials to construct the image path
 		dockerGenerator := deployment.NewDockerGenerator()
@@ -482,8 +478,6 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 
 		// Construct the Docker image path
 		imagePath := fmt.Sprintf("%s/%s:latest", strings.TrimSuffix(pullCreds.URL, "/"), pullCreds.Repository)
-		fmt.Printf("  Image path: %s\n", imagePath)
-		fmt.Printf("  Owner ID: %s\n", s.OwnerID)
 
 		req.Image = &ImageDetails{
 			OwnerID:              s.OwnerID,

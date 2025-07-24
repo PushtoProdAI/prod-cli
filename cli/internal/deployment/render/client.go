@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 )
@@ -71,7 +70,6 @@ func (c *HTTPRenderClient) handleResponse(resp *http.Response, result interface{
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
-	log.Printf("Response from Render API: %s", string(body))
 	// Check for HTTP errors
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
@@ -104,10 +102,6 @@ func (c *HTTPRenderClient) ListWorkspaces(ctx context.Context) ([]RenderWorkspac
 // CreateWebService creates a new web service on Render
 // Based on: https://api-docs.render.com/reference/create-service
 func (c *HTTPRenderClient) CreateWebService(ctx context.Context, req CreateWebServiceRequest) (*RenderService, error) {
-	// Log the request for debugging
-	reqJSON, _ := json.MarshalIndent(req, "", "  ")
-	fmt.Printf("\n📤 CreateWebService Request:\n%s\n\n", string(reqJSON))
-	
 	resp, err := c.makeRequest(ctx, "POST", "/v1/services", req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create web service: %w", err)
@@ -124,10 +118,6 @@ func (c *HTTPRenderClient) CreateWebService(ctx context.Context, req CreateWebSe
 // CreatePostgres creates a new PostgreSQL database service on Render
 // Based on: https://api-docs.render.com/reference/create-postgres
 func (c *HTTPRenderClient) CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*RenderService, error) {
-	// Log the request for debugging
-	reqJSON, _ := json.MarshalIndent(req, "", "  ")
-	fmt.Printf("\n📤 CreatePostgres Request:\n%s\n\n", string(reqJSON))
-	
 	resp, err := c.makeRequest(ctx, "POST", "/v1/postgres", req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create postgres service: %w", err)
@@ -144,10 +134,6 @@ func (c *HTTPRenderClient) CreatePostgres(ctx context.Context, req CreatePostgre
 // CreateRedis creates a new Redis key-value store service on Render
 // Based on: https://api-docs.render.com/reference/create-redis
 func (c *HTTPRenderClient) CreateRedis(ctx context.Context, req CreateRedisRequest) (*RenderService, error) {
-	// Log the request for debugging
-	reqJSON, _ := json.MarshalIndent(req, "", "  ")
-	fmt.Printf("\n📤 CreateRedis Request:\n%s\n\n", string(reqJSON))
-	
 	resp, err := c.makeRequest(ctx, "POST", "/v1/redis", req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create redis service: %w", err)
