@@ -30,32 +30,6 @@ func (b *BaseStep) GetDependencies() []string {
 	return b.DependsOn
 }
 
-// Legacy struct for backward compatibility during transition
-type LegacyRenderAPIStep struct {
-	ID          string         `json:"id"`
-	Description string         `json:"description"`
-	Method      string         `json:"method"`
-	Endpoint    string         `json:"endpoint"`
-	Payload     map[string]any `json:"payload"`
-	DependsOn   []string       `json:"dependsOn,omitempty"`
-}
-
-type RenderProject struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt"`
-	OwnerID     string `json:"ownerId"`
-	TeamID      string `json:"teamId,omitempty"`
-	Environment string `json:"environment"`
-}
-
-type CreateProjectRequest struct {
-	Name        string `json:"name"`
-	TeamID      string `json:"teamId,omitempty"`
-	Environment string `json:"environment,omitempty"`
-}
-
 type CreateWebServiceRequest struct {
 	Name           string                `json:"name"`
 	Type           string                `json:"type"` // "web_service"
@@ -64,6 +38,7 @@ type CreateWebServiceRequest struct {
 	Branch         string                `json:"branch,omitempty"`
 	BuildCommand   string                `json:"buildCommand,omitempty"`
 	StartCommand   string                `json:"startCommand,omitempty"`
+	Image          *ImageDetails         `json:"image,omitempty"` // For Docker image deployments
 	EnvVars        []CreateServiceEnvVar `json:"envVars,omitempty"`
 	ServiceDetails *WebServiceDetails    `json:"serviceDetails,omitempty"`
 }
@@ -73,11 +48,39 @@ type CreateServiceEnvVar struct {
 	Value string `json:"value"`
 }
 
+type ImageDetails struct {
+	OwnerID              string `json:"ownerId"`
+	RegistryCredentialID string `json:"registryCredentialId"`
+	ImagePath            string `json:"imagePath"`
+}
+
+// For creating registry credentials
+type CreateRegistryCredentialRequest struct {
+	Name      string `json:"name"`
+	Username  string `json:"username"`
+	AuthToken string `json:"authToken"`
+	Registry  string `json:"registry"`
+	OwnerID   string `json:"ownerId"`
+}
+
+type RegistryCredential struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	RegistryURL string `json:"registryUrl"`
+	UpdatedAt   string `json:"updatedAt"`
+}
+
 type WebServiceDetails struct {
-	Env                        string       `json:"env,omitempty"` // "docker", "node", "python3", etc.
+	Runtime                    string
+	Plan                       string
+	EnvSpecificDetails         *WebServiceEnvSpecificDetails
 	BuildFilter                *BuildFilter `json:"buildFilter,omitempty"`
 	PublishPath                string       `json:"publishPath,omitempty"` // For static sites
 	PullRequestPreviewsEnabled *bool        `json:"pullRequestPreviewsEnabled,omitempty"`
+}
+
+type WebServiceEnvSpecificDetails struct {
+	RegistryCredentialID string
 }
 
 type BuildFilter struct {
@@ -146,12 +149,6 @@ type RenderClient interface {
 	// Workspaces
 	ListWorkspaces(ctx context.Context) ([]RenderWorkspace, error)
 
-	// Projects
-	CreateProject(ctx context.Context, req CreateProjectRequest) (*RenderProject, error)
-	GetProject(ctx context.Context, projectID string) (*RenderProject, error)
-	ListProjects(ctx context.Context) ([]*RenderProject, error)
-	DeleteProject(ctx context.Context, projectID string) error
-
 	// Services
 	CreateWebService(ctx context.Context, req CreateWebServiceRequest) (*RenderService, error)
 	CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*RenderService, error)
@@ -163,5 +160,8 @@ type RenderClient interface {
 
 	// Blueprint
 	DeployBlueprint(ctx context.Context, blueprint *RenderBlueprint) error
-}
 
+	// Registry Credentials
+	ListRegistryCredentials(ctx context.Context, ownerID string) ([]*RegistryCredential, error)
+	CreateRegistryCredential(ctx context.Context, req CreateRegistryCredentialRequest) (*RegistryCredential, error)
+}
