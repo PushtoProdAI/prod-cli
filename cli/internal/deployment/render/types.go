@@ -89,11 +89,13 @@ type BuildFilter struct {
 }
 
 type CreatePostgresRequest struct {
-	Name         string `json:"name"`
-	OwnerID      string `json:"ownerId"`
-	Plan         string `json:"plan"`
-	Version      string `json:"version"`
-	DatabaseName string `json:"databaseName"`
+	Name                   string `json:"name"`
+	OwnerID                string `json:"ownerId"`
+	Plan                   string `json:"plan"`
+	Version                string `json:"version"`
+	DiskSizeGB             int    `json:"diskSizeGB"`
+	Region                 string `json:"region"`
+	EnableHighAvailability bool   `json:"enableHighAvailability"`
 }
 
 type CreateRedisRequest struct {

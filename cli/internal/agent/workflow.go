@@ -33,7 +33,7 @@ var ActivityOpts = workflow.ActivityOptions{
 
 var DeployActivityOpts = workflow.ActivityOptions{
 	RetryOptions: workflow.RetryOptions{
-		MaxAttempts:        3,
+		MaxAttempts:        1,
 		BackoffCoefficient: 1,
 		FirstRetryInterval: time.Second * 5,
 		MaxRetryInterval:   time.Second * 20,
@@ -96,7 +96,7 @@ func (Workflows) PlanDeploy(ctx context.Context, c *client.Client, input string)
 func (Workflows) Deploy(ctx context.Context, c *client.Client, input deployPlan) (*workflow.Instance, error) {
 	log.Println(input.Platform, input.Action)
 	if input.Platform == Render {
-		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployRenderWorkflowName, time.Now().Unix())}, DeployRenderWorkflowName, input.Spec)
+		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployRenderWorkflowName, time.Now().Unix())}, DeployRenderWorkflowName, input)
 	}
 	return nil, errors.New("unsupported platform for deployment")
 }
@@ -153,12 +153,12 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, 
 	return plan, err
 }
 
-func (w *Workflows) deployRender(ctx workflow.Context, input analyzer.ProjectSpec) error {
+func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) error {
 	if w.registry == nil {
 		return errors.New("workflow registry is not set")
 	}
 	dockerGen := deployment.NewDockerGenerator()
-	db := deployment.NewDeploymentBuilder(&input)
+	db := deployment.NewDeploymentBuilder(&input.Spec)
 	spec, err := db.Build()
 	if err != nil {
 		return errors.Errorf("failed to build deployment spec: %w", err)
@@ -169,6 +169,8 @@ func (w *Workflows) deployRender(ctx workflow.Context, input analyzer.ProjectSpe
 		w.statusSender("error", summary)
 		return errors.Errorf("failed to get Render workspace: %w", err)
 	}
+	spec.Metadata["buildContext"] = input.Source
+	spec.Metadata["tenantID"] = "test" // TODO: this shouldn't be hardcoded, we need to get the tenant ID from the context or config
 
 	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true)
 	steps := d.GenerateAPISteps(workspaceID)
@@ -186,6 +188,7 @@ func (w *Workflows) deployRender(ctx workflow.Context, input analyzer.ProjectSpe
 	w.statusSender("deploying", fmt.Sprintf("%s\n-----", summary))
 	log.Printf("Generated %d steps for deployment", len(steps))
 
+	stepExecutor := render.NewStepExecutor(w.renderClient)
 	for _, step := range steps {
 		// this is a bit of a hack. Generating and registering the activities deynamically
 		// this is so we can get an activity per step so that we can track the status of each step and handle retries, etc..
@@ -193,8 +196,7 @@ func (w *Workflows) deployRender(ctx workflow.Context, input analyzer.ProjectSpe
 		// as they'll disappear when closing the app, but we will need to look at what to do if we move to a server
 		af := func(ctx context.Context) error {
 			w.statusSender("deploying", step.GetDescription())
-			stepResults := map[string]any{}
-			_, err := step.Execute(ctx, w.renderClient, stepResults)
+			err := stepExecutor.ExecuteStep(ctx, step)
 			if err != nil {
 				w.statusSender("error", fmt.Sprintf("⚠️ Uh oh! Encountered an error trying to %s", step.GetDescription()))
 				log.Printf("Error executing step %s: %s: %v", step.GetID(), step.GetDescription(), err)

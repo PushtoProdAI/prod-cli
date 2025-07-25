@@ -7,7 +7,7 @@ import (
 
 type StepExecutor struct {
 	client           RenderClient
-	stepResults      map[string]interface{}
+	stepResults      map[string]any
 	createdResources []CreatedResource
 	executedSteps    []RenderAPIStep
 }
@@ -21,27 +21,26 @@ type CreatedResource struct {
 func NewStepExecutor(client RenderClient) *StepExecutor {
 	return &StepExecutor{
 		client:           client,
-		stepResults:      make(map[string]interface{}),
+		stepResults:      make(map[string]any),
 		createdResources: make([]CreatedResource, 0),
 		executedSteps:    make([]RenderAPIStep, 0),
 	}
 }
 
-
 func (se *StepExecutor) ExecuteSteps(ctx context.Context, steps []RenderAPIStep) error {
 	executed := make(map[string]bool)
-	
+
 	for len(executed) < len(steps) {
 		progress := false
-		
+
 		for _, step := range steps {
 			if executed[step.GetID()] {
 				continue
 			}
-			
+
 			// Check if all dependencies are satisfied
 			if se.dependenciesSatisfied(step.GetDependencies(), executed) {
-				if err := se.executeStep(ctx, step); err != nil {
+				if err := se.ExecuteStep(ctx, step); err != nil {
 					fmt.Printf("✗ Failed: %s - %v\n", step.GetDescription(), err)
 					// Attempt rollback of created resources
 					if rollbackErr := se.rollback(ctx); rollbackErr != nil {
@@ -54,12 +53,12 @@ func (se *StepExecutor) ExecuteSteps(ctx context.Context, steps []RenderAPIStep)
 				fmt.Printf("✓ Completed: %s\n", step.GetDescription())
 			}
 		}
-		
+
 		if !progress {
 			return fmt.Errorf("circular dependency detected or unresolvable dependencies")
 		}
 	}
-	
+
 	return nil
 }
 
@@ -72,18 +71,18 @@ func (se *StepExecutor) dependenciesSatisfied(dependencies []string, executed ma
 	return true
 }
 
-func (se *StepExecutor) executeStep(ctx context.Context, step RenderAPIStep) error {
+func (se *StepExecutor) ExecuteStep(ctx context.Context, step RenderAPIStep) error {
 	result, err := step.Execute(ctx, se.client, se.stepResults)
 	if err != nil {
 		return err
 	}
-	
+
 	// Store the result for future steps to use
 	se.stepResults[step.GetID()] = result
-	
+
 	// Track executed step for rollback
 	se.executedSteps = append(se.executedSteps, step)
-	
+
 	// Track created resources for rollback (if the result is a resource)
 	if result != nil {
 		switch res := result.(type) {
@@ -95,6 +94,7 @@ func (se *StepExecutor) executeStep(ctx context.Context, step RenderAPIStep) err
 			})
 		}
 	}
-	
+
 	return nil
 }
+
