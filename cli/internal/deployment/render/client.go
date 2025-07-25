@@ -31,7 +31,7 @@ func NewHTTPRenderClient(apiKey string) *HTTPRenderClient {
 }
 
 // makeRequest makes an HTTP request with proper authentication and error handling
-func (c *HTTPRenderClient) makeRequest(ctx context.Context, method, endpoint string, body interface{}) (*http.Response, error) {
+func (c *HTTPRenderClient) makeRequest(ctx context.Context, method, endpoint string, body any) (*http.Response, error) {
 	var reqBody io.Reader
 
 	if body != nil {
@@ -63,7 +63,7 @@ func (c *HTTPRenderClient) makeRequest(ctx context.Context, method, endpoint str
 }
 
 // handleResponse handles HTTP response parsing and error checking
-func (c *HTTPRenderClient) handleResponse(resp *http.Response, result interface{}) error {
+func (c *HTTPRenderClient) handleResponse(resp *http.Response, result any) error {
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
@@ -186,7 +186,7 @@ func (c *HTTPRenderClient) DeployBlueprint(ctx context.Context, blueprint *Rende
 // ListRegistryCredentials lists all registry credentials for a given owner
 // Based on: https://api-docs.render.com/reference/list-registry-credentials
 func (c *HTTPRenderClient) ListRegistryCredentials(ctx context.Context, ownerID string) ([]*RegistryCredential, error) {
-	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/owners/%s/registrycredentials", ownerID), nil)
+	resp, err := c.makeRequest(ctx, "GET", "/v1/registrycredentials", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list registry credentials: %w", err)
 	}

@@ -46,13 +46,15 @@ func NewCreatePostgresStep(config CreatePostgresStepConfig) *CreatePostgresStep 
 	}
 }
 
-func (s *CreatePostgresStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *CreatePostgresStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error) {
 	postgres, err := client.CreatePostgres(ctx, CreatePostgresRequest{
-		Name:         s.Name,
-		OwnerID:      s.OwnerID,
-		DatabaseName: s.DatabaseName,
-		Plan:         "starter",
-		Version:      "16",
+		OwnerID:                s.OwnerID,
+		Name:                   s.DatabaseName,
+		Plan:                   "basic_256mb",
+		Version:                "16",
+		DiskSizeGB:             15,
+		Region:                 "virginia",
+		EnableHighAvailability: false,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create postgres: %w", err)
@@ -60,7 +62,7 @@ func (s *CreatePostgresStep) Execute(ctx context.Context, client RenderClient, s
 	return postgres, nil
 }
 
-func (s *CreatePostgresStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]interface{}) error {
+func (s *CreatePostgresStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error {
 	// Note: Render may not support service deletion, so this might be a no-op
 	// In a real implementation, you'd implement the appropriate cleanup
 	return nil
@@ -99,11 +101,11 @@ func NewCreateRedisStep(config CreateRedisStepConfig) *CreateRedisStep {
 	}
 }
 
-func (s *CreateRedisStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *CreateRedisStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error) {
 	redis, err := client.CreateRedis(ctx, CreateRedisRequest{
 		Name:    s.Name,
 		OwnerID: s.OwnerID,
-		Plan:    "starter",
+		Plan:    "standard",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create redis: %w", err)
@@ -111,7 +113,7 @@ func (s *CreateRedisStep) Execute(ctx context.Context, client RenderClient, step
 	return redis, nil
 }
 
-func (s *CreateRedisStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]interface{}) error {
+func (s *CreateRedisStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error {
 	// Note: Render may not support service deletion, so this might be a no-op
 	return nil
 }
@@ -149,7 +151,7 @@ func NewGetConnectionInfoStep(config GetConnectionInfoStepConfig) *GetConnection
 	}
 }
 
-func (s *GetConnectionInfoStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *GetConnectionInfoStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error) {
 	// Get the service from the previous step
 	serviceResult, exists := stepResults[s.ServiceStepID]
 	if !exists {
@@ -166,7 +168,7 @@ func (s *GetConnectionInfoStep) Execute(ctx context.Context, client RenderClient
 
 	// Retry fetching connection information until service is ready or timeout
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		var connInfo interface{}
+		var connInfo any
 		var err error
 
 		switch s.ServiceType {
@@ -200,7 +202,7 @@ func (s *GetConnectionInfoStep) Execute(ctx context.Context, client RenderClient
 	return nil, fmt.Errorf("failed to get connection info for %s service %s after %d attempts", s.ServiceType, service.ID, maxRetries)
 }
 
-func (s *GetConnectionInfoStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]interface{}) error {
+func (s *GetConnectionInfoStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error {
 	// No rollback needed for fetching connection info
 	return nil
 }
@@ -246,7 +248,7 @@ func NewBuildAndPushStep(config BuildAndPushStepConfig) *BuildAndPushStep {
 	}
 }
 
-func (s *BuildAndPushStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *BuildAndPushStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error) {
 	// Build and push the Docker image
 	_, _, err := s.DockerGenerator.BuildAndPush(ctx, s.DeploymentSpec, s.BuildContext, s.TenantID)
 	if err != nil {
@@ -257,7 +259,7 @@ func (s *BuildAndPushStep) Execute(ctx context.Context, client RenderClient, ste
 	return nil, nil
 }
 
-func (s *BuildAndPushStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]interface{}) error {
+func (s *BuildAndPushStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error {
 	// No rollback needed for Docker build/push
 	// The image will just remain in the registry unused
 	return nil
@@ -300,7 +302,7 @@ func NewCreateRegistryCredentialStep(config CreateRegistryCredentialStepConfig) 
 	}
 }
 
-func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error) {
 	// First, check if a registry credential with this name already exists
 	existingCreds, err := client.ListRegistryCredentials(ctx, s.OwnerID)
 	if err != nil {
@@ -340,7 +342,7 @@ func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client Rende
 	return registryCred, nil
 }
 
-func (s *CreateRegistryCredentialStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]interface{}) error {
+func (s *CreateRegistryCredentialStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error {
 	// TODO: Implement deletion of registry credential if needed
 	return nil
 }
@@ -418,7 +420,7 @@ func NewCreateWebServiceStep(config CreateWebServiceStepConfig) *CreateWebServic
 	}
 }
 
-func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error) {
 	// Resolve connection strings from previous steps
 	resolvedEnvVars := make(map[string]string)
 
@@ -493,7 +495,7 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 
 		serviceDetails := &WebServiceDetails{
 			Runtime:            "image",
-			Plan:               "starter",
+			Plan:               "standard",
 			EnvSpecificDetails: envSpecificDetails,
 		}
 
@@ -513,7 +515,7 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 	return webService, nil
 }
 
-func (s *CreateWebServiceStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]interface{}) error {
+func (s *CreateWebServiceStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error {
 	// Note: Render may not support service deletion, so this might be a no-op
 	return nil
 }
