@@ -90,3 +90,7 @@ If you encounter issues:
    4. From the supabase directory, run `supabase functions serve`
    5. Run `PROD_DEBUG=true go run cmd/main.go`
    6. logs will be sent to ~/.prod/logs.txt
+
+## Updating Prompts
+   1. We are currently using BAML for handling our LLM interations. BAML requires a generation step to update the prompts and clients.
+   2. When you change a prompt, run `make generate` from `prod/cli` and this will generate updated code. When things are working, please commit this code. 
