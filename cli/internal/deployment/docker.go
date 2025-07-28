@@ -593,7 +593,7 @@ func (dg *DockerGenerator) GetPushCredentials(ctx context.Context, tenantId stri
 // PushToRegistry tags and pushes a Docker image to a private registry
 func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *DockerBuildResult, creds *RegistryCredentials) (*DockerPushResult, error) {
 	if dg.client == nil {
-		return nil, fmt.Errorf("Docker client not available. Please ensure Docker is installed and running")
+		return nil, fmt.Errorf("docker client not available. Please ensure Docker is installed and running")
 	}
 
 	// Build the registry image tag in ECR format: registry/repository:tag
@@ -724,7 +724,7 @@ func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpe
 
 	// If Docker is not available, we can't push
 	if dg.client == nil {
-		return buildResult, nil, fmt.Errorf("Docker client not available - cannot push to registry")
+		return buildResult, nil, fmt.Errorf("docker client not available - cannot push to registry")
 	}
 
 	// Get push credentials

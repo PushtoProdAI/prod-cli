@@ -31,15 +31,6 @@ var ActivityOpts = workflow.ActivityOptions{
 	},
 }
 
-var DeployActivityOpts = workflow.ActivityOptions{
-	RetryOptions: workflow.RetryOptions{
-		MaxAttempts:        1,
-		BackoffCoefficient: 1,
-		FirstRetryInterval: time.Second * 5,
-		MaxRetryInterval:   time.Second * 20,
-	},
-}
-
 type SendWorkflowStatus func(status string, message string)
 
 type Workflows struct {
@@ -53,7 +44,7 @@ var _ workflowext.Registerer = (*Workflows)(nil)
 
 func NewWorkflows(renderClient render.RenderClient, statusSender SendWorkflowStatus) *Workflows {
 	return &Workflows{
-		Acts:         &Activities{renderClient: renderClient},
+		Acts:         &Activities{renderClient: renderClient, statusSender: statusSender},
 		statusSender: statusSender,
 		renderClient: renderClient,
 	}
@@ -102,7 +93,6 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input deployPlan)
 }
 
 func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, error) {
-	w.statusSender("planning", "Understanding your request...")
 	intent, err := workflow.ExecuteActivity[types.Intent](ctx, ActivityOpts, AgentDetermineIntent, input).Get(ctx)
 	if err != nil {
 		log.Println(errors.Errorf("failed to determine intent: %w", err))
@@ -119,7 +109,6 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, 
 			log.Println(errors.Errorf("failed to analyze project: %w", err))
 		}
 	}
-	w.statusSender("summarizing", "Summarizing your request...")
 	summary, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarizeIntent, intent, spec.Name, spec.Language).Get(ctx)
 	if err != nil {
 		log.Println(errors.Errorf("failed to summarize intent: %w", err))
@@ -174,45 +163,21 @@ func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) error {
 
 	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true)
 	steps := d.GenerateAPISteps(workspaceID)
-	log.Printf("Generated %d steps for deployment", len(steps))
 
 	// collect the descriptions to generate a summary
 	descriptions := make([]string, len(steps))
 	for i, step := range steps {
 		descriptions[i] = step.GetDescription()
 	}
-	summary, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
+	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
 	if err != nil {
 		log.Printf("Failed to summarize deployment steps: %v", err)
 	}
-	w.statusSender("deploying", fmt.Sprintf("%s\n-----", summary))
-	log.Printf("Generated %d steps for deployment", len(steps))
-
-	stepExecutor := render.NewStepExecutor(w.renderClient)
-	for _, step := range steps {
-		// this is a bit of a hack. Generating and registering the activities deynamically
-		// this is so we can get an activity per step so that we can track the status of each step and handle retries, etc..
-		// not sure of the impact of having one off activities, running in a CLI this is probably fine
-		// as they'll disappear when closing the app, but we will need to look at what to do if we move to a server
-		af := func(ctx context.Context) error {
-			w.statusSender("deploying", step.GetDescription())
-			err := stepExecutor.ExecuteStep(ctx, step)
-			if err != nil {
-				w.statusSender("error", fmt.Sprintf("⚠️ Uh oh! Encountered an error trying to %s", step.GetDescription()))
-				log.Printf("Error executing step %s: %s: %v", step.GetID(), step.GetDescription(), err)
-				return errors.Errorf("failed to execute step %s: %s: %w", step.GetID(), step.GetDescription(), err)
-			}
-			return nil
-		}
-		name := fmt.Sprintf("agent.deploy.render.%s.%d", step.GetID(), time.Now().Unix())
-		a := workflowext.Activity{Name: name, ActFunc: af}
-		a.Register(w.registry)
-		_, err := workflow.ExecuteActivity[any](ctx, DeployActivityOpts, name).Get(ctx)
-		if err != nil {
-			summary, _ := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarizeError, err.Error()).Get(ctx)
-			w.statusSender("error", summary)
-			return errors.Errorf("failed to execute step %s: %w", step.GetID(), err)
-		}
+	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentDeployRenderSteps, *spec, workspaceID).Get(ctx)
+	if err != nil {
+		summary, _ := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarizeError, err.Error()).Get(ctx)
+		w.statusSender("error", summary)
+		return errors.Errorf("failed to execute Render deploy: %w", err)
 	}
 
 	return nil

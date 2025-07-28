@@ -94,7 +94,5 @@ func (se *StepExecutor) ExecuteStep(ctx context.Context, step RenderAPIStep) err
 			})
 		}
 	}
-
 	return nil
 }
-

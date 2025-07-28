@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/workflowext"
 )
@@ -18,12 +20,14 @@ const (
 	AgentAnalyzeProject       = "agent.analyzeProject"
 	AgentSummarizeIntent      = "agent.summarize"
 	AgentGetRenderWorkspace   = "agent.getRenderWorkspace"
+	AgentDeployRenderSteps    = "agent.deployRenderSteps"
 	AgentSummarizeDeploySteps = "agent.summarizeDeploySteps"
 	AgentSummarizeError       = "agent.summarizeError"
 )
 
 type Activities struct {
 	renderClient render.RenderClient
+	statusSender SendWorkflowStatus
 }
 
 func (a *Activities) Activities() []workflowext.Activity {
@@ -33,11 +37,13 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentSummarizeIntent, ActFunc: a.summarize},
 		{Name: AgentGetRenderWorkspace, ActFunc: a.getRenderWorkspace},
 		{Name: AgentSummarizeDeploySteps, ActFunc: a.summarizeDeploySteps},
+		{Name: AgentDeployRenderSteps, ActFunc: a.deployRenderSteps},
 		{Name: AgentSummarizeError, ActFunc: a.summarizeError},
 	}
 }
 
 func (a *Activities) determineIntent(ctx context.Context, prompt string) (types.Intent, error) {
+	a.statusSender("planning", "Understanding your request...")
 	intent, err := baml_client.ExtractIntent(ctx, prompt)
 	if err != nil {
 		return types.Intent{}, errors.Errorf("failed to extract intent: %w", err)
@@ -64,6 +70,7 @@ func (a *Activities) analyze(_ context.Context, intent types.Intent) (analyzer.P
 }
 
 func (a *Activities) summarize(ctx context.Context, intent types.Intent, name string, language string) (string, error) {
+	a.statusSender("summarizing", "Summarizing your request...")
 	summary, err := baml_client.SummarizeIntent(ctx, intent, name, language)
 	if err != nil {
 		return "", errors.Errorf("failed to summarize intent: %w", err)
@@ -85,12 +92,25 @@ func (a *Activities) getRenderWorkspace(ctx context.Context) (string, error) {
 	return ownerID, nil
 }
 
-func (a *Activities) summarizeDeploySteps(ctx context.Context, steps []string) (string, error) {
+func (a *Activities) summarizeDeploySteps(ctx context.Context, steps []string) error {
 	summary, err := baml_client.SummarizeSteps(ctx, steps)
 	if err != nil {
-		return "", errors.Errorf("failed to summarize deploy steps: %w", err)
+		return errors.Errorf("failed to summarize deploy steps: %w", err)
 	}
-	return summary.Summary, nil
+	a.statusSender("deploying", fmt.Sprintf("%s\n-----", summary.Summary))
+	return nil
+}
+
+func (a *Activities) deployRenderSteps(ctx context.Context, spec deployment.DeploymentSpec, workspaceID string) error {
+	dockerGen := deployment.NewDockerGenerator()
+	d := render.NewQueuedDeployment(a.renderClient, &spec, dockerGen, true)
+	steps := d.GenerateAPISteps(workspaceID)
+	stepExecutor := render.NewStepExecutor(a.renderClient)
+	err := stepExecutor.ExecuteSteps(ctx, steps)
+	if err != nil {
+		return errors.Errorf("failed to execute render steps: %w", err)
+	}
+	return nil
 }
 
 func (a *Activities) summarizeError(ctx context.Context, error string) (string, error) {

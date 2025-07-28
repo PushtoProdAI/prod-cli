@@ -254,7 +254,6 @@ func (s *BuildAndPushStep) Execute(ctx context.Context, client RenderClient, ste
 	if err != nil {
 		return nil, fmt.Errorf("failed to build and push Docker image: %w", err)
 	}
-
 	// We only care that it succeeded, return nil
 	return nil, nil
 }
