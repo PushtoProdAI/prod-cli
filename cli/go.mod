@@ -8,7 +8,7 @@ require (
 	github.com/boundaryml/baml v0.201.0
 	github.com/conduitio/ecdysis v0.4.2
 	github.com/cschleiden/go-workflows v0.0.0-00010101000000-000000000000
-	github.com/docker/docker v28.3.2+incompatible
+	github.com/docker/docker v28.3.3+incompatible
 	github.com/go-errors/errors v1.5.1
 	github.com/manifoldco/promptui v0.9.0
 	github.com/pelletier/go-toml/v2 v2.2.3
