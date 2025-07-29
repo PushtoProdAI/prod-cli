@@ -176,7 +176,7 @@ func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateF
 	_, err = client.GetWorkflowResult[deployPlan](ctx, a.wfClient, wf, 10*time.Minute)
 	if err != nil {
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
-		fmt.Fprint(out, "Sorry that we had trouble deploying your project \n")
+		fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
 		return a.plan, nil
 	}
 
