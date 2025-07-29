@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	PlanDeployWorkflowName      = "agent.planDeploy"
-	DeployRenderWorkflowName    = "agent.deploy.render"
-	DryRunDeployWorkflowName    = "agent.dryRun.render"
+	PlanDeployWorkflowName   = "agent.planDeploy"
+	DeployRenderWorkflowName = "agent.deploy.render"
+	DryRunDeployWorkflowName = "agent.dryRun.render"
 )
 
 var ActivityOpts = workflow.ActivityOptions{
@@ -197,7 +197,7 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 	if w.registry == nil {
 		return DryRunResult{}, errors.New("workflow registry is not set")
 	}
-	
+
 	// Validate credentials first
 	credentialStatus := make(map[string]bool)
 	workspaceID, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderWorkspace).Get(ctx)
@@ -214,7 +214,7 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 	if err != nil {
 		return DryRunResult{}, errors.Errorf("failed to build deployment spec: %w", err)
 	}
-	
+
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["tenantID"] = "test" // TODO: this shouldn't be hardcoded
 
@@ -234,24 +234,27 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 	}
 
 	// Generate estimated costs
-	estimatedCosts := calculateEstimatedCosts(spec)
-	
+	estimatedCosts, err := workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateRenderCosts, spec, deployment.StrategyRenderQueued).Get(ctx)
+	log.Println(err)
+	if err != nil {
+		return DryRunResult{}, errors.Errorf("failed to estimate costs: %w", err)
+	}
 	// Generate configuration files (Dockerfile, etc.)
 	configFiles := generateConfigFiles(spec, dockerGen)
-	
+
 	// Perform conflict checks
 	conflictChecks := performConflictChecks(workspaceID, spec, w.renderClient)
-	
+
 	// Collect validation errors
 	validationErrors := validateDeploymentSpec(spec)
 
 	return DryRunResult{
-		Steps:             dryRunSteps,
-		EstimatedCosts:    estimatedCosts,
-		ConfigFiles:       configFiles,
-		CredentialStatus:  credentialStatus,
-		ConflictChecks:    conflictChecks,
-		ValidationErrors:  validationErrors,
+		Steps:            dryRunSteps,
+		EstimatedCosts:   estimatedCosts,
+		ConfigFiles:      configFiles,
+		CredentialStatus: credentialStatus,
+		ConflictChecks:   conflictChecks,
+		ValidationErrors: validationErrors,
 	}, nil
 }
 
@@ -276,7 +279,7 @@ func getStepType(step render.RenderAPIStep) string {
 
 func extractStepConfig(step render.RenderAPIStep) map[string]any {
 	config := make(map[string]any)
-	
+
 	switch s := step.(type) {
 	case *render.CreatePostgresStep:
 		config["name"] = s.Name
@@ -292,16 +295,16 @@ func extractStepConfig(step render.RenderAPIStep) map[string]any {
 		config["startCommand"] = s.StartCommand
 		config["environment"] = s.Environment
 	}
-	
+
 	return config
 }
 
 func calculateEstimatedCosts(spec *deployment.DeploymentSpec) map[string]float64 {
 	costs := make(map[string]float64)
-	
+
 	// Base web service cost
 	costs["Web Service"] = 7.00 // Standard plan
-	
+
 	// Add costs for backing services
 	serviceCounts := spec.ServiceCounts()
 	for provider, count := range serviceCounts {
@@ -312,48 +315,48 @@ func calculateEstimatedCosts(spec *deployment.DeploymentSpec) map[string]float64
 			costs["Redis"] = float64(count) * 15.00 // standard plan
 		}
 	}
-	
+
 	return costs
 }
 
 func generateConfigFiles(spec *deployment.DeploymentSpec, dockerGen *deployment.DockerGenerator) map[string]string {
 	files := make(map[string]string)
-	
+
 	if dockerGen != nil {
 		// Generate Dockerfile content
 		artifacts, err := dockerGen.GenerateDockerfile(spec)
 		if err == nil && artifacts != nil {
 			files["Dockerfile"] = artifacts.Dockerfile
 		}
-		
+
 		// Generate docker-compose.yml for local development
 		if len(spec.ServiceCounts()) > 0 {
 			dockerCompose := generateDockerCompose(spec)
 			files["docker-compose.yml"] = dockerCompose
 		}
 	}
-	
+
 	return files
 }
 
 func generateDockerCompose(spec *deployment.DeploymentSpec) string {
 	var content strings.Builder
 	content.WriteString("version: '3.8'\nservices:\n")
-	
+
 	// Add the main application service
 	content.WriteString("  app:\n")
 	content.WriteString("    build: .\n")
 	content.WriteString("    ports:\n")
 	content.WriteString("      - \"8080:8080\"\n")
 	content.WriteString("    depends_on:\n")
-	
+
 	serviceCounts := spec.ServiceCounts()
 	for provider := range serviceCounts {
 		content.WriteString(fmt.Sprintf("      - %s\n", provider))
 	}
-	
+
 	content.WriteString("    environment:\n")
-	
+
 	// Add service definitions
 	for provider, count := range serviceCounts {
 		switch provider {
@@ -379,22 +382,22 @@ func generateDockerCompose(spec *deployment.DeploymentSpec) string {
 			content.WriteString("      - REDIS_URL=redis://redis-1:6379\n")
 		}
 	}
-	
+
 	return content.String()
 }
 
 func performConflictChecks(workspaceID string, spec *deployment.DeploymentSpec, client render.RenderClient) []ConflictCheck {
 	var checks []ConflictCheck
-	
+
 	// Note: In a real implementation, you would call the Render API to check for existing services
 	// For now, we'll simulate some basic checks
-	
+
 	checks = append(checks, ConflictCheck{
 		Resource: fmt.Sprintf("Web service '%s-web'", spec.Name),
 		Status:   "ok",
 		Message:  "No conflicts detected",
 	})
-	
+
 	serviceCounts := spec.ServiceCounts()
 	for provider, count := range serviceCounts {
 		for i := 1; i <= count; i++ {
@@ -405,22 +408,22 @@ func performConflictChecks(workspaceID string, spec *deployment.DeploymentSpec, 
 			})
 		}
 	}
-	
+
 	return checks
 }
 
 func validateDeploymentSpec(spec *deployment.DeploymentSpec) []string {
 	var errors []string
-	
+
 	if spec.Name == "" {
 		errors = append(errors, "Application name is required")
 	}
-	
+
 	if spec.Language == "" {
 		errors = append(errors, "Programming language must be specified")
 	}
-	
+
 	// Add more validation as needed
-	
+
 	return errors
 }

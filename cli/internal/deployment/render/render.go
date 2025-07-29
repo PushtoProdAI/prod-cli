@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
@@ -77,11 +78,12 @@ func (rda *RenderDeploymentAdapter) shouldUseDockerfile(spec *deployment.Deploym
 }
 
 func (rda *RenderDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	cr := deployment.CostRequest{Services: make([]deployment.CostService, len(spec.Services))}
-	for i, service := range spec.Services {
+	log.Printf("Estimating costs for spec: %+v with strategy: %s\n", spec, strategy)
+	cr := deployment.CostRequest{Services: make([]deployment.CostService, 0)}
+	for _, service := range spec.Services {
 		cs := deployment.CostService{}
 		switch service.Provider {
-		case "postgres":
+		case "postgresql":
 			cs.Service = service
 			cs.Plan = postgresPlan
 			cs.Storage = postgresDiskSize
@@ -91,7 +93,7 @@ func (rda *RenderDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec
 		default:
 			continue
 		}
-		cr.Services[i] = cs
+		cr.Services = append(cr.Services, cs)
 	}
 	// add a service representing the web service
 	cs := deployment.CostService{
@@ -103,19 +105,24 @@ func (rda *RenderDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec
 	}
 	cr.Services = append(cr.Services, cs)
 	ce, _ := estimateCost(cr)
-	return ce, fmt.Errorf("cost estimation not implemented for strategy: %s", strategy)
+	return ce, nil
 }
 
 func estimateCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	// TODO: this is a placeholder implementation for cost estimation. We'd call the LLM/APIs/etc
 	// and use that data
+	log.Printf("Estimating costs for request: %+v\n", cr)
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 	for _, service := range cr.Services {
-		service.Cost = 5.0
+		if service.Provider == "postgresql" || service.Provider == "redis" {
+			service.Cost = 15.0
+		}
+		if service.Provider == "web" {
+			service.Cost = 7.0
+		}
 		ce.Total += service.Cost
 		ce.Services = append(ce.Services, service)
 	}
 	return ce, nil
 }
-

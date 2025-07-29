@@ -12,6 +12,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/manifoldco/promptui"
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
 type Agent struct {
@@ -115,13 +116,13 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 		return a.plan, nil
 	}
 	a.deployPlan = &plan
-	
+
 	// Skip confirmation prompt in dry-run mode
 	if a.dryRun {
 		fmt.Fprintf(out, "Executing dry-run deployment...\n")
 		return a.deploy(ctx, input, out)
 	}
-	
+
 	if a.interactive {
 		// automatically advance the next state, don't need to wait for input here
 		return a.confirmWithPrompt(ctx, input, out)
@@ -181,7 +182,7 @@ func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateF
 	}
 
 	io.WriteString(out, "Deployed...\n")
-	
+
 	// In non-interactive mode, end the state machine
 	if !a.interactive {
 		return nil, nil
@@ -208,7 +209,7 @@ func (a *Agent) dryRunDeploy(ctx context.Context, input string, out io.Writer) (
 
 	// Display the dry-run preview
 	a.displayDryRunResult(out, result)
-	
+
 	// In non-interactive mode, end the state machine
 	if !a.interactive {
 		return nil, nil
@@ -231,20 +232,20 @@ func shouldProceed(plan deployPlan) bool {
 }
 
 type DryRunResult struct {
-	Steps             []DryRunStep         `json:"steps"`
-	EstimatedCosts    map[string]float64   `json:"estimatedCosts"`
-	ConfigFiles       map[string]string    `json:"configFiles"`
-	CredentialStatus  map[string]bool      `json:"credentialStatus"`
-	ConflictChecks    []ConflictCheck      `json:"conflictChecks"`
-	ValidationErrors  []string             `json:"validationErrors"`
+	Steps            []DryRunStep            `json:"steps"`
+	EstimatedCosts   deployment.CostEstimate `json:"estimatedCosts"`
+	ConfigFiles      map[string]string       `json:"configFiles"`
+	CredentialStatus map[string]bool         `json:"credentialStatus"`
+	ConflictChecks   []ConflictCheck         `json:"conflictChecks"`
+	ValidationErrors []string                `json:"validationErrors"`
 }
 
 type DryRunStep struct {
-	ID          string            `json:"id"`
-	Description string            `json:"description"`
-	Type        string            `json:"type"`
-	Config      map[string]any    `json:"config"`
-	DependsOn   []string          `json:"dependsOn"`
+	ID          string         `json:"id"`
+	Description string         `json:"description"`
+	Type        string         `json:"type"`
+	Config      map[string]any `json:"config"`
+	DependsOn   []string       `json:"dependsOn"`
 }
 
 type ConflictCheck struct {
@@ -309,14 +310,12 @@ func (a *Agent) displayDryRunResult(out io.Writer, result DryRunResult) {
 	fmt.Fprint(out, "\n")
 
 	// Show estimated costs
-	if len(result.EstimatedCosts) > 0 {
+	if result.EstimatedCosts.Total > 0 {
 		fmt.Fprint(out, "💰 ESTIMATED MONTHLY COSTS:\n")
-		var total float64
-		for service, cost := range result.EstimatedCosts {
-			fmt.Fprintf(out, "  • %s: $%.2f\n", service, cost)
-			total += cost
+		for _, service := range result.EstimatedCosts.Services {
+			fmt.Fprintf(out, "  • %s: $%.2f\n", service.Provider, service.Cost)
 		}
-		fmt.Fprintf(out, "  Total: $%.2f/month\n", total)
+		fmt.Fprintf(out, "  Total: $%.2f/month\n", result.EstimatedCosts.Total)
 		fmt.Fprint(out, "\n")
 	}
 
