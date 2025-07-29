@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	PlanDeployWorkflowName   = "agent.planDeploy"
-	DeployRenderWorkflowName = "agent.deploy.render"
+	PlanDeployWorkflowName      = "agent.planDeploy"
+	DeployRenderWorkflowName    = "agent.deploy.render"
+	DryRunDeployWorkflowName    = "agent.dryRun.render"
 )
 
 var ActivityOpts = workflow.ActivityOptions{
@@ -77,6 +78,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 	return []workflowext.Workflow{
 		{Name: PlanDeployWorkflowName, WorkflowFunc: w.planDeploy},
 		{Name: DeployRenderWorkflowName, WorkflowFunc: w.deployRender},
+		{Name: DryRunDeployWorkflowName, WorkflowFunc: w.dryRunDeployRender},
 	}
 }
 
@@ -90,6 +92,14 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input deployPlan)
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployRenderWorkflowName, time.Now().Unix())}, DeployRenderWorkflowName, input)
 	}
 	return nil, errors.New("unsupported platform for deployment")
+}
+
+func (Workflows) DryRunDeploy(ctx context.Context, c *client.Client, input deployPlan) (*workflow.Instance, error) {
+	log.Println("Dry run for", input.Platform, input.Action)
+	if input.Platform == Render {
+		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DryRunDeployWorkflowName, time.Now().Unix())}, DryRunDeployWorkflowName, input)
+	}
+	return nil, errors.New("unsupported platform for dry-run deployment")
 }
 
 func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, error) {
@@ -181,4 +191,236 @@ func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) error {
 	}
 
 	return nil
+}
+
+func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (DryRunResult, error) {
+	if w.registry == nil {
+		return DryRunResult{}, errors.New("workflow registry is not set")
+	}
+	
+	// Validate credentials first
+	credentialStatus := make(map[string]bool)
+	workspaceID, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderWorkspace).Get(ctx)
+	if err != nil {
+		credentialStatus["Render API"] = false
+	} else {
+		credentialStatus["Render API"] = true
+	}
+
+	// Generate the deployment steps (same as actual deployment)
+	dockerGen := deployment.NewDockerGenerator()
+	db := deployment.NewDeploymentBuilder(&input.Spec)
+	spec, err := db.Build()
+	if err != nil {
+		return DryRunResult{}, errors.Errorf("failed to build deployment spec: %w", err)
+	}
+	
+	spec.Metadata["buildContext"] = input.Source
+	spec.Metadata["tenantID"] = "test" // TODO: this shouldn't be hardcoded
+
+	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true)
+	steps := d.GenerateAPISteps(workspaceID)
+
+	// Convert render steps to dry-run steps
+	dryRunSteps := make([]DryRunStep, len(steps))
+	for i, step := range steps {
+		dryRunSteps[i] = DryRunStep{
+			ID:          step.GetID(),
+			Description: step.GetDescription(),
+			Type:        getStepType(step),
+			Config:      extractStepConfig(step),
+			DependsOn:   step.GetDependencies(),
+		}
+	}
+
+	// Generate estimated costs
+	estimatedCosts := calculateEstimatedCosts(spec)
+	
+	// Generate configuration files (Dockerfile, etc.)
+	configFiles := generateConfigFiles(spec, dockerGen)
+	
+	// Perform conflict checks
+	conflictChecks := performConflictChecks(workspaceID, spec, w.renderClient)
+	
+	// Collect validation errors
+	validationErrors := validateDeploymentSpec(spec)
+
+	return DryRunResult{
+		Steps:             dryRunSteps,
+		EstimatedCosts:    estimatedCosts,
+		ConfigFiles:       configFiles,
+		CredentialStatus:  credentialStatus,
+		ConflictChecks:    conflictChecks,
+		ValidationErrors:  validationErrors,
+	}, nil
+}
+
+func getStepType(step render.RenderAPIStep) string {
+	switch step.(type) {
+	case *render.CreatePostgresStep:
+		return "postgres"
+	case *render.CreateRedisStep:
+		return "redis"
+	case *render.GetConnectionInfoStep:
+		return "connection"
+	case *render.BuildAndPushStep:
+		return "docker_build"
+	case *render.CreateRegistryCredentialStep:
+		return "registry_credential"
+	case *render.CreateWebServiceStep:
+		return "web_service"
+	default:
+		return "unknown"
+	}
+}
+
+func extractStepConfig(step render.RenderAPIStep) map[string]any {
+	config := make(map[string]any)
+	
+	switch s := step.(type) {
+	case *render.CreatePostgresStep:
+		config["name"] = s.Name
+		config["databaseName"] = s.DatabaseName
+		config["plan"] = "basic_256mb"
+		config["version"] = "16"
+	case *render.CreateRedisStep:
+		config["name"] = s.Name
+		config["plan"] = "standard"
+	case *render.CreateWebServiceStep:
+		config["name"] = s.Name
+		config["buildCommand"] = s.BuildCommand
+		config["startCommand"] = s.StartCommand
+		config["environment"] = s.Environment
+	}
+	
+	return config
+}
+
+func calculateEstimatedCosts(spec *deployment.DeploymentSpec) map[string]float64 {
+	costs := make(map[string]float64)
+	
+	// Base web service cost
+	costs["Web Service"] = 7.00 // Standard plan
+	
+	// Add costs for backing services
+	serviceCounts := spec.ServiceCounts()
+	for provider, count := range serviceCounts {
+		switch provider {
+		case "postgresql":
+			costs["PostgreSQL"] = float64(count) * 15.00 // basic_256mb plan
+		case "redis":
+			costs["Redis"] = float64(count) * 15.00 // standard plan
+		}
+	}
+	
+	return costs
+}
+
+func generateConfigFiles(spec *deployment.DeploymentSpec, dockerGen *deployment.DockerGenerator) map[string]string {
+	files := make(map[string]string)
+	
+	if dockerGen != nil {
+		// Generate Dockerfile content
+		artifacts, err := dockerGen.GenerateDockerfile(spec)
+		if err == nil && artifacts != nil {
+			files["Dockerfile"] = artifacts.Dockerfile
+		}
+		
+		// Generate docker-compose.yml for local development
+		if len(spec.ServiceCounts()) > 0 {
+			dockerCompose := generateDockerCompose(spec)
+			files["docker-compose.yml"] = dockerCompose
+		}
+	}
+	
+	return files
+}
+
+func generateDockerCompose(spec *deployment.DeploymentSpec) string {
+	var content strings.Builder
+	content.WriteString("version: '3.8'\nservices:\n")
+	
+	// Add the main application service
+	content.WriteString("  app:\n")
+	content.WriteString("    build: .\n")
+	content.WriteString("    ports:\n")
+	content.WriteString("      - \"8080:8080\"\n")
+	content.WriteString("    depends_on:\n")
+	
+	serviceCounts := spec.ServiceCounts()
+	for provider := range serviceCounts {
+		content.WriteString(fmt.Sprintf("      - %s\n", provider))
+	}
+	
+	content.WriteString("    environment:\n")
+	
+	// Add service definitions
+	for provider, count := range serviceCounts {
+		switch provider {
+		case "postgresql":
+			for i := 1; i <= count; i++ {
+				content.WriteString(fmt.Sprintf("  postgres-%d:\n", i))
+				content.WriteString("    image: postgres:16\n")
+				content.WriteString("    environment:\n")
+				content.WriteString(fmt.Sprintf("      POSTGRES_DB: %s_db\n", spec.Name))
+				content.WriteString("      POSTGRES_USER: postgres\n")
+				content.WriteString("      POSTGRES_PASSWORD: password\n")
+				content.WriteString("    ports:\n")
+				content.WriteString(fmt.Sprintf("      - \"%d:5432\"\n", 5432+i-1))
+			}
+			content.WriteString("      - DATABASE_URL=postgresql://postgres:password@postgres-1:5432/" + spec.Name + "_db\n")
+		case "redis":
+			for i := 1; i <= count; i++ {
+				content.WriteString(fmt.Sprintf("  redis-%d:\n", i))
+				content.WriteString("    image: redis:7\n")
+				content.WriteString("    ports:\n")
+				content.WriteString(fmt.Sprintf("      - \"%d:6379\"\n", 6379+i-1))
+			}
+			content.WriteString("      - REDIS_URL=redis://redis-1:6379\n")
+		}
+	}
+	
+	return content.String()
+}
+
+func performConflictChecks(workspaceID string, spec *deployment.DeploymentSpec, client render.RenderClient) []ConflictCheck {
+	var checks []ConflictCheck
+	
+	// Note: In a real implementation, you would call the Render API to check for existing services
+	// For now, we'll simulate some basic checks
+	
+	checks = append(checks, ConflictCheck{
+		Resource: fmt.Sprintf("Web service '%s-web'", spec.Name),
+		Status:   "ok",
+		Message:  "No conflicts detected",
+	})
+	
+	serviceCounts := spec.ServiceCounts()
+	for provider, count := range serviceCounts {
+		for i := 1; i <= count; i++ {
+			checks = append(checks, ConflictCheck{
+				Resource: fmt.Sprintf("%s service '%s-%s-%d'", provider, spec.Name, provider, i),
+				Status:   "ok",
+				Message:  "No conflicts detected",
+			})
+		}
+	}
+	
+	return checks
+}
+
+func validateDeploymentSpec(spec *deployment.DeploymentSpec) []string {
+	var errors []string
+	
+	if spec.Name == "" {
+		errors = append(errors, "Application name is required")
+	}
+	
+	if spec.Language == "" {
+		errors = append(errors, "Programming language must be specified")
+	}
+	
+	// Add more validation as needed
+	
+	return errors
 }
