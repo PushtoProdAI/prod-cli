@@ -43,6 +43,7 @@ type RegistryCredentials struct {
 	URL        string `json:"proxyEndpoint"`
 	Repository string `json:"dockerRepo"`
 	ExpiresAt  string `json:"expiresAt"`
+	AccountID  string `json:"accountId"`
 }
 
 type DockerPushResult struct {

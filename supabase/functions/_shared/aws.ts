@@ -14,6 +14,7 @@ export interface EcrTokenResp {
   dockerRepo: string;
   proxyEndpoint: string;
   expiresAt: Date;
+  accountId: string;
 }
 
 export async function ecrTokenRequest(tenantId: string, roleArn: string): Promise<EcrTokenResp | Error> {
@@ -40,7 +41,7 @@ export async function ecrTokenRequest(tenantId: string, roleArn: string): Promis
       TransitiveTagKeys: ["tenant"]
     });
 
-    const { Credentials } = await stsClient.send(assumeRoleCommand);
+    const { Credentials, AssumedRoleUser } = await stsClient.send(assumeRoleCommand);
 
     if (!Credentials) {
       return new Error("No credentials returned from STS");
@@ -75,12 +76,17 @@ export async function ecrTokenRequest(tenantId: string, roleArn: string): Promis
     const decoded = atob(authToken);
     const [, password] = decoded.split(":");
 
+    const assumedArn = AssumedRoleUser.Arn;
+    const accountIdMatch = assumedArn.match(/arn:aws:sts::(\d+):/);
+    const accountId = accountIdMatch ? accountIdMatch[1] : "";
+
     return {
       dockerAuthToken: password,
       dockerAuthUsername: "AWS",
       dockerRepo: allowedRepos?.length ? allowedRepos[0] : "",
       proxyEndpoint: authData.proxyEndpoint,
       expiresAt: authData.expiresAt,
+      accountId: accountId,
     };
   } catch (err) {
     console.error("ECR token request error:", err);
