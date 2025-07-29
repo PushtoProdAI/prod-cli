@@ -50,10 +50,10 @@ func (s *CreatePostgresStep) Execute(ctx context.Context, client RenderClient, s
 	postgres, err := client.CreatePostgres(ctx, CreatePostgresRequest{
 		OwnerID:                s.OwnerID,
 		Name:                   s.DatabaseName,
-		Plan:                   "basic_256mb",
-		Version:                "16",
-		DiskSizeGB:             15,
-		Region:                 "virginia",
+		Plan:                   postgresPlan,
+		Version:                postgresVersion,
+		DiskSizeGB:             postgresDiskSize,
+		Region:                 postgresRegion,
 		EnableHighAvailability: false,
 	})
 	if err != nil {
@@ -105,7 +105,7 @@ func (s *CreateRedisStep) Execute(ctx context.Context, client RenderClient, step
 	redis, err := client.CreateRedis(ctx, CreateRedisRequest{
 		Name:    s.Name,
 		OwnerID: s.OwnerID,
-		Plan:    "standard",
+		Plan:    redisPlan,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create redis: %w", err)
@@ -494,7 +494,7 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 
 		serviceDetails := &WebServiceDetails{
 			Runtime:            "image",
-			Plan:               "standard",
+			Plan:               webServicePlan,
 			EnvSpecificDetails: envSpecificDetails,
 		}
 

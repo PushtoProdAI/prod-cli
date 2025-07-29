@@ -25,6 +25,7 @@ type Deployable interface {
 type DeploymentAdapter interface {
 	SupportedStrategies() []DeploymentStrategy
 	GenerateArtifacts(spec *DeploymentSpec, strategy DeploymentStrategy) (Deployable, error)
+	EstimateCost(spec *DeploymentSpec, strategy DeploymentStrategy) (CostEstimate, error)
 }
 
 type Service struct {
@@ -41,6 +42,24 @@ type DeploymentSpec struct {
 	Metadata     map[string]any
 	BuildCommand string
 	StartCommand string
+}
+
+type CostService struct {
+	Service
+	Plan    string
+	Storage int
+	Cost    float64
+}
+
+type CostEstimate struct {
+	Total    float64
+	Services []CostService
+}
+
+type CostRequest struct {
+	BasePlan string
+	Platform string
+	Services []CostService
 }
 
 func (ds *DeploymentSpec) ServiceCounts() map[string]int {
