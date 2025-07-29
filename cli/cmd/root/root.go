@@ -24,6 +24,7 @@ var (
 const exitPrompt = "exit"
 
 type RootFlags struct {
+	DryRun  bool `long:"dry-run" usage:"simulate the execution without making any changes"`
 	Version bool `long:"version" short:"v" usage:"show the current Prod version"`
 }
 
@@ -70,8 +71,13 @@ ______              _
 	}
 
 	c.output.Stdout(fmt.Sprintf("%s\n", banner))
+	
+	if c.flags.DryRun {
+		c.output.Stdout("🔍 DRY RUN MODE - Simulating execution without making changes\n\n")
+	}
 
 	if c.args.prompt != "" {
+		c.Agent.SetInteractive(false)
 		c.processPrompt(c.args.prompt)
 		return nil
 	}
@@ -154,6 +160,7 @@ ______              _
 // and when input is captured from interactive mode
 func (c *RootCommand) processPrompt(prompt string) {
 	ctx := context.Background()
+	c.Agent.SetDryRun(c.flags.DryRun)
 	c.Agent.Process(ctx, prompt, c)
 }
 

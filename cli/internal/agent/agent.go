@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/cschleiden/go-workflows/client"
@@ -18,6 +19,7 @@ type Agent struct {
 	wfClient    *client.Client
 	interactive bool
 	deployPlan  *deployPlan
+	dryRun      bool
 }
 
 func NewAgent(wfClient *client.Client, interactive bool) *Agent {
@@ -73,6 +75,14 @@ func (sm *deploySM) next(ctx context.Context, input string, out io.Writer) error
 	return nil
 }
 
+func (a *Agent) SetDryRun(dryRun bool) {
+	a.dryRun = dryRun
+}
+
+func (a *Agent) SetInteractive(interactive bool) {
+	a.interactive = interactive
+}
+
 func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 	a.sm.next(ctx, input, out)
 }
@@ -90,6 +100,9 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 
 	fmt.Fprintf(out, "%s\n", plan.Summary)
 	fmt.Fprint(out, "-------\n")
+	if a.dryRun {
+		fmt.Fprint(out, "🔍 DRY RUN MODE - No changes will be made\n")
+	}
 	fmt.Fprintf(out, "Action: %s\n", plan.Action)
 	fmt.Fprintf(out, "Platform: %s\n", plan.Platform)
 	fmt.Fprintf(out, "Source: %s\n", plan.Source)
@@ -98,9 +111,17 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 	fmt.Fprint(out, "-------\n")
 
 	if !shouldProceed(plan) {
+		fmt.Fprintf(out, "Cannot proceed with deployment plan\n")
 		return a.plan, nil
 	}
 	a.deployPlan = &plan
+	
+	// Skip confirmation prompt in dry-run mode
+	if a.dryRun {
+		fmt.Fprintf(out, "Executing dry-run deployment...\n")
+		return a.deploy(ctx, input, out)
+	}
+	
 	if a.interactive {
 		// automatically advance the next state, don't need to wait for input here
 		return a.confirmWithPrompt(ctx, input, out)
@@ -140,6 +161,10 @@ func (a *Agent) confirm(ctx context.Context, input string, out io.Writer) (state
 }
 
 func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	if a.dryRun {
+		return a.dryRunDeploy(ctx, input, out)
+	}
+
 	wf, err := Workflows{}.Deploy(ctx, a.wfClient, *a.deployPlan)
 	if err != nil {
 		log.Printf("Workflow execution result: %v\n", err)
@@ -156,6 +181,39 @@ func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateF
 	}
 
 	io.WriteString(out, "Deployed...\n")
+	
+	// In non-interactive mode, end the state machine
+	if !a.interactive {
+		return nil, nil
+	}
+	// In interactive mode, return to plan state for more commands
+	return a.plan, nil
+}
+
+func (a *Agent) dryRunDeploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	wf, err := Workflows{}.DryRunDeploy(ctx, a.wfClient, *a.deployPlan)
+	if err != nil {
+		log.Printf("Dry-run workflow execution result: %v\n", err)
+		fmt.Fprint(out, "Sorry, couldn't create a dry-run deployment plan \n")
+		return a.plan, nil
+	}
+
+	// get the dry-run result with a shorter timeout since it's just planning
+	result, err := client.GetWorkflowResult[DryRunResult](ctx, a.wfClient, wf, 2*time.Minute)
+	if err != nil {
+		a.wfClient.CancelWorkflowInstance(ctx, wf)
+		fmt.Fprint(out, "Sorry that we had trouble creating the dry-run preview \n")
+		return a.plan, nil
+	}
+
+	// Display the dry-run preview
+	a.displayDryRunResult(out, result)
+	
+	// In non-interactive mode, end the state machine
+	if !a.interactive {
+		return nil, nil
+	}
+	// In interactive mode, return to plan state for more commands
 	return a.plan, nil
 }
 
@@ -170,4 +228,110 @@ func shouldProceed(plan deployPlan) bool {
 		return false
 	}
 	return true
+}
+
+type DryRunResult struct {
+	Steps             []DryRunStep         `json:"steps"`
+	EstimatedCosts    map[string]float64   `json:"estimatedCosts"`
+	ConfigFiles       map[string]string    `json:"configFiles"`
+	CredentialStatus  map[string]bool      `json:"credentialStatus"`
+	ConflictChecks    []ConflictCheck      `json:"conflictChecks"`
+	ValidationErrors  []string             `json:"validationErrors"`
+}
+
+type DryRunStep struct {
+	ID          string            `json:"id"`
+	Description string            `json:"description"`
+	Type        string            `json:"type"`
+	Config      map[string]any    `json:"config"`
+	DependsOn   []string          `json:"dependsOn"`
+}
+
+type ConflictCheck struct {
+	Resource string `json:"resource"`
+	Status   string `json:"status"` // "ok", "conflict", "warning"
+	Message  string `json:"message"`
+}
+
+func (a *Agent) displayDryRunResult(out io.Writer, result DryRunResult) {
+	fmt.Fprint(out, "\n🔍 DRY RUN PREVIEW\n")
+	fmt.Fprint(out, "==================\n\n")
+
+	// Show validation errors first
+	if len(result.ValidationErrors) > 0 {
+		fmt.Fprint(out, "❌ VALIDATION ERRORS:\n")
+		for _, err := range result.ValidationErrors {
+			fmt.Fprintf(out, "  • %s\n", err)
+		}
+		fmt.Fprint(out, "\n")
+	}
+
+	// Show credential status
+	fmt.Fprint(out, "🔑 CREDENTIAL STATUS:\n")
+	for service, valid := range result.CredentialStatus {
+		status := "✅"
+		if !valid {
+			status = "❌"
+		}
+		fmt.Fprintf(out, "  %s %s\n", status, service)
+	}
+	fmt.Fprint(out, "\n")
+
+	// Show conflict checks
+	if len(result.ConflictChecks) > 0 {
+		fmt.Fprint(out, "🔍 CONFLICT CHECKS:\n")
+		for _, check := range result.ConflictChecks {
+			var icon string
+			switch check.Status {
+			case "ok":
+				icon = "✅"
+			case "conflict":
+				icon = "❌"
+			case "warning":
+				icon = "⚠️"
+			default:
+				icon = "❓"
+			}
+			fmt.Fprintf(out, "  %s %s: %s\n", icon, check.Resource, check.Message)
+		}
+		fmt.Fprint(out, "\n")
+	}
+
+	// Show planned actions
+	fmt.Fprint(out, "📋 PLANNED ACTIONS:\n")
+	for i, step := range result.Steps {
+		fmt.Fprintf(out, "%d. %s\n", i+1, step.Description)
+		fmt.Fprintf(out, "   Type: %s\n", step.Type)
+		if len(step.DependsOn) > 0 {
+			fmt.Fprintf(out, "   Depends on: %v\n", step.DependsOn)
+		}
+	}
+	fmt.Fprint(out, "\n")
+
+	// Show estimated costs
+	if len(result.EstimatedCosts) > 0 {
+		fmt.Fprint(out, "💰 ESTIMATED MONTHLY COSTS:\n")
+		var total float64
+		for service, cost := range result.EstimatedCosts {
+			fmt.Fprintf(out, "  • %s: $%.2f\n", service, cost)
+			total += cost
+		}
+		fmt.Fprintf(out, "  Total: $%.2f/month\n", total)
+		fmt.Fprint(out, "\n")
+	}
+
+	// Show configuration files
+	if len(result.ConfigFiles) > 0 {
+		fmt.Fprint(out, "📁 CONFIGURATION FILES:\n")
+		for filename, content := range result.ConfigFiles {
+			fmt.Fprintf(out, "  📄 %s:\n", filename)
+			lines := strings.Split(content, "\n")
+			for _, line := range lines {
+				fmt.Fprintf(out, "      %s\n", line)
+			}
+			fmt.Fprint(out, "\n")
+		}
+	}
+
+	fmt.Fprint(out, "✅ Dry run completed. Run without --dry-run to execute these actions.\n")
 }
