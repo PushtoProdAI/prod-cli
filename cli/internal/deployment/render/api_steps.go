@@ -329,7 +329,7 @@ func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client Rende
 	// Create registry credential in Render
 	registryCred, err := client.CreateRegistryCredential(ctx, CreateRegistryCredentialRequest{
 		Name:      s.Name,
-		Username:  pullCreds.Username,
+		Username:  pullCreds.AccountID, // Render uses the account id for the username
 		AuthToken: pullCreds.Token,
 		Registry:  "AWS_ECR",
 		OwnerID:   s.OwnerID,
