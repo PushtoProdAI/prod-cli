@@ -18,7 +18,6 @@ const (
 	postgresRegion   = "virginia"
 	redisPlan        = "standard"
 	webServicePlan   = "standard"
-	renderPricingURL = "https://render.com/pricing"
 )
 
 type RenderPricing struct {
@@ -184,16 +183,16 @@ func fetchPricingViaLLM(services []deployment.CostService) ([]float64, error) {
 		}
 		serviceDescriptions = append(serviceDescriptions, desc)
 	}
-	
+
 	servicesText := strings.Join(serviceDescriptions, "\n")
 	log.Printf("Fetching pricing via LLM for services:\n%s", servicesText)
-	
+
 	ctx := context.Background()
 	response, err := baml_client.FetchRenderPricing(ctx, servicesText)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch pricing via LLM: %v", err)
 	}
-	
+
 	// Extract costs in order of input services
 	costs := make([]float64, len(services))
 	for i, service := range services {
@@ -210,17 +209,17 @@ func fetchPricingViaLLM(services []deployment.CostService) ([]float64, error) {
 			costs[i] = 0.0
 		}
 	}
-	
+
 	log.Printf("LLM returned pricing: %v (total: $%.2f)", costs, response.Total_cost)
 	return costs, nil
 }
 
 func estimateCostFallback(cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	log.Printf("Using fallback pricing (last updated: %s)", fallbackPricing.LastFetched.Format("2006-01-02"))
-	
+
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
-	
+
 	for _, service := range cr.Services {
 		cost := getFallbackServiceCost(service.Provider, service.Plan, service.Storage)
 		service.Cost = cost
