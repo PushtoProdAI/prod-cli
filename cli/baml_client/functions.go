@@ -59,6 +59,45 @@ func ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) 
 	return casted, nil
 }
 
+func FetchRenderPricing(ctx context.Context, services string, opts ...CallOptionFunc) (types.PricingResponse, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"services": services},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	encoded, err := baml.EncodeArgs(args)
+	if err != nil {
+		panic(err)
+	}
+
+	result, err := bamlRuntime.CallFunction(ctx, "FetchRenderPricing", encoded)
+	if err != nil {
+		return types.PricingResponse{}, err
+	}
+
+	if result.Error != nil {
+		return types.PricingResponse{}, result.Error
+	}
+
+	casted := *(result.Data).(*types.PricingResponse)
+
+	return casted, nil
+}
+
 func SummarizeDeployError(ctx context.Context, errorMsg string, opts ...CallOptionFunc) (types.Summary, error) {
 
 	var callOpts callOption
