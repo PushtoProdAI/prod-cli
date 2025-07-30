@@ -21,8 +21,12 @@ import (
 )
 
 var typeMap = map[string]reflect.Type{
-	"TYPES.Intent":         reflect.TypeOf(types.Intent{}),
-	"STREAM_TYPES.Intent":  reflect.TypeOf(stream_types.Intent{}),
-	"TYPES.Summary":        reflect.TypeOf(types.Summary{}),
-	"STREAM_TYPES.Summary": reflect.TypeOf(stream_types.Summary{}),
+	"TYPES.Intent":                 reflect.TypeOf(types.Intent{}),
+	"STREAM_TYPES.Intent":          reflect.TypeOf(stream_types.Intent{}),
+	"TYPES.PricingResponse":        reflect.TypeOf(types.PricingResponse{}),
+	"STREAM_TYPES.PricingResponse": reflect.TypeOf(stream_types.PricingResponse{}),
+	"TYPES.ServicePricing":         reflect.TypeOf(types.ServicePricing{}),
+	"STREAM_TYPES.ServicePricing":  reflect.TypeOf(stream_types.ServicePricing{}),
+	"TYPES.Summary":                reflect.TypeOf(types.Summary{}),
+	"STREAM_TYPES.Summary":         reflect.TypeOf(stream_types.Summary{}),
 }
