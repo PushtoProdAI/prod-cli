@@ -1,6 +1,8 @@
 package render
 
-import "context"
+import (
+	"context"
+)
 
 // RenderAPIStep interface for all deployment steps
 type RenderAPIStep interface {
@@ -52,6 +54,11 @@ type ImageDetails struct {
 	OwnerID              string `json:"ownerId"`
 	RegistryCredentialID string `json:"registryCredentialId"`
 	ImagePath            string `json:"imagePath"`
+}
+
+type CreateWebServiceResponse struct {
+	DeploymentID string        `json:"deployId"`
+	Service      RenderService `json:"service"`
 }
 
 // For creating registry credentials
@@ -120,6 +127,15 @@ type RenderService struct {
 	Type string `json:"type"`
 }
 
+type RenderWebService struct {
+	RenderService
+	ServiceDetails ServiceDetails `json:"serviceDetails"`
+}
+
+type ServiceDetails struct {
+	URL string `json:"url"`
+}
+
 type RenderBlueprint struct {
 	Services []BlueprintService `json:"services"`
 }
@@ -157,6 +173,7 @@ type RenderClient interface {
 	CreateWebService(ctx context.Context, req CreateWebServiceRequest) (*RenderService, error)
 	CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*RenderService, error)
 	CreateRedis(ctx context.Context, req CreateRedisRequest) (*RenderService, error)
+	GetWebService(ctx context.Context, serviceID string) (*RenderWebService, error)
 
 	// Connection Info
 	GetPostgresConnectionInfo(ctx context.Context, serviceID string) (*PostgresConnectionInfo, error)

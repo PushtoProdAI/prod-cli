@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/cschleiden/go-workflows/client"
@@ -173,14 +175,18 @@ func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateF
 	}
 
 	// give a generous timeout for the deployment to complete
-	_, err = client.GetWorkflowResult[deployPlan](ctx, a.wfClient, wf, 10*time.Minute)
+	url, err := client.GetWorkflowResult[string](ctx, a.wfClient, wf, 10*time.Minute)
 	if err != nil {
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
 		fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
 		return a.plan, nil
 	}
 
-	io.WriteString(out, "Deployed...\n")
+  io.WriteString(out, "Deployed!...🚀\n")
+	if url != "" {
+		fmt.Fprintf(out, "You can access your deployment at: %s\n", url)
+		openInBrowser(url)
+	}
 
 	// In non-interactive mode, end the state machine
 	if !a.interactive {
@@ -328,4 +334,25 @@ func (a *Agent) displayDryRunResult(out io.Writer, result DryRunResult) {
 	}
 
 	fmt.Fprint(out, "✅ Dry run completed. Run without --dry-run to execute these actions.\n")
+}
+
+func openInBrowser(url string) error {
+	var cmd string
+	var args []string
+
+	switch runtime.GOOS {
+	case "windows":
+		cmd = "cmd"
+		args = []string{"/c", "start", url}
+	case "darwin":
+		cmd = "open"
+		args = []string{url}
+	case "linux":
+		cmd = "xdg-open"
+		args = []string{url}
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+
+	return exec.Command(cmd, args...).Start()
 }

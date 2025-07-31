@@ -18,8 +18,14 @@ const (
 	StrategyRenderQueued    DeploymentStrategy = "render_queued"
 )
 
+type CreatedResource struct {
+	ID   string
+	Type string
+	Name string
+}
+
 type Deployable interface {
-	Deploy(ctx context.Context) error
+	Deploy(ctx context.Context) ([]CreatedResource, error)
 }
 
 type DeploymentAdapter interface {

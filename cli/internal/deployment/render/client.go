@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -107,12 +108,11 @@ func (c *HTTPRenderClient) CreateWebService(ctx context.Context, req CreateWebSe
 		return nil, fmt.Errorf("failed to create web service: %w", err)
 	}
 
-	var service RenderService
-	if err := c.handleResponse(resp, &service); err != nil {
+	var createdResp CreateWebServiceResponse
+	if err := c.handleResponse(resp, &createdResp); err != nil {
 		return nil, err
 	}
-
-	return &service, nil
+	return &createdResp.Service, nil
 }
 
 // CreatePostgres creates a new PostgreSQL database service on Render
@@ -177,6 +177,20 @@ func (c *HTTPRenderClient) GetRedisConnectionInfo(ctx context.Context, serviceID
 	}
 
 	return &connectionInfo, nil
+}
+
+func (c *HTTPRenderClient) GetWebService(ctx context.Context, serviceID string) (*RenderWebService, error) {
+	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/services/%s", serviceID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get service info: %w", err)
+	}
+
+	var webService RenderWebService
+	if err := c.handleResponse(resp, &webService); err != nil {
+		return nil, err
+	}
+	log.Printf("Retrieved web service: %+v", webService)
+	return &webService, nil
 }
 
 func (c *HTTPRenderClient) DeployBlueprint(ctx context.Context, blueprint *RenderBlueprint) error {
