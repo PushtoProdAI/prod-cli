@@ -25,6 +25,7 @@ const (
 	AgentDeployRenderSteps    = "agent.deployRenderSteps"
 	AgentSummarizeDeploySteps = "agent.summarizeDeploySteps"
 	AgentSummarizeError       = "agent.summarizeError"
+	AgentEstimateRenderCosts  = "agent.estimateRenderCosts"
 	AgentGetServiceURL        = "agent.getServiceURL"
 	AgentIsURLLive            = "agent.isURLLive"
 )
@@ -43,6 +44,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentSummarizeDeploySteps, ActFunc: a.summarizeDeploySteps},
 		{Name: AgentDeployRenderSteps, ActFunc: a.deployRenderSteps},
 		{Name: AgentSummarizeError, ActFunc: a.summarizeError},
+		{Name: AgentEstimateRenderCosts, ActFunc: a.estimateRenderCosts},
 		{Name: AgentGetServiceURL, ActFunc: a.getServiceURL},
 		{Name: AgentIsURLLive, ActFunc: a.isURLLive},
 	}
@@ -153,4 +155,13 @@ func (a *Activities) summarizeError(ctx context.Context, error string) (string, 
 		return "", errors.Errorf("failed to summarize error: %w", err)
 	}
 	return summary.Summary, nil
+}
+
+func (a *Activities) estimateRenderCosts(_ context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+	ra := render.NewRenderDeploymentAdapter(a.renderClient)
+	costs, err := ra.EstimateCost(&spec, strategy)
+	if err != nil {
+		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
+	}
+	return costs, nil
 }
