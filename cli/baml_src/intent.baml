@@ -115,7 +115,8 @@ function SummarizeIntent(intent: Intent, name: string, language: string) -> Summ
     - Generate a clear and friendly summary of the request.
     - Include the action, platform, project name, language, and source path.
     - Do **not** include any warnings or "check your code" suggestions.
-    - End with: “If everything looks good, we’ll take care of deploying it for you.”
+    - If this is a dry-run request (intent.dryRun is true), end with: "We'll show you what would happen without making any changes."
+    - If this is NOT a dry-run request (intent.dryRun is false), end with: "If everything looks good, we'll take care of deploying it for you."
 
   ## STYLE
   - Keep it friendly and simple.
