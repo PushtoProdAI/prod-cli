@@ -3,31 +3,27 @@ package render
 import (
 	"context"
 	"fmt"
+
+	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
 type StepExecutor struct {
 	client           RenderClient
 	stepResults      map[string]any
-	createdResources []CreatedResource
+	createdResources []deployment.CreatedResource
 	executedSteps    []RenderAPIStep
-}
-
-type CreatedResource struct {
-	ID   string
-	Type string
-	Name string
 }
 
 func NewStepExecutor(client RenderClient) *StepExecutor {
 	return &StepExecutor{
 		client:           client,
 		stepResults:      make(map[string]any),
-		createdResources: make([]CreatedResource, 0),
+		createdResources: make([]deployment.CreatedResource, 0),
 		executedSteps:    make([]RenderAPIStep, 0),
 	}
 }
 
-func (se *StepExecutor) ExecuteSteps(ctx context.Context, steps []RenderAPIStep) error {
+func (se *StepExecutor) ExecuteSteps(ctx context.Context, steps []RenderAPIStep) ([]deployment.CreatedResource, error) {
 	executed := make(map[string]bool)
 
 	for len(executed) < len(steps) {
@@ -46,7 +42,7 @@ func (se *StepExecutor) ExecuteSteps(ctx context.Context, steps []RenderAPIStep)
 					if rollbackErr := se.rollback(ctx); rollbackErr != nil {
 						fmt.Printf("⚠️  Rollback failed: %v\n", rollbackErr)
 					}
-					return fmt.Errorf("failed to execute step %s: %w", step.GetID(), err)
+					return se.createdResources, fmt.Errorf("failed to execute step %s: %w", step.GetID(), err)
 				}
 				executed[step.GetID()] = true
 				progress = true
@@ -55,11 +51,11 @@ func (se *StepExecutor) ExecuteSteps(ctx context.Context, steps []RenderAPIStep)
 		}
 
 		if !progress {
-			return fmt.Errorf("circular dependency detected or unresolvable dependencies")
+			return se.createdResources, fmt.Errorf("circular dependency detected or unresolvable dependencies")
 		}
 	}
 
-	return nil
+	return se.createdResources, nil
 }
 
 func (se *StepExecutor) dependenciesSatisfied(dependencies []string, executed map[string]bool) bool {
@@ -87,7 +83,7 @@ func (se *StepExecutor) ExecuteStep(ctx context.Context, step RenderAPIStep) err
 	if result != nil {
 		switch res := result.(type) {
 		case *RenderService:
-			se.createdResources = append(se.createdResources, CreatedResource{
+			se.createdResources = append(se.createdResources, deployment.CreatedResource{
 				ID:   res.ID,
 				Type: res.Type,
 				Name: res.Name,
