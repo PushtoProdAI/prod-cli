@@ -311,7 +311,17 @@ func (a *Agent) displayDryRunResult(out io.Writer, result DryRunResult) {
 	if result.EstimatedCosts.Total > 0 {
 		fmt.Fprint(out, "💰 ESTIMATED MONTHLY COSTS:\n")
 		for _, service := range result.EstimatedCosts.Services {
-			fmt.Fprintf(out, "  • %s: $%.2f\n", service.Provider, service.Cost)
+			var description string
+			if service.Plan != "" {
+				if service.Storage > 0 {
+					description = fmt.Sprintf("%s (%s, %dGB storage)", service.Provider, service.Plan, service.Storage)
+				} else {
+					description = fmt.Sprintf("%s (%s)", service.Provider, service.Plan)
+				}
+			} else {
+				description = service.Provider
+			}
+			fmt.Fprintf(out, "  • %s: $%.2f\n", description, service.Cost)
 		}
 		fmt.Fprintf(out, "  Total: $%.2f/month\n", result.EstimatedCosts.Total)
 		fmt.Fprint(out, "\n")
