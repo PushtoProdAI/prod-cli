@@ -4,6 +4,7 @@ class Intent {
     action string
     platform string
     source string
+    dryRun bool
   }
 
 class Summary {
@@ -44,6 +45,23 @@ You are a strict classifier. Your only job is to analyze deployment requests and
   ## SOURCE EXTRACTION
   Extract the source path if one is given (e.g., a full path like `/Users/alice/project/app`). If not, set:
     "source": "pwd"
+
+  ## DRY RUN DETECTION
+  Check if the user wants to perform a dry run (simulation without making changes). Look for keywords like:
+    - "dry run", "dry-run"
+    - "simulate", "simulation" 
+    - "preview", "preview changes"
+    - "test", "test deployment"
+    - "check", "verify"
+    - "what would happen"
+    - "without making changes"
+    - "just show me"
+
+  If any of these patterns are found, set:
+    "dryRun": true
+
+  Otherwise, set:
+    "dryRun": false
 
   ## OUTPUT FORMAT
   Respond ONLY with a JSON object in this format:
@@ -177,6 +195,15 @@ test intentSummary
     }
     name "foo"
     language ""
+  }
+}
+
+test testDryRunIntent {
+  functions [ExtractIntent]
+  args {
+    request #"
+     Can you simulate deploying /Users/raulbarroso/code/meroxa/prod/test-projects/fastapi-app to render without making any changes?
+    "#
   }
 }
 

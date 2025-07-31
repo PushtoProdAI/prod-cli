@@ -24,6 +24,7 @@ type Intent struct {
 	Action   string `json:"action"`
 	Platform string `json:"platform"`
 	Source   string `json:"source"`
+	DryRun   bool   `json:"dryRun"`
 }
 
 func (c *Intent) Decode(holder *cffi.CFFIValueClass) {
@@ -49,6 +50,9 @@ func (c *Intent) Decode(holder *cffi.CFFIValueClass) {
 		case "source":
 			c.Source = baml.Decode(valueHolder).(string)
 
+		case "dryRun":
+			c.DryRun = baml.Decode(valueHolder).(bool)
+
 		default:
 			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
@@ -64,6 +68,8 @@ func (c Intent) Encode() (*cffi.CFFIValueHolder, error) {
 	fields["platform"] = c.Platform
 
 	fields["source"] = c.Source
+
+	fields["dryRun"] = c.DryRun
 
 	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
 }
