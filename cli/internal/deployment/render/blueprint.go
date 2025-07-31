@@ -23,11 +23,12 @@ func NewBlueprintDeployment(client RenderClient, spec *deployment.DeploymentSpec
 	}
 }
 
-func (bd *BlueprintDeployment) Deploy(ctx context.Context) error {
+func (bd *BlueprintDeployment) Deploy(ctx context.Context) ([]deployment.CreatedResource, error) {
+	// TODO: have the blueprint deployment return the created resources
 	if bd.useDockerfile && bd.dockerGenerator != nil {
-		return bd.deployWithDockerfile(ctx)
+		return []deployment.CreatedResource{}, bd.deployWithDockerfile(ctx)
 	}
-	return bd.deployWithNativeBlueprint(ctx)
+	return []deployment.CreatedResource{}, bd.deployWithNativeBlueprint(ctx)
 }
 
 func (bd *BlueprintDeployment) deployWithDockerfile(ctx context.Context) error {
@@ -39,7 +40,7 @@ func (bd *BlueprintDeployment) deployWithDockerfile(ctx context.Context) error {
 
 	// Create Render blueprint with Dockerfile
 	blueprint := bd.createDockerBlueprint(dockerArtifacts)
-	
+
 	// Deploy blueprint to Render
 	return bd.client.DeployBlueprint(ctx, blueprint)
 }
@@ -47,7 +48,6 @@ func (bd *BlueprintDeployment) deployWithDockerfile(ctx context.Context) error {
 func (bd *BlueprintDeployment) deployWithNativeBlueprint(ctx context.Context) error {
 	// Create native Render blueprint without Docker
 	blueprint := bd.createNativeBlueprint()
-	
 	// Deploy blueprint to Render
 	return bd.client.DeployBlueprint(ctx, blueprint)
 }
@@ -57,14 +57,14 @@ func (bd *BlueprintDeployment) createDockerBlueprint(artifacts *deployment.Docke
 
 	// Add main web service using Dockerfile
 	webService := BlueprintService{
-		Name: fmt.Sprintf("%s-web", bd.spec.Name),
-		Type: "web_service",
-		Env:  "docker",
-		Repo: ".", // Assumes source is in current directory
-		Dockerfile: artifacts.Dockerfile,
+		Name:         fmt.Sprintf("%s-web", bd.spec.Name),
+		Type:         "web_service",
+		Env:          "docker",
+		Repo:         ".", // Assumes source is in current directory
+		Dockerfile:   artifacts.Dockerfile,
 		BuildCommand: "", // Docker handles the build
 		StartCommand: "", // Docker handles the start
-		EnvVars: make(map[string]string),
+		EnvVars:      make(map[string]string),
 	}
 
 	// Add environment variables for backing services
@@ -84,8 +84,8 @@ func (bd *BlueprintDeployment) createDockerBlueprint(artifacts *deployment.Docke
 		switch provider {
 		case "postgresql":
 			services = append(services, BlueprintService{
-				Name: fmt.Sprintf("%s-postgres", bd.spec.Name),
-				Type: "postgres",
+				Name:         fmt.Sprintf("%s-postgres", bd.spec.Name),
+				Type:         "postgres",
 				DatabaseName: fmt.Sprintf("%s_db", bd.spec.Name),
 			})
 		case "redis":
@@ -106,13 +106,13 @@ func (bd *BlueprintDeployment) createNativeBlueprint() *RenderBlueprint {
 
 	// Add main web service using native Render detection
 	webService := BlueprintService{
-		Name: fmt.Sprintf("%s-web", bd.spec.Name),
-		Type: "web_service",
-		Env:  bd.getEnvironmentForLanguage(bd.spec.Language),
-		Repo: ".", // Assumes source is in current directory
+		Name:         fmt.Sprintf("%s-web", bd.spec.Name),
+		Type:         "web_service",
+		Env:          bd.getEnvironmentForLanguage(bd.spec.Language),
+		Repo:         ".", // Assumes source is in current directory
 		BuildCommand: bd.spec.BuildCommand,
 		StartCommand: bd.spec.StartCommand,
-		EnvVars: make(map[string]string),
+		EnvVars:      make(map[string]string),
 	}
 
 	// Add environment variables for backing services
@@ -132,8 +132,8 @@ func (bd *BlueprintDeployment) createNativeBlueprint() *RenderBlueprint {
 		switch provider {
 		case "postgresql":
 			services = append(services, BlueprintService{
-				Name: fmt.Sprintf("%s-postgres", bd.spec.Name),
-				Type: "postgres",
+				Name:         fmt.Sprintf("%s-postgres", bd.spec.Name),
+				Type:         "postgres",
 				DatabaseName: fmt.Sprintf("%s_db", bd.spec.Name),
 			})
 		case "redis":
@@ -161,3 +161,4 @@ func (bd *BlueprintDeployment) getEnvironmentForLanguage(language string) string
 		return "docker" // Default to docker for unsupported languages
 	}
 }
+

@@ -152,21 +152,21 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, 
 	return plan, err
 }
 
-func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) error {
+func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (string, error) {
 	if w.registry == nil {
-		return errors.New("workflow registry is not set")
+		return "", errors.New("workflow registry is not set")
 	}
 	dockerGen := deployment.NewDockerGenerator()
 	db := deployment.NewDeploymentBuilder(&input.Spec)
 	spec, err := db.Build()
 	if err != nil {
-		return errors.Errorf("failed to build deployment spec: %w", err)
+		return "", errors.Errorf("failed to build deployment spec: %w", err)
 	}
 	workspaceID, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderWorkspace).Get(ctx)
 	if err != nil {
 		summary, _ := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarizeError, err.Error()).Get(ctx)
 		w.statusSender("error", summary)
-		return errors.Errorf("failed to get Render workspace: %w", err)
+		return "", errors.Errorf("failed to get Render workspace: %w", err)
 	}
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["tenantID"] = "test" // TODO: this shouldn't be hardcoded, we need to get the tenant ID from the context or config
@@ -183,14 +183,31 @@ func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) error {
 	if err != nil {
 		log.Printf("Failed to summarize deployment steps: %v", err)
 	}
-	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentDeployRenderSteps, *spec, workspaceID).Get(ctx)
+	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeployRenderSteps, *spec, workspaceID).Get(ctx)
 	if err != nil {
 		summary, _ := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarizeError, err.Error()).Get(ctx)
 		w.statusSender("error", summary)
-		return errors.Errorf("failed to execute Render deploy: %w", err)
+		return "", errors.Errorf("failed to execute Render deploy: %w", err)
 	}
-
-	return nil
+	var ws deployment.CreatedResource
+	for _, cr := range createdResources {
+		if cr.Type == "web_service" {
+			ws = cr
+			break // assuming we only have one web service
+		}
+	}
+	if ws.ID == "" {
+		return "", nil
+	}
+	url, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetServiceURL, ws.ID).Get(ctx)
+	if err != nil {
+		return "", errors.Errorf("failed to get service URL for %s: %w", ws.Name, err)
+	}
+	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, url).Get(ctx)
+	if err != nil {
+		return "", errors.Errorf("service URL %s is not live: %w", url, err)
+	}
+	return url, nil
 }
 
 func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (DryRunResult, error) {

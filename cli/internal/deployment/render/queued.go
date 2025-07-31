@@ -37,15 +37,15 @@ func NewQueuedDeployment(client RenderClient, spec *deployment.DeploymentSpec, d
 	}
 }
 
-func (qd *QueuedDeployment) Deploy(ctx context.Context) error {
+func (qd *QueuedDeployment) Deploy(ctx context.Context) ([]deployment.CreatedResource, error) {
 	// Step 1: Get the first workspace to use as owner
 	workspaces, err := qd.client.ListWorkspaces(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to list workspaces: %w", err)
+		return []deployment.CreatedResource{}, fmt.Errorf("failed to list workspaces: %w", err)
 	}
 
 	if len(workspaces) == 0 {
-		return fmt.Errorf("no workspaces found")
+		return []deployment.CreatedResource{}, fmt.Errorf("no workspaces found")
 	}
 
 	ownerID := workspaces[0].Owner.ID
