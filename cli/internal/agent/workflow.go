@@ -142,11 +142,12 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, 
 	}
 
 	plan := deployPlan{
-		Action:   action,
-		Platform: platform,
-		Source:   intent.Source,
-		Spec:     spec,
-		Summary:  summary,
+		Action:           action,
+		Platform:         platform,
+		Source:           intent.Source,
+		Spec:             spec,
+		Summary:          summary,
+		DryRunFromPrompt: intent.DryRun,
 	}
 
 	return plan, err

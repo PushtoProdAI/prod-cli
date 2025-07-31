@@ -32,11 +32,12 @@ func NewAgent(wfClient *client.Client, interactive bool) *Agent {
 }
 
 type deployPlan struct {
-	Action   Action
-	Platform Platform
-	Source   string
-	Spec     analyzer.ProjectSpec
-	Summary  string
+	Action           Action
+	Platform         Platform
+	Source           string
+	Spec             analyzer.ProjectSpec
+	Summary          string
+	DryRunFromPrompt bool
 }
 
 //go:generate stringer -type=Platform,Action -output=types_string.go
@@ -98,6 +99,12 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 	plan, err := client.GetWorkflowResult[deployPlan](ctx, a.wfClient, wf, 30*time.Second)
 	if err != nil {
 		fmt.Fprintf(out, "Error getting workflow result: %v\n", err)
+	}
+
+	// Check if dry-run was inferred from the prompt and merge with existing flag
+	if plan.DryRunFromPrompt && !a.dryRun {
+		a.dryRun = true
+		fmt.Fprint(out, "🔍 Detected dry-run request from your prompt - simulating execution without making changes\n")
 	}
 
 	fmt.Fprintf(out, "%s\n", plan.Summary)
