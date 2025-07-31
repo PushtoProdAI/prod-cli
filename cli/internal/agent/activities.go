@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/baml_client"
@@ -23,6 +25,8 @@ const (
 	AgentDeployRenderSteps    = "agent.deployRenderSteps"
 	AgentSummarizeDeploySteps = "agent.summarizeDeploySteps"
 	AgentSummarizeError       = "agent.summarizeError"
+	AgentGetServiceURL        = "agent.getServiceURL"
+	AgentIsURLLive            = "agent.isURLLive"
 )
 
 type Activities struct {
@@ -39,6 +43,8 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentSummarizeDeploySteps, ActFunc: a.summarizeDeploySteps},
 		{Name: AgentDeployRenderSteps, ActFunc: a.deployRenderSteps},
 		{Name: AgentSummarizeError, ActFunc: a.summarizeError},
+		{Name: AgentGetServiceURL, ActFunc: a.getServiceURL},
+		{Name: AgentIsURLLive, ActFunc: a.isURLLive},
 	}
 }
 
@@ -101,15 +107,43 @@ func (a *Activities) summarizeDeploySteps(ctx context.Context, steps []string) e
 	return nil
 }
 
-func (a *Activities) deployRenderSteps(ctx context.Context, spec deployment.DeploymentSpec, workspaceID string) error {
+func (a *Activities) deployRenderSteps(ctx context.Context, spec deployment.DeploymentSpec, workspaceID string) ([]deployment.CreatedResource, error) {
 	dockerGen := deployment.NewDockerGenerator()
 	d := render.NewQueuedDeployment(a.renderClient, &spec, dockerGen, true)
 	steps := d.GenerateAPISteps(workspaceID)
 	stepExecutor := render.NewStepExecutor(a.renderClient)
-	err := stepExecutor.ExecuteSteps(ctx, steps)
+	createdResources, err := stepExecutor.ExecuteSteps(ctx, steps)
 	if err != nil {
-		return errors.Errorf("failed to execute render steps: %w", err)
+		return []deployment.CreatedResource{}, errors.Errorf("failed to execute render steps: %w", err)
 	}
+	return createdResources, nil
+}
+
+func (a *Activities) getServiceURL(ctx context.Context, serviceID string) (string, error) {
+	service, err := a.renderClient.GetWebService(ctx, serviceID)
+	if err != nil {
+		return "", errors.Errorf("failed to get service info: %w", err)
+	}
+	return service.ServiceDetails.URL, nil
+}
+
+func (a *Activities) isURLLive(ctx context.Context, url string) error {
+	// we could also use the deploys endpoint and check the status of the latest deploy,
+	// but using the URL saves us on the rate limiting and ultimately is what the user cares about
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return errors.Errorf("failed to make GET request to %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode > 300 {
+		return errors.Errorf("received non-success status code %d from %s", resp.StatusCode, url)
+	}
+
 	return nil
 }
 
