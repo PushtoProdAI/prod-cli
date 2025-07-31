@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/cschleiden/go-workflows/client"
@@ -119,7 +118,7 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 
 	// Skip confirmation prompt in dry-run mode
 	if a.dryRun {
-		fmt.Fprintf(out, "Executing dry-run deployment...\n")
+		fmt.Fprintf(out, "Executing a dry-run deployment. Please wait as we calculate pricing and identify potential issues before you deploy...\n")
 		return a.deploy(ctx, input, out)
 	}
 
@@ -234,7 +233,6 @@ func shouldProceed(plan deployPlan) bool {
 type DryRunResult struct {
 	Steps            []DryRunStep            `json:"steps"`
 	EstimatedCosts   deployment.CostEstimate `json:"estimatedCosts"`
-	ConfigFiles      map[string]string       `json:"configFiles"`
 	CredentialStatus map[string]bool         `json:"credentialStatus"`
 	ConflictChecks   []ConflictCheck         `json:"conflictChecks"`
 	ValidationErrors []string                `json:"validationErrors"`
@@ -317,19 +315,6 @@ func (a *Agent) displayDryRunResult(out io.Writer, result DryRunResult) {
 		}
 		fmt.Fprintf(out, "  Total: $%.2f/month\n", result.EstimatedCosts.Total)
 		fmt.Fprint(out, "\n")
-	}
-
-	// Show configuration files
-	if len(result.ConfigFiles) > 0 {
-		fmt.Fprint(out, "📁 CONFIGURATION FILES:\n")
-		for filename, content := range result.ConfigFiles {
-			fmt.Fprintf(out, "  📄 %s:\n", filename)
-			lines := strings.Split(content, "\n")
-			for _, line := range lines {
-				fmt.Fprintf(out, "      %s\n", line)
-			}
-			fmt.Fprint(out, "\n")
-		}
 	}
 
 	fmt.Fprint(out, "✅ Dry run completed. Run without --dry-run to execute these actions.\n")

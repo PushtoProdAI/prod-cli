@@ -239,8 +239,6 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 	if err != nil {
 		return DryRunResult{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
-	// Generate configuration files (Dockerfile, etc.)
-	configFiles := generateConfigFiles(spec, dockerGen)
 
 	// Perform conflict checks
 	conflictChecks := performConflictChecks(workspaceID, spec, w.renderClient)
@@ -251,7 +249,6 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 	return DryRunResult{
 		Steps:            dryRunSteps,
 		EstimatedCosts:   estimatedCosts,
-		ConfigFiles:      configFiles,
 		CredentialStatus: credentialStatus,
 		ConflictChecks:   conflictChecks,
 		ValidationErrors: validationErrors,
@@ -317,73 +314,6 @@ func calculateEstimatedCosts(spec *deployment.DeploymentSpec) map[string]float64
 	}
 
 	return costs
-}
-
-func generateConfigFiles(spec *deployment.DeploymentSpec, dockerGen *deployment.DockerGenerator) map[string]string {
-	files := make(map[string]string)
-
-	if dockerGen != nil {
-		// Generate Dockerfile content
-		artifacts, err := dockerGen.GenerateDockerfile(spec)
-		if err == nil && artifacts != nil {
-			files["Dockerfile"] = artifacts.Dockerfile
-		}
-
-		// Generate docker-compose.yml for local development
-		if len(spec.ServiceCounts()) > 0 {
-			dockerCompose := generateDockerCompose(spec)
-			files["docker-compose.yml"] = dockerCompose
-		}
-	}
-
-	return files
-}
-
-func generateDockerCompose(spec *deployment.DeploymentSpec) string {
-	var content strings.Builder
-	content.WriteString("version: '3.8'\nservices:\n")
-
-	// Add the main application service
-	content.WriteString("  app:\n")
-	content.WriteString("    build: .\n")
-	content.WriteString("    ports:\n")
-	content.WriteString("      - \"8080:8080\"\n")
-	content.WriteString("    depends_on:\n")
-
-	serviceCounts := spec.ServiceCounts()
-	for provider := range serviceCounts {
-		content.WriteString(fmt.Sprintf("      - %s\n", provider))
-	}
-
-	content.WriteString("    environment:\n")
-
-	// Add service definitions
-	for provider, count := range serviceCounts {
-		switch provider {
-		case "postgresql":
-			for i := 1; i <= count; i++ {
-				content.WriteString(fmt.Sprintf("  postgres-%d:\n", i))
-				content.WriteString("    image: postgres:16\n")
-				content.WriteString("    environment:\n")
-				content.WriteString(fmt.Sprintf("      POSTGRES_DB: %s_db\n", spec.Name))
-				content.WriteString("      POSTGRES_USER: postgres\n")
-				content.WriteString("      POSTGRES_PASSWORD: password\n")
-				content.WriteString("    ports:\n")
-				content.WriteString(fmt.Sprintf("      - \"%d:5432\"\n", 5432+i-1))
-			}
-			content.WriteString("      - DATABASE_URL=postgresql://postgres:password@postgres-1:5432/" + spec.Name + "_db\n")
-		case "redis":
-			for i := 1; i <= count; i++ {
-				content.WriteString(fmt.Sprintf("  redis-%d:\n", i))
-				content.WriteString("    image: redis:7\n")
-				content.WriteString("    ports:\n")
-				content.WriteString(fmt.Sprintf("      - \"%d:6379\"\n", 6379+i-1))
-			}
-			content.WriteString("      - REDIS_URL=redis://redis-1:6379\n")
-		}
-	}
-
-	return content.String()
 }
 
 func performConflictChecks(workspaceID string, spec *deployment.DeploymentSpec, client render.RenderClient) []ConflictCheck {
