@@ -8,8 +8,20 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 )
+
+// RateLimitError represents a rate limit error with retry information
+type RateLimitError struct {
+	RetryAfter time.Duration
+	Message    string
+}
+
+func (e *RateLimitError) Error() string {
+	return e.Message
+}
 
 // HTTPRenderClient implements the RenderClient interface with actual HTTP calls
 type HTTPRenderClient struct {
@@ -71,6 +83,15 @@ func (c *HTTPRenderClient) handleResponse(resp *http.Response, result any) error
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
+
+	// Check for rate limit errors (429)
+	if resp.StatusCode == 429 {
+		retryAfter := c.parseRetryAfter(resp.Header)
+		message := c.formatRateLimitMessage(retryAfter)
+		fmt.Println(message)
+		os.Exit(1)
+	}
+
 	// Check for HTTP errors
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
@@ -83,6 +104,51 @@ func (c *HTTPRenderClient) handleResponse(resp *http.Response, result any) error
 		}
 	}
 	return nil
+}
+
+// parseRetryAfter parses the Retry-After header and returns the duration
+func (c *HTTPRenderClient) parseRetryAfter(headers http.Header) time.Duration {
+	retryAfterStr := headers.Get("Retry-After")
+	if retryAfterStr == "" {
+		// Default to 60 seconds if no Retry-After header
+		return 60 * time.Second
+	}
+
+	// Try to parse as seconds first
+	if seconds, err := strconv.Atoi(retryAfterStr); err == nil {
+		return time.Duration(seconds) * time.Second
+	}
+
+	// Try to parse as HTTP date format
+	if t, err := time.Parse(time.RFC1123, retryAfterStr); err == nil {
+		return time.Until(t)
+	}
+
+	// Default to 60 seconds if parsing fails
+	return 60 * time.Second
+}
+
+// formatRateLimitMessage creates a human-readable rate limit message
+func (c *HTTPRenderClient) formatRateLimitMessage(retryAfter time.Duration) string {
+	minutes := int(retryAfter.Minutes())
+	seconds := int(retryAfter.Seconds()) % 60
+
+	var timeStr string
+	if minutes > 0 {
+		if seconds > 0 {
+			timeStr = fmt.Sprintf("%d minutes and %d seconds", minutes, seconds)
+		} else {
+			timeStr = fmt.Sprintf("%d minutes", minutes)
+		}
+	} else {
+		timeStr = fmt.Sprintf("%d seconds", seconds)
+	}
+
+	// Calculate when the rate limit will expire
+	expiryTime := time.Now().Add(retryAfter)
+	expiryTimeStr := expiryTime.Format("3:04 PM")
+
+	return fmt.Sprintf("🚫 Rate limit exceeded\n\nOur system has exceeded its allowed requests for a short period. Please try again in %s (at %s).", timeStr, expiryTimeStr)
 }
 
 // ListWorkspaces lists the workspaces that your API key has access to
