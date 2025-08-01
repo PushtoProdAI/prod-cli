@@ -79,17 +79,8 @@ ______              _
 	}
 
 	if c.args.prompt != "" {
-		// Process the initial prompt
-		c.Agent.SetInteractive(false)
-		isDryRun := c.processPrompt(c.args.prompt)
-		
-		// If it was a dry-run (either from flag or inferred from prompt), keep the session alive
-		if c.flags.DryRun || isDryRun {
-			c.Agent.SetInteractive(true)
-			// Continue to interactive mode below
-		} else {
-			return nil
-		}
+		c.processPrompt(c.args.prompt)
+		return nil
 	}
 
 	// Create a context that can be canceled on SIGINT (Ctrl+C)
@@ -147,11 +138,10 @@ ______              _
 // processPrompt handles the business logic for processing prompts
 // This method is called both when a prompt is provided as an argument
 // and when input is captured from interactive mode
-// Returns true if dry-run was inferred from the prompt
-func (c *RootCommand) processPrompt(prompt string) bool {
+func (c *RootCommand) processPrompt(prompt string) {
 	ctx := context.Background()
 	c.Agent.SetDryRun(c.flags.DryRun)
-	return c.Agent.Process(ctx, prompt, c)
+	c.Agent.Process(ctx, prompt, c)
 }
 
 func (c *RootCommand) Usage() string { return "prod" }

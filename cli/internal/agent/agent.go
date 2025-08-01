@@ -86,11 +86,8 @@ func (a *Agent) SetInteractive(interactive bool) {
 	a.interactive = interactive
 }
 
-func (a *Agent) Process(ctx context.Context, input string, out io.Writer) bool {
-	originalDryRun := a.dryRun
+func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 	a.sm.next(ctx, input, out)
-	// Return true if dry-run was enabled after processing (either from flag or prompt)
-	return a.dryRun && !originalDryRun
 }
 
 func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn, error) {
