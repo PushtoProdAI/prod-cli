@@ -20,8 +20,8 @@ type ProjectSpec struct {
 }
 
 type ServiceRequirement struct {
-	Type     string
-	Provider string
+	Type     string `json:"type"`
+	Provider string `json:"provider"`
 }
 
 const (
