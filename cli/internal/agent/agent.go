@@ -86,8 +86,11 @@ func (a *Agent) SetInteractive(interactive bool) {
 	a.interactive = interactive
 }
 
-func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
+func (a *Agent) Process(ctx context.Context, input string, out io.Writer) bool {
+	originalDryRun := a.dryRun
 	a.sm.next(ctx, input, out)
+	// Return true if dry-run was enabled after processing (either from flag or prompt)
+	return a.dryRun && !originalDryRun
 }
 
 func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -189,7 +192,7 @@ func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateF
 		return a.plan, nil
 	}
 
-  io.WriteString(out, "Deployed!...🚀\n")
+	io.WriteString(out, "Deployed!...🚀\n")
 	if url != "" {
 		fmt.Fprintf(out, "You can access your deployment at: %s\n", url)
 		openInBrowser(url)
@@ -339,8 +342,6 @@ func (a *Agent) displayDryRunResult(out io.Writer, result DryRunResult) {
 		fmt.Fprintf(out, "  Total: $%.2f/month\n", result.EstimatedCosts.Total)
 		fmt.Fprint(out, "\n")
 	}
-
-	fmt.Fprint(out, "✅ Dry run completed. Run without --dry-run to execute these actions.\n")
 }
 
 func openInBrowser(url string) error {
