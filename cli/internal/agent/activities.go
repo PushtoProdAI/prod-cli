@@ -169,8 +169,8 @@ func (a *Activities) estimateRenderCosts(_ context.Context, spec deployment.Depl
 	return costs, nil
 }
 
-func (a *Activities) sendProjectStats(_ context.Context, platform string, spec analyzer.ProjectSpec) error {
-	err := backend.RecordRequestedStack(platform, spec.Language, spec.ServiceRequirements)
+func (a *Activities) sendProjectStats(ctx context.Context, platform string, spec analyzer.ProjectSpec) error {
+	err := backend.RecordRequestedStack(ctx, platform, spec.Language, spec.ServiceRequirements)
 	if err != nil {
 		return errors.Errorf("failed to record project stats: %w", err)
 	}
