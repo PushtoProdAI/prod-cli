@@ -1,9 +1,7 @@
 package agent
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,6 +12,7 @@ import (
 	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/workflowext"
@@ -171,42 +170,9 @@ func (a *Activities) estimateRenderCosts(_ context.Context, spec deployment.Depl
 }
 
 func (a *Activities) sendProjectStats(_ context.Context, platform string, spec analyzer.ProjectSpec) error {
-	data := map[string]any{
-		"platform":            platform,
-		"language":            spec.Language,
-		"serviceRequirements": spec.ServiceRequirements,
-	}
-
-	jsonData, err := json.Marshal(data)
+	err := backend.RecordRequestedStack(platform, spec.Language, spec.ServiceRequirements)
 	if err != nil {
-		return fmt.Errorf("failed to marshal usage data: %w", err)
+		return errors.Errorf("failed to record project stats: %w", err)
 	}
-
-	// Create request
-	url := "http://127.0.0.1:54321/functions/v1/record-stack"
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Set headers
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	// Make request
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check response
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("request failed with status: %d", resp.StatusCode)
-	}
-
 	return nil
 }
