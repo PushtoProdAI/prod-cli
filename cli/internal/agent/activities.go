@@ -12,6 +12,7 @@ import (
 	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/workflowext"
@@ -28,6 +29,7 @@ const (
 	AgentEstimateRenderCosts  = "agent.estimateRenderCosts"
 	AgentGetServiceURL        = "agent.getServiceURL"
 	AgentIsURLLive            = "agent.isURLLive"
+	AgentSendProjectStats     = "agent.sendProjectStats"
 )
 
 type Activities struct {
@@ -47,6 +49,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentEstimateRenderCosts, ActFunc: a.estimateRenderCosts},
 		{Name: AgentGetServiceURL, ActFunc: a.getServiceURL},
 		{Name: AgentIsURLLive, ActFunc: a.isURLLive},
+		{Name: AgentSendProjectStats, ActFunc: a.sendProjectStats},
 	}
 }
 
@@ -164,4 +167,12 @@ func (a *Activities) estimateRenderCosts(_ context.Context, spec deployment.Depl
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
 	return costs, nil
+}
+
+func (a *Activities) sendProjectStats(ctx context.Context, platform string, spec analyzer.ProjectSpec) error {
+	err := backend.RecordRequestedStack(ctx, platform, spec.Language, spec.ServiceRequirements)
+	if err != nil {
+		return errors.Errorf("failed to record project stats: %w", err)
+	}
+	return nil
 }

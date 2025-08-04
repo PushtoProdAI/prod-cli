@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/meroxa/prod/cli/internal/backend"
 )
 
 type DockerArtifacts struct {
@@ -35,15 +35,6 @@ type DockerBuildResult struct {
 	ImageID     string
 	BuildOutput string
 	Artifacts   *DockerArtifacts
-}
-
-type RegistryCredentials struct {
-	Username   string `json:"dockerAuthUsername"`
-	Token      string `json:"dockerAuthToken"`
-	URL        string `json:"proxyEndpoint"`
-	Repository string `json:"dockerRepo"`
-	ExpiresAt  string `json:"expiresAt"`
-	AccountID  string `json:"accountId"`
 }
 
 type DockerPushResult struct {
@@ -539,60 +530,12 @@ func createTarFromDir(dir string) (io.ReadCloser, error) {
 }
 
 // GetPushCredentials fetches registry credentials from the push-token endpoint
-func (dg *DockerGenerator) GetPushCredentials(ctx context.Context, tenantId string) (*RegistryCredentials, error) {
-	// Prepare request payload
-	payload := map[string]string{
-		"tenantId": tenantId,
-	}
-
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request payload: %w", err)
-	}
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", "http://127.0.0.1:54321/functions/v1/push-token", bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	// Make HTTP request
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request to push-token endpoint: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check response status
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("push-token endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	// Parse response
-	var creds RegistryCredentials
-	if err := json.NewDecoder(resp.Body).Decode(&creds); err != nil {
-		return nil, fmt.Errorf("failed to decode push-token response: %w", err)
-	}
-
-	// Validate required fields
-	if creds.Username == "" || creds.Token == "" || creds.URL == "" || creds.Repository == "" {
-		return nil, fmt.Errorf("incomplete credentials received: username=%s, token present=%t, url=%s, repository=%s",
-			creds.Username, creds.Token != "", creds.URL, creds.Repository)
-	}
-
-	// Strip https:// prefix as Docker doesn't accept it in image references
-	creds.URL = strings.TrimPrefix(creds.URL, "https://")
-	creds.URL = strings.TrimPrefix(creds.URL, "http://")
-
-	return &creds, nil
+func (dg *DockerGenerator) GetPushCredentials(ctx context.Context, tenantId string) (*backend.RegistryCredentials, error) {
+	return backend.GetPushRegistryCredentials(ctx, tenantId)
 }
 
 // PushToRegistry tags and pushes a Docker image to a private registry
-func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *DockerBuildResult, creds *RegistryCredentials) (*DockerPushResult, error) {
+func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *DockerBuildResult, creds *backend.RegistryCredentials) (*DockerPushResult, error) {
 	if dg.client == nil {
 		return nil, fmt.Errorf("docker client not available. Please ensure Docker is installed and running")
 	}
@@ -661,56 +604,8 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 }
 
 // GetPullCredentials fetches registry credentials from the pull-token endpoint
-func (dg *DockerGenerator) GetPullCredentials(ctx context.Context, tenantId string) (*RegistryCredentials, error) {
-	// Prepare request payload
-	payload := map[string]string{
-		"tenantId": tenantId,
-	}
-
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request payload: %w", err)
-	}
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", "http://127.0.0.1:54321/functions/v1/pull-token", bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	// Make HTTP request
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request to pull-token endpoint: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check response status
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("pull-token endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	// Parse response
-	var creds RegistryCredentials
-	if err := json.NewDecoder(resp.Body).Decode(&creds); err != nil {
-		return nil, fmt.Errorf("failed to decode pull-token response: %w", err)
-	}
-
-	// Validate required fields
-	if creds.Username == "" || creds.Token == "" || creds.URL == "" || creds.Repository == "" {
-		return nil, fmt.Errorf("incomplete credentials received: username=%s, token present=%t, url=%s, repository=%s",
-			creds.Username, creds.Token != "", creds.URL, creds.Repository)
-	}
-
-	// Strip https:// prefix as Docker doesn't accept it in image references
-	creds.URL = strings.TrimPrefix(creds.URL, "https://")
-	creds.URL = strings.TrimPrefix(creds.URL, "http://")
-
-	return &creds, nil
+func (dg *DockerGenerator) GetPullCredentials(ctx context.Context, tenantId string) (*backend.RegistryCredentials, error) {
+	return backend.GetPullRegistryCredentials(ctx, tenantId)
 }
 
 // BuildAndPush is a convenience method that generates, builds, and pushes a Docker image in one step
