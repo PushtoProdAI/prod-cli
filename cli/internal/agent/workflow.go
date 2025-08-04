@@ -119,6 +119,14 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, 
 			log.Println(errors.Errorf("failed to analyze project: %w", err))
 		}
 	}
+
+	opts := ActivityOpts
+	opts.RetryOptions.MaxAttempts = 2
+	_, err = workflow.ExecuteActivity[any](ctx, opts, AgentSendProjectStats, intent.Platform, spec).Get(ctx)
+	if err != nil {
+		log.Println(errors.Errorf("failed to send project stats: %w", err))
+	}
+
 	summary, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarizeIntent, intent, spec.Name, spec.Language).Get(ctx)
 	if err != nil {
 		log.Println(errors.Errorf("failed to summarize intent: %w", err))
