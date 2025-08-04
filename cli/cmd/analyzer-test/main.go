@@ -21,7 +21,7 @@ func main() {
 	}
 
 	fmt.Println("🔍 Project Analyzer Test")
-	fmt.Println("========================\n")
+	fmt.Println("========================")
 
 	for _, projectPath := range testProjects {
 		fmt.Printf("📁 Analyzing: %s\n", projectPath)
@@ -41,7 +41,7 @@ func main() {
 		}
 
 		// Analyze the project
-		spec, err := (*analyzerPtr).Analyze()
+		spec, err := analyzerPtr.Analyze()
 		if err != nil {
 			fmt.Printf("❌ Failed to analyze project: %v\n\n", err)
 			continue

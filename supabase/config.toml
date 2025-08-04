@@ -344,3 +344,24 @@ api_secret = ""
 # secret = "your-apple-client-secret"
 # redirect_uri = "https://your-project-ref.supabase.co/auth/v1/callback"
 # url = "https://appleid.apple.com" 
+[functions.push-token]
+enabled = true
+verify_jwt = false # MUST ENABLE THIS WHEN WE HAVE AUTH HOOKED UP!
+import_map = "./functions/push-token/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/push-token/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/push-token/*.html" ]
+
+[functions.pull-token]
+enabled = true
+verify_jwt = false # MUST ENABLE THIS WHEN WE HAVE AUTH HOOKED UP! 
+import_map = "./functions/pull-token/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/pull-token/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/pull-token/*.html" ]

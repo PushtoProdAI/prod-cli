@@ -23,6 +23,8 @@ import (
 type Intent struct {
 	Action   *string `json:"action"`
 	Platform *string `json:"platform"`
+	Source   *string `json:"source"`
+	DryRun   *bool   `json:"dryRun"`
 }
 
 func (c *Intent) Decode(holder *cffi.CFFIValueClass) {
@@ -63,6 +65,30 @@ func (c *Intent) Decode(holder *cffi.CFFIValueClass) {
 				}(decoded)
 			}(valueHolder)
 
+		case "source":
+			c.Source = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "dryRun":
+			c.DryRun = func(param *cffi.CFFIValueHolder) *bool {
+				decoded := baml.Decode(param)
+				return func(result any) *bool {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(bool)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
 		default:
 			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
@@ -77,6 +103,10 @@ func (c Intent) Encode() (*cffi.CFFIValueHolder, error) {
 
 	fields["platform"] = c.Platform
 
+	fields["source"] = c.Source
+
+	fields["dryRun"] = c.DryRun
+
 	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
 }
 
@@ -88,5 +118,226 @@ func (u Intent) BamlEncodeName() *cffi.CFFITypeName {
 	return &cffi.CFFITypeName{
 		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
 		Name:      "Intent",
+	}
+}
+
+type PricingResponse struct {
+	Services   []ServicePricing `json:"services"`
+	Total_cost *float64         `json:"total_cost"`
+}
+
+func (c *PricingResponse) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "PricingResponse" {
+		panic(fmt.Sprintf("expected PricingResponse, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "services":
+			c.Services = baml.DecodeList(valueHolder, func(inner *cffi.CFFIValueHolder) ServicePricing {
+				return *baml.Decode(inner).(*ServicePricing)
+			})
+
+		case "total_cost":
+			c.Total_cost = func(param *cffi.CFFIValueHolder) *float64 {
+				decoded := baml.Decode(param)
+				return func(result any) *float64 {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(float64)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c PricingResponse) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["services"] = c.Services
+
+	fields["total_cost"] = c.Total_cost
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c PricingResponse) BamlTypeName() string {
+	return "PricingResponse"
+}
+
+func (u PricingResponse) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "PricingResponse",
+	}
+}
+
+type ServicePricing struct {
+	Service_name *string  `json:"service_name"`
+	Service_type *string  `json:"service_type"`
+	Plan         *string  `json:"plan"`
+	Monthly_cost *float64 `json:"monthly_cost"`
+}
+
+func (c *ServicePricing) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "ServicePricing" {
+		panic(fmt.Sprintf("expected ServicePricing, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "service_name":
+			c.Service_name = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "service_type":
+			c.Service_type = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "plan":
+			c.Plan = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "monthly_cost":
+			c.Monthly_cost = func(param *cffi.CFFIValueHolder) *float64 {
+				decoded := baml.Decode(param)
+				return func(result any) *float64 {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(float64)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c ServicePricing) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["service_name"] = c.Service_name
+
+	fields["service_type"] = c.Service_type
+
+	fields["plan"] = c.Plan
+
+	fields["monthly_cost"] = c.Monthly_cost
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c ServicePricing) BamlTypeName() string {
+	return "ServicePricing"
+}
+
+func (u ServicePricing) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "ServicePricing",
+	}
+}
+
+type Summary struct {
+	Summary *string `json:"summary"`
+}
+
+func (c *Summary) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "Summary" {
+		panic(fmt.Sprintf("expected Summary, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "summary":
+			c.Summary = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c Summary) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["summary"] = c.Summary
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c Summary) BamlTypeName() string {
+	return "Summary"
+}
+
+func (u Summary) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "Summary",
 	}
 }

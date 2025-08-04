@@ -10,10 +10,10 @@ import (
 
 type AnalysisCache struct {
 	mu    sync.RWMutex
-	cache map[string]interface{}
+	cache map[string]any
 }
 
-func (p *PythonAnalyzer) extractProjectName(runtime *RuntimeInfo, dependencies []Dependency) string {
+func (p *PythonAnalyzer) extractProjectName(_ *RuntimeInfo, _ []Dependency) string {
 	// Try to get from pyproject.toml first
 	if data, err := fs.ReadFile(p.ProjectFS, "pyproject.toml"); err == nil {
 		var pyproject PyProjectToml
