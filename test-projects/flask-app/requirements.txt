@@ -14,4 +14,4 @@ python-dotenv==1.0.0
 
 # Development
 pytest==7.4.2
-black==23.9.1 
+black==24.3.0 
