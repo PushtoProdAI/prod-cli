@@ -1,6 +1,6 @@
 # Web framework
 django==4.2.22
-gunicorn==21.2.0
+gunicorn==23.0.0
 
 # Database
 psycopg2-binary==2.9.7
