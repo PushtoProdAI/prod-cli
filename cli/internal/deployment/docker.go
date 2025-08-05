@@ -57,11 +57,13 @@ var templateFS embed.FS
 type DockerGenerator struct {
 	templates map[string]*template.Template
 	client    *client.Client
+	beClient  *backend.Client
 }
 
 func NewDockerGenerator() *DockerGenerator {
 	dg := &DockerGenerator{
 		templates: make(map[string]*template.Template),
+		beClient:  backend.NewClient(),
 	}
 	dg.initTemplates()
 
@@ -531,7 +533,7 @@ func createTarFromDir(dir string) (io.ReadCloser, error) {
 
 // GetPushCredentials fetches registry credentials from the push-token endpoint
 func (dg *DockerGenerator) GetPushCredentials(ctx context.Context, tenantId string) (*backend.RegistryCredentials, error) {
-	return backend.GetPushRegistryCredentials(ctx, tenantId)
+	return dg.beClient.GetPushRegistryCredentials(ctx, tenantId)
 }
 
 // PushToRegistry tags and pushes a Docker image to a private registry
@@ -605,7 +607,7 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 
 // GetPullCredentials fetches registry credentials from the pull-token endpoint
 func (dg *DockerGenerator) GetPullCredentials(ctx context.Context, tenantId string) (*backend.RegistryCredentials, error) {
-	return backend.GetPullRegistryCredentials(ctx, tenantId)
+	return dg.beClient.GetPullRegistryCredentials(ctx, tenantId)
 }
 
 // BuildAndPush is a convenience method that generates, builds, and pushes a Docker image in one step

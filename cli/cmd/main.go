@@ -13,6 +13,7 @@ import (
 	"github.com/cschleiden/go-workflows/backend"
 	"github.com/meroxa/prod/cli/cmd/root"
 	"github.com/meroxa/prod/cli/internal/agent"
+	be "github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/workflowext"
 )
@@ -42,7 +43,8 @@ func main() {
 	apiKey := os.Getenv("RENDER_API_KEY")
 	// Create HTTP client for real API calls
 	renderClient := render.NewHTTPRenderClient(apiKey)
-	provider, err := workflowext.InitWorkflows(ctx, cfg, mux, agent.NewWorkflows(renderClient, wfStatusWriter))
+	beClient := be.NewClient()
+	provider, err := workflowext.InitWorkflows(ctx, cfg, mux, agent.NewWorkflows(renderClient, wfStatusWriter, beClient))
 	if err != nil {
 		log.Fatalf("failed to initialize workflows: %v", err)
 	}

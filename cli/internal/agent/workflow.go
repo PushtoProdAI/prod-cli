@@ -12,6 +12,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/workflowext"
@@ -43,9 +44,9 @@ type Workflows struct {
 
 var _ workflowext.Registerer = (*Workflows)(nil)
 
-func NewWorkflows(renderClient render.RenderClient, statusSender SendWorkflowStatus) *Workflows {
+func NewWorkflows(renderClient render.RenderClient, statusSender SendWorkflowStatus, beClient *backend.Client) *Workflows {
 	return &Workflows{
-		Acts:         &Activities{renderClient: renderClient, statusSender: statusSender},
+		Acts:         &Activities{renderClient: renderClient, statusSender: statusSender, beClient: beClient},
 		statusSender: statusSender,
 		renderClient: renderClient,
 	}

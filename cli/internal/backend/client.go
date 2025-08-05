@@ -27,9 +27,19 @@ type RegistryCredentials struct {
 	AccountID  string `json:"accountId"`
 }
 
-// TODO: can refactor this to where thhere is a struct that can hold state like the auth token for the edge functions
+type Client struct {
+	httpClient *http.Client
+}
 
-func RecordRequestedStack(ctx context.Context, platform string, language string, serviceRequirements []analyzer.ServiceRequirement) error {
+func NewClient() *Client {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	return &Client{httpClient: client}
+}
+
+// RecordRequestedStack sends usage data to the backend service. It will be the stack that we infered from the request so that we can see what users are requesting so we know what to support next
+func (c *Client) RecordRequestedStack(ctx context.Context, platform string, language string, serviceRequirements []analyzer.ServiceRequirement) error {
 	data := map[string]any{
 		"platform":            platform,
 		"language":            language,
@@ -49,11 +59,7 @@ func RecordRequestedStack(ctx context.Context, platform string, language string,
 
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	resp, err := client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return errors.Errorf("failed to send request: %w", err)
 	}
@@ -66,7 +72,8 @@ func RecordRequestedStack(ctx context.Context, platform string, language string,
 	return nil
 }
 
-func GetPushRegistryCredentials(ctx context.Context, tenantID string) (*RegistryCredentials, error) {
+// GetPushRegistryCredentials fetches temporary Docker registry credentials for pushing images. These are scoped to JUST being able to push to registries for the specified tenant
+func (c *Client) GetPushRegistryCredentials(ctx context.Context, tenantID string) (*RegistryCredentials, error) {
 	// Prepare request payload
 	payload := map[string]string{
 		"tenantId": tenantID,
@@ -86,8 +93,7 @@ func GetPushRegistryCredentials(ctx context.Context, tenantID string) (*Registry
 	req.Header.Set("Content-Type", "application/json")
 
 	// Make HTTP request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, errors.Errorf("failed to make request to push-token endpoint: %w", err)
 	}
@@ -118,7 +124,8 @@ func GetPushRegistryCredentials(ctx context.Context, tenantID string) (*Registry
 	return &creds, nil
 }
 
-func GetPullRegistryCredentials(ctx context.Context, tenantID string) (*RegistryCredentials, error) {
+// GetPullRegistryCredentials fetches temporary Docker registry credentials for pulling images. These are scoped to JUST being able to pull from registries for the specified tenant
+func (c *Client) GetPullRegistryCredentials(ctx context.Context, tenantID string) (*RegistryCredentials, error) {
 	// Prepare request payload
 	payload := map[string]string{
 		"tenantId": tenantID,
@@ -138,8 +145,7 @@ func GetPullRegistryCredentials(ctx context.Context, tenantID string) (*Registry
 	req.Header.Set("Content-Type", "application/json")
 
 	// Make HTTP request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, errors.Errorf("failed to make request to pull-token endpoint: %w", err)
 	}
