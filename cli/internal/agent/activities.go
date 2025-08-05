@@ -35,6 +35,7 @@ const (
 type Activities struct {
 	renderClient render.RenderClient
 	statusSender SendWorkflowStatus
+	beClient     *backend.Client
 }
 
 func (a *Activities) Activities() []workflowext.Activity {
@@ -170,7 +171,7 @@ func (a *Activities) estimateRenderCosts(_ context.Context, spec deployment.Depl
 }
 
 func (a *Activities) sendProjectStats(ctx context.Context, platform string, spec analyzer.ProjectSpec) error {
-	err := backend.RecordRequestedStack(ctx, platform, spec.Language, spec.ServiceRequirements)
+	err := a.beClient.RecordRequestedStack(ctx, platform, spec.Language, spec.ServiceRequirements)
 	if err != nil {
 		return errors.Errorf("failed to record project stats: %w", err)
 	}
