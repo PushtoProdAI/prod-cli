@@ -259,6 +259,19 @@ func (c *HTTPRenderClient) GetWebService(ctx context.Context, serviceID string) 
 	return &webService, nil
 }
 
+func (c *HTTPRenderClient) GetPostgres(ctx context.Context, serviceID string) (*RenderPostgres, error) {
+	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/postgres/%s", serviceID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get postgres service info: %w", err)
+	}
+
+	var postgres RenderPostgres
+	if err := c.handleResponse(resp, &postgres); err != nil {
+		return nil, err
+	}
+	return &postgres, nil
+}
+
 func (c *HTTPRenderClient) DeployBlueprint(ctx context.Context, blueprint *RenderBlueprint) error {
 	return fmt.Errorf("DeployBlueprint not yet implemented")
 }

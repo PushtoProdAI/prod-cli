@@ -18,6 +18,7 @@ const (
 	postgresRegion   = "virginia"
 	redisPlan        = "standard"
 	webServicePlan   = "standard"
+	webServiceRegion = "virginia"
 )
 
 type RenderPricing struct {

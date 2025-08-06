@@ -59,7 +59,67 @@ func (s *CreatePostgresStep) Execute(ctx context.Context, client RenderClient, s
 	if err != nil {
 		return nil, fmt.Errorf("failed to create postgres: %w", err)
 	}
+
+	if err := s.waitForPostgresReady(ctx, client, postgres.ID); err != nil {
+		return nil, fmt.Errorf("postgres service created but failed to become ready: %w", err)
+	}
+
 	return postgres, nil
+}
+
+func (s *CreatePostgresStep) waitForPostgresReady(ctx context.Context, client RenderClient, serviceID string) error {
+	const (
+		maxRetries    = 20
+		initialDelay  = 5 * time.Second
+		maxDelay      = 2 * time.Minute
+		backoffFactor = 1.5
+		totalTimeout  = 15 * time.Minute
+	)
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, totalTimeout)
+	defer cancel()
+
+	delay := initialDelay
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		select {
+		case <-timeoutCtx.Done():
+			return fmt.Errorf("timeout waiting for postgres service %s to be ready after %v", serviceID, totalTimeout)
+		default:
+		}
+
+		postgresService, err := client.GetPostgres(timeoutCtx, serviceID)
+		if err != nil {
+			if attempt == maxRetries {
+				return fmt.Errorf("failed to get postgres service status after %d attempts: %w", maxRetries, err)
+			}
+		} else {
+			if s.isPostgresReady(postgresService) {
+				return nil
+			}
+		}
+
+		// Wait before retrying with exponential backoff
+		select {
+		case <-timeoutCtx.Done():
+			return fmt.Errorf("timeout waiting for postgres service %s to be ready after %v", serviceID, totalTimeout)
+		case <-time.After(delay):
+			delay = min(time.Duration(float64(delay)*backoffFactor), maxDelay)
+		}
+	}
+
+	return fmt.Errorf("postgres service %s did not become ready after %d attempts over %v", serviceID, maxRetries, totalTimeout)
+}
+
+func (s *CreatePostgresStep) isPostgresReady(postgres *RenderPostgres) bool {
+	readyStates := []string{"available"} // can add some more states if needed
+
+	for _, readyState := range readyStates {
+		if strings.EqualFold(postgres.Status, readyState) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *CreatePostgresStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error {
@@ -495,6 +555,7 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		serviceDetails := &WebServiceDetails{
 			Runtime:            "image",
 			Plan:               webServicePlan,
+			Region:             webServiceRegion,
 			EnvSpecificDetails: envSpecificDetails,
 		}
 
@@ -506,7 +567,6 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		req.BuildCommand = s.BuildCommand
 		req.StartCommand = s.StartCommand
 	}
-
 	webService, err := client.CreateWebService(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create web service: %w", err)

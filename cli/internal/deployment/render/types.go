@@ -84,6 +84,7 @@ type WebServiceDetails struct {
 	BuildFilter                *BuildFilter `json:"buildFilter,omitempty"`
 	PublishPath                string       `json:"publishPath,omitempty"` // For static sites
 	PullRequestPreviewsEnabled *bool        `json:"pullRequestPreviewsEnabled,omitempty"`
+	Region                     string       `json:"region,omitempty"` // Optional, if not provided, defaults to oregon
 }
 
 type WebServiceEnvSpecificDetails struct {
@@ -132,6 +133,18 @@ type RenderWebService struct {
 	ServiceDetails ServiceDetails `json:"serviceDetails"`
 }
 
+type RenderPostgres struct {
+	RenderService
+	Status       string `json:"status"`
+	DatabaseName string `json:"databaseName"`
+	Plan         string `json:"plan"`
+	Region       string `json:"region"`
+	Version      string `json:"version"`
+	DiskSizeGB   int    `json:"diskSizeGB"`
+	CreatedAt    string `json:"createdAt"`
+	UpdatedAt    string `json:"updatedAt"`
+}
+
 type ServiceDetails struct {
 	URL string `json:"url"`
 }
@@ -174,6 +187,7 @@ type RenderClient interface {
 	CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*RenderService, error)
 	CreateRedis(ctx context.Context, req CreateRedisRequest) (*RenderService, error)
 	GetWebService(ctx context.Context, serviceID string) (*RenderWebService, error)
+	GetPostgres(ctx context.Context, serviceID string) (*RenderPostgres, error)
 
 	// Connection Info
 	GetPostgresConnectionInfo(ctx context.Context, serviceID string) (*PostgresConnectionInfo, error)
