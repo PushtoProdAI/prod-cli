@@ -6,8 +6,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"runtime"
 	"time"
 
+	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
@@ -93,6 +95,16 @@ func (a *Activities) summarize(ctx context.Context, intent types.Intent, name st
 func (a *Activities) getRenderWorkspace(ctx context.Context) (string, error) {
 	workspaces, err := a.renderClient.ListWorkspaces(ctx)
 	if err != nil {
+		var httpErr *render.HTTPError
+		if errors.As(err, &httpErr) {
+			// Handle HTTP errors based on status code
+			if httpErr.IsClientError() {
+				return "", workflow.NewPermanentError(errors.Errorf("failed to list workspaces. client error (%d): %s", httpErr.StatusCode, httpErr.Message))
+			}
+			if httpErr.IsServerError() {
+				return "", errors.Errorf("failed to list workspaces. server error (%d): %s", httpErr.StatusCode, httpErr.Message)
+			}
+		}
 		return "", errors.Errorf("failed to list workspaces: %w", err)
 	}
 
@@ -120,6 +132,12 @@ func (a *Activities) deployRenderSteps(ctx context.Context, spec deployment.Depl
 	stepExecutor := render.NewStepExecutor(a.renderClient)
 	createdResources, err := stepExecutor.ExecuteSteps(ctx, steps)
 	if err != nil {
+		var httpErr *render.HTTPError
+		if errors.As(err, &httpErr) {
+			if httpErr.IsClientError() {
+				return []deployment.CreatedResource{}, workflow.NewPermanentError(errors.Errorf("failed to execute render steps. client error (%d): %s", httpErr.StatusCode, httpErr.Message))
+			}
+		}
 		return []deployment.CreatedResource{}, errors.Errorf("failed to execute render steps: %w", err)
 	}
 	return createdResources, nil
@@ -153,12 +171,37 @@ func (a *Activities) isURLLive(ctx context.Context, url string) error {
 	return nil
 }
 
-func (a *Activities) summarizeError(ctx context.Context, error string) (string, error) {
-	summary, err := baml_client.SummarizeDeployError(ctx, error)
-	if err != nil {
-		return "", errors.Errorf("failed to summarize error: %w", err)
+func (a *Activities) summarizeError(ctx context.Context, error string, input deployPlan) (deployError, error) {
+	intent := types.Intent{
+		Action:   input.Action.String(),
+		Platform: input.Platform.String(),
+		Source:   input.Source,
 	}
-	return summary.Summary, nil
+
+	spec := types.ProjectSpec{
+		BuildCommand: input.Spec.BuildCommand,
+		Language:     input.Spec.Language,
+		Name:         input.Spec.Name,
+		StartCommand: input.Spec.StartCommand,
+	}
+	log.Println(error)
+	summary, err := baml_client.SummarizeDeployError(ctx, error, intent, spec, runtime.GOOS)
+	if err != nil {
+		return deployError{}, errors.Errorf("failed to summarize error: %w", err)
+	}
+	deployError := deployError{
+		Summary:      summary.Summary,
+		Remediations: make([]remediation, len(summary.Remediations)),
+	}
+	for i, r := range summary.Remediations {
+		deployError.Remediations[i] = remediation{
+			Description: r.Description,
+			CliCommand:  r.CliCommand,
+		}
+	}
+	log.Printf("Error summary: %s", deployError.Summary)
+	log.Printf("Remediations: %v", deployError.Remediations)
+	return deployError, nil
 }
 
 func (a *Activities) estimateRenderCosts(_ context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {

@@ -21,12 +21,20 @@ import (
 )
 
 var typeMap = map[string]reflect.Type{
-	"TYPES.Intent":                 reflect.TypeOf(types.Intent{}),
-	"STREAM_TYPES.Intent":          reflect.TypeOf(stream_types.Intent{}),
-	"TYPES.PricingResponse":        reflect.TypeOf(types.PricingResponse{}),
-	"STREAM_TYPES.PricingResponse": reflect.TypeOf(stream_types.PricingResponse{}),
-	"TYPES.ServicePricing":         reflect.TypeOf(types.ServicePricing{}),
-	"STREAM_TYPES.ServicePricing":  reflect.TypeOf(stream_types.ServicePricing{}),
-	"TYPES.Summary":                reflect.TypeOf(types.Summary{}),
-	"STREAM_TYPES.Summary":         reflect.TypeOf(stream_types.Summary{}),
+	"TYPES.Error":                     reflect.TypeOf(types.Error{}),
+	"STREAM_TYPES.Error":              reflect.TypeOf(stream_types.Error{}),
+	"TYPES.Intent":                    reflect.TypeOf(types.Intent{}),
+	"STREAM_TYPES.Intent":             reflect.TypeOf(stream_types.Intent{}),
+	"TYPES.PricingResponse":           reflect.TypeOf(types.PricingResponse{}),
+	"STREAM_TYPES.PricingResponse":    reflect.TypeOf(stream_types.PricingResponse{}),
+	"TYPES.ProjectSpec":               reflect.TypeOf(types.ProjectSpec{}),
+	"STREAM_TYPES.ProjectSpec":        reflect.TypeOf(stream_types.ProjectSpec{}),
+	"TYPES.Remediation":               reflect.TypeOf(types.Remediation{}),
+	"STREAM_TYPES.Remediation":        reflect.TypeOf(stream_types.Remediation{}),
+	"TYPES.ServicePricing":            reflect.TypeOf(types.ServicePricing{}),
+	"STREAM_TYPES.ServicePricing":     reflect.TypeOf(stream_types.ServicePricing{}),
+	"TYPES.ServiceRequirement":        reflect.TypeOf(types.ServiceRequirement{}),
+	"STREAM_TYPES.ServiceRequirement": reflect.TypeOf(stream_types.ServiceRequirement{}),
+	"TYPES.Summary":                   reflect.TypeOf(types.Summary{}),
+	"STREAM_TYPES.Summary":            reflect.TypeOf(stream_types.Summary{}),
 }

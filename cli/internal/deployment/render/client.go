@@ -23,6 +23,31 @@ func (e *RateLimitError) Error() string {
 	return e.Message
 }
 
+// HTTPError represents an HTTP error with status code information
+type HTTPError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *HTTPError) Error() string {
+	return e.Message
+}
+
+// IsClientError returns true if the status code is in the 4xx range
+func (e *HTTPError) IsClientError() bool {
+	return e.StatusCode >= 400 && e.StatusCode < 500
+}
+
+// IsServerError returns true if the status code is in the 5xx range
+func (e *HTTPError) IsServerError() bool {
+	return e.StatusCode >= 500 && e.StatusCode < 600
+}
+
+// IsRedirection returns true if the status code is in the 3xx range
+func (e *HTTPError) IsRedirection() bool {
+	return e.StatusCode >= 300 && e.StatusCode < 400
+}
+
 // HTTPRenderClient implements the RenderClient interface with actual HTTP calls
 type HTTPRenderClient struct {
 	baseURL    string
@@ -95,7 +120,10 @@ func (c *HTTPRenderClient) handleResponse(resp *http.Response, result any) error
 
 	// Check for HTTP errors
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return &HTTPError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("API request failed with status %d: %s", resp.StatusCode, string(body)),
+		}
 	}
 
 	// Parse successful response
