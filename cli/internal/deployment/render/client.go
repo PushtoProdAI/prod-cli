@@ -26,16 +26,15 @@ func (e *RateLimitError) Error() string {
 // HTTPRenderClient implements the RenderClient interface with actual HTTP calls
 type HTTPRenderClient struct {
 	baseURL    string
-	apiKey     string
 	httpClient *http.Client
 	userAgent  string
 }
 
 // NewHTTPRenderClient creates a new HTTP-based Render client
+// The apiKey parameter is ignored - the client will dynamically read from RENDER_API_KEY environment variable
 func NewHTTPRenderClient(apiKey string) *HTTPRenderClient {
 	return &HTTPRenderClient{
 		baseURL: "https://api.render.com",
-		apiKey:  apiKey,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -62,7 +61,9 @@ func (c *HTTPRenderClient) makeRequest(ctx context.Context, method, endpoint str
 	}
 
 	// Set headers per Render API docs
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	// Dynamically get API key from environment variable
+	apiKey := os.Getenv("RENDER_API_KEY")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", c.userAgent)

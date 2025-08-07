@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"os/exec"
 	"runtime"
 	"time"
@@ -13,7 +14,9 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/manifoldco/promptui"
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/auth"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/render"
 )
 
 type Agent struct {
@@ -174,6 +177,13 @@ func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateF
 		return a.dryRunDeploy(ctx, input, out)
 	}
 
+	// Check authentication before deployment
+	if a.deployPlan.Platform == Render {
+		if err := a.checkRenderAuthentication(ctx, out); err != nil {
+			return a.plan, nil
+		}
+	}
+
 	wf, err := Workflows{}.Deploy(ctx, a.wfClient, *a.deployPlan)
 	if err != nil {
 		log.Printf("Workflow execution result: %v\n", err)
@@ -204,6 +214,13 @@ func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateF
 }
 
 func (a *Agent) dryRunDeploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	// Check authentication before dry run deployment
+	if a.deployPlan.Platform == Render {
+		if err := a.checkRenderAuthentication(ctx, out); err != nil {
+			return a.plan, nil
+		}
+	}
+
 	wf, err := Workflows{}.DryRunDeploy(ctx, a.wfClient, *a.deployPlan)
 	if err != nil {
 		log.Printf("Dry-run workflow execution result: %v\n", err)
@@ -339,6 +356,47 @@ func (a *Agent) displayDryRunResult(out io.Writer, result DryRunResult) {
 		fmt.Fprintf(out, "  Total: $%.2f/month\n", result.EstimatedCosts.Total)
 		fmt.Fprint(out, "\n")
 	}
+}
+
+func (a *Agent) checkRenderAuthentication(ctx context.Context, out io.Writer) error {
+	fmt.Fprint(out, "Checking Render authentication...\n")
+	
+	// Get the render client from the workflow
+	apiKey := os.Getenv("RENDER_API_KEY")
+	renderClient := render.NewHTTPRenderClient(apiKey)
+	renderAuth := auth.NewRenderAuth(renderClient)
+	
+	// Check if already authenticated
+	authenticated, err := renderAuth.CheckAuthentication(ctx)
+	if err != nil {
+		fmt.Fprintf(out, "Error checking authentication: %v\n", err)
+		return err
+	}
+	
+	if !authenticated {
+		fmt.Fprint(out, "🔐 Authentication required for Render deployment\n\n")
+		
+		// Determine auth mode based on interactiveness
+		var authMode *auth.AuthMode
+		if a.interactive {
+			// In interactive mode, let the user choose
+			authMode = nil
+		} else {
+			// In non-interactive mode, default to API key mode
+			mode := auth.APIKey
+			authMode = &mode
+		}
+		
+		// Prompt for login
+		if err := renderAuth.PromptLogin(ctx, authMode); err != nil {
+			fmt.Fprintf(out, "Authentication failed: %v\n", err)
+			return err
+		}
+		
+		fmt.Fprint(out, "✅ Successfully authenticated with Render\n")
+	}
+	
+	return nil
 }
 
 func openInBrowser(url string) error {
