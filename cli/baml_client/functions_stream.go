@@ -187,7 +187,7 @@ func (*stream) FetchRenderPricing(ctx context.Context, services string, opts ...
 }
 
 // / Streaming version of SummarizeDeployError
-func (*stream) SummarizeDeployError(ctx context.Context, errorMsg string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Summary, types.Summary], error) {
+func (*stream) SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Intent, spec types.ProjectSpec, os string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Error, types.Error], error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -195,7 +195,7 @@ func (*stream) SummarizeDeployError(ctx context.Context, errorMsg string, opts .
 	}
 
 	args := baml.BamlFunctionArguments{
-		Kwargs: map[string]any{"errorMsg": errorMsg},
+		Kwargs: map[string]any{"errorMsg": errorMsg, "intent": intent, "spec": spec, "os": os},
 		Env:    getEnvVars(callOpts.env),
 	}
 
@@ -221,7 +221,7 @@ func (*stream) SummarizeDeployError(ctx context.Context, errorMsg string, opts .
 		return nil, err
 	}
 
-	channel := make(chan StreamValue[stream_types.Summary, types.Summary])
+	channel := make(chan StreamValue[stream_types.Error, types.Error])
 	go func() {
 		defer func() {
 			internal_ctx.Done()
@@ -241,14 +241,14 @@ func (*stream) SummarizeDeployError(ctx context.Context, errorMsg string, opts .
 					return
 				}
 				if result.HasData {
-					data := *(result.Data).(*types.Summary)
-					channel <- StreamValue[stream_types.Summary, types.Summary]{
+					data := *(result.Data).(*types.Error)
+					channel <- StreamValue[stream_types.Error, types.Error]{
 						IsFinal:  true,
 						as_final: &data,
 					}
 				} else {
-					data := *(result.StreamData).(*stream_types.Summary)
-					channel <- StreamValue[stream_types.Summary, types.Summary]{
+					data := *(result.StreamData).(*stream_types.Error)
+					channel <- StreamValue[stream_types.Error, types.Error]{
 						IsFinal:   false,
 						as_stream: &data,
 					}

@@ -43,6 +43,21 @@ type deployPlan struct {
 	DryRunFromPrompt bool
 }
 
+type deployResult struct {
+	Url   string
+	Error deployError
+}
+
+type deployError struct {
+	Summary      string
+	Remediations []remediation
+}
+
+type remediation struct {
+	Description string
+	CliCommand  string
+}
+
 //go:generate stringer -type=Platform,Action -output=types_string.go
 type Platform int
 
@@ -192,17 +207,40 @@ func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateF
 	}
 
 	// give a generous timeout for the deployment to complete
-	url, err := client.GetWorkflowResult[string](ctx, a.wfClient, wf, 10*time.Minute)
+	result, err := client.GetWorkflowResult[deployResult](ctx, a.wfClient, wf, 20*time.Minute)
 	if err != nil {
+		log.Printf("Deployment workflow execution result: %v\n", err)
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
 		fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
 		return a.plan, nil
 	}
 
+	if result.Error.Summary != "" {
+		fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
+		fmt.Fprintf(out, "%s\n", result.Error.Summary)
+		if len(result.Error.Remediations) > 0 {
+			fmt.Fprint(out, "Here are some suggestions to fix the issues:\n")
+			for _, r := range result.Error.Remediations {
+				fmt.Fprintf(out, " • %s\n", r.Description)
+				if r.CliCommand != "" {
+					fmt.Fprintf(out, "   Run: %s\n", r.CliCommand)
+				}
+			}
+			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
+			// jump to the confirm state so that we give the user a chance to fix the issues and retry, without having to replan.
+			return a.confirmWithPrompt(ctx, input, out)
+
+		}
+		if !a.interactive {
+			return nil, nil
+		}
+		return a.plan, nil
+	}
+
 	io.WriteString(out, "Deployed!...🚀\n")
-	if url != "" {
-		fmt.Fprintf(out, "You can access your deployment at: %s\n", url)
-		openInBrowser(url)
+	if result.Url != "" {
+		fmt.Fprintf(out, "You can access your deployment at: %s\n", result.Url)
+		openInBrowser(result.Url)
 	}
 
 	// In non-interactive mode, end the state machine
@@ -360,22 +398,22 @@ func (a *Agent) displayDryRunResult(out io.Writer, result DryRunResult) {
 
 func (a *Agent) checkRenderAuthentication(ctx context.Context, out io.Writer) error {
 	fmt.Fprint(out, "Checking Render authentication...\n")
-	
+
 	// Get the render client from the workflow
 	apiKey := os.Getenv("RENDER_API_KEY")
 	renderClient := render.NewHTTPRenderClient(apiKey)
 	renderAuth := auth.NewRenderAuth(renderClient)
-	
+
 	// Check if already authenticated
 	authenticated, err := renderAuth.CheckAuthentication(ctx)
 	if err != nil {
 		fmt.Fprintf(out, "Error checking authentication: %v\n", err)
 		return err
 	}
-	
+
 	if !authenticated {
 		fmt.Fprint(out, "🔐 Authentication required for Render deployment\n\n")
-		
+
 		// Determine auth mode based on interactiveness
 		var authMode *auth.AuthMode
 		if a.interactive {
@@ -386,16 +424,16 @@ func (a *Agent) checkRenderAuthentication(ctx context.Context, out io.Writer) er
 			mode := auth.APIKey
 			authMode = &mode
 		}
-		
+
 		// Prompt for login
 		if err := renderAuth.PromptLogin(ctx, authMode); err != nil {
 			fmt.Fprintf(out, "Authentication failed: %v\n", err)
 			return err
 		}
-		
+
 		fmt.Fprint(out, "✅ Successfully authenticated with Render\n")
 	}
-	
+
 	return nil
 }
 

@@ -162,24 +162,38 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, 
 	return plan, err
 }
 
-func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (string, error) {
+func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (deployResult, error) {
 	if w.registry == nil {
-		return "", errors.New("workflow registry is not set")
+		return deployResult{}, errors.New("workflow registry is not set")
 	}
 	dockerGen := deployment.NewDockerGenerator()
 	db := deployment.NewDeploymentBuilder(&input.Spec)
 	spec, err := db.Build()
 	if err != nil {
-		return "", errors.Errorf("failed to build deployment spec: %w", err)
+		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
 	}
 	workspaceID, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderWorkspace).Get(ctx)
 	if err != nil {
-		summary, _ := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarizeError, err.Error()).Get(ctx)
-		w.statusSender("error", summary)
-		return "", errors.Errorf("failed to get Render workspace: %w", err)
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			log.Printf("Failed to get Render workspace: %v", e1)
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil // when a summary fails we return the original error
+		}
+		return deployResult{Error: summary}, nil // can return nil for error as the error has been summarized into deploy result
 	}
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["tenantID"] = "test" // TODO: this shouldn't be hardcoded, we need to get the tenant ID from the context or config
+
+	// this check is done in the step generator as well. We do it here as well
+	// since we know we want to use docker so we can short circuit and provide a nice error.
+	// the step generator is generic and will try to generate steps working around the docker not being avaliable
+	if !deployment.IsDockerAvailable() {
+		summary, err := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, "not able to build docker image. cannot connect to local docker daemon", input).Get(ctx)
+		if err != nil {
+			return deployResult{Error: deployError{Summary: "not able to build docker image. cannont connect to local docker daemon"}}, nil
+		}
+		return deployResult{Error: summary}, nil
+	}
 
 	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true)
 	steps := d.GenerateAPISteps(workspaceID)
@@ -195,9 +209,12 @@ func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (string
 	}
 	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeployRenderSteps, *spec, workspaceID).Get(ctx)
 	if err != nil {
-		summary, _ := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarizeError, err.Error()).Get(ctx)
-		w.statusSender("error", summary)
-		return "", errors.Errorf("failed to execute Render deploy: %w", err)
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		log.Printf("Deployment failed: %v", err)
+		return deployResult{Error: summary}, nil
 	}
 	var ws deployment.CreatedResource
 	for _, cr := range createdResources {
@@ -207,17 +224,17 @@ func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (string
 		}
 	}
 	if ws.ID == "" {
-		return "", nil
+		return deployResult{}, nil
 	}
 	url, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetServiceURL, ws.ID).Get(ctx)
 	if err != nil {
-		return "", errors.Errorf("failed to get service URL for %s: %w", ws.Name, err)
+		return deployResult{}, errors.Errorf("failed to get service URL for %s: %w", ws.Name, err)
 	}
 	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, url).Get(ctx)
 	if err != nil {
-		return "", errors.Errorf("service URL %s is not live: %w", url, err)
+		return deployResult{}, errors.Errorf("service URL %s is not live: %w", url, err)
 	}
-	return url, nil
+	return deployResult{Url: url}, nil
 }
 
 func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (DryRunResult, error) {

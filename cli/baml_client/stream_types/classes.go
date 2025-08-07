@@ -20,6 +20,70 @@ import (
 	"github.com/boundaryml/baml/engine/language_client_go/pkg/cffi"
 )
 
+type Error struct {
+	Summary      *string       `json:"summary"`
+	Remediations []Remediation `json:"remediations"`
+}
+
+func (c *Error) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "Error" {
+		panic(fmt.Sprintf("expected Error, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "summary":
+			c.Summary = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "remediations":
+			c.Remediations = baml.DecodeList(valueHolder, func(inner *cffi.CFFIValueHolder) Remediation {
+				return *baml.Decode(inner).(*Remediation)
+			})
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c Error) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["summary"] = c.Summary
+
+	fields["remediations"] = c.Remediations
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c Error) BamlTypeName() string {
+	return "Error"
+}
+
+func (u Error) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "Error",
+	}
+}
+
 type Intent struct {
 	Action   *string `json:"action"`
 	Platform *string `json:"platform"`
@@ -185,6 +249,186 @@ func (u PricingResponse) BamlEncodeName() *cffi.CFFITypeName {
 	}
 }
 
+type ProjectSpec struct {
+	Name                *string              `json:"name"`
+	Language            *string              `json:"language"`
+	ServiceRequirements []ServiceRequirement `json:"serviceRequirements"`
+	BuildCommand        *string              `json:"buildCommand"`
+	StartCommand        *string              `json:"startCommand"`
+}
+
+func (c *ProjectSpec) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "ProjectSpec" {
+		panic(fmt.Sprintf("expected ProjectSpec, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "name":
+			c.Name = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "language":
+			c.Language = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "serviceRequirements":
+			c.ServiceRequirements = baml.DecodeList(valueHolder, func(inner *cffi.CFFIValueHolder) ServiceRequirement {
+				return *baml.Decode(inner).(*ServiceRequirement)
+			})
+
+		case "buildCommand":
+			c.BuildCommand = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "startCommand":
+			c.StartCommand = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c ProjectSpec) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["name"] = c.Name
+
+	fields["language"] = c.Language
+
+	fields["serviceRequirements"] = c.ServiceRequirements
+
+	fields["buildCommand"] = c.BuildCommand
+
+	fields["startCommand"] = c.StartCommand
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c ProjectSpec) BamlTypeName() string {
+	return "ProjectSpec"
+}
+
+func (u ProjectSpec) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "ProjectSpec",
+	}
+}
+
+type Remediation struct {
+	Description *string `json:"description"`
+	CliCommand  *string `json:"cliCommand"`
+}
+
+func (c *Remediation) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "Remediation" {
+		panic(fmt.Sprintf("expected Remediation, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "description":
+			c.Description = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "cliCommand":
+			c.CliCommand = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c Remediation) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["description"] = c.Description
+
+	fields["cliCommand"] = c.CliCommand
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c Remediation) BamlTypeName() string {
+	return "Remediation"
+}
+
+func (u Remediation) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "Remediation",
+	}
+}
+
 type ServicePricing struct {
 	Service_name *string  `json:"service_name"`
 	Service_type *string  `json:"service_type"`
@@ -283,6 +527,77 @@ func (u ServicePricing) BamlEncodeName() *cffi.CFFITypeName {
 	return &cffi.CFFITypeName{
 		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
 		Name:      "ServicePricing",
+	}
+}
+
+type ServiceRequirement struct {
+	Type     *string `json:"type"`
+	Provider *string `json:"provider"`
+}
+
+func (c *ServiceRequirement) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "ServiceRequirement" {
+		panic(fmt.Sprintf("expected ServiceRequirement, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "type":
+			c.Type = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "provider":
+			c.Provider = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c ServiceRequirement) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["type"] = c.Type
+
+	fields["provider"] = c.Provider
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c ServiceRequirement) BamlTypeName() string {
+	return "ServiceRequirement"
+}
+
+func (u ServiceRequirement) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "ServiceRequirement",
 	}
 }
 
