@@ -12,6 +12,7 @@
 go.work
 
 bin/
+cli/test-cli
 
 .vscode/
 .idea/

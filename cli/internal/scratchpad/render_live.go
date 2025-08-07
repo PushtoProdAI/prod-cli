@@ -141,7 +141,7 @@ func LiveTestRenderDeployment() {
 
 	// Execute the deployment
 	ctx := context.Background()
-	err = deployment.Deploy(ctx)
+	_, err = deployment.Deploy(ctx)
 	if err != nil {
 		log.Fatalf("❌ Deployment failed: %v", err)
 	}
