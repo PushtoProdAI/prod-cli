@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/output"
 )
 
 type BlueprintDeployment struct {
@@ -12,14 +13,19 @@ type BlueprintDeployment struct {
 	spec            *deployment.DeploymentSpec
 	dockerGenerator *deployment.DockerGenerator
 	useDockerfile   bool
+	writer          output.Writer
 }
 
-func NewBlueprintDeployment(client RenderClient, spec *deployment.DeploymentSpec, dockerGenerator *deployment.DockerGenerator, useDockerfile bool) *BlueprintDeployment {
+func NewBlueprintDeployment(client RenderClient, spec *deployment.DeploymentSpec, dockerGenerator *deployment.DockerGenerator, useDockerfile bool, writer output.Writer) *BlueprintDeployment {
+	if writer == nil {
+		writer = output.NewNoOpWriter()
+	}
 	return &BlueprintDeployment{
 		client:          client,
 		spec:            spec,
 		dockerGenerator: dockerGenerator,
 		useDockerfile:   useDockerfile,
+		writer:          writer,
 	}
 }
 
@@ -161,4 +167,3 @@ func (bd *BlueprintDeployment) getEnvironmentForLanguage(language string) string
 		return "docker" // Default to docker for unsupported languages
 	}
 }
-

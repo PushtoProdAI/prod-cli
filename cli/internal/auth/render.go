@@ -14,6 +14,7 @@ import (
 
 	"github.com/manifoldco/promptui"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
+	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/render-oss/cli/pkg/client/oauth"
 	"github.com/render-oss/cli/pkg/config"
 	"github.com/render-oss/cli/pkg/dashboard"
@@ -22,8 +23,8 @@ import (
 // customTransport wraps an HTTP transport to add custom user-agent headers
 // and fix OAuth library Content-Type bug
 type customTransport struct {
-	transport http.RoundTripper
-	userAgent string
+	transport           http.RoundTripper
+	userAgent           string
 	fixOAuthContentType bool
 }
 
@@ -46,16 +47,54 @@ func (t *customTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 type RenderAuth struct {
 	client render.RenderClient
 	config *config.Config
+	output output.UnifiedOutputWriter
 }
 
 // NewRenderAuth creates a new Render authentication handler
-func NewRenderAuth(client render.RenderClient) *RenderAuth {
+func NewRenderAuth(client render.RenderClient, writer io.Writer) *RenderAuth {
 	// Load existing config if available
 	cfg, _ := config.Load()
+
+	// Convert io.Writer to UnifiedOutputWriter
+	var unifiedOutput output.UnifiedOutputWriter
+	if writer == nil {
+		unifiedOutput = output.NewConsoleWriter() // Fallback to console writer
+	} else if uw, ok := writer.(output.UnifiedOutputWriter); ok {
+		unifiedOutput = uw
+	} else {
+		// Wrap the io.Writer in a UnifiedWriter
+		unifiedOutput = output.NewUnifiedWriter()
+		unifiedOutput.SetOutput(writer)
+	}
+
 	return &RenderAuth{
 		client: client,
 		config: cfg,
+		output: unifiedOutput,
 	}
+}
+
+// getAuthInteractor returns the AuthInteractor if the output implements it, nil otherwise
+func (ra *RenderAuth) getAuthInteractor() output.AuthInteractor {
+	if ai, ok := ra.output.(output.AuthInteractor); ok {
+		return ai
+	}
+	return nil
+}
+
+// getUnifiedWriter returns the UnifiedOutputWriter (replaces getTeaWriter)
+func (ra *RenderAuth) getUnifiedWriter() output.UnifiedOutputWriter {
+	return ra.output
+}
+
+// printf writes formatted output to the configured writer
+func (ra *RenderAuth) printf(format string, args ...any) {
+	fmt.Fprintf(ra.output, format, args...)
+}
+
+// println writes a line to the configured writer
+func (ra *RenderAuth) println(args ...any) {
+	fmt.Fprintln(ra.output, args...)
 }
 
 // CheckAuthentication verifies if the user is authenticated with Render
@@ -65,7 +104,7 @@ func (ra *RenderAuth) CheckAuthentication(ctx context.Context) (bool, error) {
 	apiKey := os.Getenv("RENDER_API_KEY")
 	if apiKey != "" {
 		// Validate the API key by making a test API call
-		return ra.validateAPIKey(ctx)
+		return ra.ValidateAPIKey(ctx)
 	}
 
 	// Check if we have valid stored credentials from Render CLI
@@ -74,15 +113,15 @@ func (ra *RenderAuth) CheckAuthentication(ctx context.Context) (bool, error) {
 		if ra.config.ExpiresAt == 0 || time.Now().Unix() < ra.config.ExpiresAt {
 			// Set the API key from stored config and validate
 			os.Setenv("RENDER_API_KEY", ra.config.Key)
-			return ra.validateAPIKey(ctx)
+			return ra.ValidateAPIKey(ctx)
 		}
 	}
 
 	return false, nil
 }
 
-// validateAPIKey validates the API key by making a test API call
-func (ra *RenderAuth) validateAPIKey(ctx context.Context) (bool, error) {
+// ValidateAPIKey validates the API key by making a test API call
+func (ra *RenderAuth) ValidateAPIKey(ctx context.Context) (bool, error) {
 	// Try to list workspaces - this is a simple call that requires authentication
 	_, err := ra.client.ListWorkspaces(ctx)
 	if err != nil {
@@ -128,32 +167,48 @@ func (ra *RenderAuth) PromptLogin(ctx context.Context, mode *AuthMode) error {
 	} else {
 		// Prompt user to choose authentication mode
 		options := ra.GetAuthOptions()
-		templates := &promptui.SelectTemplates{
-			Label:    "{{ . }}?",
-			Active:   "\U0001F449 {{ .Label }}",
-			Inactive: "  {{ .Label }}",
-			Selected: "\U0001F389 {{ .Label }}",
-		}
 
-		prompt := promptui.Select{
-			Label:     "Choose authentication method",
-			Items:     options,
-			Templates: templates,
-		}
+		// Check if we have an AuthInteractor for interactive prompts
+		if authInteractor := ra.getAuthInteractor(); authInteractor != nil {
+			// Use TUI prompt - convert options to strings
+			optionStrings := make([]string, len(options))
+			for i, opt := range options {
+				optionStrings[i] = opt.Label
+			}
+			selectedIndex, err := authInteractor.PromptSelection("Choose authentication method", optionStrings)
+			if err != nil {
+				return fmt.Errorf("authentication selection failed: %w", err)
+			}
+			authMode = options[selectedIndex].Mode
+		} else {
+			// Use promptui for non-TUI mode
+			templates := &promptui.SelectTemplates{
+				Label:    "{{ . }}?",
+				Active:   "\U0001F449 {{ .Label }}",
+				Inactive: "  {{ .Label }}",
+				Selected: "\U0001F389 {{ .Label }}",
+			}
 
-		i, _, err := prompt.Run()
-		if err != nil {
-			return fmt.Errorf("authentication selection failed: %w", err)
-		}
+			prompt := promptui.Select{
+				Label:     "Choose authentication method",
+				Items:     options,
+				Templates: templates,
+			}
 
-		authMode = options[i].Mode
+			i, _, err := prompt.Run()
+			if err != nil {
+				return fmt.Errorf("authentication selection failed: %w", err)
+			}
+
+			authMode = options[i].Mode
+		}
 	}
 
 	switch authMode {
 	case APIKey:
 		return ra.promptForAPIKey(ctx)
 	case Interactive:
-		return ra.performOAuthLogin(ctx)
+		return ra.PerformOAuthLogin(ctx)
 	default:
 		return fmt.Errorf("unknown authentication mode")
 	}
@@ -161,70 +216,86 @@ func (ra *RenderAuth) PromptLogin(ctx context.Context, mode *AuthMode) error {
 
 // showManualAPIKeyInstructions shows instructions for manual API key setup
 func (ra *RenderAuth) showManualAPIKeyInstructions() {
-	fmt.Println()
-	fmt.Println("📋 Manual API Key Setup:")
-	fmt.Println("1. Go to https://dashboard.render.com/account/settings")
-	fmt.Println("2. Create a new API key")
-	fmt.Println("3. Export it: export RENDER_API_KEY=your_api_key_here")
-	fmt.Println("4. Run your command again")
+	ra.println()
+	ra.println("📋 Manual API Key Setup:")
+	ra.println("1. Go to https://dashboard.render.com/account/settings")
+	ra.println("2. Create a new API key")
+	ra.println("3. Export it: export RENDER_API_KEY=your_api_key_here")
+	ra.println("4. Run your command again")
 }
 
 // promptForAPIKey prompts the user to enter their API key directly
 func (ra *RenderAuth) promptForAPIKey(ctx context.Context) error {
-	fmt.Println("🎉 Direct API key setup")
-	fmt.Println()
-	fmt.Println("📋 To get your API key:")
-	fmt.Println("1. Go to https://dashboard.render.com/account/settings")
-	fmt.Println("2. Create a new API key")
-	fmt.Println("3. Copy the key and paste it below")
-	fmt.Println()
+	ra.println("🎉 Direct API key setup")
+	ra.println()
+	ra.println("📋 To get your API key:")
+	ra.println("1. Go to https://dashboard.render.com/account/settings")
+	ra.println("2. Create a new API key")
+	ra.println("3. Copy the key and paste it below")
+	ra.println()
 
-	// Create a custom prompt template with better styling
-	templates := &promptui.PromptTemplates{
-		Prompt:  "{{ . }}: ",
-		Valid:   "{{ . | green }}: ",
-		Invalid: "{{ . | red }}: ",
-		Success: "{{ . | green }}: {{ . | faint }}",
-	}
+	var apiKey string
+	var err error
 
-	prompt := promptui.Prompt{
-		Label:       "🔑 Enter your Render API key",
-		Templates:   templates,
-		Mask:        '*',
-		HideEntered: true,
-		Validate: func(input string) error {
-			input = strings.TrimSpace(input)
-			if len(input) == 0 {
-				return fmt.Errorf("API key cannot be empty")
-			}
-			if len(input) < 20 {
-				return fmt.Errorf("API key seems too short (should be at least 20 characters)")
-			}
-			// Basic format check for Render API keys (they typically start with 'rnd_')
-			if !strings.HasPrefix(input, "rnd_") {
-				return fmt.Errorf("Render API keys typically start with 'rnd_'")
-			}
-			return nil
-		},
-	}
-
-	apiKey, err := prompt.Run()
-	if err != nil {
-		if err == promptui.ErrInterrupt {
-			return fmt.Errorf("authentication cancelled by user")
+	// Check if we have an AuthInteractor for TUI prompts
+	if authInteractor := ra.getAuthInteractor(); authInteractor != nil {
+		// Use TUI prompt
+		apiKey, err = authInteractor.PromptInput("🔑 Enter your Render API key", true)
+		if err != nil {
+			return fmt.Errorf("failed to read API key: %w", err)
 		}
-		return fmt.Errorf("failed to read API key: %w", err)
-	}
+	} else {
+		// Use promptui for non-TUI mode
+		templates := &promptui.PromptTemplates{
+			Prompt:  "{{ . }}: ",
+			Valid:   "{{ . | green }}: ",
+			Invalid: "{{ . | red }}: ",
+			Success: "{{ . | green }}: {{ . | faint }}",
+		}
 
-	// Clean the input
-	apiKey = strings.TrimSpace(apiKey)
+		prompt := promptui.Prompt{
+			Label:       "🔑 Enter your Render API key",
+			Templates:   templates,
+			Mask:        '*',
+			HideEntered: true,
+			Validate: func(input string) error {
+				input = strings.TrimSpace(input)
+				if len(input) == 0 {
+					return fmt.Errorf("API key cannot be empty")
+				}
+				if len(input) < 20 {
+					return fmt.Errorf("API key seems too short (should be at least 20 characters)")
+				}
+				// Basic format check for Render API keys (they typically start with 'rnd_')
+				if !strings.HasPrefix(input, "rnd_") {
+					return fmt.Errorf("Render API keys typically start with 'rnd_'")
+				}
+				return nil
+			},
+		}
+
+		apiKey, err = prompt.Run()
+		if err != nil {
+			if err == promptui.ErrInterrupt {
+				return fmt.Errorf("authentication cancelled by user")
+			}
+			return fmt.Errorf("failed to read API key: %w", err)
+		}
+
+		// Clean the input
+		apiKey = strings.TrimSpace(apiKey)
+	}
 
 	// Set the API key in the current process environment
 	os.Setenv("RENDER_API_KEY", apiKey)
 
 	// Validate the API key by making a test call
-	fmt.Println("\n🔍 Validating API key...")
-	valid, err := ra.validateAPIKey(ctx)
+	unifiedWriter := ra.getUnifiedWriter()
+	unifiedWriter.StartSpinner("🔍 Validating API key...")
+
+	valid, err := ra.ValidateAPIKey(ctx)
+
+	unifiedWriter.StopSpinner()
 	if err != nil {
 		return fmt.Errorf("failed to validate API key: %w", err)
 	}
@@ -235,7 +306,7 @@ func (ra *RenderAuth) promptForAPIKey(ctx context.Context) error {
 		return fmt.Errorf("invalid API key - please check your key and try again")
 	}
 
-	fmt.Println("✅ API key validated successfully!")
+	ra.println("✅ API key validated successfully!")
 
 	// Ask user if they want to persist the API key
 	persistPrompt := promptui.Prompt{
@@ -247,33 +318,33 @@ func (ra *RenderAuth) promptForAPIKey(ctx context.Context) error {
 	persistResult, err := persistPrompt.Run()
 	if err != nil && err != promptui.ErrAbort {
 		// Don't fail authentication if they can't answer the persist question
-		fmt.Println("⚠️  Could not ask about persisting API key, continuing...")
+		ra.println("⚠️  Could not ask about persisting API key, continuing...")
 		return nil
 	}
 
 	if err == promptui.ErrAbort || (persistResult != "y" && persistResult != "yes") {
-		fmt.Println("💡 API key will only be available for this session.")
-		fmt.Println("   To persist it manually, run: export RENDER_API_KEY=your_key_here")
+		ra.println("💡 API key will only be available for this session.")
+		ra.println("   To persist it manually, run: export RENDER_API_KEY=your_key_here")
 		return nil
 	}
 
 	// Persist the API key to shell profile
 	if err := ra.persistAPIKeyToShellProfile(apiKey); err != nil {
-		fmt.Printf("⚠️  Could not persist API key to shell profile: %v\n", err)
-		fmt.Println("💡 You can manually add this to your shell profile:")
-		fmt.Printf("   echo 'export RENDER_API_KEY=%s' >> ~/.zshrc\n", apiKey)
-		fmt.Println("   (or ~/.bashrc if using bash)")
+		ra.printf("⚠️  Could not persist API key to shell profile: %v\n", err)
+		ra.println("💡 You can manually add this to your shell profile:")
+		ra.printf("   echo 'export RENDER_API_KEY=%s' >> ~/.zshrc\n", apiKey)
+		ra.println("   (or ~/.bashrc if using bash)")
 	} else {
-		fmt.Println("✅ API key saved to shell profile!")
-		fmt.Println("💡 The API key will be available in new terminal sessions.")
+		ra.println("✅ API key saved to shell profile!")
+		ra.println("💡 The API key will be available in new terminal sessions.")
 	}
 
 	return nil
 }
 
-// performOAuthLogin executes the OAuth device authorization flow using Render CLI components
-func (ra *RenderAuth) performOAuthLogin(ctx context.Context) error {
-	fmt.Println("🚀 Starting authentication flow...")
+// PerformOAuthLogin executes the OAuth device authorization flow using Render CLI components
+func (ra *RenderAuth) PerformOAuthLogin(ctx context.Context) error {
+	ra.println("🚀 Starting authentication flow...")
 
 	// Load Render CLI config to get proper host configuration
 	// The render CLI uses config to determine the correct host
@@ -292,7 +363,7 @@ func (ra *RenderAuth) performOAuthLogin(ctx context.Context) error {
 		host = "https://api.render.com/v1" // Use the API domain with v1 path for OAuth
 	}
 
-	fmt.Printf("🔧 Using OAuth host: %s\n", host)
+	ra.printf("🔧 Using OAuth host: %s\n", host)
 
 	// Set up custom HTTP client with proper user-agent like Render CLI and OAuth Content-Type fix
 	customClient := &http.Client{
@@ -315,22 +386,26 @@ func (ra *RenderAuth) performOAuthLogin(ctx context.Context) error {
 	oauthClient := oauth.NewClient(host)
 
 	// Try to create device grant with automatic fallback
-	fmt.Println("🔗 Connecting to Render authentication server...")
+	unifiedWriter := ra.getUnifiedWriter()
+	unifiedWriter.StartSpinner("🔗 Connecting to Render authentication server...")
+
 	deviceGrant, err := oauthClient.CreateGrant(ctx)
+
+	unifiedWriter.StopSpinner()
 	if err != nil {
-		fmt.Printf("❌ Failed to connect to Render authentication server\n")
-		fmt.Printf("Error details: %v\n", err)
-		fmt.Println("\n💡 This might be due to:")
-		fmt.Println("   • Network connectivity issues")
-		fmt.Println("   • Render's OAuth service being temporarily unavailable")
-		fmt.Println("   • Firewall or proxy blocking the connection")
-		fmt.Println("\n🔧 You can try option 2 (Manual API key setup) instead")
+		ra.printf("❌ Failed to connect to Render authentication server\n")
+		ra.printf("Error details: %v\n", err)
+		ra.println("\n💡 This might be due to:")
+		ra.println("   • Network connectivity issues")
+		ra.println("   • Render's OAuth service being temporarily unavailable")
+		ra.println("   • Firewall or proxy blocking the connection")
+		ra.println("\n🔧 You can try option 2 (Manual API key setup) instead")
 		return fmt.Errorf("failed to create device grant: %w", err)
 	}
 
 	// Step 2: Generate dashboard authentication URL and open browser
-	fmt.Printf("\n📱 Please visit: %s\n", deviceGrant.VerificationUri)
-	fmt.Printf("🔑 Enter code: %s\n\n", deviceGrant.UserCode)
+	ra.printf("\n📱 Please visit: %s\n", deviceGrant.VerificationUri)
+	ra.printf("🔑 Enter code: %s\n\n", deviceGrant.UserCode)
 
 	// Use the complete verification URI from the API response
 	// This includes the user code in the path: /device-authorization/{user_code}
@@ -341,16 +416,16 @@ func (ra *RenderAuth) performOAuthLogin(ctx context.Context) error {
 	}
 
 	// Open browser automatically
-	fmt.Println("🌐 Opening browser automatically...")
+	ra.println("🌐 Opening browser automatically...")
 	if err := dashboard.Open(authURL); err != nil {
-		fmt.Printf("Failed to open browser automatically: %v\n", err)
-		fmt.Println("Please visit the URL manually.")
+		ra.printf("Failed to open browser automatically: %v\n", err)
+		ra.println("Please visit the URL manually.")
 	}
 
-	fmt.Println("⏳ Waiting for authentication...")
-	fmt.Printf("💡 Complete authentication in your browser, then return here.\n")
-	fmt.Printf("⏰ You have %d minutes to complete authentication.\n", deviceGrant.ExpiresIn/60)
-	fmt.Printf("🔗 Browser URL: %s\n\n", authURL)
+	ra.println("⏳ Waiting for authentication...")
+	ra.printf("💡 Complete authentication in your browser, then return here.\n")
+	ra.printf("⏰ You have %d minutes to complete authentication.\n", deviceGrant.ExpiresIn/60)
+	ra.printf("🔗 Browser URL: %s\n\n", authURL)
 
 	// Step 3: Poll for token using render CLI components
 	deviceToken, err := ra.pollForToken(ctx, oauthClient, deviceGrant)
@@ -380,7 +455,7 @@ func (ra *RenderAuth) performOAuthLogin(ctx context.Context) error {
 	// Set the API key for immediate use
 	os.Setenv("RENDER_API_KEY", deviceToken.AccessToken)
 
-	fmt.Println("✅ Authentication successful!")
+	ra.println("✅ Authentication successful!")
 	return nil
 }
 

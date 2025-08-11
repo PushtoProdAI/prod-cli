@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/output"
 )
 
 // CreatePostgresStepConfig holds configuration for creating a PostgreSQL service
@@ -378,7 +379,7 @@ func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client Rende
 	// No existing credential found, create a new one
 
 	// Get pull credentials from the Docker generator
-	dockerGenerator := deployment.NewDockerGenerator()
+	dockerGenerator := deployment.NewDockerGenerator(output.NewNoOpWriter())
 	defer dockerGenerator.Close()
 
 	pullCreds, err := dockerGenerator.GetPullCredentials(ctx, s.TenantID)
@@ -531,7 +532,7 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		}
 
 		// Get pull credentials to construct the image path
-		dockerGenerator := deployment.NewDockerGenerator()
+		dockerGenerator := deployment.NewDockerGenerator(output.NewNoOpWriter())
 		defer dockerGenerator.Close()
 
 		pullCreds, err := dockerGenerator.GetPullCredentials(ctx, s.TenantID)

@@ -8,16 +8,23 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/cschleiden/go-workflows/client"
-	"github.com/go-errors/errors"
-	"github.com/manifoldco/promptui"
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/auth"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
+	"github.com/meroxa/prod/cli/internal/output"
 )
+
+type ConfirmationWriter interface {
+	io.Writer
+	SendConfirmation(message string, callback func(bool))
+	SendAPIKeyPrompt(message string)
+	SendSelect(message string, options []string)
+}
 
 type Agent struct {
 	sm          deploySM
@@ -25,6 +32,8 @@ type Agent struct {
 	interactive bool
 	deployPlan  *deployPlan
 	dryRun      bool
+	UIOutput    io.Writer
+	renderAuth  *auth.RenderAuth
 }
 
 func NewAgent(wfClient *client.Client, interactive bool) *Agent {
@@ -105,7 +114,13 @@ func (a *Agent) SetInteractive(interactive bool) {
 }
 
 func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
-	a.sm.next(ctx, input, out)
+	// Use UIOutput if available, otherwise fall back to out parameter
+	log.Printf("Processing input: %s\n", input)
+	output := out
+	if a.UIOutput != nil {
+		output = a.UIOutput
+	}
+	a.sm.next(ctx, input, output)
 }
 
 func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -135,6 +150,17 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 	fmt.Fprintf(out, "Source: %s\n", plan.Source)
 	fmt.Fprintf(out, "Name: %s\n", plan.Spec.Name)
 	fmt.Fprintf(out, "Language: %s\n", plan.Spec.Language)
+	if len(plan.Spec.ServiceRequirements) > 0 {
+		fmt.Fprint(out, "Services:\n")
+		fmt.Fprint(out, "-------\n")
+		for i, spec := range plan.Spec.ServiceRequirements {
+			fmt.Fprintf(out, "Service Type: %s\n", spec.Type)
+			fmt.Fprintf(out, "Service: %s\n", spec.Provider)
+			if i < len(plan.Spec.ServiceRequirements)-1 {
+				fmt.Fprint(out, "-------\n")
+			}
+		}
+	}
 	fmt.Fprint(out, "-------\n")
 
 	if !shouldProceed(plan) {
@@ -157,30 +183,50 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 }
 
 func (a *Agent) confirmWithPrompt(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	prompt := promptui.Prompt{
-		Label:     "Do you want to proceed with the deployment",
-		IsConfirm: true,
+	// Check if we have a ConfirmationWriter (Bubble Tea UI)
+	if confirmWriter, ok := out.(ConfirmationWriter); ok {
+		// For Bubble Tea, we need to handle this differently
+		// Check if this is the initial call or a response to confirmation
+		if input == "" {
+			// Initial call - send confirmation prompt
+			confirmWriter.SendConfirmation("Do you want to proceed with the deployment?", nil)
+			return a.waitForConfirmation, nil
+		}
+		// This is a response to confirmation - process it
+		return a.processConfirmationResponse(ctx, input, out)
 	}
 
-	result, err := prompt.Run()
-	if err != nil {
-		if err == promptui.ErrInterrupt {
-			fmt.Fprintf(out, "Operation cancelled\n")
-			return a.plan, nil
-		}
-		if err == promptui.ErrAbort {
-			return a.plan, nil
-		}
-		return nil, errors.Errorf("prompt failed: %v", err)
-	}
+	// This should not happen in bubbletea mode, but handle gracefully
+	fmt.Fprintf(out, "Proceeding with deployment...\n")
+	return a.deploy(ctx, input, out)
+}
 
-	if result == "y" || result == "yes" {
+func (a *Agent) waitForConfirmation(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	// This state waits for user input during confirmation
+	return a.processConfirmationResponse(ctx, input, out)
+}
+
+func (a *Agent) processConfirmationResponse(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	input = strings.ToLower(strings.TrimSpace(input))
+
+	if input == "y" || input == "yes" {
 		fmt.Fprintf(out, "Proceeding with deployment...\n")
 		return a.deploy(ctx, input, out)
 	}
 
-	fmt.Fprintf(out, "Deployment cancelled\n")
-	return a.plan, nil
+	if input == "n" || input == "no" {
+		fmt.Fprintf(out, "Deployment cancelled\n")
+		return a.plan, nil
+	}
+
+	// Invalid response - ask again
+	if confirmWriter, ok := out.(ConfirmationWriter); ok {
+		confirmWriter.SendConfirmation("Do you want to proceed with the deployment?", nil)
+		return a.waitForConfirmation, nil
+	}
+
+	// This should not happen in bubbletea mode
+	return a.confirmWithPrompt, nil
 }
 
 func (a *Agent) confirm(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -194,11 +240,13 @@ func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateF
 
 	// Check authentication before deployment
 	if a.deployPlan.Platform == Render {
-		if err := a.checkRenderAuthentication(ctx, out); err != nil {
-			return a.plan, nil
-		}
+		return a.checkRenderAuthentication(ctx, input, out)
 	}
 
+	return a.executeDeployment(ctx, input, out)
+}
+
+func (a *Agent) executeDeployment(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	wf, err := Workflows{}.Deploy(ctx, a.wfClient, *a.deployPlan)
 	if err != nil {
 		log.Printf("Workflow execution result: %v\n", err)
@@ -228,7 +276,7 @@ func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateF
 			}
 			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
 			// jump to the confirm state so that we give the user a chance to fix the issues and retry, without having to replan.
-			return a.confirmWithPrompt(ctx, input, out)
+			return a.confirmWithPrompt(ctx, "", out)
 
 		}
 		if !a.interactive {
@@ -254,35 +302,10 @@ func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateF
 func (a *Agent) dryRunDeploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	// Check authentication before dry run deployment
 	if a.deployPlan.Platform == Render {
-		if err := a.checkRenderAuthentication(ctx, out); err != nil {
-			return a.plan, nil
-		}
+		return a.checkRenderAuthenticationForDryRun(ctx, input, out)
 	}
 
-	wf, err := Workflows{}.DryRunDeploy(ctx, a.wfClient, *a.deployPlan)
-	if err != nil {
-		log.Printf("Dry-run workflow execution result: %v\n", err)
-		fmt.Fprint(out, "Sorry, couldn't create a dry-run deployment plan \n")
-		return a.plan, nil
-	}
-
-	// get the dry-run result with a shorter timeout since it's just planning
-	result, err := client.GetWorkflowResult[DryRunResult](ctx, a.wfClient, wf, 2*time.Minute)
-	if err != nil {
-		a.wfClient.CancelWorkflowInstance(ctx, wf)
-		fmt.Fprint(out, "Sorry that we had trouble creating the dry-run preview \n")
-		return a.plan, nil
-	}
-
-	// Display the dry-run preview
-	a.displayDryRunResult(out, result)
-
-	// In non-interactive mode, end the state machine
-	if !a.interactive {
-		return nil, nil
-	}
-	// In interactive mode, return to plan state for more commands
-	return a.plan, nil
+	return a.executeDryRun(ctx, input, out)
 }
 
 func shouldProceed(plan deployPlan) bool {
@@ -396,45 +419,353 @@ func (a *Agent) displayDryRunResult(out io.Writer, result DryRunResult) {
 	}
 }
 
-func (a *Agent) checkRenderAuthentication(ctx context.Context, out io.Writer) error {
+func (a *Agent) checkRenderAuthentication(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	fmt.Fprint(out, "Checking Render authentication...\n")
 
 	// Get the render client from the workflow
 	apiKey := os.Getenv("RENDER_API_KEY")
-	renderClient := render.NewHTTPRenderClient(apiKey)
-	renderAuth := auth.NewRenderAuth(renderClient)
+	renderClient := render.NewHTTPRenderClient(apiKey, output.NewNoOpWriter())
+	renderAuth := auth.NewRenderAuth(renderClient, out)
 
 	// Check if already authenticated
 	authenticated, err := renderAuth.CheckAuthentication(ctx)
 	if err != nil {
 		fmt.Fprintf(out, "Error checking authentication: %v\n", err)
-		return err
+		return a.plan, err
 	}
 
 	if !authenticated {
 		fmt.Fprint(out, "🔐 Authentication required for Render deployment\n\n")
 
-		// Determine auth mode based on interactiveness
-		var authMode *auth.AuthMode
-		if a.interactive {
-			// In interactive mode, let the user choose
-			authMode = nil
-		} else {
-			// In non-interactive mode, default to API key mode
-			mode := auth.APIKey
-			authMode = &mode
+		// Store the render auth for use in authentication states
+		a.renderAuth = renderAuth
+
+		// In non-interactive mode, default to API key mode
+		if !a.interactive {
+			err := a.promptForAPIKeyDirect(ctx, out)
+			if err != nil {
+				return a.plan, err
+			}
+			// Continue with deployment after API key setup
+			return a.executeDeployment, nil
 		}
 
-		// Prompt for login
-		if err := renderAuth.PromptLogin(ctx, authMode); err != nil {
-			fmt.Fprintf(out, "Authentication failed: %v\n", err)
-			return err
+		// In interactive mode, transition to auth selection state
+		if confirmWriter, ok := out.(ConfirmationWriter); ok {
+			// Use bubbletea select - no output writes, everything in input panel
+			confirmWriter.SendSelect("Choose authentication method:", []string{
+				"Interactive login (recommended)",
+				"Enter API key directly",
+			})
+			// Transition to waiting for auth selection
+			return a.waitForAuthSelection, nil
 		}
 
-		fmt.Fprint(out, "✅ Successfully authenticated with Render\n")
+		// Fallback for non-bubbletea mode
+		err := a.promptForAPIKeyDirect(ctx, out)
+		if err != nil {
+			return a.plan, err
+		}
+		return a.executeDeployment, nil
 	}
 
-	return nil
+	// Already authenticated, proceed with deployment
+	return a.executeDeployment(ctx, input, out)
+}
+
+func (a *Agent) promptForAPIKeyDirect(ctx context.Context, out io.Writer) error {
+	fmt.Fprint(out, "🎉 Direct API key setup\n\n")
+	fmt.Fprint(out, "📋 To get your API key:\n")
+	fmt.Fprint(out, "1. Go to https://dashboard.render.com/account/settings\n")
+	fmt.Fprint(out, "2. Create a new API key\n")
+	fmt.Fprint(out, "3. Copy the key and paste it below\n\n")
+
+	// In non-interactive mode, show manual instructions
+	fmt.Fprint(out, "💡 Manual API Key Setup:\n")
+	fmt.Fprint(out, "1. Go to https://dashboard.render.com/account/settings\n")
+	fmt.Fprint(out, "2. Create a new API key\n")
+	fmt.Fprint(out, "3. Export it: export RENDER_API_KEY=your_api_key_here\n")
+	fmt.Fprint(out, "4. Run your command again\n")
+
+	return fmt.Errorf("API key required - please set RENDER_API_KEY environment variable")
+}
+
+func (a *Agent) waitForAuthSelection(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	input = strings.TrimSpace(input)
+
+	switch input {
+	case "0": // First option - Interactive login
+		return a.performOAuthLogin(ctx, input, out)
+	case "1": // Second option - API key
+		return a.promptForAPIKey(ctx, input, out)
+	default:
+		// Invalid selection, ask again
+		if confirmWriter, ok := out.(ConfirmationWriter); ok {
+			confirmWriter.SendSelect("Choose authentication method:", []string{
+				"Interactive login (recommended)",
+				"Enter API key directly",
+			})
+			return a.waitForAuthSelection, nil
+		}
+		return a.waitForAuthSelection, nil
+	}
+}
+
+func (a *Agent) promptForAPIKey(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	// Check if we have a ConfirmationWriter (Bubble Tea UI)
+	if confirmWriter, ok := out.(ConfirmationWriter); ok {
+		// In bubbletea mode, everything goes in the input panel
+		confirmWriter.SendAPIKeyPrompt("🔑 Enter your Render API key (get it from https://dashboard.render.com/account/settings):")
+		return a.waitForAPIKey, nil
+	}
+	// Fallback for non-Bubble Tea mode
+	fmt.Fprint(out, "🎉 Direct API key setup\n\n")
+	fmt.Fprint(out, "📋 To get your API key:\n")
+	fmt.Fprint(out, "1. Go to https://dashboard.render.com/account/settings\n")
+	fmt.Fprint(out, "2. Create a new API key\n")
+	fmt.Fprint(out, "3. Copy the key and paste it below\n\n")
+	fmt.Fprint(out, "🔑 Enter your Render API key: ")
+	return a.waitForAPIKey, nil
+}
+
+func (a *Agent) waitForAPIKey(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	apiKey := strings.TrimSpace(input)
+
+	// Validate API key format
+	if len(apiKey) == 0 {
+		fmt.Fprint(out, "❌ API key cannot be empty\n")
+		return a.promptForAPIKey(ctx, "", out)
+	}
+
+	if len(apiKey) < 20 {
+		fmt.Fprint(out, "❌ API key seems too short (should be at least 20 characters)\n")
+		return a.promptForAPIKey(ctx, "", out)
+	}
+
+	if !strings.HasPrefix(apiKey, "rnd_") {
+		fmt.Fprint(out, "❌ Render API keys typically start with 'rnd_'\n")
+		return a.promptForAPIKey(ctx, "", out)
+	}
+
+	// Set the API key in the environment
+	os.Setenv("RENDER_API_KEY", apiKey)
+
+	// Validate the API key by making a test call
+	fmt.Fprint(out, "🔍 Validating API key...\n")
+	valid, err := a.renderAuth.ValidateAPIKey(ctx)
+	if err != nil {
+		fmt.Fprintf(out, "❌ Failed to validate API key: %v\n", err)
+		os.Unsetenv("RENDER_API_KEY")
+		return a.promptForAPIKey(ctx, "", out)
+	}
+
+	if !valid {
+		fmt.Fprint(out, "❌ Invalid API key - please check your key and try again\n")
+		os.Unsetenv("RENDER_API_KEY")
+		return a.promptForAPIKey(ctx, "", out)
+	}
+
+	fmt.Fprint(out, "✅ API key validated successfully!\n")
+	fmt.Fprint(out, "💡 API key will only be available for this session.\n")
+	fmt.Fprint(out, "   To persist it manually, run: export RENDER_API_KEY=your_key_here\n")
+
+	// Continue with deployment
+	return a.executeDeployment(ctx, input, out)
+}
+
+func (a *Agent) performOAuthLogin(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	fmt.Fprint(out, "🚀 Starting authentication flow...\n")
+
+	// Perform OAuth login using the auth package
+	if err := a.renderAuth.PerformOAuthLogin(ctx); err != nil {
+		fmt.Fprintf(out, "❌ Authentication failed: %v\n", err)
+		fmt.Fprint(out, "🔧 You can try option 2 (Manual API key setup) instead\n")
+		return a.waitForAuthSelection, nil
+	}
+
+	fmt.Fprint(out, "✅ Authentication successful!\n")
+
+	// Continue with deployment
+	return a.executeDeployment(ctx, input, out)
+}
+
+func (a *Agent) checkRenderAuthenticationForDryRun(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	fmt.Fprint(out, "Checking Render authentication...\n")
+
+	// Get the render client from the workflow
+	apiKey := os.Getenv("RENDER_API_KEY")
+	renderClient := render.NewHTTPRenderClient(apiKey, output.NewNoOpWriter())
+	renderAuth := auth.NewRenderAuth(renderClient, out)
+
+	// Check if already authenticated
+	authenticated, err := renderAuth.CheckAuthentication(ctx)
+	if err != nil {
+		fmt.Fprintf(out, "Error checking authentication: %v\n", err)
+		return a.plan, err
+	}
+
+	if !authenticated {
+		fmt.Fprint(out, "🔐 Authentication required for Render deployment\n\n")
+
+		// Store the render auth for use in authentication states
+		a.renderAuth = renderAuth
+
+		// In non-interactive mode, default to API key mode
+		if !a.interactive {
+			err := a.promptForAPIKeyDirect(ctx, out)
+			if err != nil {
+				return a.plan, err
+			}
+			// Continue with dry run after API key setup
+			return a.executeDryRun, nil
+		}
+
+		// In interactive mode, transition to auth selection state
+		if confirmWriter, ok := out.(ConfirmationWriter); ok {
+			// Use bubbletea select - no output writes, everything in input panel
+			confirmWriter.SendSelect("Choose authentication method:", []string{
+				"Interactive login (recommended)",
+				"Enter API key directly",
+			})
+			// Transition to waiting for auth selection (but for dry run)
+			return a.waitForAuthSelectionDryRun, nil
+		}
+		// Fallback for non-bubbletea mode
+		err := a.promptForAPIKeyDirect(ctx, out)
+		if err != nil {
+			return a.plan, err
+		}
+		return a.executeDryRun, nil
+	}
+
+	// Already authenticated, proceed with dry run
+	return a.executeDryRun(ctx, input, out)
+}
+
+func (a *Agent) waitForAuthSelectionDryRun(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	input = strings.TrimSpace(input)
+
+	switch input {
+	case "0": // First option - Interactive login
+		return a.performOAuthLoginDryRun(ctx, input, out)
+	case "1": // Second option - API key
+		return a.promptForAPIKeyDryRun(ctx, input, out)
+	default:
+		// Invalid selection, ask again
+		if confirmWriter, ok := out.(ConfirmationWriter); ok {
+			confirmWriter.SendSelect("Choose authentication method:", []string{
+				"Interactive login (recommended)",
+				"Enter API key directly",
+			})
+			return a.waitForAuthSelectionDryRun, nil
+		}
+		return a.waitForAuthSelectionDryRun, nil
+	}
+}
+
+func (a *Agent) promptForAPIKeyDryRun(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	// Check if we have a ConfirmationWriter (Bubble Tea UI)
+	if confirmWriter, ok := out.(ConfirmationWriter); ok {
+		// In bubbletea mode, everything goes in the input panel
+		confirmWriter.SendAPIKeyPrompt("🔑 Enter your Render API key (get it from https://dashboard.render.com/account/settings):")
+		return a.waitForAPIKeyDryRun, nil
+	}
+	// Fallback for non-Bubble Tea mode
+	fmt.Fprint(out, "🎉 Direct API key setup\n\n")
+	fmt.Fprint(out, "📋 To get your API key:\n")
+	fmt.Fprint(out, "1. Go to https://dashboard.render.com/account/settings\n")
+	fmt.Fprint(out, "2. Create a new API key\n")
+	fmt.Fprint(out, "3. Copy the key and paste it below\n\n")
+	fmt.Fprint(out, "🔑 Enter your Render API key: ")
+	return a.waitForAPIKeyDryRun, nil
+}
+
+func (a *Agent) waitForAPIKeyDryRun(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	apiKey := strings.TrimSpace(input)
+
+	// Validate API key format
+	if len(apiKey) == 0 {
+		fmt.Fprint(out, "❌ API key cannot be empty\n")
+		return a.promptForAPIKeyDryRun(ctx, "", out)
+	}
+
+	if len(apiKey) < 20 {
+		fmt.Fprint(out, "❌ API key seems too short (should be at least 20 characters)\n")
+		return a.promptForAPIKeyDryRun(ctx, "", out)
+	}
+
+	if !strings.HasPrefix(apiKey, "rnd_") {
+		fmt.Fprint(out, "❌ Render API keys typically start with 'rnd_'\n")
+		return a.promptForAPIKeyDryRun(ctx, "", out)
+	}
+
+	// Set the API key in the environment
+	os.Setenv("RENDER_API_KEY", apiKey)
+
+	// Validate the API key by making a test call
+	fmt.Fprint(out, "🔍 Validating API key...\n")
+	valid, err := a.renderAuth.ValidateAPIKey(ctx)
+	if err != nil {
+		fmt.Fprintf(out, "❌ Failed to validate API key: %v\n", err)
+		os.Unsetenv("RENDER_API_KEY")
+		return a.promptForAPIKeyDryRun(ctx, "", out)
+	}
+
+	if !valid {
+		fmt.Fprint(out, "❌ Invalid API key - please check your key and try again\n")
+		os.Unsetenv("RENDER_API_KEY")
+		return a.promptForAPIKeyDryRun(ctx, "", out)
+	}
+
+	fmt.Fprint(out, "✅ API key validated successfully!\n")
+	fmt.Fprint(out, "💡 API key will only be available for this session.\n")
+	fmt.Fprint(out, "   To persist it manually, run: export RENDER_API_KEY=your_key_here\n")
+
+	// Continue with dry run
+	return a.executeDryRun(ctx, input, out)
+}
+
+func (a *Agent) performOAuthLoginDryRun(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	fmt.Fprint(out, "🚀 Starting authentication flow...\n")
+
+	// Perform OAuth login using the auth package
+	if err := a.renderAuth.PerformOAuthLogin(ctx); err != nil {
+		fmt.Fprintf(out, "❌ Authentication failed: %v\n", err)
+		fmt.Fprint(out, "🔧 You can try option 2 (Manual API key setup) instead\n")
+		return a.waitForAuthSelectionDryRun, nil
+	}
+
+	fmt.Fprint(out, "✅ Authentication successful!\n")
+
+	// Continue with dry run
+	return a.executeDryRun(ctx, input, out)
+}
+
+func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	wf, err := Workflows{}.DryRunDeploy(ctx, a.wfClient, *a.deployPlan)
+	if err != nil {
+		log.Printf("Dry-run workflow execution result: %v\n", err)
+		fmt.Fprint(out, "Sorry, couldn't create a dry-run deployment plan \n")
+		return a.plan, nil
+	}
+
+	// get the dry-run result with a shorter timeout since it's just planning
+	result, err := client.GetWorkflowResult[DryRunResult](ctx, a.wfClient, wf, 2*time.Minute)
+	if err != nil {
+		a.wfClient.CancelWorkflowInstance(ctx, wf)
+		fmt.Fprint(out, "Sorry that we had trouble creating the dry-run preview \n")
+		return a.plan, nil
+	}
+
+	// Display the dry-run preview
+	a.displayDryRunResult(out, result)
+
+	// In non-interactive mode, end the state machine
+	if !a.interactive {
+		return nil, nil
+	}
+	// In interactive mode, return to plan state for more commands
+	return a.plan, nil
 }
 
 func openInBrowser(url string) error {

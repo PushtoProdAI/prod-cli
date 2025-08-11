@@ -15,6 +15,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
+	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
 )
 
@@ -33,22 +34,20 @@ var ActivityOpts = workflow.ActivityOptions{
 	},
 }
 
-type SendWorkflowStatus func(status string, message string)
-
 type Workflows struct {
 	Acts         *Activities
-	statusSender SendWorkflowStatus
 	registry     workflowext.Registry
 	renderClient render.RenderClient
+	uiWriter     output.UnifiedOutputWriter
 }
 
 var _ workflowext.Registerer = (*Workflows)(nil)
 
-func NewWorkflows(renderClient render.RenderClient, statusSender SendWorkflowStatus, beClient *backend.Client) *Workflows {
+func NewWorkflows(renderClient render.RenderClient, beClient *backend.Client, uiWriter output.UnifiedOutputWriter) *Workflows {
 	return &Workflows{
-		Acts:         &Activities{renderClient: renderClient, statusSender: statusSender, beClient: beClient},
-		statusSender: statusSender,
+		Acts:         &Activities{renderClient: renderClient, beClient: beClient, uiWriter: uiWriter},
 		renderClient: renderClient,
+		uiWriter:     uiWriter,
 	}
 }
 
@@ -107,17 +106,20 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, 
 	intent, err := workflow.ExecuteActivity[types.Intent](ctx, ActivityOpts, AgentDetermineIntent, input).Get(ctx)
 	if err != nil {
 		log.Println(errors.Errorf("failed to determine intent: %w", err))
-		w.statusSender("error", "Failed to determine intent")
+		w.uiWriter.SendStatus("error", "Failed to determine intent")
 	}
 	spec := analyzer.ProjectSpec{}
 	if intent.Source != "" {
 		opts := ActivityOpts
 		opts.RetryOptions.MaxAttempts = 3
 		opts.RetryOptions.FirstRetryInterval = time.Second * 2
-		w.statusSender("analyzing", "Analyzing project...")
+		w.uiWriter.SendStatus("analyzing", "Analyzing project...")
 		spec, err = workflow.ExecuteActivity[analyzer.ProjectSpec](ctx, opts, AgentAnalyzeProject, intent).Get(ctx)
 		if err != nil {
+			w.uiWriter.SendStatusComplete("analyzing", "❌ Failed to analyze project")
 			log.Println(errors.Errorf("failed to analyze project: %w", err))
+		} else {
+			w.uiWriter.SendStatusComplete("analyzing", "✅ Project analyzed")
 		}
 	}
 
@@ -166,7 +168,7 @@ func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (deploy
 	if w.registry == nil {
 		return deployResult{}, errors.New("workflow registry is not set")
 	}
-	dockerGen := deployment.NewDockerGenerator()
+	dockerGen := deployment.NewDockerGenerator(w.uiWriter)
 	db := deployment.NewDeploymentBuilder(&input.Spec)
 	spec, err := db.Build()
 	if err != nil {
@@ -195,7 +197,7 @@ func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (deploy
 		return deployResult{Error: summary}, nil
 	}
 
-	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true)
+	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true, w.uiWriter)
 	steps := d.GenerateAPISteps(workspaceID)
 
 	// collect the descriptions to generate a summary
@@ -252,7 +254,7 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 	}
 
 	// Generate the deployment steps (same as actual deployment)
-	dockerGen := deployment.NewDockerGenerator()
+	dockerGen := deployment.NewDockerGenerator(w.uiWriter)
 	db := deployment.NewDeploymentBuilder(&input.Spec)
 	spec, err := db.Build()
 	if err != nil {
@@ -262,7 +264,7 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["tenantID"] = "test" // TODO: this shouldn't be hardcoded
 
-	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true)
+	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true, w.uiWriter)
 	steps := d.GenerateAPISteps(workspaceID)
 
 	// Convert render steps to dry-run steps

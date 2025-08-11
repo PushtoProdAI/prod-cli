@@ -3,16 +3,13 @@ package root
 import (
 	"context"
 	"fmt"
-	"io"
 	"math/rand"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
 
-	"github.com/chzyer/readline"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/conduitio/ecdysis"
 	"github.com/meroxa/prod/cli/internal/agent"
+	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/meroxa/prod/cli/tui"
 )
 
 var (
@@ -35,10 +32,11 @@ type RootArgs struct {
 }
 
 type RootCommand struct {
-	flags  RootFlags
-	args   RootArgs
-	output ecdysis.Output
-	Agent  *agent.Agent
+	flags         RootFlags
+	args          RootArgs
+	output        ecdysis.Output
+	Agent         *agent.Agent
+	UnifiedWriter output.UnifiedOutputWriter
 }
 
 func (c *RootCommand) Args(args []string) error {
@@ -72,8 +70,6 @@ ______              _
 		return nil
 	}
 
-	c.output.Stdout(fmt.Sprintf("%s\n", banner))
-
 	if c.flags.DryRun {
 		c.output.Stdout("🔍 DRY RUN MODE - Simulating execution without making changes\n\n")
 	}
@@ -83,56 +79,30 @@ ______              _
 		return nil
 	}
 
-	// Create a context that can be canceled on SIGINT (Ctrl+C)
-	ctxWithCancel, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	// Initialize Bubble Tea model
+	model := tui.NewModel(c.Agent)
 
-	c.output.Stdout(fmt.Sprintf("Type %q or press Ctrl+C to exit.\n", exitPrompt))
-	c.output.Stdout(greetUser() + "\n")
-	rl, err := readline.NewEx(&readline.Config{
-		Prompt:          "> ",
-		HistoryFile:     "/tmp/.prodcli_app_history",
-		InterruptPrompt: "^C",
-		EOFPrompt:       "exit",
-	})
+	// Create Bubble Tea program with mouse support
+	program := tea.NewProgram(&model, tea.WithMouseCellMotion())
+
+	// Set the program reference in the model
+	model.SetProgram(program)
+
+	// Connect the unified writer to the TUI
+	if c.UnifiedWriter != nil {
+		c.UnifiedWriter.SetOutput(c.Agent.UIOutput)
+		// Connect spinner controller to TeaWriter
+		if teaWriter, ok := c.Agent.UIOutput.(*tui.TeaWriter); ok {
+			c.UnifiedWriter.SetSpinnerController(teaWriter)
+		}
+	}
+	// Run the program
+	_, err := program.Run()
 	if err != nil {
-		return fmt.Errorf("failed to initialize readline: %w", err)
+		return fmt.Errorf("failed to run TUI: %w", err)
 	}
-	defer rl.Close()
 
-	for {
-		select {
-		case <-ctxWithCancel.Done():
-			c.output.Stdout("\nInterrupted, exiting...\n")
-			return nil
-		default:
-		}
-
-		line, err := rl.Readline()
-		switch err {
-		case nil:
-		case readline.ErrInterrupt:
-			c.output.Stdout("\nInterrupted, exiting...\n")
-			return nil
-		case io.EOF:
-			c.output.Stdout("\nEOF detected, exiting...\n")
-			return nil
-		default:
-			return fmt.Errorf("readline error: %w", err)
-		}
-		line = strings.TrimSpace(line)
-
-		if line == "" {
-			continue
-		}
-
-		if line == exitPrompt {
-			c.output.Stdout("Exiting...\n")
-			return nil
-		}
-
-		c.processPrompt(line)
-	}
+	return nil
 }
 
 // processPrompt handles the business logic for processing prompts

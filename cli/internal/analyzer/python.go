@@ -17,7 +17,7 @@ func NewPythonAnalyzer(projectFS fs.FS) Analyzer {
 	return &PythonAnalyzer{
 		ProjectFS: projectFS,
 		Cache: &AnalysisCache{
-			cache: make(map[string]interface{}),
+			cache: make(map[string]any),
 		},
 	}
 }
