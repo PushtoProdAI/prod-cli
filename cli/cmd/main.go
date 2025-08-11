@@ -15,6 +15,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/agent"
 	be "github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
+	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
 )
 
@@ -36,15 +37,20 @@ func main() {
 		BackendOptions: []backend.BackendOption{},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	wfStatusWriter := func(status, message string) {
-		fmt.Println(message)
+
+	// Create a writer based on environment or configuration
+	// You can easily swap this to output.WriterTypeConsole for simple console output
+	writerType := output.WriterTypeTUI
+	if os.Getenv("PROD_CONSOLE_MODE") == "true" {
+		writerType = output.WriterTypeConsole
 	}
+	unifiedWriter := output.NewWriter(writerType)
 
 	apiKey := os.Getenv("RENDER_API_KEY")
 	// Create HTTP client for real API calls
-	renderClient := render.NewHTTPRenderClient(apiKey)
+	renderClient := render.NewHTTPRenderClient(apiKey, unifiedWriter)
 	beClient := be.NewClient()
-	provider, err := workflowext.InitWorkflows(ctx, cfg, mux, agent.NewWorkflows(renderClient, wfStatusWriter, beClient))
+	provider, err := workflowext.InitWorkflows(ctx, cfg, mux, agent.NewWorkflows(renderClient, beClient, unifiedWriter))
 	if err != nil {
 		log.Fatalf("failed to initialize workflows: %v", err)
 	}
@@ -62,7 +68,7 @@ func main() {
 	}
 	e := ecdysis.New()
 	a := agent.NewAgent(provider.Client, true)
-	cmd := e.MustBuildCobraCommand(&root.RootCommand{Agent: a})
+	cmd := e.MustBuildCobraCommand(&root.RootCommand{Agent: a, UnifiedWriter: unifiedWriter})
 	if err := cmd.Execute(); err != nil {
 		log.Fatal(err)
 	}

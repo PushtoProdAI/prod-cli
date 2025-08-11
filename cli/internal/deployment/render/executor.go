@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/output"
 )
 
 type StepExecutor struct {
@@ -12,14 +13,19 @@ type StepExecutor struct {
 	stepResults      map[string]any
 	createdResources []deployment.CreatedResource
 	executedSteps    []RenderAPIStep
+	writer           output.Writer
 }
 
-func NewStepExecutor(client RenderClient) *StepExecutor {
+func NewStepExecutor(client RenderClient, writer output.Writer) *StepExecutor {
+	if writer == nil {
+		writer = output.NewNoOpWriter()
+	}
 	return &StepExecutor{
 		client:           client,
 		stepResults:      make(map[string]any),
 		createdResources: make([]deployment.CreatedResource, 0),
 		executedSteps:    make([]RenderAPIStep, 0),
+		writer:           writer,
 	}
 }
 
@@ -36,17 +42,21 @@ func (se *StepExecutor) ExecuteSteps(ctx context.Context, steps []RenderAPIStep)
 
 			// Check if all dependencies are satisfied
 			if se.dependenciesSatisfied(step.GetDependencies(), executed) {
+				// Show step start message (will trigger spinner automatically)
+				se.writer.Printf("🔄 Executing: %s...\n", step.GetDescription())
+
 				if err := se.ExecuteStep(ctx, step); err != nil {
-					fmt.Printf("✗ Failed: %s - %v\n", step.GetDescription(), err)
+					se.writer.Printf("✗ Failed: %s - %v\n", step.GetDescription(), err)
 					// Attempt rollback of created resources
 					if rollbackErr := se.rollback(ctx); rollbackErr != nil {
-						fmt.Printf("⚠️  Rollback failed: %v\n", rollbackErr)
+						se.writer.Printf("⚠️  Rollback failed: %v\n", rollbackErr)
 					}
 					return se.createdResources, fmt.Errorf("failed to execute step %s: %w", step.GetID(), err)
 				}
+
 				executed[step.GetID()] = true
 				progress = true
-				fmt.Printf("✓ Completed: %s\n", step.GetDescription())
+				se.writer.Printf("✓ Completed: %s\n", step.GetDescription())
 			}
 		}
 

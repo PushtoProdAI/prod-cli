@@ -11,6 +11,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/meroxa/prod/cli/internal/output"
 )
 
 // RateLimitError represents a rate limit error with retry information
@@ -53,17 +55,22 @@ type HTTPRenderClient struct {
 	baseURL    string
 	httpClient *http.Client
 	userAgent  string
+	writer     output.Writer
 }
 
 // NewHTTPRenderClient creates a new HTTP-based Render client
 // The apiKey parameter is ignored - the client will dynamically read from RENDER_API_KEY environment variable
-func NewHTTPRenderClient(apiKey string) *HTTPRenderClient {
+func NewHTTPRenderClient(apiKey string, writer output.Writer) *HTTPRenderClient {
+	if writer == nil {
+		writer = output.NewNoOpWriter()
+	}
 	return &HTTPRenderClient{
 		baseURL: "https://api.render.com",
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 		userAgent: "prod-cli/1.0",
+		writer:    writer,
 	}
 }
 
@@ -114,7 +121,7 @@ func (c *HTTPRenderClient) handleResponse(resp *http.Response, result any) error
 	if resp.StatusCode == 429 {
 		retryAfter := c.parseRetryAfter(resp.Header)
 		message := c.formatRateLimitMessage(retryAfter)
-		fmt.Println(message)
+		c.writer.Printf("%s\n", message)
 		os.Exit(1)
 	}
 

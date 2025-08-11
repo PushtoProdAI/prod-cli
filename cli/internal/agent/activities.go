@@ -17,6 +17,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
+	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
 )
 
@@ -36,8 +37,8 @@ const (
 
 type Activities struct {
 	renderClient render.RenderClient
-	statusSender SendWorkflowStatus
 	beClient     *backend.Client
+	uiWriter     output.UnifiedOutputWriter
 }
 
 func (a *Activities) Activities() []workflowext.Activity {
@@ -57,9 +58,10 @@ func (a *Activities) Activities() []workflowext.Activity {
 }
 
 func (a *Activities) determineIntent(ctx context.Context, prompt string) (types.Intent, error) {
-	a.statusSender("planning", "Understanding your request...")
+	a.uiWriter.SendStatus("planning", "Understanding your request...")
 	intent, err := baml_client.ExtractIntent(ctx, prompt)
 	if err != nil {
+		a.uiWriter.SendStatusComplete("planning", "❌ Failed to understand request")
 		return types.Intent{}, errors.Errorf("failed to extract intent: %w", err)
 	}
 	if intent.Source == "pwd" {
@@ -67,10 +69,12 @@ func (a *Activities) determineIntent(ctx context.Context, prompt string) (types.
 		if err != nil {
 			intent.Source = ""
 			log.Printf("failed to get current working directory: %v", err)
+			a.uiWriter.SendStatusComplete("planning", "✅ Request understood")
 			return intent, nil
 		}
 		intent.Source = path
 	}
+	a.uiWriter.SendStatusComplete("planning", "✅ Request understood")
 	return intent, nil
 }
 
@@ -84,17 +88,21 @@ func (a *Activities) analyze(_ context.Context, intent types.Intent) (analyzer.P
 }
 
 func (a *Activities) summarize(ctx context.Context, intent types.Intent, name string, language string) (string, error) {
-	a.statusSender("summarizing", "Summarizing your request...")
+	a.uiWriter.SendStatus("summarizing", "Summarizing your request...")
 	summary, err := baml_client.SummarizeIntent(ctx, intent, name, language)
 	if err != nil {
+		a.uiWriter.SendStatusComplete("summarizing", "❌ Failed to summarize request")
 		return "", errors.Errorf("failed to summarize intent: %w", err)
 	}
+	a.uiWriter.SendStatusComplete("summarizing", "✅ Request summarized")
 	return summary.Summary, nil
 }
 
 func (a *Activities) getRenderWorkspace(ctx context.Context) (string, error) {
+	a.uiWriter.SendStatus("retrieving", "Retrieving Render workspace details...")
 	workspaces, err := a.renderClient.ListWorkspaces(ctx)
 	if err != nil {
+		a.uiWriter.SendStatusComplete("retrieving", "❌ Failed to retrieve workspace details")
 		var httpErr *render.HTTPError
 		if errors.As(err, &httpErr) {
 			// Handle HTTP errors based on status code
@@ -109,27 +117,32 @@ func (a *Activities) getRenderWorkspace(ctx context.Context) (string, error) {
 	}
 
 	if len(workspaces) == 0 {
+		a.uiWriter.SendStatusComplete("retrieving", "❌ No workspaces found")
 		return "", errors.Errorf("no workspaces found")
 	}
 
 	ownerID := workspaces[0].Owner.ID
+	a.uiWriter.SendStatusComplete("retrieving", "✅ Workplace details retrieved")
 	return ownerID, nil
 }
 
 func (a *Activities) summarizeDeploySteps(ctx context.Context, steps []string) error {
+	a.uiWriter.SendStatus("summarizing", "Summarizing deployment steps")
+
 	summary, err := baml_client.SummarizeSteps(ctx, steps)
 	if err != nil {
 		return errors.Errorf("failed to summarize deploy steps: %w", err)
 	}
-	a.statusSender("deploying", fmt.Sprintf("%s\n-----", summary.Summary))
+	a.uiWriter.SendStatusComplete("summarizing", "✅ Steps summarized")
+	a.uiWriter.SendStatus("summary", fmt.Sprintf("%s\n-----", summary.Summary))
 	return nil
 }
 
 func (a *Activities) deployRenderSteps(ctx context.Context, spec deployment.DeploymentSpec, workspaceID string) ([]deployment.CreatedResource, error) {
-	dockerGen := deployment.NewDockerGenerator()
-	d := render.NewQueuedDeployment(a.renderClient, &spec, dockerGen, true)
+	dockerGen := deployment.NewDockerGenerator(a.uiWriter)
+	d := render.NewQueuedDeployment(a.renderClient, &spec, dockerGen, true, a.uiWriter)
 	steps := d.GenerateAPISteps(workspaceID)
-	stepExecutor := render.NewStepExecutor(a.renderClient)
+	stepExecutor := render.NewStepExecutor(a.renderClient, a.uiWriter)
 	createdResources, err := stepExecutor.ExecuteSteps(ctx, steps)
 	if err != nil {
 		var httpErr *render.HTTPError
@@ -157,7 +170,7 @@ func (a *Activities) isURLLive(ctx context.Context, url string) error {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
-
+	a.uiWriter.SendStatus("deploying", "Waiting for URL to be live...")
 	resp, err := client.Get(url)
 	if err != nil {
 		return errors.Errorf("failed to make GET request to %s: %w", url, err)
@@ -167,7 +180,7 @@ func (a *Activities) isURLLive(ctx context.Context, url string) error {
 	if resp.StatusCode > 300 {
 		return errors.Errorf("received non-success status code %d from %s", resp.StatusCode, url)
 	}
-
+	a.uiWriter.SendStatusComplete("deploying", "✅ URL is live")
 	return nil
 }
 
@@ -184,7 +197,7 @@ func (a *Activities) summarizeError(ctx context.Context, error string, input dep
 		Name:         input.Spec.Name,
 		StartCommand: input.Spec.StartCommand,
 	}
-	log.Println(error)
+	a.uiWriter.SendStatus("summarizing", "Creating next steps...")
 	summary, err := baml_client.SummarizeDeployError(ctx, error, intent, spec, runtime.GOOS)
 	if err != nil {
 		return deployError{}, errors.Errorf("failed to summarize error: %w", err)
@@ -199,13 +212,14 @@ func (a *Activities) summarizeError(ctx context.Context, error string, input dep
 			CliCommand:  r.CliCommand,
 		}
 	}
+	a.uiWriter.SendStatusComplete("summarizing", "✅ Errors summarized")
 	log.Printf("Error summary: %s", deployError.Summary)
 	log.Printf("Remediations: %v", deployError.Remediations)
 	return deployError, nil
 }
 
 func (a *Activities) estimateRenderCosts(_ context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	ra := render.NewRenderDeploymentAdapter(a.renderClient)
+	ra := render.NewRenderDeploymentAdapter(a.renderClient, a.uiWriter)
 	costs, err := ra.EstimateCost(&spec, strategy)
 	if err != nil {
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)

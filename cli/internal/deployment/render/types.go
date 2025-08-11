@@ -6,8 +6,8 @@ import (
 
 // RenderAPIStep interface for all deployment steps
 type RenderAPIStep interface {
-	Execute(ctx context.Context, client RenderClient, stepResults map[string]interface{}) (interface{}, error)
-	Rollback(ctx context.Context, client RenderClient, stepResults map[string]interface{}) error
+	Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error)
+	Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error
 	GetID() string
 	GetDescription() string
 	GetDependencies() []string

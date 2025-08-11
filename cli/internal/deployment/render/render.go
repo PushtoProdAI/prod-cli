@@ -9,6 +9,7 @@ import (
 
 	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/output"
 )
 
 const (
@@ -59,12 +60,17 @@ var fallbackPricing = RenderPricing{
 type RenderDeploymentAdapter struct {
 	client          RenderClient
 	dockerGenerator *deployment.DockerGenerator
+	writer          output.Writer
 }
 
-func NewRenderDeploymentAdapter(client RenderClient) *RenderDeploymentAdapter {
+func NewRenderDeploymentAdapter(client RenderClient, writer output.Writer) *RenderDeploymentAdapter {
+	if writer == nil {
+		writer = output.NewNoOpWriter()
+	}
 	return &RenderDeploymentAdapter{
 		client:          client,
-		dockerGenerator: deployment.NewDockerGenerator(),
+		dockerGenerator: deployment.NewDockerGenerator(writer),
+		writer:          writer,
 	}
 }
 
@@ -81,9 +87,11 @@ func (rda *RenderDeploymentAdapter) GenerateArtifacts(spec *deployment.Deploymen
 
 	switch strategy {
 	case deployment.StrategyRenderBlueprint:
-		return NewBlueprintDeployment(rda.client, spec, rda.dockerGenerator, useDockerfile), nil
+		deployment := NewBlueprintDeployment(rda.client, spec, rda.dockerGenerator, useDockerfile, rda.writer)
+		return deployment, nil
 	case deployment.StrategyRenderQueued:
-		return NewQueuedDeployment(rda.client, spec, rda.dockerGenerator, useDockerfile), nil
+		deployment := NewQueuedDeployment(rda.client, spec, rda.dockerGenerator, useDockerfile, rda.writer)
+		return deployment, nil
 	default:
 		return nil, fmt.Errorf("unsupported strategy: %s", strategy)
 	}

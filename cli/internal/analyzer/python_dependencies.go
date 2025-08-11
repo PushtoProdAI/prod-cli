@@ -28,17 +28,17 @@ type PyProjectToml struct {
 	} `toml:"build-system"`
 	Tool struct {
 		Poetry struct {
-			Name         string                 `toml:"name"`
-			Version      string                 `toml:"version"`
-			Dependencies map[string]interface{} `toml:"dependencies"`
+			Name         string         `toml:"name"`
+			Version      string         `toml:"version"`
+			Dependencies map[string]any `toml:"dependencies"`
 		} `toml:"poetry"`
 	} `toml:"tool"`
 }
 
 // Pipfile represents the structure of Pipfile
 type Pipfile struct {
-	Packages    map[string]interface{} `toml:"packages"`
-	DevPackages map[string]interface{} `toml:"dev-packages"`
+	Packages    map[string]any `toml:"packages"`
+	DevPackages map[string]any `toml:"dev-packages"`
 }
 
 func (p *PythonAnalyzer) extractDependencies() ([]Dependency, error) {

@@ -20,6 +20,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/meroxa/prod/cli/internal/backend"
+	"github.com/meroxa/prod/cli/internal/output"
 )
 
 type DockerArtifacts struct {
@@ -58,12 +59,17 @@ type DockerGenerator struct {
 	templates map[string]*template.Template
 	client    *client.Client
 	beClient  *backend.Client
+	writer    output.Writer
 }
 
-func NewDockerGenerator() *DockerGenerator {
+func NewDockerGenerator(writer output.Writer) *DockerGenerator {
+	if writer == nil {
+		writer = output.NewNoOpWriter()
+	}
 	dg := &DockerGenerator{
 		templates: make(map[string]*template.Template),
 		beClient:  backend.NewClient(),
+		writer:    writer,
 	}
 	dg.initTemplates()
 
@@ -391,7 +397,8 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 	var imageID string
 
 	// Create a custom writer to capture output
-	output := io.MultiWriter(os.Stdout, buildOutput)
+	writerAdapter := &writerToIOWriter{writer: dg.writer}
+	output := io.MultiWriter(writerAdapter, buildOutput)
 
 	// Create auxCallback to capture the built image ID
 	auxCallback := func(msg jsonmessage.JSONMessage) {
@@ -422,7 +429,7 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 		}
 	}
 
-	fmt.Printf("✓ Successfully built image: %s\n", artifacts.ImageName+":latest")
+	dg.writer.Printf("✓ Successfully built image: %s\n", artifacts.ImageName+":latest")
 
 	return &DockerBuildResult{
 		ImageName:   artifacts.ImageName + ":latest",
@@ -434,7 +441,7 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 
 // GenerateAndBuild generates Dockerfile and builds the image in one step
 func (dg *DockerGenerator) GenerateAndBuild(ctx context.Context, spec *DeploymentSpec, buildContext string) (*DockerBuildResult, error) {
-	fmt.Printf("Generating Dockerfile for %s (%s)...\n", spec.Name, spec.Language)
+	dg.writer.Printf("Generating Dockerfile for %s (%s)...\n", spec.Name, spec.Language)
 
 	// Generate artifacts first
 	artifacts, err := dg.GenerateDockerfile(spec)
@@ -453,7 +460,7 @@ func (dg *DockerGenerator) GenerateAndBuild(ctx context.Context, spec *Deploymen
 
 	// If Docker is available, build the image
 	if dg.client != nil {
-		fmt.Printf("Building Docker image...\n")
+		dg.writer.Printf("Building Docker image...\n")
 		return dg.BuildImage(ctx, artifacts, buildContext)
 	}
 
@@ -551,7 +558,7 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 		sourceImage = sourceImage + ":latest"
 	}
 
-	fmt.Printf("Tagging image for registry...\n")
+	dg.writer.Printf("Tagging image for registry...\n")
 
 	// Tag the image for the registry
 	err := dg.client.ImageTag(ctx, sourceImage, registryImageTag)
@@ -578,7 +585,7 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 		RegistryAuth: authStr,
 	}
 
-	fmt.Printf("Pushing image to registry...\n")
+	dg.writer.Printf("Pushing image to registry...\n")
 
 	// Push the image
 	pushResponse, err := dg.client.ImagePush(ctx, registryImageTag, pushOptions)
@@ -589,7 +596,8 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 
 	// Read push output and parse JSON messages
 	pushOutput := &strings.Builder{}
-	output := io.MultiWriter(os.Stdout, pushOutput)
+	writerAdapter := &writerToIOWriter{writer: dg.writer}
+	output := io.MultiWriter(writerAdapter, pushOutput)
 
 	// Use the Docker SDK's jsonmessage package for proper parsing
 	err = jsonmessage.DisplayJSONMessagesStream(pushResponse, output, 0, false, nil)
@@ -597,7 +605,7 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 		return nil, fmt.Errorf("docker push failed: %w", err)
 	}
 
-	fmt.Printf("✓ Successfully pushed image: %s\n", registryImageTag)
+	dg.writer.Printf("✓ Successfully pushed image: %s\n", registryImageTag)
 
 	return &DockerPushResult{
 		PushedImageURL: registryImageTag,
@@ -612,7 +620,7 @@ func (dg *DockerGenerator) GetPullCredentials(ctx context.Context, tenantId stri
 
 // BuildAndPush is a convenience method that generates, builds, and pushes a Docker image in one step
 func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpec, buildContext string, tenantId string) (*DockerBuildResult, *DockerPushResult, error) {
-	fmt.Printf("Starting Docker build and push for %s...\n", spec.Name)
+	dg.writer.Printf("Starting Docker build and push for %s...\n", spec.Name)
 
 	// Build the image first
 	buildResult, err := dg.GenerateAndBuild(ctx, spec, buildContext)
@@ -638,6 +646,16 @@ func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpe
 	}
 
 	return buildResult, pushResult, nil
+}
+
+// writerToIOWriter adapts output.Writer to io.Writer
+type writerToIOWriter struct {
+	writer output.Writer
+}
+
+func (w *writerToIOWriter) Write(p []byte) (n int, err error) {
+	w.writer.Printf("%s", string(p))
+	return len(p), nil
 }
 
 // stringPtr returns a pointer to a string

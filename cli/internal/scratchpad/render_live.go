@@ -83,7 +83,7 @@ func LiveTestRenderDeployment() {
 		BuildCommand: "",
 		StartCommand: projectSpec.StartCommand,
 		Services:     []deployment.Service{},
-		Metadata:     make(map[string]interface{}),
+		Metadata:     make(map[string]any),
 	}
 
 	// Add metadata for deployment
@@ -258,18 +258,18 @@ func TestRenderDeploymentOnly() {
 
 	// Create HTTP client for real API calls
 	httpClient := render.NewHTTPRenderClient(apiKey)
-	
+
 	// Get workspace first
 	ctx := context.Background()
 	workspaces, err := httpClient.ListWorkspaces(ctx)
 	if err != nil {
 		log.Fatalf("❌ Failed to list workspaces: %v", err)
 	}
-	
+
 	if len(workspaces) == 0 {
 		log.Fatal("❌ No workspaces found")
 	}
-	
+
 	ownerID := workspaces[0].Owner.ID
 	fmt.Printf("Using workspace: %s (ID: %s)\n", workspaces[0].Owner.Name, ownerID)
 
@@ -287,17 +287,17 @@ func TestRenderDeploymentOnly() {
 		ownerID,
 		[]string{}, // No dependencies
 	)
-	
-	registryCred, err := registryCredStep.Execute(ctx, httpClient, map[string]interface{}{})
+
+	registryCred, err := registryCredStep.Execute(ctx, httpClient, map[string]any{})
 	if err != nil {
 		log.Fatalf("❌ Failed to create registry credential: %v", err)
 	}
-	
+
 	fmt.Printf("✅ Created registry credential: %s\n", registryCred.(*render.RegistryCredential).ID)
 
 	// Step 2: Create web service
 	fmt.Println("\n📋 Step 2: Creating web service...")
-	
+
 	// Prepare the web service step
 	webServiceStep := render.NewCreateWebServiceStep(
 		"step-2",
@@ -305,31 +305,31 @@ func TestRenderDeploymentOnly() {
 		"my-node-app-web",
 		"web_service",
 		ownerID,
-		"",  // No build command for Docker
-		"",  // No start command for Docker
+		"", // No build command for Docker
+		"", // No start command for Docker
 		"docker",
-		"",  // No dockerfile path
+		"",                 // No dockerfile path
 		"mock-docker-step", // Set a non-empty docker image step ID to trigger Docker path
-		"step-1", // Registry credential step ID
+		"step-1",           // Registry credential step ID
 		tenantID,
 		map[string]string{}, // No env vars
 		[]string{},          // No connection steps
 		[]string{"step-1"},  // Depends on registry credential
 	)
-	
+
 	// Execute with step results containing the registry credential
-	stepResults := map[string]interface{}{
+	stepResults := map[string]any{
 		"step-1": registryCred,
 	}
-	
+
 	webService, err := webServiceStep.Execute(ctx, httpClient, stepResults)
 	if err != nil {
 		log.Fatalf("❌ Failed to create web service: %v", err)
 	}
-	
+
 	renderService := webService.(*render.RenderService)
 	fmt.Printf("✅ Created web service: %s (ID: %s)\n", renderService.Name, renderService.ID)
-	
+
 	fmt.Println("\n✅ Render deployment test completed successfully!")
 	fmt.Println("\n🎯 What was created:")
 	fmt.Println("  - Registry credential for pulling from ECR")
