@@ -206,6 +206,9 @@ func (w *UnifiedWriter) shouldStartSpinner(message string) bool {
 		"🔄 Attempting resource-based rollback",
 		// Deployment step execution
 		"🔄 Executing:",
+		// Authentication operations
+		"🔍 Validating API key",
+		"🔗 Connecting to Render authentication server",
 	}
 
 	for _, trigger := range spinnerTriggers {
@@ -245,6 +248,9 @@ func (w *UnifiedWriter) extractSpinnerMessage(message string) string {
 		// Render operations
 		"🔄 Attempting rollback":                "Rolling back deployment...",
 		"🔄 Attempting resource-based rollback": "Cleaning up resources...",
+		// Authentication operations
+		"🔍 Validating API key":                         "Validating API key...",
+		"🔗 Connecting to Render authentication server": "Connecting to authentication server...",
 	}
 
 	for trigger, spinnerMsg := range messageMap {

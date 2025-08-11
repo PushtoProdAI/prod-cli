@@ -3,6 +3,7 @@ package render
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/output"
@@ -15,10 +16,10 @@ type QueuedDeployment struct {
 	useDockerfile   bool
 	buildContext    string
 	tenantID        string
-	writer          output.Writer
+	writer          io.Writer
 }
 
-func NewQueuedDeployment(client RenderClient, spec *deployment.DeploymentSpec, dockerGenerator *deployment.DockerGenerator, useDockerfile bool, writer output.Writer) *QueuedDeployment {
+func NewQueuedDeployment(client RenderClient, spec *deployment.DeploymentSpec, dockerGenerator *deployment.DockerGenerator, useDockerfile bool, writer io.Writer) *QueuedDeployment {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}
@@ -62,7 +63,7 @@ func (qd *QueuedDeployment) Deploy(ctx context.Context) ([]deployment.CreatedRes
 
 	// Execute steps with dependency resolution
 	stepExecutor := NewStepExecutor(qd.client, qd.writer)
-	return stepExecutor.ExecuteSteps(ctx, steps)
+	return stepExecutor.ExecuteSteps(ctx, steps, qd.writer)
 }
 
 func (qd *QueuedDeployment) GenerateAPISteps(ownerID string) []RenderAPIStep {

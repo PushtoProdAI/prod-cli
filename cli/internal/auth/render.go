@@ -291,11 +291,9 @@ func (ra *RenderAuth) promptForAPIKey(ctx context.Context) error {
 
 	// Validate the API key by making a test call
 	unifiedWriter := ra.getUnifiedWriter()
-	unifiedWriter.StartSpinner("🔍 Validating API key...")
+	fmt.Fprintf(unifiedWriter, "🔍 Validating API key...\n")
 
 	valid, err := ra.ValidateAPIKey(ctx)
-
-	unifiedWriter.StopSpinner()
 	if err != nil {
 		return fmt.Errorf("failed to validate API key: %w", err)
 	}
@@ -387,11 +385,9 @@ func (ra *RenderAuth) PerformOAuthLogin(ctx context.Context) error {
 
 	// Try to create device grant with automatic fallback
 	unifiedWriter := ra.getUnifiedWriter()
-	unifiedWriter.StartSpinner("🔗 Connecting to Render authentication server...")
+	fmt.Fprintf(unifiedWriter, "🔗 Connecting to Render authentication server...\n")
 
 	deviceGrant, err := oauthClient.CreateGrant(ctx)
-
-	unifiedWriter.StopSpinner()
 	if err != nil {
 		ra.printf("❌ Failed to connect to Render authentication server\n")
 		ra.printf("Error details: %v\n", err)

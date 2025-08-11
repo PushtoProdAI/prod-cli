@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	// Test projects to analyze
+	out := os.Stdout
 	testProjects := []string{
 		"../test-projects/flask-app",
 		"../test-projects/django-app",
@@ -20,55 +20,55 @@ func main() {
 		"../test-projects/node-app",
 	}
 
-	fmt.Println("🔍 Project Analyzer Test")
-	fmt.Println("========================")
+	fmt.Fprintf(out, "🔍 Project Analyzer Test\n")
+	fmt.Fprintf(out, "========================\n")
 
 	for _, projectPath := range testProjects {
-		fmt.Printf("📁 Analyzing: %s\n", projectPath)
-		fmt.Println("─" + strings.Repeat("─", len(projectPath)+10))
+		fmt.Fprintf(out, "📁 Analyzing: %s\n", projectPath)
+		fmt.Fprintf(out, "─%s\n", strings.Repeat("─", len(projectPath)+10))
 
 		// Check if project exists
 		if _, err := os.Stat(projectPath); os.IsNotExist(err) {
-			fmt.Printf("❌ Project not found: %s\n\n", projectPath)
+			fmt.Fprintf(out, "❌ Project not found: %s\n\n", projectPath)
 			continue
 		}
 
 		// Get analyzer for the project
 		analyzerPtr, err := analyzer.GetAnalyzer(projectPath)
 		if err != nil {
-			fmt.Printf("❌ Failed to get analyzer: %v\n\n", err)
+			fmt.Fprintf(out, "❌ Failed to get analyzer: %v\n\n", err)
 			continue
 		}
 
 		// Analyze the project
 		spec, err := analyzerPtr.Analyze()
 		if err != nil {
-			fmt.Printf("❌ Failed to analyze project: %v\n\n", err)
+			fmt.Fprintf(out, "❌ Failed to analyze project: %v\n\n", err)
 			continue
 		}
 
 		// Display results
-		fmt.Printf("✅ Project: %s\n", spec.Name)
-		fmt.Printf("🔤 Language: %s\n", spec.Language)
+		fmt.Fprintf(out, "✅ Project: %s\n", spec.Name)
+		fmt.Fprintf(out, "🔤 Language: %s\n", spec.Language)
 
 		if len(spec.ServiceRequirements) > 0 {
-			fmt.Printf("🔧 Required Services:\n")
+			fmt.Fprintf(out, "🔧 Required Services:\n")
 			for _, service := range spec.ServiceRequirements {
-				fmt.Printf("  • %s (%s)\n", service.Type, service.Provider)
+				fmt.Fprintf(out, "  • %s (%s)\n", service.Type, service.Provider)
 			}
 		} else {
-			fmt.Printf("🔧 Required Services: None detected\n")
+			fmt.Fprintf(out, "🔧 Required Services: None detected\n")
 		}
 
 		// Show JSON output
-		fmt.Printf("📄 JSON Output:\n")
+		fmt.Fprintf(out, "📄 JSON Output:\n")
 		jsonData, err := json.MarshalIndent(spec, "", "  ")
 		if err != nil {
-			fmt.Printf("❌ Failed to marshal JSON: %v\n", err)
+			fmt.Fprintf(out, "❌ Failed to marshal JSON: %v\n", err)
 		} else {
-			fmt.Println(string(jsonData))
+			fmt.Fprintf(out, "%s\n", string(jsonData))
 		}
 
-		fmt.Println()
+		fmt.Fprintf(out, "\n")
 	}
 }

@@ -143,7 +143,7 @@ func (a *Activities) deployRenderSteps(ctx context.Context, spec deployment.Depl
 	d := render.NewQueuedDeployment(a.renderClient, &spec, dockerGen, true, a.uiWriter)
 	steps := d.GenerateAPISteps(workspaceID)
 	stepExecutor := render.NewStepExecutor(a.renderClient, a.uiWriter)
-	createdResources, err := stepExecutor.ExecuteSteps(ctx, steps)
+	createdResources, err := stepExecutor.ExecuteSteps(ctx, steps, a.uiWriter)
 	if err != nil {
 		var httpErr *render.HTTPError
 		if errors.As(err, &httpErr) {

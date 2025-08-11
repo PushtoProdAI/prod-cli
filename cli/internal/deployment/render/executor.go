@@ -3,6 +3,7 @@ package render
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/output"
@@ -13,10 +14,10 @@ type StepExecutor struct {
 	stepResults      map[string]any
 	createdResources []deployment.CreatedResource
 	executedSteps    []RenderAPIStep
-	writer           output.Writer
+	writer           io.Writer
 }
 
-func NewStepExecutor(client RenderClient, writer output.Writer) *StepExecutor {
+func NewStepExecutor(client RenderClient, writer io.Writer) *StepExecutor {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}
@@ -29,7 +30,7 @@ func NewStepExecutor(client RenderClient, writer output.Writer) *StepExecutor {
 	}
 }
 
-func (se *StepExecutor) ExecuteSteps(ctx context.Context, steps []RenderAPIStep) ([]deployment.CreatedResource, error) {
+func (se *StepExecutor) ExecuteSteps(ctx context.Context, steps []RenderAPIStep, out io.Writer) ([]deployment.CreatedResource, error) {
 	executed := make(map[string]bool)
 
 	for len(executed) < len(steps) {
@@ -43,20 +44,20 @@ func (se *StepExecutor) ExecuteSteps(ctx context.Context, steps []RenderAPIStep)
 			// Check if all dependencies are satisfied
 			if se.dependenciesSatisfied(step.GetDependencies(), executed) {
 				// Show step start message (will trigger spinner automatically)
-				se.writer.Printf("🔄 Executing: %s...\n", step.GetDescription())
+				fmt.Fprintf(out, "🔄 Executing: %s...\n", step.GetDescription())
 
 				if err := se.ExecuteStep(ctx, step); err != nil {
-					se.writer.Printf("✗ Failed: %s - %v\n", step.GetDescription(), err)
+					fmt.Fprintf(out, "✗ Failed: %s - %v\n", step.GetDescription(), err)
 					// Attempt rollback of created resources
-					if rollbackErr := se.rollback(ctx); rollbackErr != nil {
-						se.writer.Printf("⚠️  Rollback failed: %v\n", rollbackErr)
+					if rollbackErr := se.rollback(ctx, out); rollbackErr != nil {
+						fmt.Fprintf(out, "⚠️  Rollback failed: %v\n", rollbackErr)
 					}
 					return se.createdResources, fmt.Errorf("failed to execute step %s: %w", step.GetID(), err)
 				}
 
 				executed[step.GetID()] = true
 				progress = true
-				se.writer.Printf("✓ Completed: %s\n", step.GetDescription())
+				fmt.Fprintf(out, "✓ Completed: %s\n", step.GetDescription())
 			}
 		}
 

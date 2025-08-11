@@ -13,10 +13,10 @@ type BlueprintDeployment struct {
 	spec            *deployment.DeploymentSpec
 	dockerGenerator *deployment.DockerGenerator
 	useDockerfile   bool
-	writer          output.Writer
+	writer          output.UnifiedOutputWriter
 }
 
-func NewBlueprintDeployment(client RenderClient, spec *deployment.DeploymentSpec, dockerGenerator *deployment.DockerGenerator, useDockerfile bool, writer output.Writer) *BlueprintDeployment {
+func NewBlueprintDeployment(client RenderClient, spec *deployment.DeploymentSpec, dockerGenerator *deployment.DockerGenerator, useDockerfile bool, writer output.UnifiedOutputWriter) *BlueprintDeployment {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}

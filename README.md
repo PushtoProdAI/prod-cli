@@ -94,3 +94,129 @@ If you encounter issues:
 ## Updating Prompts
    1. We are currently using BAML for handling our LLM interations. BAML requires a generation step to update the prompts and clients.
    2. When you change a prompt, run `make generate` from `prod/cli` and this will generate updated code. When things are working, please commit this code. 
+
+## Output Pattern Guide
+
+This explains how to write output in the codebase using the standard `fmt.Fprintf(out, ...)` pattern.
+
+## Basic Pattern
+
+Use `fmt.Fprintf(out, ...)` for all output throughout the codebase:
+
+```go
+func DoSomething(ctx context.Context, out io.Writer) error {
+    // Regular output
+    fmt.Fprintf(out, "Starting operation...\n")
+    
+    // Do work...
+    
+    fmt.Fprintf(out, "✅ Operation completed successfully\n")
+    return nil
+}
+```
+
+## Spinner Messages
+
+Spinners are triggered automatically based on message patterns. Use these patterns to get automatic spinners in TUI mode:
+
+### Automatic Spinner Triggers
+
+These patterns will automatically start spinners:
+
+```go
+// Docker operations
+fmt.Fprintf(out, "Generating Dockerfile...\n")
+fmt.Fprintf(out, "Building Docker image...\n")
+fmt.Fprintf(out, "Tagging image for registry...\n")
+fmt.Fprintf(out, "Pushing image to registry...\n")
+
+// Deployment operations
+fmt.Fprintf(out, "🔄 Executing: Creating web service...\n")
+fmt.Fprintf(out, "🔄 Executing: Setting up database...\n")
+
+// Authentication
+fmt.Fprintf(out, "Checking Render authentication...\n")
+fmt.Fprintf(out, "🔍 Validating API key...\n")
+```
+
+### Automatic Spinner Stop Triggers
+
+These patterns will automatically stop spinners:
+
+```go
+// Success messages
+fmt.Fprintf(out, "✓ Successfully built image\n")
+fmt.Fprintf(out, "✅ API key validated successfully\n")
+fmt.Fprintf(out, "✅ Authentication successful\n")
+
+// Error messages
+fmt.Fprintf(out, "❌ Failed to build image: %v\n", err)
+fmt.Fprintf(out, "✗ Failed to authenticate\n")
+fmt.Fprintf(out, "Error: %v\n", err)
+```
+
+## Examples
+
+### Simple Service Function
+
+```go
+func DeployService(ctx context.Context, serviceName string, out io.Writer) error {
+    // This will trigger a spinner automatically
+    fmt.Fprintf(out, "🔄 Executing: Deploying %s...\n", serviceName)
+    
+    // Simulate work
+    time.Sleep(2 * time.Second)
+    
+    // This will stop the spinner automatically
+    fmt.Fprintf(out, "✅ Successfully deployed %s\n", serviceName)
+    
+    // Regular output continues
+    fmt.Fprintf(out, "Service URL: https://%s.example.com\n", serviceName)
+    return nil
+}
+```
+
+### Error Handling
+
+```go
+func BuildImage(ctx context.Context, imageName string, out io.Writer) error {
+    fmt.Fprintf(out, "Building Docker image...\n")
+    
+    if err := doBuild(); err != nil {
+        // This stops any active spinner
+        fmt.Fprintf(out, "❌ Failed to build image: %v\n", err)
+        return err
+    }
+    
+    fmt.Fprintf(out, "✓ Successfully built image: %s\n", imageName)
+    return nil
+}
+```
+
+## Benefits
+
+1. **Consistent API**: Same pattern everywhere - `fmt.Fprintf(out, ...)`
+2. **Automatic Spinners**: Spinners work automatically based on message patterns
+3. **Mode Flexibility**: Works in TUI mode (with spinners) and console mode (plain text)
+4. **Easy Testing**: Can pass `bytes.Buffer` or `io.Discard` for tests
+5. **Standard Go**: Uses standard library functions developers already know
+
+## Testing
+
+For tests, you can easily capture or discard output:
+
+```go
+func TestDeployService(t *testing.T) {
+    var buf bytes.Buffer
+    err := DeployService(context.Background(), "test-service", &buf)
+    
+    assert.NoError(t, err)
+    output := buf.String()
+    assert.Contains(t, output, "Successfully deployed test-service")
+}
+
+// Or discard output in tests that don't need it
+func TestSomethingElse(t *testing.T) {
+    err := SomeFunction(context.Background(), io.Discard)
+    assert.NoError(t, err)
+}

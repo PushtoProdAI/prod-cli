@@ -55,12 +55,12 @@ type HTTPRenderClient struct {
 	baseURL    string
 	httpClient *http.Client
 	userAgent  string
-	writer     output.Writer
+	writer     io.Writer
 }
 
 // NewHTTPRenderClient creates a new HTTP-based Render client
 // The apiKey parameter is ignored - the client will dynamically read from RENDER_API_KEY environment variable
-func NewHTTPRenderClient(apiKey string, writer output.Writer) *HTTPRenderClient {
+func NewHTTPRenderClient(apiKey string, writer io.Writer) *HTTPRenderClient {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}
@@ -121,7 +121,7 @@ func (c *HTTPRenderClient) handleResponse(resp *http.Response, result any) error
 	if resp.StatusCode == 429 {
 		retryAfter := c.parseRetryAfter(resp.Header)
 		message := c.formatRateLimitMessage(retryAfter)
-		c.writer.Printf("%s\n", message)
+		fmt.Fprintf(c.writer, "%s\n", message)
 		os.Exit(1)
 	}
 
