@@ -9,7 +9,7 @@ import (
 	"github.com/conduitio/ecdysis"
 	"github.com/meroxa/prod/cli/internal/agent"
 	"github.com/meroxa/prod/cli/internal/output"
-	"github.com/meroxa/prod/cli/tui"
+	"github.com/meroxa/prod/cli/internal/tui"
 )
 
 var (
