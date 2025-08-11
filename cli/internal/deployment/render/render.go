@@ -60,10 +60,10 @@ var fallbackPricing = RenderPricing{
 type RenderDeploymentAdapter struct {
 	client          RenderClient
 	dockerGenerator *deployment.DockerGenerator
-	writer          output.Writer
+	writer          output.UnifiedOutputWriter
 }
 
-func NewRenderDeploymentAdapter(client RenderClient, writer output.Writer) *RenderDeploymentAdapter {
+func NewRenderDeploymentAdapter(client RenderClient, writer output.UnifiedOutputWriter) *RenderDeploymentAdapter {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}
