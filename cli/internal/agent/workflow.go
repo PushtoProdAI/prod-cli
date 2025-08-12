@@ -38,12 +38,12 @@ type Workflows struct {
 	Acts         *Activities
 	registry     workflowext.Registry
 	renderClient render.RenderClient
-	uiWriter     output.UnifiedOutputWriter
+	uiWriter     output.StatusWriter
 }
 
 var _ workflowext.Registerer = (*Workflows)(nil)
 
-func NewWorkflows(renderClient render.RenderClient, beClient *backend.Client, uiWriter output.UnifiedOutputWriter) *Workflows {
+func NewWorkflows(renderClient render.RenderClient, beClient *backend.Client, uiWriter output.StatusWriter) *Workflows {
 	return &Workflows{
 		Acts:         &Activities{renderClient: renderClient, beClient: beClient, uiWriter: uiWriter},
 		renderClient: renderClient,

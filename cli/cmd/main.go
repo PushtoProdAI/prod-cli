@@ -38,19 +38,27 @@ func main() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Create a writer based on environment or configuration
-	// You can easily swap this to output.WriterTypeConsole for simple console output
+	// Determine writer type based on environment
 	writerType := output.WriterTypeTUI
 	if os.Getenv("PROD_CONSOLE_MODE") == "true" {
 		writerType = output.WriterTypeConsole
 	}
-	unifiedWriter := output.NewWriter(writerType)
+
+	// Create a writer that can be updated later for TUI mode
+	var statusWriter output.StatusWriter
+	if writerType == output.WriterTypeConsole {
+		statusWriter = output.NewConsoleWriter()
+	} else {
+		// For TUI mode, create a proxy writer that starts with console writer
+		// and will be updated to TeaWriter when TUI starts
+		statusWriter = output.NewProxyWriter(output.NewConsoleWriter())
+	}
 
 	apiKey := os.Getenv("RENDER_API_KEY")
 	// Create HTTP client for real API calls
-	renderClient := render.NewHTTPRenderClient(apiKey, unifiedWriter)
+	renderClient := render.NewHTTPRenderClient(apiKey, statusWriter)
 	beClient := be.NewClient()
-	provider, err := workflowext.InitWorkflows(ctx, cfg, mux, agent.NewWorkflows(renderClient, beClient, unifiedWriter))
+	provider, err := workflowext.InitWorkflows(ctx, cfg, mux, agent.NewWorkflows(renderClient, beClient, statusWriter))
 	if err != nil {
 		log.Fatalf("failed to initialize workflows: %v", err)
 	}
@@ -68,7 +76,11 @@ func main() {
 	}
 	e := ecdysis.New()
 	a := agent.NewAgent(provider.Client, true)
-	cmd := e.MustBuildCobraCommand(&root.RootCommand{Agent: a, UnifiedWriter: unifiedWriter})
+	cmd := e.MustBuildCobraCommand(&root.RootCommand{
+		Agent:        a,
+		StatusWriter: statusWriter,
+		WriterType:   writerType,
+	})
 	if err := cmd.Execute(); err != nil {
 		log.Fatal(err)
 	}

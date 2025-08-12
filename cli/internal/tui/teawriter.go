@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,23 +30,9 @@ func (w *TeaWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Printf provides formatted output (implements output.Writer interface)
-func (w *TeaWriter) Printf(format string, args ...any) {
-	message := fmt.Sprintf(format, args...)
-	w.Write([]byte(message))
-}
-
-// Println provides line output (implements output.Writer interface)
-func (w *TeaWriter) Println(args ...any) {
-	message := fmt.Sprintln(args...)
-	w.Write([]byte(message))
-}
-
 // SendStatus sends a workflow status message with spinner logic
 func (w *TeaWriter) SendStatus(status, message string) {
-	w.mu.RLock()
-	shouldSpin := w.shouldShowSpinnerForStatus(status)
-	w.mu.RUnlock()
+	shouldSpin := output.ShouldShowSpinnerForStatus(status)
 
 	if shouldSpin {
 		w.mu.Lock()
@@ -105,132 +90,22 @@ func (w *TeaWriter) SetSpinnerController(controller output.SpinnerController) {
 // handleSpinnerLogic processes automatic spinner start/stop based on message content
 func (w *TeaWriter) handleSpinnerLogic(message string) {
 	// Check if this message should start a spinner
-	if w.shouldStartSpinner(message) {
-		spinnerMessage := w.extractSpinnerMessage(message)
-		w.mu.Lock()
+	if output.ShouldStartSpinner(message) {
+		spinnerMessage := output.ExtractSpinnerMessage(message)
 		w.send(SpinnerStartMsg{Message: spinnerMessage})
+		w.mu.Lock()
 		w.activeSpinner = spinnerMessage
 		w.mu.Unlock()
 		return // Don't write the original message
 	}
 
 	// Check if this message should stop a spinner
-	if w.shouldStopSpinner(message) && w.activeSpinner != "" {
-		w.mu.Lock()
+	if output.ShouldStopSpinner(message) && w.activeSpinner != "" {
 		w.send(SpinnerStopMsg{})
+		w.mu.Lock()
 		w.activeSpinner = ""
 		w.mu.Unlock()
 	}
-}
-
-// shouldShowSpinnerForStatus determines if a workflow status should show a spinner
-func (w *TeaWriter) shouldShowSpinnerForStatus(status string) bool {
-	spinnerStatuses := []string{
-		"planning",
-		"analyzing",
-		"summarizing",
-		"deploying",
-		"retrieving",
-	}
-
-	for _, spinnerStatus := range spinnerStatuses {
-		if status == spinnerStatus {
-			return true
-		}
-	}
-	return false
-}
-
-// shouldStartSpinner determines if a message should start a spinner
-func (w *TeaWriter) shouldStartSpinner(message string) bool {
-	spinnerTriggers := []string{
-		// Docker operations
-		"Generating Dockerfile",
-		"Building Docker image",
-		"Tagging image for registry",
-		"Pushing image to registry",
-		// Render operations
-		"🔄 Attempting rollback",
-		"🔄 Attempting resource-based rollback",
-		// Deployment step execution
-		"🔄 Executing:",
-		// Authentication
-		"Checking Render authentication",
-		"🔍 Validating API key",
-	}
-
-	for _, trigger := range spinnerTriggers {
-		if strings.Contains(message, trigger) {
-			return true
-		}
-	}
-	return false
-}
-
-// shouldStopSpinner determines if a message should stop a spinner
-func (w *TeaWriter) shouldStopSpinner(message string) bool {
-	stopTriggers := []string{
-		"✓ Successfully",
-		"✓ Completed",
-		"❌ Failed",
-		"✗ Failed",
-		"Error:",
-		"✅ API key validated successfully",
-		"✅ Authentication successful",
-	}
-
-	for _, trigger := range stopTriggers {
-		if strings.Contains(message, trigger) {
-			return true
-		}
-	}
-	return false
-}
-
-// extractSpinnerMessage extracts a friendly spinner message from the log message
-func (w *TeaWriter) extractSpinnerMessage(message string) string {
-	messageMap := map[string]string{
-		// Docker operations
-		"Generating Dockerfile":      "Generating Dockerfile...",
-		"Building Docker image":      "Building Docker image...",
-		"Tagging image for registry": "Tagging image for registry...",
-		"Pushing image to registry":  "Pushing image to registry...",
-		// Render operations
-		"🔄 Attempting rollback":                "Rolling back deployment...",
-		"🔄 Attempting resource-based rollback": "Cleaning up resources...",
-		// Authentication
-		"Checking Render authentication": "Checking authentication...",
-		"🔍 Validating API key":           "Validating API key...",
-	}
-
-	for trigger, spinnerMsg := range messageMap {
-		if strings.Contains(message, trigger) {
-			return spinnerMsg
-		}
-	}
-
-	// Handle deployment step execution messages
-	if strings.Contains(message, "🔄 Executing:") {
-		// Extract the step description from "🔄 Executing: Creating web service..."
-		parts := strings.SplitN(message, "🔄 Executing:", 2)
-		if len(parts) > 1 {
-			stepDesc := strings.TrimSpace(parts[1])
-			// Remove trailing "..." if present and add it back for consistency
-			stepDesc = strings.TrimSuffix(stepDesc, "...")
-			stepDesc = strings.TrimSuffix(stepDesc, "\n")
-			return stepDesc + "..."
-		}
-	}
-
-	// Fallback: extract the first part of the message
-	if strings.Contains(message, "...") {
-		parts := strings.Split(message, "...")
-		if len(parts) > 0 {
-			return strings.TrimSpace(parts[0]) + "..."
-		}
-	}
-
-	return "Working..."
 }
 
 func (w *TeaWriter) SendConfirmation(message string, callback func(bool)) {
@@ -292,6 +167,6 @@ func (w *TeaWriter) HideProgress() {
 
 // Ensure TeaWriter implements both interfaces
 var (
-	_ output.UnifiedOutputWriter = (*TeaWriter)(nil)
-	_ output.AuthInteractor      = (*TeaWriter)(nil)
+	_ output.StatusWriter   = (*TeaWriter)(nil)
+	_ output.AuthInteractor = (*TeaWriter)(nil)
 )

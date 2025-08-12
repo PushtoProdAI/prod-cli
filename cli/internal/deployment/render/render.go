@@ -3,6 +3,7 @@ package render
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"strings"
 	"time"
@@ -60,10 +61,10 @@ var fallbackPricing = RenderPricing{
 type RenderDeploymentAdapter struct {
 	client          RenderClient
 	dockerGenerator *deployment.DockerGenerator
-	writer          output.UnifiedOutputWriter
+	writer          io.Writer
 }
 
-func NewRenderDeploymentAdapter(client RenderClient, writer output.UnifiedOutputWriter) *RenderDeploymentAdapter {
+func NewRenderDeploymentAdapter(client RenderClient, writer io.Writer) *RenderDeploymentAdapter {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}

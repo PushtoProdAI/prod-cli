@@ -38,7 +38,7 @@ const (
 type Activities struct {
 	renderClient render.RenderClient
 	beClient     *backend.Client
-	uiWriter     output.UnifiedOutputWriter
+	uiWriter     output.StatusWriter
 }
 
 func (a *Activities) Activities() []workflowext.Activity {

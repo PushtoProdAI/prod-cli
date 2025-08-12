@@ -130,7 +130,7 @@ func NewModel(agent *agent.Agent) Model {
 
 func (m *Model) SetProgram(program *tea.Program) {
 	m.program = program
-	// Set up the agent with TeaWriter that implements UnifiedOutputWriter
+	// Set up the agent with TeaWriter that implements StatusWriter
 	if m.agent != nil {
 		teaWriter := NewTeaWriter(func(msg tea.Msg) {
 			program.Send(msg)
