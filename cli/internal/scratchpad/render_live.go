@@ -167,7 +167,7 @@ func LiveTestRenderDeployment() {
 }
 
 // TestWorkspaces tests listing workspaces
-func TestWorkspaces(out output.UnifiedOutputWriter) {
+func TestWorkspaces(out output.StatusWriter) {
 	apiKey := os.Getenv("RENDER_API_KEY")
 	if apiKey == "" {
 		log.Fatal("RENDER_API_KEY environment variable must be set")
@@ -190,7 +190,7 @@ func TestWorkspaces(out output.UnifiedOutputWriter) {
 }
 
 // TestDockerBuildLocal tests just the Docker build and push functionality
-func TestDockerBuildLocal(out output.UnifiedOutputWriter) {
+func TestDockerBuildLocal(out output.StatusWriter) {
 	tenantID := os.Getenv("TENANT_ID")
 	if tenantID == "" {
 		log.Fatal("TENANT_ID environment variable must be set for Docker testing")

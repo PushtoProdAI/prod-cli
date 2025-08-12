@@ -47,7 +47,7 @@ func (t *customTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 type RenderAuth struct {
 	client render.RenderClient
 	config *config.Config
-	output output.UnifiedOutputWriter
+	output io.Writer
 }
 
 // NewRenderAuth creates a new Render authentication handler
@@ -55,22 +55,15 @@ func NewRenderAuth(client render.RenderClient, writer io.Writer) *RenderAuth {
 	// Load existing config if available
 	cfg, _ := config.Load()
 
-	// Convert io.Writer to UnifiedOutputWriter
-	var unifiedOutput output.UnifiedOutputWriter
+	// Use provided writer or fallback to stdout
 	if writer == nil {
-		unifiedOutput = output.NewConsoleWriter() // Fallback to console writer
-	} else if uw, ok := writer.(output.UnifiedOutputWriter); ok {
-		unifiedOutput = uw
-	} else {
-		// Wrap the io.Writer in a UnifiedWriter
-		unifiedOutput = output.NewUnifiedWriter()
-		unifiedOutput.SetOutput(writer)
+		writer = os.Stdout
 	}
 
 	return &RenderAuth{
 		client: client,
 		config: cfg,
-		output: unifiedOutput,
+		output: writer,
 	}
 }
 
@@ -80,11 +73,6 @@ func (ra *RenderAuth) getAuthInteractor() output.AuthInteractor {
 		return ai
 	}
 	return nil
-}
-
-// getUnifiedWriter returns the UnifiedOutputWriter (replaces getTeaWriter)
-func (ra *RenderAuth) getUnifiedWriter() output.UnifiedOutputWriter {
-	return ra.output
 }
 
 // printf writes formatted output to the configured writer
@@ -290,8 +278,7 @@ func (ra *RenderAuth) promptForAPIKey(ctx context.Context) error {
 	os.Setenv("RENDER_API_KEY", apiKey)
 
 	// Validate the API key by making a test call
-	unifiedWriter := ra.getUnifiedWriter()
-	fmt.Fprintf(unifiedWriter, "🔍 Validating API key...\n")
+	fmt.Fprintf(ra.output, "🔍 Validating API key...\n")
 
 	valid, err := ra.ValidateAPIKey(ctx)
 	if err != nil {
@@ -384,8 +371,7 @@ func (ra *RenderAuth) PerformOAuthLogin(ctx context.Context) error {
 	oauthClient := oauth.NewClient(host)
 
 	// Try to create device grant with automatic fallback
-	unifiedWriter := ra.getUnifiedWriter()
-	fmt.Fprintf(unifiedWriter, "🔗 Connecting to Render authentication server...\n")
+	fmt.Fprintf(ra.output, "🔗 Connecting to Render authentication server...\n")
 
 	deviceGrant, err := oauthClient.CreateGrant(ctx)
 	if err != nil {

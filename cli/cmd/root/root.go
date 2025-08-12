@@ -32,11 +32,12 @@ type RootArgs struct {
 }
 
 type RootCommand struct {
-	flags         RootFlags
-	args          RootArgs
-	output        ecdysis.Output
-	Agent         *agent.Agent
-	UnifiedWriter output.UnifiedOutputWriter
+	flags        RootFlags
+	args         RootArgs
+	output       ecdysis.Output
+	Agent        *agent.Agent
+	StatusWriter output.StatusWriter
+	WriterType   output.WriterType
 }
 
 func (c *RootCommand) Args(args []string) error {
@@ -79,27 +80,41 @@ ______              _
 		return nil
 	}
 
-	// Initialize Bubble Tea model
-	model := tui.NewModel(c.Agent)
+	// Check if we should use TUI mode
+	if c.WriterType == output.WriterTypeTUI {
+		// Initialize Bubble Tea model
+		model := tui.NewModel(c.Agent)
 
-	// Create Bubble Tea program with mouse support
-	program := tea.NewProgram(&model, tea.WithMouseCellMotion())
+		// Create Bubble Tea program with mouse support
+		program := tea.NewProgram(&model, tea.WithMouseCellMotion())
 
-	// Set the program reference in the model
-	model.SetProgram(program)
+		// Set the program reference in the model
+		model.SetProgram(program)
 
-	// Connect the unified writer to the TUI
-	if c.UnifiedWriter != nil {
-		c.UnifiedWriter.SetOutput(c.Agent.UIOutput)
-		// Connect spinner controller to TeaWriter
+		// In TUI mode, use TeaWriter directly as the StatusWriter
 		if teaWriter, ok := c.Agent.UIOutput.(*tui.TeaWriter); ok {
-			c.UnifiedWriter.SetSpinnerController(teaWriter)
+			// If the StatusWriter is a ProxyWriter, update its target
+			if proxyWriter, ok := c.StatusWriter.(*output.ProxyWriter); ok {
+				proxyWriter.SetTarget(teaWriter)
+			} else {
+				c.StatusWriter = teaWriter
+			}
 		}
-	}
-	// Run the program
-	_, err := program.Run()
-	if err != nil {
-		return fmt.Errorf("failed to run TUI: %w", err)
+
+		// Run the TUI program
+		_, err := program.Run()
+		if err != nil {
+			return fmt.Errorf("failed to run TUI: %w", err)
+		}
+	} else {
+		// In console mode, just use the existing console writer
+		// and process the prompt directly
+		if c.args.prompt != "" {
+			c.processPrompt(c.args.prompt)
+			return nil
+		}
+		// For console mode without prompt, we might want to show help or handle differently
+		return fmt.Errorf("console mode requires a prompt argument")
 	}
 
 	return nil

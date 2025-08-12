@@ -7,176 +7,59 @@ import (
 	"sync"
 )
 
-// Writer provides a simple interface for writing output messages
-// without any knowledge of the underlying UI implementation
-type Writer interface {
-	Printf(format string, args ...any)
-	Println(args ...any)
-}
-
-// SpinnerController defines the interface for controlling spinners
-type SpinnerController interface {
-	StartSpinner(message string)
-	StopSpinner()
-}
-
-// UnifiedOutputWriter defines the interface for the unified output system
-type UnifiedOutputWriter interface {
-	io.Writer
-	Writer // Printf, Println methods
-
-	// Status methods (replaces StatusWriter)
-	SendStatus(status, message string)
-	SendStatusComplete(status, message string)
-
-	// Spinner methods
-	StartSpinner(message string)
-	StopSpinner()
-
-	// Configuration
-	SetOutput(output io.Writer)
-	SetSpinnerController(controller SpinnerController)
-}
-
-// UnifiedWriter is a single io.Writer compatible solution that handles all output types
-// It implements UnifiedOutputWriter interface
-type UnifiedWriter struct {
-	mu            sync.RWMutex
-	output        io.Writer
-	spinnerWriter SpinnerController
-	activeSpinner string
-}
-
-// Ensure UnifiedWriter implements UnifiedOutputWriter
-var _ UnifiedOutputWriter = (*UnifiedWriter)(nil)
-
-// NewUnifiedWriter creates a new unified output writer
-func NewUnifiedWriter() *UnifiedWriter {
-	return &UnifiedWriter{}
-}
-
-// SetOutput sets the underlying output writer (typically TeaWriter)
-func (w *UnifiedWriter) SetOutput(output io.Writer) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.output = output
-}
-
-// SetSpinnerController sets the spinner controller
-func (w *UnifiedWriter) SetSpinnerController(controller SpinnerController) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.spinnerWriter = controller
-}
-
-// Write implements io.Writer interface
-func (w *UnifiedWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	message := string(p)
-
-	// Handle spinner logic
-	w.handleSpinnerLogic(message)
-
-	// Write to output if available
-	if w.output != nil {
-		return w.output.Write(p)
-	}
-
-	return len(p), nil
-}
-
-// Printf provides formatted output (for compatibility with existing code)
-func (w *UnifiedWriter) Printf(format string, args ...any) {
-	message := fmt.Sprintf(format, args...)
-	w.Write([]byte(message))
-}
-
-// Println provides line output (for compatibility with existing code)
-func (w *UnifiedWriter) Println(args ...any) {
-	message := fmt.Sprintln(args...)
-	w.Write([]byte(message))
-}
-
-// SendStatus sends a workflow status message (replaces StatusWriter.SendStatus)
-func (w *UnifiedWriter) SendStatus(status, message string) {
-	w.mu.RLock()
-	shouldSpin := w.shouldShowSpinnerForStatus(status)
-	w.mu.RUnlock()
-
-	if shouldSpin {
-		w.mu.Lock()
-		if w.spinnerWriter != nil {
-			w.spinnerWriter.StartSpinner(message)
-			w.activeSpinner = message
-		}
-		w.mu.Unlock()
-		return // Don't write the message, just show spinner
-	}
-
-	w.Write([]byte(message + "\n"))
-}
-
-// SendStatusComplete sends a completion message and stops spinner (replaces StatusWriter.SendStatusComplete)
-func (w *UnifiedWriter) SendStatusComplete(status, message string) {
-	w.mu.Lock()
-	if w.spinnerWriter != nil && w.activeSpinner != "" {
-		w.spinnerWriter.StopSpinner()
-		w.activeSpinner = ""
-	}
-	w.mu.Unlock()
-
-	w.Write([]byte(message + "\n"))
-}
-
-// StartSpinner manually starts a spinner
-func (w *UnifiedWriter) StartSpinner(message string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if w.spinnerWriter != nil {
-		w.spinnerWriter.StartSpinner(message)
-		w.activeSpinner = message
-	}
-}
-
-// StopSpinner manually stops the spinner
-func (w *UnifiedWriter) StopSpinner() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if w.spinnerWriter != nil && w.activeSpinner != "" {
-		w.spinnerWriter.StopSpinner()
-		w.activeSpinner = ""
-	}
-}
-
-// handleSpinnerLogic processes automatic spinner start/stop based on message content
-func (w *UnifiedWriter) handleSpinnerLogic(message string) {
-	// Check if this message should start a spinner
-	if w.shouldStartSpinner(message) {
-		spinnerMessage := w.extractSpinnerMessage(message)
-		if w.spinnerWriter != nil {
-			w.spinnerWriter.StartSpinner(spinnerMessage)
-			w.activeSpinner = spinnerMessage
-		}
-		return // Don't write the original message
-	}
-
-	// Check if this message should stop a spinner
-	if w.shouldStopSpinner(message) && w.activeSpinner != "" {
-		if w.spinnerWriter != nil {
-			w.spinnerWriter.StopSpinner()
-		}
-		w.activeSpinner = ""
-	}
-}
-
 // TODO: this spinner stuff could use some work, triggering off keywords is a bit brittle
 
-// shouldShowSpinnerForStatus determines if a workflow status should show a spinner
-func (w *UnifiedWriter) shouldShowSpinnerForStatus(status string) bool {
+// SpinnerTriggers contains the patterns that should start spinners
+var SpinnerTriggers = []string{
+	// Docker operations
+	"Generating Dockerfile",
+	"Building Docker image",
+	"Tagging image for registry",
+	"Pushing image to registry",
+	// Render operations
+	"🔄 Attempting rollback",
+	"🔄 Attempting resource-based rollback",
+	// Deployment step execution
+	"🔄 Executing:",
+	// Authentication operations
+	"🔍 Validating API key",
+	"🔗 Connecting to Render authentication server",
+	"Checking Render authentication",
+}
+
+// SpinnerStopTriggers contains the patterns that should stop spinners
+var SpinnerStopTriggers = []string{
+	"✓ Successfully",
+	"✓ Completed",
+	"❌ Failed",
+	"✗ Failed",
+	"Error:",
+	"✅ API key validated successfully",
+	"✅ Authentication successful",
+}
+
+// ShouldStartSpinner determines if a message should start a spinner
+func ShouldStartSpinner(message string) bool {
+	for _, trigger := range SpinnerTriggers {
+		if strings.Contains(message, trigger) {
+			return true
+		}
+	}
+	return false
+}
+
+// ShouldStopSpinner determines if a message should stop a spinner
+func ShouldStopSpinner(message string) bool {
+	for _, trigger := range SpinnerStopTriggers {
+		if strings.Contains(message, trigger) {
+			return true
+		}
+	}
+	return false
+}
+
+// ShouldShowSpinnerForStatus determines if a workflow status should show a spinner
+func ShouldShowSpinnerForStatus(status string) bool {
 	spinnerStatuses := []string{
 		"planning",
 		"analyzing",
@@ -193,52 +76,8 @@ func (w *UnifiedWriter) shouldShowSpinnerForStatus(status string) bool {
 	return false
 }
 
-// shouldStartSpinner determines if a message should start a spinner
-func (w *UnifiedWriter) shouldStartSpinner(message string) bool {
-	spinnerTriggers := []string{
-		// Docker operations
-		"Generating Dockerfile",
-		"Building Docker image",
-		"Tagging image for registry",
-		"Pushing image to registry",
-		// Render operations
-		"🔄 Attempting rollback",
-		"🔄 Attempting resource-based rollback",
-		// Deployment step execution
-		"🔄 Executing:",
-		// Authentication operations
-		"🔍 Validating API key",
-		"🔗 Connecting to Render authentication server",
-	}
-
-	for _, trigger := range spinnerTriggers {
-		if strings.Contains(message, trigger) {
-			return true
-		}
-	}
-	return false
-}
-
-// shouldStopSpinner determines if a message should stop a spinner
-func (w *UnifiedWriter) shouldStopSpinner(message string) bool {
-	stopTriggers := []string{
-		"✓ Successfully",
-		"✓ Completed",
-		"❌ Failed",
-		"✗ Failed",
-		"Error:",
-	}
-
-	for _, trigger := range stopTriggers {
-		if strings.Contains(message, trigger) {
-			return true
-		}
-	}
-	return false
-}
-
-// extractSpinnerMessage extracts a friendly spinner message from the log message
-func (w *UnifiedWriter) extractSpinnerMessage(message string) string {
+// ExtractSpinnerMessage extracts a friendly spinner message from the log message
+func ExtractSpinnerMessage(message string) string {
 	messageMap := map[string]string{
 		// Docker operations
 		"Generating Dockerfile":      "Generating Dockerfile...",
@@ -251,6 +90,7 @@ func (w *UnifiedWriter) extractSpinnerMessage(message string) string {
 		// Authentication operations
 		"🔍 Validating API key":                         "Validating API key...",
 		"🔗 Connecting to Render authentication server": "Connecting to authentication server...",
+		"Checking Render authentication":               "Checking authentication...",
 	}
 
 	for trigger, spinnerMsg := range messageMap {
@@ -283,22 +123,25 @@ func (w *UnifiedWriter) extractSpinnerMessage(message string) string {
 	return "Working..."
 }
 
+// SpinnerController defines the interface for controlling spinners
+type SpinnerController interface {
+	StartSpinner(message string)
+	StopSpinner()
+}
+
+// StatusWriter defines the interface for sending workflow status messages
+type StatusWriter interface {
+	io.Writer
+	SendStatus(status, message string)
+	SendStatusComplete(status, message string)
+}
+
 // NoOpWriter implements Writer but discards all output
 type NoOpWriter struct{}
 
 // NewNoOpWriter creates a writer that discards all output
 func NewNoOpWriter() *NoOpWriter {
 	return &NoOpWriter{}
-}
-
-// Printf discards the output
-func (w *NoOpWriter) Printf(format string, args ...any) {
-	// Do nothing
-}
-
-// Println discards the output
-func (w *NoOpWriter) Println(args ...any) {
-	// Do nothing
 }
 
 // Write implements io.Writer and discards the output
@@ -336,10 +179,10 @@ func (w *NoOpWriter) SetSpinnerController(controller SpinnerController) {
 	// Do nothing
 }
 
-// Ensure NoOpWriter implements UnifiedOutputWriter
-var _ UnifiedOutputWriter = (*NoOpWriter)(nil)
+// Ensure NoOpWriter implements StatusWriter
+var _ StatusWriter = (*NoOpWriter)(nil)
 
-// ConsoleWriter implements UnifiedOutputWriter for simple console output
+// ConsoleWriter implements StatusWriter for simple console output
 // No TUI, no spinners - just plain text output to stdout/stderr
 type ConsoleWriter struct {
 	mu sync.RWMutex
@@ -353,16 +196,6 @@ func NewConsoleWriter() *ConsoleWriter {
 // Write implements io.Writer - outputs directly to stdout
 func (w *ConsoleWriter) Write(p []byte) (int, error) {
 	return fmt.Print(string(p))
-}
-
-// Printf outputs formatted text to stdout
-func (w *ConsoleWriter) Printf(format string, args ...any) {
-	fmt.Printf(format, args...)
-}
-
-// Println outputs text with newline to stdout
-func (w *ConsoleWriter) Println(args ...any) {
-	fmt.Println(args...)
 }
 
 // SendStatus outputs status messages to stdout (no spinner)
@@ -447,8 +280,8 @@ func (w *ConsoleWriter) HideProgress() {
 
 // Ensure ConsoleWriter implements both interfaces
 var (
-	_ UnifiedOutputWriter = (*ConsoleWriter)(nil)
-	_ AuthInteractor      = (*ConsoleWriter)(nil)
+	_ StatusWriter   = (*ConsoleWriter)(nil)
+	_ AuthInteractor = (*ConsoleWriter)(nil)
 )
 
 // WriterType represents the type of writer to create
@@ -477,8 +310,50 @@ type AuthInteractor interface {
 	HideProgress()
 }
 
+// ProxyWriter is a writer that forwards calls to another writer that can be updated
+type ProxyWriter struct {
+	mu     sync.RWMutex
+	target StatusWriter
+}
+
+// NewProxyWriter creates a new proxy writer with an initial target
+func NewProxyWriter(initial StatusWriter) *ProxyWriter {
+	return &ProxyWriter{target: initial}
+}
+
+// SetTarget updates the target writer
+func (p *ProxyWriter) SetTarget(target StatusWriter) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.target = target
+}
+
+// Write implements io.Writer
+func (p *ProxyWriter) Write(data []byte) (int, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.target.Write(data)
+}
+
+// SendStatus implements StatusWriter
+func (p *ProxyWriter) SendStatus(status, message string) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	p.target.SendStatus(status, message)
+}
+
+// SendStatusComplete implements StatusWriter
+func (p *ProxyWriter) SendStatusComplete(status, message string) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	p.target.SendStatusComplete(status, message)
+}
+
+// Ensure ProxyWriter implements StatusWriter
+var _ StatusWriter = (*ProxyWriter)(nil)
+
 // NewWriter creates a writer based on the specified type
-func NewWriter(writerType WriterType) UnifiedOutputWriter {
+func NewWriter(writerType WriterType) StatusWriter {
 	switch writerType {
 	case WriterTypeConsole:
 		return NewConsoleWriter()
@@ -487,6 +362,6 @@ func NewWriter(writerType WriterType) UnifiedOutputWriter {
 	case WriterTypeTUI:
 		fallthrough
 	default:
-		return NewUnifiedWriter()
+		return NewConsoleWriter() // Default to console writer
 	}
 }

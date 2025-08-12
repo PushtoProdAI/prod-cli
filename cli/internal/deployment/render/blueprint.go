@@ -3,6 +3,7 @@ package render
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/output"
@@ -13,10 +14,10 @@ type BlueprintDeployment struct {
 	spec            *deployment.DeploymentSpec
 	dockerGenerator *deployment.DockerGenerator
 	useDockerfile   bool
-	writer          output.UnifiedOutputWriter
+	writer          io.Writer
 }
 
-func NewBlueprintDeployment(client RenderClient, spec *deployment.DeploymentSpec, dockerGenerator *deployment.DockerGenerator, useDockerfile bool, writer output.UnifiedOutputWriter) *BlueprintDeployment {
+func NewBlueprintDeployment(client RenderClient, spec *deployment.DeploymentSpec, dockerGenerator *deployment.DockerGenerator, useDockerfile bool, writer io.Writer) *BlueprintDeployment {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}
