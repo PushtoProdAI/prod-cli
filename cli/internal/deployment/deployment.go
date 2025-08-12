@@ -16,6 +16,8 @@ const (
 	// Platform-specific strategies
 	StrategyRenderBlueprint DeploymentStrategy = "render_blueprint"
 	StrategyRenderQueued    DeploymentStrategy = "render_queued"
+
+	StrategyFlyio DeploymentStrategy = "flyio"
 )
 
 type CreatedResource struct {
