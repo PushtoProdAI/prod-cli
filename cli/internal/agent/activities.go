@@ -16,6 +16,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
@@ -27,16 +28,19 @@ const (
 	AgentSummarizeIntent      = "agent.summarize"
 	AgentGetRenderWorkspace   = "agent.getRenderWorkspace"
 	AgentDeployRenderSteps    = "agent.deployRenderSteps"
+	AgentDeployFlyIOSteps     = "agent.deployFlyIOSteps"
 	AgentSummarizeDeploySteps = "agent.summarizeDeploySteps"
 	AgentSummarizeError       = "agent.summarizeError"
 	AgentEstimateRenderCosts  = "agent.estimateRenderCosts"
-	AgentGetServiceURL        = "agent.getServiceURL"
+	AgentGetRenderServiceURL  = "agent.getRenderServiceURL"
 	AgentIsURLLive            = "agent.isURLLive"
 	AgentSendProjectStats     = "agent.sendProjectStats"
+	AgentGetFlyIOAppURL       = "agent.getFlyIOAppURL"
 )
 
 type Activities struct {
 	renderClient render.RenderClient
+	flyClient    flyio.FlyioClient
 	beClient     *backend.Client
 	uiWriter     output.StatusWriter
 }
@@ -49,11 +53,13 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentGetRenderWorkspace, ActFunc: a.getRenderWorkspace},
 		{Name: AgentSummarizeDeploySteps, ActFunc: a.summarizeDeploySteps},
 		{Name: AgentDeployRenderSteps, ActFunc: a.deployRenderSteps},
+		{Name: AgentDeployFlyIOSteps, ActFunc: a.deployFlyIOSteps},
 		{Name: AgentSummarizeError, ActFunc: a.summarizeError},
 		{Name: AgentEstimateRenderCosts, ActFunc: a.estimateRenderCosts},
-		{Name: AgentGetServiceURL, ActFunc: a.getServiceURL},
+		{Name: AgentGetRenderServiceURL, ActFunc: a.getRenderServiceURL},
 		{Name: AgentIsURLLive, ActFunc: a.isURLLive},
 		{Name: AgentSendProjectStats, ActFunc: a.sendProjectStats},
+		{Name: AgentGetFlyIOAppURL, ActFunc: a.getFlyIOAppURL},
 	}
 }
 
@@ -156,12 +162,35 @@ func (a *Activities) deployRenderSteps(ctx context.Context, spec deployment.Depl
 	return createdResources, nil
 }
 
-func (a *Activities) getServiceURL(ctx context.Context, serviceID string) (string, error) {
+func (a *Activities) deployFlyIOSteps(ctx context.Context, spec deployment.DeploymentSpec) ([]deployment.CreatedResource, error) {
+	d := flyio.NewFlyioQueuedDeployment(a.flyClient, &spec, a.uiWriter)
+	createdResources, err := d.Deploy(ctx)
+	if err != nil {
+		var httpErr *render.HTTPError
+		if errors.As(err, &httpErr) {
+			if httpErr.IsClientError() {
+				return []deployment.CreatedResource{}, workflow.NewPermanentError(errors.Errorf("failed to execute render steps. client error (%d): %s", httpErr.StatusCode, httpErr.Message))
+			}
+		}
+		return []deployment.CreatedResource{}, errors.Errorf("failed to execute render steps: %w", err)
+	}
+	return createdResources, nil
+}
+
+func (a *Activities) getRenderServiceURL(ctx context.Context, serviceID string) (string, error) {
 	service, err := a.renderClient.GetWebService(ctx, serviceID)
 	if err != nil {
 		return "", errors.Errorf("failed to get service info: %w", err)
 	}
 	return service.ServiceDetails.URL, nil
+}
+
+func (a *Activities) getFlyIOAppURL(ctx context.Context, appID string) (string, error) {
+	service, err := a.flyClient.GetApp(ctx, appID)
+	if err != nil {
+		return "", errors.Errorf("failed to get service info: %w", err)
+	}
+	return service.Hostname, nil
 }
 
 func (a *Activities) isURLLive(ctx context.Context, url string) error {

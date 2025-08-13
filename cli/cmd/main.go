@@ -14,6 +14,7 @@ import (
 	"github.com/meroxa/prod/cli/cmd/root"
 	"github.com/meroxa/prod/cli/internal/agent"
 	be "github.com/meroxa/prod/cli/internal/backend"
+	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
@@ -57,8 +58,9 @@ func main() {
 	apiKey := os.Getenv("RENDER_API_KEY")
 	// Create HTTP client for real API calls
 	renderClient := render.NewHTTPRenderClient(apiKey, statusWriter)
+	flyClient := flyio.NewFlyioClient()
 	beClient := be.NewClient()
-	provider, err := workflowext.InitWorkflows(ctx, cfg, mux, agent.NewWorkflows(renderClient, beClient, statusWriter))
+	provider, err := workflowext.InitWorkflows(ctx, cfg, mux, agent.NewWorkflows(renderClient, flyClient, beClient, statusWriter))
 	if err != nil {
 		log.Fatalf("failed to initialize workflows: %v", err)
 	}

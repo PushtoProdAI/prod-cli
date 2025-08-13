@@ -2,6 +2,7 @@ package flyio
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
@@ -9,18 +10,19 @@ import (
 // FlyioDeploymentAdapter implements the DeploymentAdapter interface for Fly.io
 type FlyioDeploymentAdapter struct {
 	client FlyioClient
+	writer io.Writer
 }
 
 // NewFlyioDeploymentAdapter creates a new Fly.io deployment adapter
-func NewFlyioDeploymentAdapter(client FlyioClient) *FlyioDeploymentAdapter {
+func NewFlyioDeploymentAdapter(client FlyioClient, writer io.Writer) *FlyioDeploymentAdapter {
 	return &FlyioDeploymentAdapter{
 		client: client,
 	}
 }
 
 // NewDefaultFlyioDeploymentAdapter creates a deployment adapter with the default client
-func NewDefaultFlyioDeploymentAdapter() *FlyioDeploymentAdapter {
-	return NewFlyioDeploymentAdapter(NewFlyioClient())
+func NewDefaultFlyioDeploymentAdapter(writer io.Writer) *FlyioDeploymentAdapter {
+	return NewFlyioDeploymentAdapter(NewFlyioClient(), writer)
 }
 
 // SupportedStrategies returns the deployment strategies supported by Fly.io
@@ -38,7 +40,7 @@ func (fda *FlyioDeploymentAdapter) GenerateArtifacts(spec *deployment.Deployment
 	if strategy != deployment.StrategyFlyio {
 		return nil, fmt.Errorf("unsupported deployment strategy for Fly.io: %s (only %s is supported)", strategy, deployment.StrategyFlyio)
 	}
-	return NewFlyioQueuedDeployment(fda.client, spec), nil
+	return NewFlyioQueuedDeployment(fda.client, spec, fda.writer), nil
 }
 
 // GenerateArtifactsWithSource generates deployment artifacts with source path
@@ -47,14 +49,14 @@ func (fda *FlyioDeploymentAdapter) GenerateArtifactsWithSource(spec *deployment.
 	if strategy != deployment.StrategyFlyio {
 		return nil, fmt.Errorf("unsupported deployment strategy for Fly.io: %s (only %s is supported)", strategy, deployment.StrategyFlyio)
 	}
-	
+
 	// Pass the source path through metadata so it can be used during deployment
 	if spec.Metadata == nil {
 		spec.Metadata = make(map[string]any)
 	}
 	spec.Metadata["buildContext"] = sourcePath
-	
-	return NewFlyioQueuedDeployment(fda.client, spec), nil
+
+	return NewFlyioQueuedDeployment(fda.client, spec, fda.writer), nil
 }
 
 // EstimateCost estimates the cost of deployment on Fly.io

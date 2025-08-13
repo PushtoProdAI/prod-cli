@@ -14,6 +14,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
@@ -23,6 +24,7 @@ const (
 	PlanDeployWorkflowName   = "agent.planDeploy"
 	DeployRenderWorkflowName = "agent.deploy.render"
 	DryRunDeployWorkflowName = "agent.dryRun.render"
+	DeployFlyioWorkflowName  = "agent.deploy.flyio"
 )
 
 var ActivityOpts = workflow.ActivityOptions{
@@ -38,15 +40,17 @@ type Workflows struct {
 	Acts         *Activities
 	registry     workflowext.Registry
 	renderClient render.RenderClient
+	flyClient    flyio.FlyioClient
 	uiWriter     output.StatusWriter
 }
 
 var _ workflowext.Registerer = (*Workflows)(nil)
 
-func NewWorkflows(renderClient render.RenderClient, beClient *backend.Client, uiWriter output.StatusWriter) *Workflows {
+func NewWorkflows(renderClient render.RenderClient, flyClient flyio.FlyioClient, beClient *backend.Client, uiWriter output.StatusWriter) *Workflows {
 	return &Workflows{
-		Acts:         &Activities{renderClient: renderClient, beClient: beClient, uiWriter: uiWriter},
+		Acts:         &Activities{renderClient: renderClient, flyClient: flyClient, beClient: beClient, uiWriter: uiWriter},
 		renderClient: renderClient,
+		flyClient:    flyClient,
 		uiWriter:     uiWriter,
 	}
 }
@@ -79,6 +83,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: PlanDeployWorkflowName, WorkflowFunc: w.planDeploy},
 		{Name: DeployRenderWorkflowName, WorkflowFunc: w.deployRender},
 		{Name: DryRunDeployWorkflowName, WorkflowFunc: w.dryRunDeployRender},
+		{Name: DeployFlyioWorkflowName, WorkflowFunc: w.deployFly},
 	}
 }
 
@@ -88,10 +93,14 @@ func (Workflows) PlanDeploy(ctx context.Context, c *client.Client, input string)
 
 func (Workflows) Deploy(ctx context.Context, c *client.Client, input deployPlan) (*workflow.Instance, error) {
 	log.Println(input.Platform, input.Action)
-	if input.Platform == Render {
+	switch input.Platform {
+	case Render:
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployRenderWorkflowName, time.Now().Unix())}, DeployRenderWorkflowName, input)
+	case FlyIO:
+		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployFlyioWorkflowName, time.Now().Unix())}, DeployFlyioWorkflowName, input)
+	default:
+		return nil, errors.New("unsupported platform for deployment")
 	}
-	return nil, errors.New("unsupported platform for deployment")
 }
 
 func (Workflows) DryRunDeploy(ctx context.Context, c *client.Client, input deployPlan) (*workflow.Instance, error) {
@@ -228,7 +237,7 @@ func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (deploy
 	if ws.ID == "" {
 		return deployResult{}, nil
 	}
-	url, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetServiceURL, ws.ID).Get(ctx)
+	url, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderServiceURL, ws.ID).Get(ctx)
 	if err != nil {
 		return deployResult{}, errors.Errorf("failed to get service URL for %s: %w", ws.Name, err)
 	}
@@ -340,6 +349,55 @@ func extractStepConfig(step render.RenderAPIStep) map[string]any {
 	}
 
 	return config
+}
+
+func (w *Workflows) deployFly(ctx workflow.Context, input deployPlan) (deployResult, error) {
+	if w.registry == nil {
+		return deployResult{}, errors.New("workflow registry is not set")
+	}
+	db := deployment.NewDeploymentBuilder(&input.Spec)
+	spec, err := db.Build()
+	if err != nil {
+		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
+	}
+	spec.Metadata["buildContext"] = input.Source
+
+	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, w.uiWriter)
+	steps := d.GenerateAPISteps()
+	// collect the descriptions to generate a summary
+	descriptions := make([]string, len(steps))
+	for i, step := range steps {
+		descriptions[i] = step.GetDescription()
+	}
+	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
+	if err != nil {
+		log.Printf("Failed to summarize deployment steps: %v", err)
+	}
+	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeployFlyIOSteps, *spec).Get(ctx)
+	if err != nil {
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		log.Printf("Deployment failed: %v", err)
+		return deployResult{Error: summary}, nil
+	}
+	var ws deployment.CreatedResource
+	for _, cr := range createdResources {
+		if cr.Type == "app" {
+			ws = cr
+			break // assuming we only have one app
+		}
+	}
+	url, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetFlyIOAppURL, ws.ID).Get(ctx)
+	if err != nil {
+		return deployResult{}, errors.Errorf("failed to get service URL for %s: %w", ws.Name, err)
+	}
+	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, url).Get(ctx)
+	if err != nil {
+		return deployResult{}, errors.Errorf("service URL %s is not live: %w", url, err)
+	}
+	return deployResult{Url: url}, nil
 }
 
 func calculateEstimatedCosts(spec *deployment.DeploymentSpec) map[string]float64 {

@@ -3,6 +3,7 @@ package flyio
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
@@ -12,13 +13,15 @@ import (
 type FlyioQueuedDeployment struct {
 	client FlyioClient
 	spec   *deployment.DeploymentSpec
+	writer io.Writer
 }
 
 // NewFlyioQueuedDeployment creates a new queued deployment for Fly.io
-func NewFlyioQueuedDeployment(client FlyioClient, spec *deployment.DeploymentSpec) *FlyioQueuedDeployment {
+func NewFlyioQueuedDeployment(client FlyioClient, spec *deployment.DeploymentSpec, writer io.Writer) *FlyioQueuedDeployment {
 	return &FlyioQueuedDeployment{
 		client: client,
 		spec:   spec,
+		writer: writer,
 	}
 }
 
@@ -30,8 +33,10 @@ func (fqd *FlyioQueuedDeployment) Deploy(ctx context.Context) ([]deployment.Crea
 	stepResults := make(map[string]interface{})
 
 	for _, step := range steps {
+		fmt.Fprintf(fqd.writer, "🔄 Executing: %s...\n", step.GetDescription())
 		result, err := step.Execute(ctx, fqd.client, stepResults)
 		if err != nil {
+			fmt.Fprintf(fqd.writer, "✗ Failed: %s - %v\n", step.GetDescription(), err)
 			return nil, fmt.Errorf("step %s failed: %w", step.GetID(), err)
 		}
 		stepResults[step.GetID()] = result
@@ -40,6 +45,8 @@ func (fqd *FlyioQueuedDeployment) Deploy(ctx context.Context) ([]deployment.Crea
 		if resource, ok := result.(deployment.CreatedResource); ok {
 			createdResources = append(createdResources, resource)
 		}
+		fmt.Fprintf(fqd.writer, "✓ Completed: %s\n", step.GetDescription())
+
 	}
 
 	return createdResources, nil
@@ -85,7 +92,7 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 				break
 			}
 		}
-		
+
 		// Only create attachment if service step was created
 		if serviceStepCreated {
 			attachStepID := fmt.Sprintf("attach-service-%d", i)
@@ -100,7 +107,7 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 	// Step 4: Deploy app configuration (after attachments are complete)
 	deployDeps := []string{appStepID}
 	deployDeps = append(deployDeps, attachmentStepIDs...)
-	
+
 	steps = append(steps, &DeployFlyioConfigStep{
 		BaseStep: BaseStep{
 			ID:          "deploy-config",
@@ -180,14 +187,13 @@ func (fqd *FlyioQueuedDeployment) createAttachmentStep(service deployment.Servic
 	}
 }
 
-
 // generateFlyConfig generates the Fly.io configuration
 func (fqd *FlyioQueuedDeployment) generateFlyConfig() *FlyioConfig {
 	config := &FlyioConfig{
 		AppName: fqd.spec.Name,
 		EnvVars: make(map[string]string),
 	}
-	
+
 	// Set source path if available in metadata
 	if sourcePath, ok := fqd.spec.Metadata["buildContext"].(string); ok {
 		config.SourcePath = sourcePath
