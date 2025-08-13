@@ -166,115 +166,42 @@ func (c *HTTPFlyioClient) formatRateLimitMessage(retryAfter time.Duration) strin
 
 // CreateApp creates a new app on Fly.io
 func (c *HTTPFlyioClient) CreateApp(ctx context.Context, req CreateAppRequest) (*FlyioApp, error) {
-
-	// Convert to the correct API format
-	apiReq := map[string]interface{}{
-		"app_name": req.Name,
-		"org_slug": req.OrgSlug,
-	}
-
-	resp, err := c.makeRequest(ctx, "POST", "/v1/apps", apiReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create app: %w", err)
-	}
-
-	var app FlyioApp
-	if err := c.handleResponse(resp, &app); err != nil {
-		return nil, err
-	}
-
-	return &app, nil
+	return nil, fmt.Errorf("CreateApp is not implemented for HTTP client - use flyctl client instead")
 }
 
 // GetApp retrieves app information
 func (c *HTTPFlyioClient) GetApp(ctx context.Context, appID string) (*FlyioApp, error) {
-	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/apps/%s", appID), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get app: %w", err)
-	}
-
-	var app FlyioApp
-	if err := c.handleResponse(resp, &app); err != nil {
-		return nil, err
-	}
-	return &app, nil
+	return nil, fmt.Errorf("GetApp is not implemented for HTTP client - use flyctl client instead")
 }
 
 // DeployApp deploys configuration to an app
-// Note: This is a placeholder since Fly.io doesn't have a direct deploy endpoint
-// In a real implementation, this would use flyctl or the Machines API
 func (c *HTTPFlyioClient) DeployApp(ctx context.Context, appID string, config *FlyioConfig) error {
-	// For now, we'll just return success since the app was created successfully
-	// In a real implementation, this would:
-	// 1. Generate fly.toml from config
-	// 2. Use flyctl or Machines API to deploy
-	return nil
+	return fmt.Errorf("DeployApp is not implemented for HTTP client - use flyctl client instead")
 }
 
 // DestroyApp destroys an app
 func (c *HTTPFlyioClient) DestroyApp(ctx context.Context, appID string) error {
-	resp, err := c.makeRequest(ctx, "DELETE", fmt.Sprintf("/v1/apps/%s", appID), nil)
-	if err != nil {
-		return fmt.Errorf("failed to destroy app: %w", err)
-	}
-
-	return c.handleResponse(resp, nil)
+	return fmt.Errorf("DestroyApp is not implemented for HTTP client - use flyctl client instead")
 }
 
 // CreatePostgres creates a new PostgreSQL database
-func (c *HTTPFlyioClient) CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*FlyioPostgres, error) {
-	resp, err := c.makeRequest(ctx, "POST", fmt.Sprintf("/v1/apps/%s/postgres", req.AppID), req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create postgres: %w", err)
-	}
-
-	var postgres FlyioPostgres
-	if err := c.handleResponse(resp, &postgres); err != nil {
-		return nil, err
-	}
-	return &postgres, nil
+func (c *HTTPFlyioClient) CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*FlyioPostgresCluster, error) {
+	return nil, fmt.Errorf("CreatePostgres is not implemented for HTTP client - use flyctl client instead")
 }
 
 // CreateRedis creates a new Redis database
 func (c *HTTPFlyioClient) CreateRedis(ctx context.Context, req CreateRedisRequest) (*FlyioRedis, error) {
-	resp, err := c.makeRequest(ctx, "POST", fmt.Sprintf("/v1/apps/%s/redis", req.AppID), req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create redis: %w", err)
-	}
-
-	var redis FlyioRedis
-	if err := c.handleResponse(resp, &redis); err != nil {
-		return nil, err
-	}
-	return &redis, nil
+	return nil, fmt.Errorf("CreateRedis is not implemented for HTTP client - use flyctl client instead")
 }
 
 // GetPostgresConnectionInfo retrieves PostgreSQL connection information
 func (c *HTTPFlyioClient) GetPostgresConnectionInfo(ctx context.Context, appID string) (*PostgresConnectionInfo, error) {
-	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/apps/%s/postgres/connection-info", appID), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get postgres connection info: %w", err)
-	}
-
-	var connectionInfo PostgresConnectionInfo
-	if err := c.handleResponse(resp, &connectionInfo); err != nil {
-		return nil, err
-	}
-	return &connectionInfo, nil
+	return nil, fmt.Errorf("GetPostgresConnectionInfo is not implemented for HTTP client - use flyctl client instead")
 }
 
 // GetRedisConnectionInfo retrieves Redis connection information
 func (c *HTTPFlyioClient) GetRedisConnectionInfo(ctx context.Context, appID string) (*RedisConnectionInfo, error) {
-	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/apps/%s/redis/connection-info", appID), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get redis connection info: %w", err)
-	}
-
-	var connectionInfo RedisConnectionInfo
-	if err := c.handleResponse(resp, &connectionInfo); err != nil {
-		return nil, err
-	}
-	return &connectionInfo, nil
+	return nil, fmt.Errorf("GetRedisConnectionInfo is not implemented for HTTP client - use flyctl client instead")
 }
 
 // AttachPostgres attaches a PostgreSQL database to an app
@@ -291,42 +218,15 @@ func (c *HTTPFlyioClient) AttachRedis(ctx context.Context, req AttachRedisReques
 
 // CreateVolume creates a new volume
 func (c *HTTPFlyioClient) CreateVolume(ctx context.Context, req CreateVolumeRequest) (*FlyioVolume, error) {
-	resp, err := c.makeRequest(ctx, "POST", fmt.Sprintf("/v1/apps/%s/volumes", req.AppID), req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create volume: %w", err)
-	}
-
-	var volume FlyioVolume
-	if err := c.handleResponse(resp, &volume); err != nil {
-		return nil, err
-	}
-	return &volume, nil
+	return nil, fmt.Errorf("CreateVolume is not implemented for HTTP client - use flyctl client instead")
 }
 
 // GetAppLogs retrieves app logs
 func (c *HTTPFlyioClient) GetAppLogs(ctx context.Context, appID string) ([]LogEntry, error) {
-	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/apps/%s/logs", appID), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get app logs: %w", err)
-	}
-
-	var logs []LogEntry
-	if err := c.handleResponse(resp, &logs); err != nil {
-		return nil, err
-	}
-	return logs, nil
+	return nil, fmt.Errorf("GetAppLogs is not implemented for HTTP client - use flyctl client instead")
 }
 
 // GetAppMetrics retrieves app metrics
 func (c *HTTPFlyioClient) GetAppMetrics(ctx context.Context, appID string) (*AppMetrics, error) {
-	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/apps/%s/metrics", appID), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get app metrics: %w", err)
-	}
-
-	var metrics AppMetrics
-	if err := c.handleResponse(resp, &metrics); err != nil {
-		return nil, err
-	}
-	return &metrics, nil
+	return nil, fmt.Errorf("GetAppMetrics is not implemented for HTTP client - use flyctl client instead")
 }
