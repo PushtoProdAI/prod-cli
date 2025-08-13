@@ -60,19 +60,9 @@ func (fa *FlyAuth) getTokenFromFlyctl(ctx context.Context) (string, error) {
 
 // validateToken validates the API token by making a test API call
 func (fa *FlyAuth) validateToken(ctx context.Context, token string) (bool, error) {
-	// Set the token temporarily for validation
-	oldToken := os.Getenv("FLY_API_TOKEN")
-	os.Setenv("FLY_API_TOKEN", token)
-	defer func() {
-		if oldToken != "" {
-			os.Setenv("FLY_API_TOKEN", oldToken)
-		} else {
-			os.Unsetenv("FLY_API_TOKEN")
-		}
-	}()
-
 	// Try to list apps - this is a simple call that requires authentication
 	cmd := exec.CommandContext(ctx, "flyctl", "apps", "list", "--json")
+	cmd.Env = append(os.Environ(), fmt.Sprintf("FLY_API_TOKEN=%s", token))
 	_, err := cmd.Output()
 	return err == nil, nil
 }
@@ -236,7 +226,7 @@ func (fa *FlyAuth) offerToPersistToken(token string) error {
 
 	if err == promptui.ErrAbort || (result != "y" && result != "yes") {
 		fmt.Println("💡 API token will only be available for this session.")
-		fmt.Println("   To persist it manually, run: export FLY_API_TOKEN=" + token)
+		fmt.Println("   To persist it manually, run: export FLY_API_TOKEN=<your-token>")
 		return nil
 	}
 
