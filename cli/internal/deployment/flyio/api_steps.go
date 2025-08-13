@@ -78,24 +78,25 @@ type CreateFlyioServiceStep struct {
 func (c *CreateFlyioServiceStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) (interface{}, error) {
 	switch c.serviceType {
 	case "postgres":
-		postgres, err := client.CreatePostgres(ctx, CreatePostgresRequest{
-			Name:   c.name,
-			Region: c.region,
-			Size:   c.size,
+		cluster, err := client.CreatePostgres(ctx, CreatePostgresRequest{
+			Name:       c.name,
+			Region:     c.region,
+			VolumeSize: c.size,
+			Plan:       "basic", // Default to basic plan
 		})
 		if err != nil {
 			return nil, err
 		}
 
-		// Wait for PostgreSQL to be ready
-		if err := c.waitForServiceReady(ctx, client, c.name, "postgres"); err != nil {
-			return nil, fmt.Errorf("postgres created but failed to become ready: %w", err)
-		}
-
+		// No need to wait - CreatePostgres already waits for provisioning
 		return deployment.CreatedResource{
-			ID:   postgres.ID,
-			Type: "postgres",
-			Name: postgres.Name,
+			ID:   cluster.ID,
+			Type: "postgres_cluster",
+			Name: cluster.Name,
+			Metadata: map[string]interface{}{
+				"cluster_id":        cluster.ID,
+				"connection_string": cluster.ConnectionString,
+			},
 		}, nil
 
 	case "redis":
@@ -177,18 +178,30 @@ func (c *CreateFlyioServiceStep) Rollback(ctx context.Context, client FlyioClien
 // AttachPostgresStep attaches a PostgreSQL database to a Fly.io app
 type AttachPostgresStep struct {
 	BaseStep
-	appName      string
-	postgresName string
-	databaseName string
-	variableName string
+	appName       string
+	serviceStepID string // ID of the step that created the postgres cluster
+	variableName  string
 }
 
 func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) (interface{}, error) {
-	// Attach the PostgreSQL database to the app
+	// Get the cluster ID from the previous step
+	clusterID := ""
+	if serviceResult, ok := stepResults[s.serviceStepID]; ok {
+		if resource, ok := serviceResult.(deployment.CreatedResource); ok {
+			if metadata, ok := resource.Metadata["cluster_id"].(string); ok {
+				clusterID = metadata
+			}
+		}
+	}
+	
+	if clusterID == "" {
+		return nil, fmt.Errorf("could not find cluster ID from step %s", s.serviceStepID)
+	}
+	
+	// Attach using cluster ID
 	err := client.AttachPostgres(ctx, AttachPostgresRequest{
 		AppName:      s.appName,
-		PostgresName: s.postgresName,
-		DatabaseName: s.databaseName,
+		ClusterID:    clusterID,
 		VariableName: s.variableName,
 	})
 	if err != nil {
@@ -199,7 +212,7 @@ func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, st
 	return map[string]string{
 		"status":       "attached",
 		"app":          s.appName,
-		"postgres":     s.postgresName,
+		"cluster_id":   clusterID,
 		"variableName": s.variableName,
 	}, nil
 }
