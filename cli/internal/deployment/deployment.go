@@ -21,9 +21,10 @@ const (
 )
 
 type CreatedResource struct {
-	ID   string
-	Type string
-	Name string
+	ID       string
+	Type     string
+	Name     string
+	Metadata map[string]interface{} // Additional metadata about the resource
 }
 
 type Deployable interface {
