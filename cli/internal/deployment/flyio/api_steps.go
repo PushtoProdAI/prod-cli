@@ -16,7 +16,6 @@ type CreateFlyioAppStep struct {
 }
 
 func (c *CreateFlyioAppStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) (interface{}, error) {
-
 	app, err := client.CreateApp(ctx, CreateAppRequest{
 		Name:    c.appName,
 		Region:  c.region,
@@ -87,12 +86,12 @@ func (c *CreateFlyioServiceStep) Execute(ctx context.Context, client FlyioClient
 		if err != nil {
 			return nil, err
 		}
-		
+
 		// Wait for PostgreSQL to be ready
 		if err := c.waitForServiceReady(ctx, client, c.name, "postgres"); err != nil {
 			return nil, fmt.Errorf("postgres created but failed to become ready: %w", err)
 		}
-		
+
 		return deployment.CreatedResource{
 			ID:   postgres.ID,
 			Type: "postgres",
@@ -107,12 +106,12 @@ func (c *CreateFlyioServiceStep) Execute(ctx context.Context, client FlyioClient
 		if err != nil {
 			return nil, err
 		}
-		
+
 		// Wait for Redis to be ready
 		if err := c.waitForServiceReady(ctx, client, c.name, "redis"); err != nil {
 			return nil, fmt.Errorf("redis created but failed to become ready: %w", err)
 		}
-		
+
 		return deployment.CreatedResource{
 			ID:   redis.ID,
 			Type: "redis",
@@ -132,10 +131,10 @@ func (c *CreateFlyioServiceStep) waitForServiceReady(ctx context.Context, client
 	// Use configuration constants from flyio.go
 	timeoutCtx, cancel := context.WithTimeout(ctx, serviceReadyTimeout)
 	defer cancel()
-	
+
 	ticker := time.NewTicker(serviceReadyInterval)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-timeoutCtx.Done():
@@ -144,7 +143,7 @@ func (c *CreateFlyioServiceStep) waitForServiceReady(ctx context.Context, client
 			// Check service status based on type
 			ready := false
 			var err error
-			
+
 			switch serviceType {
 			case "postgres":
 				// Check if PostgreSQL is ready by trying to get connection info
@@ -155,7 +154,7 @@ func (c *CreateFlyioServiceStep) waitForServiceReady(ctx context.Context, client
 				_, err = client.GetRedisConnectionInfo(ctx, serviceName)
 				ready = err == nil
 			}
-			
+
 			if ready {
 				return nil
 			}

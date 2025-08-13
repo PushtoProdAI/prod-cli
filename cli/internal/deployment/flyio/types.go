@@ -37,6 +37,8 @@ type FlyioApp struct {
 	Region    string `json:"region"`
 	CreatedAt int64  `json:"created_at"` // Unix timestamp in milliseconds
 	UpdatedAt int64  `json:"updated_at"` // Unix timestamp in milliseconds
+	Hostname  string `json:"Hostname"`
+	AppURL    string `json:"AppURL"`
 }
 
 // CreateAppRequest for creating a new Fly.io app

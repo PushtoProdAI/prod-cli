@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,7 +38,7 @@ func (e *DefaultCommandExecutor) Execute(ctx context.Context, name string, args 
 	if token := os.Getenv("FLY_API_TOKEN"); token != "" {
 		cmd.Env = append(os.Environ(), fmt.Sprintf("FLY_API_TOKEN=%s", token))
 	}
-	return cmd.Output()
+	return cmd.CombinedOutput()
 }
 
 func (e *DefaultCommandExecutor) ExecuteWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error) {
@@ -47,7 +48,7 @@ func (e *DefaultCommandExecutor) ExecuteWithInput(ctx context.Context, input []b
 	if token := os.Getenv("FLY_API_TOKEN"); token != "" {
 		cmd.Env = append(os.Environ(), fmt.Sprintf("FLY_API_TOKEN=%s", token))
 	}
-	return cmd.Output()
+	return cmd.CombinedOutput()
 }
 
 func (e *DefaultCommandExecutor) ExecuteInteractive(ctx context.Context, name string, args ...string) error {
@@ -94,14 +95,13 @@ func (c *FlyctlClient) CreateApp(ctx context.Context, req CreateAppRequest) (*Fl
 	}
 
 	args := []string{"apps", "create", req.Name}
-	
+
 	if req.OrgSlug != "" {
 		args = append(args, "--org", req.OrgSlug)
 	}
-	
+
 	// Use JSON output for structured parsing
 	args = append(args, "--json")
-
 	output, err := c.executor.Execute(ctx, "flyctl", args...)
 	if err != nil {
 		// Try to parse error from output
@@ -111,7 +111,7 @@ func (c *FlyctlClient) CreateApp(ctx context.Context, req CreateAppRequest) (*Fl
 		if json.Unmarshal(output, &errorResp) == nil && errorResp.Error != "" {
 			return nil, fmt.Errorf("failed to create app: %s", errorResp.Error)
 		}
-		return nil, fmt.Errorf("failed to create Fly.io app %q in region %q: %w", req.Name, req.Region, err)
+		return nil, fmt.Errorf("failed to create Fly.io app %q in region %q: %s", req.Name, req.Region, string(output))
 	}
 
 	// Parse the JSON response
@@ -129,15 +129,32 @@ func (c *FlyctlClient) GetApp(ctx context.Context, appID string) (*FlyioApp, err
 	if err := c.ensureFlyctl(ctx); err != nil {
 		return nil, err
 	}
-	
-	output, err := c.executor.Execute(ctx, "flyctl", "apps", "show", appID, "--json")
+
+	output, err := c.executor.Execute(ctx, "flyctl", "apps", "list", "--json")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Fly.io app %q: %w", appID, err)
 	}
 
-	var app FlyioApp
-	if err := json.Unmarshal(output, &app); err != nil {
+	var apps []FlyioApp
+	if err := json.Unmarshal(output, &apps); err != nil {
 		return nil, fmt.Errorf("failed to parse app info: %w", err)
+	}
+
+	var app FlyioApp
+	for _, a := range apps {
+		if a.ID == appID {
+			app = a
+			break
+		}
+	}
+
+	if app.ID == "" {
+		return nil, fmt.Errorf("app %q not found", appID)
+	}
+
+	if app.Hostname != "" {
+		// the hostname comes back with no scheme
+		app.Hostname = "https://" + app.Hostname
 	}
 
 	return &app, nil
@@ -169,7 +186,7 @@ func (c *FlyctlClient) DeployApp(ctx context.Context, appID string, config *Flyi
 
 	// Write fly.toml to the source directory
 	flyTomlPath := filepath.Join(sourceDir, "fly.toml")
-	
+
 	// Back up existing fly.toml if it exists
 	backupPath := ""
 	if _, err := os.Stat(flyTomlPath); err == nil {
@@ -184,7 +201,7 @@ func (c *FlyctlClient) DeployApp(ctx context.Context, appID string, config *Flyi
 			}
 		}()
 	}
-	
+
 	if err := os.WriteFile(flyTomlPath, []byte(flyToml), 0644); err != nil {
 		return fmt.Errorf("failed to write fly.toml: %w", err)
 	}
@@ -206,12 +223,12 @@ func (c *FlyctlClient) DeployApp(ctx context.Context, appID string, config *Flyi
 	cmd := exec.CommandContext(ctx, "flyctl", args...)
 	cmd.Dir = sourceDir
 	cmd.Env = os.Environ()
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Try to parse error from JSON output
 		var deployResp struct {
-			Error string `json:"error"`
+			Error  string `json:"error"`
 			Status string `json:"status"`
 		}
 		if json.Unmarshal(output, &deployResp) == nil && deployResp.Error != "" {
@@ -230,7 +247,7 @@ func (c *FlyctlClient) DeployApp(ctx context.Context, appID string, config *Flyi
 			return fmt.Errorf("deployment status: %s", deployResp.Status)
 		}
 	}
-
+	log.Printf("App deployed successfully. URL: %s", deployResp.URL)
 	return nil
 }
 
@@ -261,7 +278,6 @@ func (c *FlyctlClient) CreatePostgres(ctx context.Context, req CreatePostgresReq
 		"--initial-cluster-size", "1", // Start with single node
 		"--vm-size", "shared-cpu-1x",
 		"--volume-size", fmt.Sprintf("%d", req.Size),
-		"--json",
 	}
 
 	output, err := c.executor.Execute(ctx, "flyctl", args...)
@@ -319,7 +335,7 @@ func (c *FlyctlClient) GetPostgresConnectionInfo(ctx context.Context, appID stri
 
 	// Parse the response to extract connection strings
 	var dbList []struct {
-		Name string `json:"name"`
+		Name  string `json:"name"`
 		Users []struct {
 			Username string `json:"username"`
 			Password string `json:"password"`
@@ -344,9 +360,9 @@ func (c *FlyctlClient) GetPostgresConnectionInfo(ctx context.Context, appID stri
 	}
 
 	return &PostgresConnectionInfo{
-		InternalConnectionString: fmt.Sprintf("postgres://%s:%s@%s.internal:5432/%s", 
+		InternalConnectionString: fmt.Sprintf("postgres://%s:%s@%s.internal:5432/%s",
 			username, password, appID, db.Name),
-		ExternalConnectionString: fmt.Sprintf("postgres://%s:%s@%s.fly.dev:5432/%s", 
+		ExternalConnectionString: fmt.Sprintf("postgres://%s:%s@%s.fly.dev:5432/%s",
 			username, password, appID, db.Name),
 	}, nil
 }
@@ -389,27 +405,27 @@ func (c *FlyctlClient) AttachPostgres(ctx context.Context, req AttachPostgresReq
 		req.PostgresName,
 		"--app", req.AppName,
 	}
-	
+
 	// Add optional database name
 	if req.DatabaseName != "" {
 		args = append(args, "--database-name", req.DatabaseName)
 	}
-	
+
 	// Add variable name (default is DATABASE_URL)
 	if req.VariableName != "" {
 		args = append(args, "--variable-name", req.VariableName)
 	} else {
 		args = append(args, "--variable-name", "DATABASE_URL")
 	}
-	
+
 	// Auto-confirm the attachment
 	args = append(args, "-y")
-	
+
 	_, err := c.executor.Execute(ctx, "flyctl", args...)
 	if err != nil {
 		return fmt.Errorf("failed to attach PostgreSQL %q to app %q: %w", req.PostgresName, req.AppName, err)
 	}
-	
+
 	return nil
 }
 
@@ -426,22 +442,22 @@ func (c *FlyctlClient) AttachRedis(ctx context.Context, req AttachRedisRequest) 
 		req.RedisName,
 		"--app", req.AppName,
 	}
-	
+
 	// Add variable name (default is REDIS_URL)
 	if req.VariableName != "" {
 		args = append(args, "--variable-name", req.VariableName)
 	} else {
 		args = append(args, "--variable-name", "REDIS_URL")
 	}
-	
+
 	// Auto-confirm the attachment
 	args = append(args, "-y")
-	
+
 	_, err := c.executor.Execute(ctx, "flyctl", args...)
 	if err != nil {
 		return fmt.Errorf("failed to attach Redis %q to app %q: %w", req.RedisName, req.AppName, err)
 	}
-	
+
 	return nil
 }
 
@@ -516,10 +532,10 @@ func (c *FlyctlClient) GetAppMetrics(ctx context.Context, appID string) (*AppMet
 
 	var status struct {
 		Allocations []struct {
-			ID        string `json:"id"`
-			Status    string `json:"status"`
-			CPU       float64 `json:"cpu"`
-			Memory    float64 `json:"memory"`
+			ID     string  `json:"id"`
+			Status string  `json:"status"`
+			CPU    float64 `json:"cpu"`
+			Memory float64 `json:"memory"`
 		} `json:"allocations"`
 	}
 
@@ -548,13 +564,13 @@ func (c *FlyctlClient) GetAppMetrics(ctx context.Context, appID string) (*AppMet
 func (c *FlyctlClient) generateFlyToml(config *FlyioConfig) (string, error) {
 	// Use a simple template approach for now
 	// In the future, we could use the template generator in templates/fly_toml.go
-	
+
 	var builder strings.Builder
-	
+
 	// App name
 	builder.WriteString(fmt.Sprintf("app = \"%s\"\n", config.AppName))
 	builder.WriteString("primary_region = \"iad\"\n\n")
-	
+
 	// Build configuration
 	if config.BuildConfig != nil {
 		builder.WriteString("[build]\n")
@@ -568,7 +584,7 @@ func (c *FlyctlClient) generateFlyToml(config *FlyioConfig) (string, error) {
 		}
 		builder.WriteString("\n")
 	}
-	
+
 	// Environment variables
 	if len(config.EnvVars) > 0 {
 		builder.WriteString("[env]\n")
@@ -577,14 +593,14 @@ func (c *FlyctlClient) generateFlyToml(config *FlyioConfig) (string, error) {
 		}
 		builder.WriteString("\n")
 	}
-	
+
 	// Services (HTTP endpoints)
 	if len(config.Services) > 0 {
 		for _, service := range config.Services {
 			builder.WriteString("[[services]]\n")
 			builder.WriteString(fmt.Sprintf("  protocol = \"%s\"\n", service.Protocol))
 			builder.WriteString(fmt.Sprintf("  internal_port = %d\n", service.InternalPort))
-			
+
 			for _, port := range service.Ports {
 				builder.WriteString("  [[services.ports]]\n")
 				builder.WriteString(fmt.Sprintf("    port = %d\n", port.Port))
@@ -602,7 +618,7 @@ func (c *FlyctlClient) generateFlyToml(config *FlyioConfig) (string, error) {
 		}
 		builder.WriteString("\n")
 	}
-	
+
 	// Volumes
 	if len(config.Volumes) > 0 {
 		for _, volume := range config.Volumes {
@@ -611,6 +627,6 @@ func (c *FlyctlClient) generateFlyToml(config *FlyioConfig) (string, error) {
 			builder.WriteString("  destination = \"/data\"\n\n")
 		}
 	}
-	
+
 	return builder.String(), nil
 }
