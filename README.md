@@ -193,14 +193,6 @@ func BuildImage(ctx context.Context, imageName string, out io.Writer) error {
 }
 ```
 
-## Benefits
-
-1. **Consistent API**: Same pattern everywhere - `fmt.Fprintf(out, ...)`
-2. **Automatic Spinners**: Spinners work automatically based on message patterns
-3. **Mode Flexibility**: Works in TUI mode (with spinners) and console mode (plain text)
-4. **Easy Testing**: Can pass `bytes.Buffer` or `io.Discard` for tests
-5. **Standard Go**: Uses standard library functions developers already know
-
 ## Testing
 
 For tests, you can easily capture or discard output:

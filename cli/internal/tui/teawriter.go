@@ -167,6 +167,5 @@ func (w *TeaWriter) HideProgress() {
 
 // Ensure TeaWriter implements both interfaces
 var (
-	_ output.StatusWriter   = (*TeaWriter)(nil)
-	_ output.AuthInteractor = (*TeaWriter)(nil)
+	_ output.StatusWriter = (*TeaWriter)(nil)
 )
