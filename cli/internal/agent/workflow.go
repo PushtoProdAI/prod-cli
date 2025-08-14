@@ -4,14 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/cschleiden/go-workflows/client"
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client/types"
-	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
@@ -111,93 +108,21 @@ func (Workflows) DryRunDeploy(ctx context.Context, c *client.Client, input deplo
 	return nil, errors.New("unsupported platform for dry-run deployment")
 }
 
-func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, error) {
-	intent, err := workflow.ExecuteActivity[types.Intent](ctx, ActivityOpts, AgentDetermineIntent, input).Get(ctx)
-	if err != nil {
-		log.Println(errors.Errorf("failed to determine intent: %w", err))
-		w.uiWriter.SendStatus("error", "Failed to determine intent")
-	}
-	spec := analyzer.ProjectSpec{}
-	if intent.Source != "" {
-		opts := ActivityOpts
-		opts.RetryOptions.MaxAttempts = 3
-		opts.RetryOptions.FirstRetryInterval = time.Second * 2
-		w.uiWriter.SendStatus("analyzing", "Analyzing project...")
-		spec, err = workflow.ExecuteActivity[analyzer.ProjectSpec](ctx, opts, AgentAnalyzeProject, intent).Get(ctx)
-		if err != nil {
-			w.uiWriter.SendStatusComplete("analyzing", "❌ Failed to analyze project")
-			log.Println(errors.Errorf("failed to analyze project: %w", err))
-		} else {
-			w.uiWriter.SendStatusComplete("analyzing", "✅ Project analyzed")
-		}
-	}
-
-	opts := ActivityOpts
-	opts.RetryOptions.MaxAttempts = 2
-	_, err = workflow.ExecuteActivity[any](ctx, opts, AgentSendProjectStats, intent.Platform, spec).Get(ctx)
-	if err != nil {
-		log.Println(errors.Errorf("failed to send project stats: %w", err))
-	}
-
-	summary, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarizeIntent, intent, spec.Name, spec.Language).Get(ctx)
-	if err != nil {
-		log.Println(errors.Errorf("failed to summarize intent: %w", err))
-	}
-	platform := UnknownPlatform
-	switch strings.ToLower(intent.Platform) {
-	case "render":
-		platform = Render
-	case "fly.io":
-		platform = FlyIO
-	default:
-		platform = UnknownPlatform
-	}
-
-	action := UnknownAction
-	switch strings.ToLower(intent.Action) {
-	case "deploy":
-		action = Deploy
-	default:
-		action = UnknownAction
-	}
-
-	plan := deployPlan{
-		Action:           action,
-		Platform:         platform,
-		Source:           intent.Source,
-		Spec:             spec,
-		Summary:          summary,
-		DryRunFromPrompt: intent.DryRun,
-	}
-
-	return plan, err
-}
-
 func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (deployResult, error) {
 	if w.registry == nil {
 		return deployResult{}, errors.New("workflow registry is not set")
 	}
-	dockerGen := deployment.NewDockerGenerator(w.uiWriter)
+
+	// Build deployment spec
 	db := deployment.NewDeploymentBuilder(&input.Spec)
 	spec, err := db.Build()
 	if err != nil {
 		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
 	}
-	workspaceID, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderWorkspace).Get(ctx)
-	if err != nil {
-		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
-		if e1 != nil {
-			log.Printf("Failed to get Render workspace: %v", e1)
-			return deployResult{Error: deployError{Summary: err.Error()}}, nil // when a summary fails we return the original error
-		}
-		return deployResult{Error: summary}, nil // can return nil for error as the error has been summarized into deploy result
-	}
 	spec.Metadata["buildContext"] = input.Source
-	spec.Metadata["tenantID"] = "test" // TODO: this shouldn't be hardcoded, we need to get the tenant ID from the context or config
+	spec.Metadata["tenantID"] = "test"
 
-	// this check is done in the step generator as well. We do it here as well
-	// since we know we want to use docker so we can short circuit and provide a nice error.
-	// the step generator is generic and will try to generate steps working around the docker not being avaliable
+	// Validate Docker availability for Render
 	if !deployment.IsDockerAvailable() {
 		summary, err := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, "not able to build docker image. cannot connect to local docker daemon", input).Get(ctx)
 		if err != nil {
@@ -206,10 +131,20 @@ func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (deploy
 		return deployResult{Error: summary}, nil
 	}
 
+	// Generate and summarize deployment steps (for UI feedback)
+	workspaceID, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderWorkspace).Get(ctx)
+	if err != nil {
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			log.Printf("Failed to get Render workspace: %v", e1)
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		return deployResult{Error: summary}, nil
+	}
+
+	dockerGen := deployment.NewDockerGenerator(w.uiWriter)
 	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true, w.uiWriter)
 	steps := d.GenerateAPISteps(workspaceID)
-
-	// collect the descriptions to generate a summary
 	descriptions := make([]string, len(steps))
 	for i, step := range steps {
 		descriptions[i] = step.GetDescription()
@@ -218,7 +153,8 @@ func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (deploy
 	if err != nil {
 		log.Printf("Failed to summarize deployment steps: %v", err)
 	}
-	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeployRenderSteps, *spec, workspaceID).Get(ctx)
+
+	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
 	if err != nil {
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
@@ -227,17 +163,80 @@ func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (deploy
 		log.Printf("Deployment failed: %v", err)
 		return deployResult{Error: summary}, nil
 	}
+
+	// Find web service resource
 	var ws deployment.CreatedResource
 	for _, cr := range createdResources {
 		if cr.Type == "web_service" {
 			ws = cr
-			break // assuming we only have one web service
+			break
 		}
 	}
 	if ws.ID == "" {
 		return deployResult{}, nil
 	}
+
+	// Get service URL and verify it's live
 	url, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderServiceURL, ws.ID).Get(ctx)
+	if err != nil {
+		return deployResult{}, errors.Errorf("failed to get service URL for %s: %w", ws.Name, err)
+	}
+	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, url).Get(ctx)
+	if err != nil {
+		return deployResult{}, errors.Errorf("service URL %s is not live: %w", url, err)
+	}
+	return deployResult{Url: url}, nil
+}
+
+func (w *Workflows) deployFly(ctx workflow.Context, input deployPlan) (deployResult, error) {
+	if w.registry == nil {
+		return deployResult{}, errors.New("workflow registry is not set")
+	}
+
+	// Build deployment spec
+	db := deployment.NewDeploymentBuilder(&input.Spec)
+	spec, err := db.Build()
+	if err != nil {
+		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
+	}
+	spec.Metadata["buildContext"] = input.Source
+
+	// Generate and summarize deployment steps
+	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, w.uiWriter)
+	steps := d.GenerateAPISteps()
+	descriptions := make([]string, len(steps))
+	for i, step := range steps {
+		descriptions[i] = step.GetDescription()
+	}
+	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
+	if err != nil {
+		log.Printf("Failed to summarize deployment steps: %v", err)
+	}
+
+	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
+	if err != nil {
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		log.Printf("Deployment failed: %v", err)
+		return deployResult{Error: summary}, nil
+	}
+
+	// Find app resource
+	var ws deployment.CreatedResource
+	for _, cr := range createdResources {
+		if cr.Type == "app" {
+			ws = cr
+			break
+		}
+	}
+	if ws.ID == "" {
+		return deployResult{}, nil
+	}
+
+	// Get app URL and verify it's live
+	url, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetFlyIOAppURL, ws.ID).Get(ctx)
 	if err != nil {
 		return deployResult{}, errors.Errorf("failed to get service URL for %s: %w", ws.Name, err)
 	}
@@ -253,7 +252,6 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 		return DryRunResult{}, errors.New("workflow registry is not set")
 	}
 
-	// Validate credentials first
 	credentialStatus := make(map[string]bool)
 	workspaceID, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderWorkspace).Get(ctx)
 	if err != nil {
@@ -262,7 +260,6 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 		credentialStatus["Render API"] = true
 	}
 
-	// Generate the deployment steps (same as actual deployment)
 	dockerGen := deployment.NewDockerGenerator(w.uiWriter)
 	db := deployment.NewDeploymentBuilder(&input.Spec)
 	spec, err := db.Build()
@@ -271,12 +268,11 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 	}
 
 	spec.Metadata["buildContext"] = input.Source
-	spec.Metadata["tenantID"] = "test" // TODO: this shouldn't be hardcoded
+	spec.Metadata["tenantID"] = "test"
 
 	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true, w.uiWriter)
 	steps := d.GenerateAPISteps(workspaceID)
 
-	// Convert render steps to dry-run steps
 	dryRunSteps := make([]DryRunStep, len(steps))
 	for i, step := range steps {
 		dryRunSteps[i] = DryRunStep{
@@ -288,17 +284,13 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 		}
 	}
 
-	// Generate estimated costs
 	estimatedCosts, err := workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateRenderCosts, spec, deployment.StrategyRenderQueued).Get(ctx)
 	log.Println(err)
 	if err != nil {
 		return DryRunResult{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
 
-	// Perform conflict checks
 	conflictChecks := performConflictChecks(workspaceID, spec, w.renderClient)
-
-	// Collect validation errors
 	validationErrors := validateDeploymentSpec(spec)
 
 	return DryRunResult{
@@ -309,6 +301,8 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 		ValidationErrors: validationErrors,
 	}, nil
 }
+
+// Helper functions for dry run workflow
 
 func getStepType(step render.RenderAPIStep) string {
 	switch step.(type) {
@@ -351,80 +345,8 @@ func extractStepConfig(step render.RenderAPIStep) map[string]any {
 	return config
 }
 
-func (w *Workflows) deployFly(ctx workflow.Context, input deployPlan) (deployResult, error) {
-	if w.registry == nil {
-		return deployResult{}, errors.New("workflow registry is not set")
-	}
-	db := deployment.NewDeploymentBuilder(&input.Spec)
-	spec, err := db.Build()
-	if err != nil {
-		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
-	}
-	spec.Metadata["buildContext"] = input.Source
-
-	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, w.uiWriter)
-	steps := d.GenerateAPISteps()
-	// collect the descriptions to generate a summary
-	descriptions := make([]string, len(steps))
-	for i, step := range steps {
-		descriptions[i] = step.GetDescription()
-	}
-	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
-	if err != nil {
-		log.Printf("Failed to summarize deployment steps: %v", err)
-	}
-	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeployFlyIOSteps, *spec).Get(ctx)
-	if err != nil {
-		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
-		if e1 != nil {
-			return deployResult{Error: deployError{Summary: err.Error()}}, nil
-		}
-		log.Printf("Deployment failed: %v", err)
-		return deployResult{Error: summary}, nil
-	}
-	var ws deployment.CreatedResource
-	for _, cr := range createdResources {
-		if cr.Type == "app" {
-			ws = cr
-			break // assuming we only have one app
-		}
-	}
-	url, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetFlyIOAppURL, ws.ID).Get(ctx)
-	if err != nil {
-		return deployResult{}, errors.Errorf("failed to get service URL for %s: %w", ws.Name, err)
-	}
-	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, url).Get(ctx)
-	if err != nil {
-		return deployResult{}, errors.Errorf("service URL %s is not live: %w", url, err)
-	}
-	return deployResult{Url: url}, nil
-}
-
-func calculateEstimatedCosts(spec *deployment.DeploymentSpec) map[string]float64 {
-	costs := make(map[string]float64)
-
-	// Base web service cost
-	costs["Web Service"] = 7.00 // Standard plan
-
-	// Add costs for backing services
-	serviceCounts := spec.ServiceCounts()
-	for provider, count := range serviceCounts {
-		switch provider {
-		case "postgresql":
-			costs["PostgreSQL"] = float64(count) * 15.00 // basic_256mb plan
-		case "redis":
-			costs["Redis"] = float64(count) * 15.00 // standard plan
-		}
-	}
-
-	return costs
-}
-
 func performConflictChecks(workspaceID string, spec *deployment.DeploymentSpec, client render.RenderClient) []ConflictCheck {
 	var checks []ConflictCheck
-
-	// Note: In a real implementation, you would call the Render API to check for existing services
-	// For now, we'll simulate some basic checks
 
 	checks = append(checks, ConflictCheck{
 		Resource: fmt.Sprintf("Web service '%s-web'", spec.Name),
@@ -456,8 +378,6 @@ func validateDeploymentSpec(spec *deployment.DeploymentSpec) []string {
 	if spec.Language == "" {
 		errors = append(errors, "Programming language must be specified")
 	}
-
-	// Add more validation as needed
 
 	return errors
 }
