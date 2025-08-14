@@ -280,8 +280,7 @@ func (w *ConsoleWriter) HideProgress() {
 
 // Ensure ConsoleWriter implements both interfaces
 var (
-	_ StatusWriter   = (*ConsoleWriter)(nil)
-	_ AuthInteractor = (*ConsoleWriter)(nil)
+	_ StatusWriter = (*ConsoleWriter)(nil)
 )
 
 // WriterType represents the type of writer to create
@@ -292,23 +291,6 @@ const (
 	WriterTypeConsole WriterType = "console"
 	WriterTypeNoOp    WriterType = "noop"
 )
-
-// AuthInteractor defines the interface for authentication interactions
-// This is generic and doesn't tie to any specific UI implementation
-type AuthInteractor interface {
-	// PromptSelection prompts user to select from a list of options
-	// Returns the index of the selected option
-	PromptSelection(message string, options []string) (int, error)
-
-	// PromptInput prompts user for text input with optional masking
-	PromptInput(message string, masked bool) (string, error)
-
-	// ShowProgress shows progress for a long-running operation
-	ShowProgress(message string)
-
-	// HideProgress hides the progress indicator
-	HideProgress()
-}
 
 // ProxyWriter is a writer that forwards calls to another writer that can be updated
 type ProxyWriter struct {
