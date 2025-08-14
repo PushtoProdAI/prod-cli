@@ -373,7 +373,9 @@ func (w *Workflows) deployFly(ctx workflow.Context, input deployPlan) (deployRes
 	if err != nil {
 		log.Printf("Failed to summarize deployment steps: %v", err)
 	}
-	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeployFlyIOSteps, *spec).Get(ctx)
+	opts := ActivityOpts
+	opts.RetryOptions.MaxAttempts = 1
+	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, opts, AgentDeployFlyIOSteps, *spec).Get(ctx)
 	if err != nil {
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {

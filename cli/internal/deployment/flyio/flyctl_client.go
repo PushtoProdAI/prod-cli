@@ -39,7 +39,15 @@ func (e *DefaultCommandExecutor) Execute(ctx context.Context, name string, args 
 	if token := os.Getenv("FLY_API_TOKEN"); token != "" {
 		cmd.Env = append(os.Environ(), fmt.Sprintf("FLY_API_TOKEN=%s", token))
 	}
-	return cmd.CombinedOutput()
+	op, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, err
+	}
+	msg := string(op)
+	// even when returning JSON, there is some time plain text "Warning" attached to the message
+	msg, _, _ = strings.Cut(msg, "Warning")
+	msg = strings.TrimSpace(msg)
+	return []byte(msg), err
 }
 
 func (e *DefaultCommandExecutor) ExecuteWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error) {
@@ -272,14 +280,14 @@ func (c *FlyctlClient) CreatePostgres(ctx context.Context, req CreatePostgresReq
 	if err := c.ensureFlyctl(ctx); err != nil {
 		return nil, err
 	}
-	
+
 	args := []string{
 		"mpg", "create",
 		"--name", req.Name,
 		"--region", req.Region,
 		"--volume-size", fmt.Sprintf("%d", req.VolumeSize),
 	}
-	
+
 	// Add plan if specified, otherwise default to basic
 	if req.Plan != "" {
 		args = append(args, "--plan", req.Plan)
@@ -305,12 +313,12 @@ func (c *FlyctlClient) CreatePostgres(ctx context.Context, req CreatePostgresReq
 // parseMPGCreateOutput parses the mpg create command output
 func (c *FlyctlClient) parseMPGCreateOutput(output string) (*FlyioPostgresCluster, error) {
 	cluster := &FlyioPostgresCluster{}
-	
+
 	// Parse the final success output
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		
+
 		// Extract ID: q49ypo4wg5qr17ln
 		if strings.HasPrefix(line, "ID:") {
 			cluster.ID = strings.TrimSpace(strings.TrimPrefix(line, "ID:"))
@@ -345,7 +353,7 @@ func (c *FlyctlClient) parseMPGCreateOutput(output string) (*FlyioPostgresCluste
 			cluster.ConnectionString = strings.TrimSpace(strings.TrimPrefix(line, "Connection string:"))
 		}
 	}
-	
+
 	// Also check for cluster ID in the waiting message
 	// "Waiting for cluster foo (q49ypo4wg5qr17ln) to be ready..."
 	if cluster.ID == "" {
@@ -354,7 +362,7 @@ func (c *FlyctlClient) parseMPGCreateOutput(output string) (*FlyioPostgresCluste
 			cluster.ID = matches[1]
 		}
 	}
-	
+
 	// Validate we got the essential fields
 	if cluster.ID == "" {
 		return nil, fmt.Errorf("could not parse cluster ID from output")
@@ -362,7 +370,7 @@ func (c *FlyctlClient) parseMPGCreateOutput(output string) (*FlyioPostgresCluste
 	if cluster.Name == "" {
 		return nil, fmt.Errorf("could not parse cluster name from output")
 	}
-	
+
 	return cluster, nil
 }
 
@@ -473,10 +481,10 @@ func (c *FlyctlClient) AttachPostgres(ctx context.Context, req AttachPostgresReq
 	if err := c.ensureFlyctl(ctx); err != nil {
 		return err
 	}
-	
+
 	args := []string{
 		"mpg", "attach",
-		req.ClusterID,  // Use cluster ID directly
+		req.ClusterID, // Use cluster ID directly
 		"--app", req.AppName,
 	}
 
@@ -489,7 +497,7 @@ func (c *FlyctlClient) AttachPostgres(ctx context.Context, req AttachPostgresReq
 
 	_, err := c.executor.Execute(ctx, "flyctl", args...)
 	if err != nil {
-		return fmt.Errorf("failed to attach PostgreSQL cluster %q to app %q: %w", 
+		return fmt.Errorf("failed to attach PostgreSQL cluster %q to app %q: %w",
 			req.ClusterID, req.AppName, err)
 	}
 
