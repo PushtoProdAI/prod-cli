@@ -98,7 +98,7 @@ func FetchRenderPricing(ctx context.Context, services string, opts ...CallOption
 	return casted, nil
 }
 
-func SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Intent, spec types.ProjectSpec, os string, opts ...CallOptionFunc) (types.Error, error) {
+func SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Intent, spec types.ProjectSpec, os string, violations []string, opts ...CallOptionFunc) (types.Error, error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -106,7 +106,7 @@ func SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Int
 	}
 
 	args := baml.BamlFunctionArguments{
-		Kwargs: map[string]any{"errorMsg": errorMsg, "intent": intent, "spec": spec, "os": os},
+		Kwargs: map[string]any{"errorMsg": errorMsg, "intent": intent, "spec": spec, "os": os, "violations": violations},
 		Env:    getEnvVars(callOpts.env),
 	}
 
