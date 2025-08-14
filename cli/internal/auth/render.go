@@ -91,7 +91,7 @@ func (ra *RenderAuth) CheckAuthentication(ctx context.Context) (bool, error) {
 		if ra.config.ExpiresAt == 0 || time.Now().Unix() < ra.config.ExpiresAt {
 			// Set the API key from stored config and validate
 			os.Setenv("RENDER_API_KEY", ra.config.Key)
-			return ra.ValidateAPIKey(ctx, apiKey)
+			return ra.ValidateAPIKey(ctx, ra.config.Key)
 		}
 	}
 
