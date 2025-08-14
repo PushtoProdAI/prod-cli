@@ -187,7 +187,7 @@ func (*stream) FetchRenderPricing(ctx context.Context, services string, opts ...
 }
 
 // / Streaming version of SummarizeDeployError
-func (*stream) SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Intent, spec types.ProjectSpec, os string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Error, types.Error], error) {
+func (*stream) SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Intent, spec types.ProjectSpec, os string, violations []string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Error, types.Error], error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -195,7 +195,7 @@ func (*stream) SummarizeDeployError(ctx context.Context, errorMsg string, intent
 	}
 
 	args := baml.BamlFunctionArguments{
-		Kwargs: map[string]any{"errorMsg": errorMsg, "intent": intent, "spec": spec, "os": os},
+		Kwargs: map[string]any{"errorMsg": errorMsg, "intent": intent, "spec": spec, "os": os, "violations": violations},
 		Env:    getEnvVars(callOpts.env),
 	}
 
