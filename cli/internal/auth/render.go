@@ -12,9 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/manifoldco/promptui"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
-	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/render-oss/cli/pkg/client/oauth"
 	"github.com/render-oss/cli/pkg/config"
 	"github.com/render-oss/cli/pkg/dashboard"
@@ -67,14 +65,6 @@ func NewRenderAuth(client render.RenderClient, writer io.Writer) *RenderAuth {
 	}
 }
 
-// getAuthInteractor returns the AuthInteractor if the output implements it, nil otherwise
-func (ra *RenderAuth) getAuthInteractor() output.AuthInteractor {
-	if ai, ok := ra.output.(output.AuthInteractor); ok {
-		return ai
-	}
-	return nil
-}
-
 // printf writes formatted output to the configured writer
 func (ra *RenderAuth) printf(format string, args ...any) {
 	fmt.Fprintf(ra.output, format, args...)
@@ -92,7 +82,7 @@ func (ra *RenderAuth) CheckAuthentication(ctx context.Context) (bool, error) {
 	apiKey := os.Getenv("RENDER_API_KEY")
 	if apiKey != "" {
 		// Validate the API key by making a test API call
-		return ra.ValidateAPIKey(ctx)
+		return ra.ValidateAPIKey(ctx, apiKey)
 	}
 
 	// Check if we have valid stored credentials from Render CLI
@@ -101,7 +91,7 @@ func (ra *RenderAuth) CheckAuthentication(ctx context.Context) (bool, error) {
 		if ra.config.ExpiresAt == 0 || time.Now().Unix() < ra.config.ExpiresAt {
 			// Set the API key from stored config and validate
 			os.Setenv("RENDER_API_KEY", ra.config.Key)
-			return ra.ValidateAPIKey(ctx)
+			return ra.ValidateAPIKey(ctx, apiKey)
 		}
 	}
 
@@ -109,12 +99,27 @@ func (ra *RenderAuth) CheckAuthentication(ctx context.Context) (bool, error) {
 }
 
 // ValidateAPIKey validates the API key by making a test API call
-func (ra *RenderAuth) ValidateAPIKey(ctx context.Context) (bool, error) {
-	// Try to list workspaces - this is a simple call that requires authentication
+func (ra *RenderAuth) ValidateAPIKey(ctx context.Context, apiKey string) (bool, error) {
+	// Validate API key format
+	if len(apiKey) == 0 {
+		return false, fmt.Errorf("API key cannot be empty")
+	}
+
+	if len(apiKey) < 20 {
+		return false, fmt.Errorf("API key seems too short (should be at least 20 characters)")
+	}
+
+	if !strings.HasPrefix(apiKey, "rnd_") {
+		return false, errors.New("invalid API key format - Render API keys typically start with 'rnd_'")
+	}
+
+	// Try to list workspaces - this is a simple call that requires authenticatio
+	os.Setenv("RENDER_API_KEY", apiKey)
 	_, err := ra.client.ListWorkspaces(ctx)
 	if err != nil {
 		// Check if it's an authentication error
 		if isAuthError(err) {
+			os.Unsetenv("RENDER_API_KEY")
 			return false, nil
 		}
 		// Other error, return it
@@ -124,207 +129,8 @@ func (ra *RenderAuth) ValidateAPIKey(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-// AuthMode represents the authentication mode
-type AuthMode int
-
-const (
-	Interactive AuthMode = iota
-	APIKey
-)
-
-// AuthOption represents an authentication option
-type AuthOption struct {
-	Label string
-	Mode  AuthMode
-}
-
-// GetAuthOptions returns the available authentication options
-func (ra *RenderAuth) GetAuthOptions() []AuthOption {
-	return []AuthOption{
-		{Label: "Interactive login (recommended)", Mode: Interactive},
-		{Label: "Enter API key directly", Mode: APIKey},
-	}
-}
-
-// PromptLogin prompts the user to authenticate with Render using the specified mode
-// If mode is nil, it will prompt the user to choose
-func (ra *RenderAuth) PromptLogin(ctx context.Context, mode *AuthMode) error {
-	var authMode AuthMode
-	if mode != nil {
-		authMode = *mode
-	} else {
-		// Prompt user to choose authentication mode
-		options := ra.GetAuthOptions()
-
-		// Check if we have an AuthInteractor for interactive prompts
-		if authInteractor := ra.getAuthInteractor(); authInteractor != nil {
-			// Use TUI prompt - convert options to strings
-			optionStrings := make([]string, len(options))
-			for i, opt := range options {
-				optionStrings[i] = opt.Label
-			}
-			selectedIndex, err := authInteractor.PromptSelection("Choose authentication method", optionStrings)
-			if err != nil {
-				return fmt.Errorf("authentication selection failed: %w", err)
-			}
-			authMode = options[selectedIndex].Mode
-		} else {
-			// Use promptui for non-TUI mode
-			templates := &promptui.SelectTemplates{
-				Label:    "{{ . }}?",
-				Active:   "\U0001F449 {{ .Label }}",
-				Inactive: "  {{ .Label }}",
-				Selected: "\U0001F389 {{ .Label }}",
-			}
-
-			prompt := promptui.Select{
-				Label:     "Choose authentication method",
-				Items:     options,
-				Templates: templates,
-			}
-
-			i, _, err := prompt.Run()
-			if err != nil {
-				return fmt.Errorf("authentication selection failed: %w", err)
-			}
-
-			authMode = options[i].Mode
-		}
-	}
-
-	switch authMode {
-	case APIKey:
-		return ra.promptForAPIKey(ctx)
-	case Interactive:
-		return ra.PerformOAuthLogin(ctx)
-	default:
-		return fmt.Errorf("unknown authentication mode")
-	}
-}
-
-// showManualAPIKeyInstructions shows instructions for manual API key setup
-func (ra *RenderAuth) showManualAPIKeyInstructions() {
-	ra.println()
-	ra.println("📋 Manual API Key Setup:")
-	ra.println("1. Go to https://dashboard.render.com/account/settings")
-	ra.println("2. Create a new API key")
-	ra.println("3. Export it: export RENDER_API_KEY=your_api_key_here")
-	ra.println("4. Run your command again")
-}
-
-// promptForAPIKey prompts the user to enter their API key directly
-func (ra *RenderAuth) promptForAPIKey(ctx context.Context) error {
-	ra.println("🎉 Direct API key setup")
-	ra.println()
-	ra.println("📋 To get your API key:")
-	ra.println("1. Go to https://dashboard.render.com/account/settings")
-	ra.println("2. Create a new API key")
-	ra.println("3. Copy the key and paste it below")
-	ra.println()
-
-	var apiKey string
-	var err error
-
-	// Check if we have an AuthInteractor for TUI prompts
-	if authInteractor := ra.getAuthInteractor(); authInteractor != nil {
-		// Use TUI prompt
-		apiKey, err = authInteractor.PromptInput("🔑 Enter your Render API key", true)
-		if err != nil {
-			return fmt.Errorf("failed to read API key: %w", err)
-		}
-	} else {
-		// Use promptui for non-TUI mode
-		templates := &promptui.PromptTemplates{
-			Prompt:  "{{ . }}: ",
-			Valid:   "{{ . | green }}: ",
-			Invalid: "{{ . | red }}: ",
-			Success: "{{ . | green }}: {{ . | faint }}",
-		}
-
-		prompt := promptui.Prompt{
-			Label:       "🔑 Enter your Render API key",
-			Templates:   templates,
-			Mask:        '*',
-			HideEntered: true,
-			Validate: func(input string) error {
-				input = strings.TrimSpace(input)
-				if len(input) == 0 {
-					return fmt.Errorf("API key cannot be empty")
-				}
-				if len(input) < 20 {
-					return fmt.Errorf("API key seems too short (should be at least 20 characters)")
-				}
-				// Basic format check for Render API keys (they typically start with 'rnd_')
-				if !strings.HasPrefix(input, "rnd_") {
-					return fmt.Errorf("Render API keys typically start with 'rnd_'")
-				}
-				return nil
-			},
-		}
-
-		apiKey, err = prompt.Run()
-		if err != nil {
-			if err == promptui.ErrInterrupt {
-				return fmt.Errorf("authentication cancelled by user")
-			}
-			return fmt.Errorf("failed to read API key: %w", err)
-		}
-
-		// Clean the input
-		apiKey = strings.TrimSpace(apiKey)
-	}
-
-	// Set the API key in the current process environment
-	os.Setenv("RENDER_API_KEY", apiKey)
-
-	// Validate the API key by making a test call
-	fmt.Fprintf(ra.output, "🔍 Validating API key...\n")
-
-	valid, err := ra.ValidateAPIKey(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to validate API key: %w", err)
-	}
-
-	if !valid {
-		// Clear the invalid key from environment
-		os.Unsetenv("RENDER_API_KEY")
-		return fmt.Errorf("invalid API key - please check your key and try again")
-	}
-
-	ra.println("✅ API key validated successfully!")
-
-	// Ask user if they want to persist the API key
-	persistPrompt := promptui.Prompt{
-		Label:     "Save API key to your shell profile for future use? (y/n)",
-		IsConfirm: true,
-		Default:   "y",
-	}
-
-	persistResult, err := persistPrompt.Run()
-	if err != nil && err != promptui.ErrAbort {
-		// Don't fail authentication if they can't answer the persist question
-		ra.println("⚠️  Could not ask about persisting API key, continuing...")
-		return nil
-	}
-
-	if err == promptui.ErrAbort || (persistResult != "y" && persistResult != "yes") {
-		ra.println("💡 API key will only be available for this session.")
-		ra.println("   To persist it manually, run: export RENDER_API_KEY=your_key_here")
-		return nil
-	}
-
-	// Persist the API key to shell profile
-	if err := ra.persistAPIKeyToShellProfile(apiKey); err != nil {
-		ra.printf("⚠️  Could not persist API key to shell profile: %v\n", err)
-		ra.println("💡 You can manually add this to your shell profile:")
-		ra.printf("   echo 'export RENDER_API_KEY=%s' >> ~/.zshrc\n", apiKey)
-		ra.println("   (or ~/.bashrc if using bash)")
-	} else {
-		ra.println("✅ API key saved to shell profile!")
-		ra.println("💡 The API key will be available in new terminal sessions.")
-	}
-
-	return nil
+func (ra *RenderAuth) APIKeyPrompt() string {
+	return "🔑 Enter your Render API key (get it from https://dashboard.render.com/account/settings):"
 }
 
 // PerformOAuthLogin executes the OAuth device authorization flow using Render CLI components
