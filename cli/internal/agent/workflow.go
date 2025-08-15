@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"time"
 
 	"github.com/cschleiden/go-workflows/client"
@@ -89,7 +90,7 @@ func (Workflows) PlanDeploy(ctx context.Context, c *client.Client, input string)
 }
 
 func (Workflows) Deploy(ctx context.Context, c *client.Client, input deployPlan) (*workflow.Instance, error) {
-	log.Println(input.Platform, input.Action)
+	slog.Info("Deploy", "platform", input.Platform, "action", input.Action)
 	switch input.Platform {
 	case Render:
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployRenderWorkflowName, time.Now().Unix())}, DeployRenderWorkflowName, input)
@@ -101,7 +102,7 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input deployPlan)
 }
 
 func (Workflows) DryRunDeploy(ctx context.Context, c *client.Client, input deployPlan) (*workflow.Instance, error) {
-	log.Println("Dry run for", input.Platform, input.Action)
+	slog.Info("Dry run", "platform", input.Platform, "action", input.Action)
 	if input.Platform == Render {
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DryRunDeployWorkflowName, time.Now().Unix())}, DryRunDeployWorkflowName, input)
 	}
@@ -285,7 +286,7 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 	}
 
 	estimatedCosts, err := workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateRenderCosts, spec, deployment.StrategyRenderQueued).Get(ctx)
-	log.Println(err)
+	slog.Error("Error", "error", err)
 	if err != nil {
 		return DryRunResult{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
