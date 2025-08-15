@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -18,7 +19,7 @@ import (
 func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, error) {
 	intent, err := workflow.ExecuteActivity[types.Intent](ctx, ActivityOpts, AgentDetermineIntent, input).Get(ctx)
 	if err != nil {
-		log.Println(errors.Errorf("failed to determine intent: %w", err))
+		slog.Error("Failed to determine intent", "error", err)
 		w.uiWriter.SendStatus("error", "Failed to determine intent")
 	}
 	spec := analyzer.ProjectSpec{}
@@ -30,7 +31,7 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, 
 		spec, err = workflow.ExecuteActivity[analyzer.ProjectSpec](ctx, opts, AgentAnalyzeProject, intent).Get(ctx)
 		if err != nil {
 			w.uiWriter.SendStatusComplete("analyzing", "❌ Failed to analyze project")
-			log.Println(errors.Errorf("failed to analyze project: %w", err))
+			slog.Error("Failed to analyze project", "error", err)
 		} else {
 			w.uiWriter.SendStatusComplete("analyzing", "✅ Project analyzed")
 		}
@@ -40,12 +41,12 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, 
 	opts.RetryOptions.MaxAttempts = 2
 	_, err = workflow.ExecuteActivity[any](ctx, opts, AgentSendProjectStats, intent.Platform, spec).Get(ctx)
 	if err != nil {
-		log.Println(errors.Errorf("failed to send project stats: %w", err))
+		slog.Error("Failed to send project stats", "error", err)
 	}
 
 	summary, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarizeIntent, intent, spec.Name, spec.Language).Get(ctx)
 	if err != nil {
-		log.Println(errors.Errorf("failed to summarize intent: %w", err))
+		slog.Error("Failed to summarize intent", "error", err)
 	}
 	platform := UnknownPlatform
 	switch strings.ToLower(intent.Platform) {

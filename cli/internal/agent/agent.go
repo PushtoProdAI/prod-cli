@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"runtime"
@@ -456,7 +457,7 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 			return a.waitForAuthSelection, nil
 		} else {
 			// we are not in interactive mode but don't have a way to send a select, so exit the state machine
-			log.Println("Interactive mode is required for authentication selection")
+			slog.Info("Interactive mode is required for authentication selection")
 			return nil, nil
 		}
 	}
