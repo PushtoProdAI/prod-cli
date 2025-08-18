@@ -165,10 +165,9 @@ func (fqd *FlyioQueuedDeployment) createAttachmentStep(service deployment.Servic
 				Description: fmt.Sprintf("Attaching PostgreSQL to app: %s", appName),
 				DependsOn:   []string{appStepID, serviceStepID}, // Depends on both app and service creation
 			},
-			appName:      appName,
-			postgresName: fmt.Sprintf("%s-postgres", fqd.spec.Name),
-			databaseName: fqd.spec.Name,
-			variableName: "DATABASE_URL",
+			appName:       appName,
+			serviceStepID: serviceStepID, // Pass the service step ID to retrieve cluster ID
+			variableName:  "DATABASE_URL",
 		}
 	case "redis":
 		return &AttachRedisStep{
