@@ -14,7 +14,7 @@ type FlyioClient interface {
 	DestroyApp(ctx context.Context, appID string) error
 
 	// Databases
-	CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*FlyioPostgres, error)
+	CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*FlyioPostgresCluster, error)
 	CreateRedis(ctx context.Context, req CreateRedisRequest) (*FlyioRedis, error)
 	GetPostgresConnectionInfo(ctx context.Context, appID string) (*PostgresConnectionInfo, error)
 	GetRedisConnectionInfo(ctx context.Context, appID string) (*RedisConnectionInfo, error)
@@ -87,7 +87,7 @@ type VolumeConfig struct {
 	Region string `json:"region"`
 }
 
-// FlyioPostgres represents a Fly.io PostgreSQL database
+// FlyioPostgres represents a Fly.io PostgreSQL database (legacy)
 type FlyioPostgres struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
@@ -95,12 +95,24 @@ type FlyioPostgres struct {
 	AppID  string `json:"app_id"`
 }
 
-// CreatePostgresRequest for creating a PostgreSQL database
+// FlyioPostgresCluster represents a Fly.io Managed Postgres cluster
+type FlyioPostgresCluster struct {
+	ID               string `json:"id"`               // Cluster ID like "q49ypo4wg5qr17ln"
+	Name             string `json:"name"`             // User-friendly name
+	Organization     string `json:"organization"`
+	Region           string `json:"region"`
+	Plan             string `json:"plan"`      // "basic", "production", etc.
+	DiskSize         string `json:"disk_size"` // "10GB"
+	PostGIS          bool   `json:"postgis"`
+	ConnectionString string `json:"connection_string"` // Full connection string
+}
+
+// CreatePostgresRequest for creating a PostgreSQL database/cluster
 type CreatePostgresRequest struct {
-	AppID  string `json:"app_id"`
-	Name   string `json:"name"`
-	Region string `json:"region"`
-	Size   int    `json:"size"`
+	Name       string `json:"name"`
+	Region     string `json:"region"`
+	VolumeSize int    `json:"volume_size"` // in GB
+	Plan       string `json:"plan"`        // "basic", "production", etc.
 }
 
 // FlyioRedis represents a Fly.io Redis database
@@ -141,12 +153,11 @@ type PostgresConnectionInfo struct {
 	ExternalConnectionString string `json:"external_connection_string"`
 }
 
-// AttachPostgresRequest for attaching PostgreSQL to an app
+// AttachPostgresRequest for attaching PostgreSQL cluster to an app
 type AttachPostgresRequest struct {
 	AppName      string `json:"app_name"`
-	PostgresName string `json:"postgres_name"`
-	DatabaseName string `json:"database_name"`
-	VariableName string `json:"variable_name"`
+	ClusterID    string `json:"cluster_id"`    // MPG cluster ID
+	VariableName string `json:"variable_name"` // Environment variable name (defaults to DATABASE_URL)
 }
 
 // AttachRedisRequest for attaching Redis to an app

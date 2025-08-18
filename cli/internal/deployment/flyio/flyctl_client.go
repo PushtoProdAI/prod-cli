@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -38,7 +39,15 @@ func (e *DefaultCommandExecutor) Execute(ctx context.Context, name string, args 
 	if token := os.Getenv("FLY_API_TOKEN"); token != "" {
 		cmd.Env = append(os.Environ(), fmt.Sprintf("FLY_API_TOKEN=%s", token))
 	}
-	return cmd.CombinedOutput()
+	op, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, err
+	}
+	msg := string(op)
+	// even when returning JSON, there is some time plain text "Warning" attached to the message
+	msg, _, _ = strings.Cut(msg, "Warning")
+	msg = strings.TrimSpace(msg)
+	return []byte(msg), err
 }
 
 func (e *DefaultCommandExecutor) ExecuteWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error) {
@@ -265,32 +274,104 @@ func (c *FlyctlClient) DestroyApp(ctx context.Context, appID string) error {
 	return nil
 }
 
-// CreatePostgres creates a new PostgreSQL database
-func (c *FlyctlClient) CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*FlyioPostgres, error) {
+// CreatePostgres creates a new managed PostgreSQL cluster
+func (c *FlyctlClient) CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*FlyioPostgresCluster, error) {
 	// Check if flyctl is installed
 	if err := c.ensureFlyctl(ctx); err != nil {
 		return nil, err
 	}
+
 	args := []string{
-		"postgres", "create",
+		"mpg", "create",
 		"--name", req.Name,
 		"--region", req.Region,
-		"--initial-cluster-size", "1", // Start with single node
-		"--vm-size", "shared-cpu-1x",
-		"--volume-size", fmt.Sprintf("%d", req.Size),
+		"--volume-size", fmt.Sprintf("%d", req.VolumeSize),
 	}
 
+	// Add plan if specified, otherwise default to basic
+	if req.Plan != "" {
+		args = append(args, "--plan", req.Plan)
+	} else {
+		args = append(args, "--plan", "basic")
+	}
+
+	// Execute and wait for completion (this will block until provisioned)
 	output, err := c.executor.Execute(ctx, "flyctl", args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create PostgreSQL database %q in region %q: %w", req.Name, req.Region, err)
+		return nil, fmt.Errorf("failed to create PostgreSQL cluster %q in region %q: %w", req.Name, req.Region, err)
 	}
 
-	var postgres FlyioPostgres
-	if err := json.Unmarshal(output, &postgres); err != nil {
-		return nil, fmt.Errorf("failed to parse postgres response: %w", err)
+	// Parse the output to extract cluster information
+	cluster, err := c.parseMPGCreateOutput(string(output))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse cluster creation output: %w", err)
 	}
 
-	return &postgres, nil
+	return cluster, nil
+}
+
+// parseMPGCreateOutput parses the mpg create command output
+func (c *FlyctlClient) parseMPGCreateOutput(output string) (*FlyioPostgresCluster, error) {
+	cluster := &FlyioPostgresCluster{}
+
+	// Parse the final success output
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Extract ID: q49ypo4wg5qr17ln
+		if strings.HasPrefix(line, "ID:") {
+			cluster.ID = strings.TrimSpace(strings.TrimPrefix(line, "ID:"))
+		}
+		// Extract Name: foo
+		if strings.HasPrefix(line, "Name:") {
+			cluster.Name = strings.TrimSpace(strings.TrimPrefix(line, "Name:"))
+		}
+		// Extract Organization: james-martinez-457
+		if strings.HasPrefix(line, "Organization:") {
+			cluster.Organization = strings.TrimSpace(strings.TrimPrefix(line, "Organization:"))
+		}
+		// Extract Region: iad
+		if strings.HasPrefix(line, "Region:") {
+			cluster.Region = strings.TrimSpace(strings.TrimPrefix(line, "Region:"))
+		}
+		// Extract Plan: basic
+		if strings.HasPrefix(line, "Plan:") {
+			cluster.Plan = strings.TrimSpace(strings.TrimPrefix(line, "Plan:"))
+		}
+		// Extract Disk: 10GB
+		if strings.HasPrefix(line, "Disk:") {
+			cluster.DiskSize = strings.TrimSpace(strings.TrimPrefix(line, "Disk:"))
+		}
+		// Extract PostGIS: false
+		if strings.HasPrefix(line, "PostGIS:") {
+			postgisStr := strings.TrimSpace(strings.TrimPrefix(line, "PostGIS:"))
+			cluster.PostGIS = postgisStr == "true"
+		}
+		// Extract Connection string: postgresql://...
+		if strings.HasPrefix(line, "Connection string:") {
+			cluster.ConnectionString = strings.TrimSpace(strings.TrimPrefix(line, "Connection string:"))
+		}
+	}
+
+	// Also check for cluster ID in the waiting message
+	// "Waiting for cluster foo (q49ypo4wg5qr17ln) to be ready..."
+	if cluster.ID == "" {
+		re := regexp.MustCompile(`Waiting for cluster .+ \(([a-z0-9]+)\) to be ready`)
+		if matches := re.FindStringSubmatch(output); len(matches) > 1 {
+			cluster.ID = matches[1]
+		}
+	}
+
+	// Validate we got the essential fields
+	if cluster.ID == "" {
+		return nil, fmt.Errorf("could not parse cluster ID from output")
+	}
+	if cluster.Name == "" {
+		return nil, fmt.Errorf("could not parse cluster name from output")
+	}
+
+	return cluster, nil
 }
 
 // CreateRedis creates a new Redis database
@@ -327,8 +408,8 @@ func (c *FlyctlClient) GetPostgresConnectionInfo(ctx context.Context, appID stri
 	if err := c.ensureFlyctl(ctx); err != nil {
 		return nil, err
 	}
-	// Use flyctl postgres db list to get connection info
-	output, err := c.executor.Execute(ctx, "flyctl", "postgres", "db", "list", "--app", appID, "--json")
+	// Use flyctl mpg db list to get connection info
+	output, err := c.executor.Execute(ctx, "flyctl", "mpg", "db", "list", "--app", appID, "--json")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get postgres connection info: %w", err)
 	}
@@ -394,21 +475,17 @@ func (c *FlyctlClient) GetRedisConnectionInfo(ctx context.Context, appID string)
 	}, nil
 }
 
-// AttachPostgres attaches a PostgreSQL database to an app
+// AttachPostgres attaches a managed PostgreSQL cluster to an app
 func (c *FlyctlClient) AttachPostgres(ctx context.Context, req AttachPostgresRequest) error {
 	// Check if flyctl is installed
 	if err := c.ensureFlyctl(ctx); err != nil {
 		return err
 	}
-	args := []string{
-		"postgres", "attach",
-		req.PostgresName,
-		"--app", req.AppName,
-	}
 
-	// Add optional database name
-	if req.DatabaseName != "" {
-		args = append(args, "--database-name", req.DatabaseName)
+	args := []string{
+		"mpg", "attach",
+		req.ClusterID, // Use cluster ID directly
+		"--app", req.AppName,
 	}
 
 	// Add variable name (default is DATABASE_URL)
@@ -418,12 +495,10 @@ func (c *FlyctlClient) AttachPostgres(ctx context.Context, req AttachPostgresReq
 		args = append(args, "--variable-name", "DATABASE_URL")
 	}
 
-	// Auto-confirm the attachment
-	args = append(args, "-y")
-
 	_, err := c.executor.Execute(ctx, "flyctl", args...)
 	if err != nil {
-		return fmt.Errorf("failed to attach PostgreSQL %q to app %q: %w", req.PostgresName, req.AppName, err)
+		return fmt.Errorf("failed to attach PostgreSQL cluster %q to app %q: %w",
+			req.ClusterID, req.AppName, err)
 	}
 
 	return nil
