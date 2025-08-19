@@ -21,6 +21,10 @@ import (
 )
 
 var typeMap = map[string]reflect.Type{
+	"TYPES.EnvVarCandidate":           reflect.TypeOf(types.EnvVarCandidate{}),
+	"STREAM_TYPES.EnvVarCandidate":    reflect.TypeOf(stream_types.EnvVarCandidate{}),
+	"TYPES.EnvVarCategory":            reflect.TypeOf(types.EnvVarCategory{}),
+	"STREAM_TYPES.EnvVarCategory":     reflect.TypeOf(stream_types.EnvVarCategory{}),
 	"TYPES.Error":                     reflect.TypeOf(types.Error{}),
 	"STREAM_TYPES.Error":              reflect.TypeOf(stream_types.Error{}),
 	"TYPES.Intent":                    reflect.TypeOf(types.Intent{}),

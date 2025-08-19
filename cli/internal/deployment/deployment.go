@@ -51,6 +51,7 @@ type DeploymentSpec struct {
 	Metadata     map[string]any
 	BuildCommand string
 	StartCommand string
+	EnvVars      []EnvVar
 }
 
 type CostService struct {
@@ -71,6 +72,34 @@ type CostRequest struct {
 	Services []CostService
 }
 
+type EnvVar struct {
+	Name    string
+	Value   string
+	Role    string
+	Service string
+}
+
+const (
+	EnvRoleFullURI       = "full_uri"        // complete database connection URL
+	EnvRoleHostname      = "hostname"        // host or server address for the database
+	EnvRolePort          = "port"            // database port number
+	EnvRoleUsername      = "username"        // database username
+	EnvRolePassword      = "password"        // database password or auth token
+	EnvRoleDatabaseName  = "database_name"   // logical DB name
+	EnvRoleOtherDBConfig = "other_db_config" // database-related but not fitting above categories
+	EnvRoleNotDBRelated  = "not_db_related"  // unrelated to databases
+)
+
+// IsDBRelated returns true if the environment variable role is database-related
+func (e EnvVar) IsDBRelated() bool {
+	return e.Role != EnvRoleNotDBRelated
+}
+
+// IsNotDBRelated returns true if the environment variable role is not database-related
+func (e EnvVar) IsNotDBRelated() bool {
+	return e.Role == EnvRoleNotDBRelated
+}
+
 func (ds *DeploymentSpec) ServiceCounts() map[string]int {
 	counts := make(map[string]int)
 	for _, service := range ds.Services {
@@ -80,12 +109,14 @@ func (ds *DeploymentSpec) ServiceCounts() map[string]int {
 }
 
 type DeploymentBuilder struct {
-	projectSpec *analyzer.ProjectSpec
+	projectSpec    *analyzer.ProjectSpec
+	serviceEnvVars []EnvVar
 }
 
-func NewDeploymentBuilder(projectSpec *analyzer.ProjectSpec) *DeploymentBuilder {
+func NewDeploymentBuilder(projectSpec *analyzer.ProjectSpec, serviceEnvVars []EnvVar) *DeploymentBuilder {
 	return &DeploymentBuilder{
-		projectSpec: projectSpec,
+		projectSpec:    projectSpec,
+		serviceEnvVars: serviceEnvVars,
 	}
 }
 
@@ -106,7 +137,6 @@ func (db *DeploymentBuilder) Build() (*DeploymentSpec, error) {
 			Config:   make(map[string]any),
 			Provider: req.Provider,
 		}
-
 		services = append(services, service)
 	}
 
@@ -119,5 +149,6 @@ func (db *DeploymentBuilder) Build() (*DeploymentSpec, error) {
 		},
 		BuildCommand: db.projectSpec.BuildCommand,
 		StartCommand: db.projectSpec.StartCommand,
+		EnvVars:      db.serviceEnvVars,
 	}, nil
 }

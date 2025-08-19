@@ -317,9 +317,9 @@ func TestRenderDeploymentOnly(out io.Writer) {
 		DockerImageStepID:  "mock-docker-step", // Set a non-empty docker image step ID to trigger Docker path
 		RegistryCredStepID: "step-1",           // Registry credential step ID
 		TenantID:           tenantID,
-		EnvVars:            map[string]string{}, // No env vars
-		ConnectionStepIDs:  []string{},          // No connection steps
-		DependsOn:          []string{"step-1"},  // Depends on registry credential
+		EnvVars:            []deployment.EnvVar{}, // No env vars
+		ConnectionStepIDs:  []string{},            // No connection steps
+		DependsOn:          []string{"step-1"},    // Depends on registry credential
 	})
 
 	// Execute with step results containing the registry credential

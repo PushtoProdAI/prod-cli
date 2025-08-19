@@ -25,32 +25,49 @@ type ConfirmationWriter interface {
 	SendConfirmation(message string, callback func(bool))
 	SendAPIKeyPrompt(message string)
 	SendSelect(message string, options []string)
+	SendTextPrompt(message string)
+	SendTextPromptWithDefault(message string, defaultValue string)
+}
+
+type PlanWriter interface {
+	SendPlan(plan DeployPlan, dryRun bool)
+}
+
+type EnvVarWithStatus struct {
+	deployment.EnvVar
+	Status string // "pending", "collected", "db_related"
 }
 
 type Agent struct {
 	sm          deploySM
 	wfClient    *client.Client
 	interactive bool
-	deployPlan  *deployPlan
+	DeployPlan  *DeployPlan
 	dryRun      bool
 	UIOutput    io.Writer
 	auth        auth.AuthProvider
+	envVars     []EnvVarWithStatus
 }
 
 func NewAgent(wfClient *client.Client, interactive bool) *Agent {
-	a := &Agent{wfClient: wfClient, interactive: interactive}
+	a := &Agent{
+		wfClient:    wfClient,
+		interactive: interactive,
+		envVars:     make([]EnvVarWithStatus, 0),
+	}
 	sm := deploySM{currentState: a.plan}
 	a.sm = sm
 	return a
 }
 
-type deployPlan struct {
+type DeployPlan struct {
 	Action           Action
 	Platform         Platform
 	Source           string
 	Spec             analyzer.ProjectSpec
 	Summary          string
 	DryRunFromPrompt bool
+	CollectedEnvVars []deployment.EnvVar
 }
 
 type deployResult struct {
@@ -130,7 +147,7 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 		log.Printf("Workflow execution result: %v\n", err)
 	}
 
-	plan, err := client.GetWorkflowResult[deployPlan](ctx, a.wfClient, wf, 30*time.Second)
+	plan, err := client.GetWorkflowResult[DeployPlan](ctx, a.wfClient, wf, 30*time.Second)
 	if err != nil {
 		fmt.Fprintf(out, "Error getting workflow result: %v\n", err)
 	}
@@ -141,34 +158,51 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 		fmt.Fprint(out, "🔍 Detected dry-run request from your prompt - simulating execution without making changes\n")
 	}
 
-	fmt.Fprintf(out, "%s\n", plan.Summary)
-	fmt.Fprint(out, "-------\n")
-	if a.dryRun {
-		fmt.Fprint(out, "🔍 DRY RUN MODE - No changes will be made\n")
-	}
-	fmt.Fprintf(out, "Action: %s\n", plan.Action)
-	fmt.Fprintf(out, "Platform: %s\n", plan.Platform)
-	fmt.Fprintf(out, "Source: %s\n", plan.Source)
-	fmt.Fprintf(out, "Name: %s\n", plan.Spec.Name)
-	fmt.Fprintf(out, "Language: %s\n", plan.Spec.Language)
-	if len(plan.Spec.ServiceRequirements) > 0 {
-		fmt.Fprint(out, "Services:\n")
+	// Check if we have a PlanWriter (TUI interface) for structured display - exact same pattern as ConfirmationWriter
+	if planWriter, ok := out.(PlanWriter); ok {
+		// Send structured plan display using the original DeployPlan
+		planWriter.SendPlan(plan, a.dryRun)
+	} else {
+		// Fallback to original text format for non-TUI outputs
+		fmt.Fprintf(out, "%s\n", plan.Summary)
 		fmt.Fprint(out, "-------\n")
-		for i, spec := range plan.Spec.ServiceRequirements {
-			fmt.Fprintf(out, "Service Type: %s\n", spec.Type)
-			fmt.Fprintf(out, "Service: %s\n", spec.Provider)
-			if i < len(plan.Spec.ServiceRequirements)-1 {
-				fmt.Fprint(out, "-------\n")
+		if a.dryRun {
+			fmt.Fprint(out, "🔍 DRY RUN MODE - No changes will be made\n")
+		}
+		fmt.Fprintf(out, "Action: %s\n", plan.Action)
+		fmt.Fprintf(out, "Platform: %s\n", plan.Platform)
+		fmt.Fprintf(out, "Source: %s\n", plan.Source)
+		fmt.Fprintf(out, "Name: %s\n", plan.Spec.Name)
+		fmt.Fprintf(out, "Language: %s\n", plan.Spec.Language)
+		if len(plan.Spec.ServiceRequirements) > 0 {
+			fmt.Fprint(out, "Services:\n")
+			fmt.Fprint(out, "-------\n")
+			for i, spec := range plan.Spec.ServiceRequirements {
+				fmt.Fprintf(out, "Service Type: %s\n", spec.Type)
+				fmt.Fprintf(out, "Service: %s\n", spec.Provider)
+				if i < len(plan.Spec.ServiceRequirements)-1 {
+					fmt.Fprint(out, "-------\n")
+				}
 			}
 		}
+		if len(plan.Spec.EnvVars) > 0 {
+			fmt.Fprint(out, "Environment Variables:\n")
+			fmt.Fprint(out, "-------\n")
+			for i, envVar := range plan.Spec.EnvVars {
+				fmt.Fprintf(out, "Env Var: %s\n", envVar.VarName)
+				if i < len(plan.Spec.EnvVars)-1 {
+					fmt.Fprint(out, "-------\n")
+				}
+			}
+		}
+		fmt.Fprint(out, "-------\n")
 	}
-	fmt.Fprint(out, "-------\n")
 
 	if !shouldProceed(plan) {
 		fmt.Fprintf(out, "Cannot proceed with deployment plan\n")
 		return a.plan, nil
 	}
-	a.deployPlan = &plan
+	a.DeployPlan = &plan
 
 	// Skip confirmation prompt in dry-run mode
 	if a.dryRun {
@@ -212,7 +246,7 @@ func (a *Agent) processConfirmationResponse(ctx context.Context, input string, o
 
 	if input == "y" || input == "yes" {
 		fmt.Fprintf(out, "Proceeding with deployment...\n")
-		return a.deploy(ctx, input, out)
+		return a.categorizeEnvironmentVariables(ctx, input, out)
 	}
 
 	if input == "n" || input == "no" {
@@ -234,21 +268,153 @@ func (a *Agent) confirm(ctx context.Context, input string, out io.Writer) (state
 	return a.deploy, nil
 }
 
+func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	fmt.Fprintf(out, "🔍 Categorizing environment variables...\n")
+
+	wf, err := Workflows{}.CategorizeEnvVars(ctx, a.wfClient, *a.DeployPlan)
+	if err != nil {
+		fmt.Fprintf(out, "❌ Error categorizing environment variables: %v\n", err)
+		return a.deploy(ctx, input, out)
+	}
+
+	envVars, err := client.GetWorkflowResult[[]deployment.EnvVar](ctx, a.wfClient, wf, 30*time.Second)
+	if err != nil {
+		fmt.Fprintf(out, "❌ Error getting categorization result: %v\n", err)
+		return a.deploy(ctx, input, out)
+	}
+
+	// always initialize envVars slice to reset between deploys
+	a.envVars = make([]EnvVarWithStatus, 0)
+
+	// Process all environment variables and set their status
+	var pendingCount int
+	for _, envVar := range envVars {
+		if envVar.IsNotDBRelated() {
+			// This non-DB var needs user input
+			a.envVars = append(a.envVars, EnvVarWithStatus{
+				EnvVar: envVar,
+				Status: "pending",
+			})
+			pendingCount++
+		} else {
+			// DB-related vars - deployment system will handle values
+			a.envVars = append(a.envVars, EnvVarWithStatus{
+				EnvVar: envVar,
+				Status: "db_related",
+			})
+		}
+	}
+
+	if pendingCount > 0 {
+		fmt.Fprintf(out, "Found %d environment variables that need values:\n", pendingCount)
+		for _, envVar := range a.envVars {
+			if envVar.Status == "pending" {
+				fmt.Fprintf(out, "  - %s\n", envVar.Name)
+			}
+		}
+		fmt.Fprint(out, "\n")
+
+		return a.promptForEnvVarValue(ctx, input, out)
+	}
+
+	// All env vars are database-related or already have values, proceed with deployment
+	fmt.Fprintf(out, "✅ All environment variables are ready. Proceeding with deployment...\n")
+	return a.deploy(ctx, input, out)
+}
+
+func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	// Simply find the first pending env var - much cleaner!
+	var currentEnvVar *EnvVarWithStatus
+
+	for i := range a.envVars {
+		if a.envVars[i].Status == "pending" {
+			currentEnvVar = &a.envVars[i]
+			break
+		}
+	}
+
+	if currentEnvVar == nil {
+		// No more pending env vars, proceed with deployment
+		fmt.Fprintf(out, "All environment variable values collected. Proceeding with deployment...\n")
+		return a.deploy(ctx, input, out)
+	}
+
+	// Check if we have a ConfirmationWriter (Bubble Tea UI)
+	if confirmWriter, ok := out.(ConfirmationWriter); ok {
+		promptMessage := fmt.Sprintf("Enter value for environment variable '%s':", currentEnvVar.Name)
+		if currentEnvVar.Value != "" {
+			// Use the enhanced method that pre-fills the input with the default value
+			confirmWriter.SendTextPromptWithDefault(promptMessage, currentEnvVar.Value)
+		} else {
+			confirmWriter.SendTextPrompt(promptMessage)
+		}
+		return a.waitForEnvVarValue, nil
+	}
+
+	// Fallback for non-interactive mode - skip env var collection
+	fmt.Fprintf(out, "Interactive mode required for environment variable collection. Skipping...\n")
+	return a.deploy(ctx, input, out)
+}
+
+func (a *Agent) waitForEnvVarValue(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	userInput := strings.TrimSpace(input)
+
+	// Find and update the FIRST pending env var (much simpler!)
+	for i := range a.envVars {
+		if a.envVars[i].Status == "pending" {
+			var finalValue string
+			if userInput == "" && a.envVars[i].Value != "" {
+				// User pressed Enter without input - use default from .env file
+				finalValue = a.envVars[i].Value
+				fmt.Fprintf(out, "✅ Using default value: %s = %s\n", a.envVars[i].Name, finalValue)
+			} else if userInput != "" {
+				// User provided a value - use it
+				finalValue = userInput
+				fmt.Fprintf(out, "✅ Set %s = %s\n", a.envVars[i].Name, finalValue)
+			} else {
+				// No user input and no default - keep empty (shouldn't happen for not_db_related)
+				finalValue = ""
+				fmt.Fprintf(out, "✅ Set %s = (empty)\n", a.envVars[i].Name)
+			}
+
+			// Update the env var with the final value and mark as collected
+			a.envVars[i].Value = finalValue
+			a.envVars[i].Status = "collected"
+			break
+		}
+	}
+
+	// Continue to next env var (no counter needed - we just find the next pending one)
+	return a.promptForEnvVarValue(ctx, input, out)
+}
+
 func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	if a.dryRun {
 		return a.dryRunDeploy(ctx, input, out)
 	}
 
 	// Check authentication before deployment
-	if a.deployPlan.Platform == Render || a.deployPlan.Platform == FlyIO {
+	if a.DeployPlan.Platform == Render || a.DeployPlan.Platform == FlyIO {
 		return a.checkAuthentication(ctx, input, out)
 	}
 
 	return a.executeDeployment(ctx, input, out)
 }
 
-func (a *Agent) executeDeployment(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	wf, err := Workflows{}.Deploy(ctx, a.wfClient, *a.deployPlan)
+func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) (stateFn, error) {
+	// Add collected environment variables to the deploy plan
+	DeployPlanWithEnvVars := *a.DeployPlan
+
+	// Convert EnvVarWithStatus back to deployment.EnvVar for deployment
+	var collectedEnvVars []deployment.EnvVar
+	for _, envVar := range a.envVars {
+		if envVar.Status == "collected" || envVar.Status == "db_related" {
+			collectedEnvVars = append(collectedEnvVars, envVar.EnvVar)
+		}
+	}
+	DeployPlanWithEnvVars.CollectedEnvVars = collectedEnvVars
+
+	wf, err := Workflows{}.Deploy(ctx, a.wfClient, DeployPlanWithEnvVars)
 	if err != nil {
 		log.Printf("Workflow execution result: %v\n", err)
 		fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
@@ -302,14 +468,14 @@ func (a *Agent) executeDeployment(ctx context.Context, input string, out io.Writ
 
 func (a *Agent) dryRunDeploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	// Check authentication before dry run deployment
-	if a.deployPlan.Platform == Render {
+	if a.DeployPlan.Platform == Render {
 		return a.checkRenderAuthenticationForDryRun(ctx, input, out)
 	}
 
 	return a.executeDryRun(ctx, input, out)
 }
 
-func shouldProceed(plan deployPlan) bool {
+func shouldProceed(plan DeployPlan) bool {
 	if plan.Action == UnknownAction {
 		return false
 	}
@@ -436,7 +602,7 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 	}
 
 	if !authenticated {
-		fmt.Fprintf(out, "🔐 Authentication required for %s deployment\n\n", a.deployPlan.Platform)
+		fmt.Fprintf(out, "🔐 Authentication required for %s deployment\n\n", a.DeployPlan.Platform)
 
 		// Store the render auth for use in authentication states
 		a.auth = authProvider
@@ -467,7 +633,7 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 }
 
 func (a *Agent) getAuthProvider(out io.Writer) (auth.AuthProvider, error) {
-	switch a.deployPlan.Platform {
+	switch a.DeployPlan.Platform {
 	case Render:
 		apiKey := os.Getenv("RENDER_API_KEY")
 		renderClient := render.NewHTTPRenderClient(apiKey, output.NewNoOpWriter())
@@ -476,7 +642,7 @@ func (a *Agent) getAuthProvider(out io.Writer) (auth.AuthProvider, error) {
 	case FlyIO:
 		return auth.NewFlyAuth(out), nil
 	default:
-		return nil, fmt.Errorf("unsupported platform: %s", a.deployPlan.Platform)
+		return nil, fmt.Errorf("unsupported platform: %s", a.DeployPlan.Platform)
 	}
 }
 
@@ -687,7 +853,7 @@ func (a *Agent) performOAuthLoginDryRun(ctx context.Context, input string, out i
 }
 
 func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	wf, err := Workflows{}.DryRunDeploy(ctx, a.wfClient, *a.deployPlan)
+	wf, err := Workflows{}.DryRunDeploy(ctx, a.wfClient, *a.DeployPlan)
 	if err != nil {
 		log.Printf("Dry-run workflow execution result: %v\n", err)
 		fmt.Fprint(out, "Sorry, couldn't create a dry-run deployment plan \n")

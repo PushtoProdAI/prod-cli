@@ -18,6 +18,8 @@ func (m Model) handleEnterKey() (tea.Model, tea.Cmd) {
 		return m.handleAPIKeyEnter()
 	} else if m.isMode(ModeSelect) {
 		return m.handleSelectEnter()
+	} else if m.isMode(ModeText) {
+		return m.handleTextEnter()
 	} else {
 		return m.handleNormalEnter()
 	}
@@ -127,6 +129,30 @@ func (m Model) handleNormalEnter() (tea.Model, tea.Cmd) {
 
 	// Add to history and clear input
 	m.addToHistory(input)
+	m.textInput.SetValue("")
+
+	// Process input with agent
+	if m.agent != nil {
+		go func() {
+			ctx := context.Background()
+			m.agent.Process(ctx, input, nil)
+		}()
+	}
+
+	return m, nil
+}
+
+// handleTextEnter processes Enter in text prompt mode
+func (m Model) handleTextEnter() (tea.Model, tea.Cmd) {
+	if m.textPrompt == nil {
+		return m, nil
+	}
+
+	input := m.textInput.Value()
+
+	// Reset mode and clear prompt
+	m.setMode(ModeNormal)
+	m.textPrompt = nil
 	m.textInput.SetValue("")
 
 	// Process input with agent

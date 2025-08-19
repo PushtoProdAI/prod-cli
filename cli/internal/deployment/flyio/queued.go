@@ -159,6 +159,12 @@ func (fqd *FlyioQueuedDeployment) createAttachmentStep(service deployment.Servic
 	// Only create attachment steps for services that were actually created
 	switch service.Provider {
 	case "postgresql":
+		pgURLVar := "DATABASE_URL"
+		for _, v := range fqd.spec.EnvVars {
+			if v.Role == deployment.EnvRoleFullURI && v.Service == "postgresql" {
+				pgURLVar = v.Name
+			}
+		}
 		return &AttachPostgresStep{
 			BaseStep: BaseStep{
 				ID:          stepID,
@@ -166,8 +172,8 @@ func (fqd *FlyioQueuedDeployment) createAttachmentStep(service deployment.Servic
 				DependsOn:   []string{appStepID, serviceStepID}, // Depends on both app and service creation
 			},
 			appName:       appName,
+			variableName:  pgURLVar,
 			serviceStepID: serviceStepID, // Pass the service step ID to retrieve cluster ID
-			variableName:  "DATABASE_URL",
 		}
 	case "redis":
 		return &AttachRedisStep{
@@ -188,9 +194,17 @@ func (fqd *FlyioQueuedDeployment) createAttachmentStep(service deployment.Servic
 
 // generateFlyConfig generates the Fly.io configuration
 func (fqd *FlyioQueuedDeployment) generateFlyConfig() *FlyioConfig {
+	envVars := make(map[string]string)
+
+	for _, ev := range fqd.spec.EnvVars {
+		if ev.IsNotDBRelated() && ev.Value != "" {
+			envVars[ev.Name] = ev.Value
+		}
+	}
+
 	config := &FlyioConfig{
 		AppName: fqd.spec.Name,
-		EnvVars: make(map[string]string),
+		EnvVars: envVars,
 	}
 
 	// Set source path if available in metadata
@@ -216,7 +230,6 @@ func (fqd *FlyioQueuedDeployment) generateFlyConfig() *FlyioConfig {
 			},
 		},
 	}
-
 	return config
 }
 

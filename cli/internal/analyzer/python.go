@@ -3,17 +3,48 @@ package analyzer
 import (
 	"fmt"
 	"io/fs"
+	"regexp"
 	"strings"
+)
+
+const (
+	// Comprehensive Python environment variable regex with single capture group
+	// Matches common Python environment variable patterns including multi-line
+	pyEnvVarRegex = `(?s)(?:` +
+		// Standard os.environ patterns
+		`os\.environ\[\s*["']([A-Za-z_][A-Za-z0-9_]*)["']\]|` +
+		`os\.environ\.get\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["']|` +
+		`os\.environ\.setdefault\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["']|` +
+		`os\.getenv\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["']|` +
+
+		// Config patterns (decouple, django-environ, etc) - handles multi-line
+		`config\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["']|` +
+
+		// Environs patterns
+		`env\.[a-zA-Z_]+\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["']|` +
+		`env\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["']|` +
+
+		// Pydantic Field patterns
+		`Field\([^)]*?\benv\s*=\s*["']([A-Za-z_][A-Za-z0-9_]*)["']|` +
+
+		// Settings and getattr patterns
+		`getattr\(\s*settings\s*,\s*["']([A-Za-z_][A-Za-z0-9_]*)["']|` +
+		`settings\.([A-Za-z_][A-Za-z0-9_]*)\b|` +
+
+		// Environment variable references in assignments
+		`["']([A-Za-z_][A-Za-z0-9_]*)["']\s*:\s*os\.environ\.get\(|` +
+		`["']([A-Za-z_][A-Za-z0-9_]*)["']\s*:\s*config\(` +
+		`)`
 )
 
 // PythonAnalyzer implements the Analyzer interface for Python projects
 type PythonAnalyzer struct {
-	ProjectFS fs.FS
+	ProjectFS projectFS
 	Cache     *AnalysisCache
 }
 
 // NewPythonAnalyzer creates a new Python analyzer instance
-func NewPythonAnalyzer(projectFS fs.FS) Analyzer {
+func NewPythonAnalyzer(projectFS projectFS) Analyzer {
 	return &PythonAnalyzer{
 		ProjectFS: projectFS,
 		Cache: &AnalysisCache{
@@ -79,9 +110,17 @@ func (p *PythonAnalyzer) Analyze() (*ProjectSpec, error) {
 
 	projectName := p.extractProjectName(runtime, dependencies)
 
+	re := regexp.MustCompile(pyEnvVarRegex)
+	ignoreDirs := []string{"venv", ".venv", "env", ".env", "__pycache__", ".git", ".pytest_cache", ".mypy_cache"}
+	envVars, err := walkProjectForCandidates(p.ProjectFS, []string{".py"}, ignoreDirs, re, 3, 5)
+	if err != nil {
+		return nil, err
+	}
+
 	return &ProjectSpec{
 		Name:                projectName,
 		Language:            "python",
 		ServiceRequirements: serviceRequirements,
+		EnvVars:             envVars,
 	}, nil
 }

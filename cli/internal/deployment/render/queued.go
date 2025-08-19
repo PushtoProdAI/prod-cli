@@ -75,14 +75,11 @@ func (qd *QueuedDeployment) GenerateAPISteps(ownerID string) []RenderAPIStep {
 	steps = append(steps, backingServiceSteps...)
 	stepCounter = nextCounter
 
-	// Prepare environment variables for services
-	envVars := qd.prepareServiceEnvVars()
-
 	// Configure deployment (Docker or native)
 	deploymentConfig := qd.configureDeployment(ownerID, connectionStepIDs, &steps, &stepCounter)
 
 	// Create web service step
-	webServiceStep := qd.createWebServiceStep(ownerID, envVars, connectionStepIDs, deploymentConfig, stepCounter)
+	webServiceStep := qd.createWebServiceStep(ownerID, qd.spec.EnvVars, connectionStepIDs, deploymentConfig, stepCounter)
 	steps = append(steps, webServiceStep)
 
 	return steps
@@ -173,23 +170,6 @@ func (qd *QueuedDeployment) createConnectionInfoStep(provider, stepID, serviceSt
 	})
 }
 
-// prepareServiceEnvVars creates environment variable placeholders for services
-// These placeholders will be replaced with actual connection strings during execution
-func (qd *QueuedDeployment) prepareServiceEnvVars() map[string]string {
-	envVars := make(map[string]string)
-	// Note: These are placeholder values that will be replaced by actual connection strings
-	// from the connection info steps during CreateWebServiceStep execution
-	for provider := range qd.spec.ServiceCounts() {
-		switch provider {
-		case "postgresql":
-			envVars["DATABASE_URL"] = "" // Will be replaced with actual connection string
-		case "redis":
-			envVars["REDIS_URL"] = "" // Will be replaced with actual connection string
-		}
-	}
-	return envVars
-}
-
 // deploymentConfig holds the configuration for web service deployment
 type deploymentConfig struct {
 	buildCommand       string
@@ -261,7 +241,7 @@ func (qd *QueuedDeployment) createDockerDeploymentSteps(ownerID string, startCou
 }
 
 // createWebServiceStep creates the final web service deployment step
-func (qd *QueuedDeployment) createWebServiceStep(ownerID string, envVars map[string]string, connectionStepIDs []string, config *deploymentConfig, stepCounter int) RenderAPIStep {
+func (qd *QueuedDeployment) createWebServiceStep(ownerID string, envVars []deployment.EnvVar, connectionStepIDs []string, config *deploymentConfig, stepCounter int) RenderAPIStep {
 	return NewCreateWebServiceStep(CreateWebServiceStepConfig{
 		ID:                 fmt.Sprintf("step-%d", stepCounter),
 		Description:        "Create web service with database connection environment variables",

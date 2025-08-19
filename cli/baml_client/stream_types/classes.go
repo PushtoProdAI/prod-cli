@@ -20,6 +20,193 @@ import (
 	"github.com/boundaryml/baml/engine/language_client_go/pkg/cffi"
 )
 
+type EnvVarCandidate struct {
+	VarName *string `json:"varName"`
+	File    *string `json:"file"`
+	Line    *int64  `json:"line"`
+	Context *string `json:"context"`
+}
+
+func (c *EnvVarCandidate) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "EnvVarCandidate" {
+		panic(fmt.Sprintf("expected EnvVarCandidate, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "varName":
+			c.VarName = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "file":
+			c.File = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "line":
+			c.Line = func(param *cffi.CFFIValueHolder) *int64 {
+				decoded := baml.Decode(param)
+				return func(result any) *int64 {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(int64)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "context":
+			c.Context = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c EnvVarCandidate) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["varName"] = c.VarName
+
+	fields["file"] = c.File
+
+	fields["line"] = c.Line
+
+	fields["context"] = c.Context
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c EnvVarCandidate) BamlTypeName() string {
+	return "EnvVarCandidate"
+}
+
+func (u EnvVarCandidate) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "EnvVarCandidate",
+	}
+}
+
+type EnvVarCategory struct {
+	IsDBRelated *bool   `json:"isDBRelated"`
+	Role        *string `json:"role"`
+	DbType      *string `json:"dbType"`
+}
+
+func (c *EnvVarCategory) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "EnvVarCategory" {
+		panic(fmt.Sprintf("expected EnvVarCategory, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "isDBRelated":
+			c.IsDBRelated = func(param *cffi.CFFIValueHolder) *bool {
+				decoded := baml.Decode(param)
+				return func(result any) *bool {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(bool)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "role":
+			c.Role = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "dbType":
+			c.DbType = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c EnvVarCategory) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["isDBRelated"] = c.IsDBRelated
+
+	fields["role"] = c.Role
+
+	fields["dbType"] = c.DbType
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c EnvVarCategory) BamlTypeName() string {
+	return "EnvVarCategory"
+}
+
+func (u EnvVarCategory) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "EnvVarCategory",
+	}
+}
+
 type Error struct {
 	Summary      *string       `json:"summary"`
 	Remediations []Remediation `json:"remediations"`

@@ -4,6 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"regexp"
+)
+
+const (
+	nodeEnvVarRegex = `\b(?:process\.env\.([A-Za-z_][A-Za-z0-9_]*)|{[^}]*\b([A-Za-z_][A-Za-z0-9_]*)\b[^}]*}\s*=\s*process\.env)`
 )
 
 type PackageJson struct {
@@ -14,7 +19,7 @@ type PackageJson struct {
 }
 
 type NodeAnalyzer struct {
-	ProjectFS fs.FS
+	ProjectFS projectFS
 }
 
 var NodeServiceMappings = map[string]ServiceRequirement{
@@ -57,7 +62,7 @@ var NodeServiceMappings = map[string]ServiceRequirement{
 	"@sentry/node": {Type: "monitoring", Provider: "sentry"},
 }
 
-func NewNodeAnalyzer(projectFS fs.FS) Analyzer {
+func NewNodeAnalyzer(projectFS projectFS) Analyzer {
 	return &NodeAnalyzer{
 		ProjectFS: projectFS,
 	}
@@ -86,6 +91,11 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 		return nil, err
 	}
 
+	re := regexp.MustCompile(nodeEnvVarRegex)
+	envVars, err := walkProjectForCandidates(n.ProjectFS, []string{".js", ".ts", ".tsx", ".jsx"}, []string{"node_modules"}, re, 3, 5)
+	if err != nil {
+		return nil, err
+	}
 	return &ProjectSpec{
 		Name:                pkgJson.Name,
 		Language:            "node",
@@ -93,6 +103,7 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 		// TODO Analyze for these
 		BuildCommand: "npm run build",
 		StartCommand: "npm run start",
+		EnvVars:      envVars,
 	}, nil
 }
 
