@@ -17,11 +17,17 @@ type ProjectSpec struct {
 	ServiceRequirements []ServiceRequirement
 	BuildCommand        string
 	StartCommand        string
+	EnvVars             []EnvVarCandidate
 }
 
 type ServiceRequirement struct {
 	Type     string `json:"type"`
 	Provider string `json:"provider"`
+}
+
+type projectFS struct {
+	fs.FS
+	rootPath string
 }
 
 const (
@@ -47,17 +53,17 @@ var (
 	ServiceRedis    ServiceRequirement = ServiceRequirement{Type: TypeCache, Provider: ProviderRedis}
 )
 
-var analyzers = []func(fs.FS) Analyzer{
+var analyzers = []func(projectFS) Analyzer{
 	NewNodeAnalyzer,
 	NewPythonAnalyzer,
 	// TODO add more analyzers here
 }
 
 func GetAnalyzer(projectPath string) (Analyzer, error) {
-	projectFS := os.DirFS(projectPath)
+	pFS := os.DirFS(projectPath)
 
 	for _, newAnalyzer := range analyzers {
-		analyzer := newAnalyzer(projectFS)
+		analyzer := newAnalyzer(projectFS{FS: pFS, rootPath: projectPath})
 		canHandle, err := analyzer.CanHandle()
 		if err != nil {
 			return nil, err

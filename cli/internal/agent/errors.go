@@ -12,7 +12,7 @@ import (
 	"github.com/meroxa/prod/cli/baml_client/types"
 )
 
-func (a *Activities) summarizeError(ctx context.Context, error string, input deployPlan) (deployError, error) {
+func (a *Activities) summarizeError(ctx context.Context, error string, input DeployPlan) (deployError, error) {
 	intent := types.Intent{
 		Action:   input.Action.String(),
 		Platform: input.Platform.String(),

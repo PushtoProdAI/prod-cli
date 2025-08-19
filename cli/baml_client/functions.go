@@ -20,6 +20,45 @@ import (
 	"github.com/meroxa/prod/cli/baml_client/types"
 )
 
+func DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCandidate, dbList []string, opts ...CallOptionFunc) (types.EnvVarCategory, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"envVar": envVar, "dbList": dbList},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	encoded, err := baml.EncodeArgs(args)
+	if err != nil {
+		panic(err)
+	}
+
+	result, err := bamlRuntime.CallFunction(ctx, "DetermineEnvVarRoles", encoded)
+	if err != nil {
+		return types.EnvVarCategory{}, err
+	}
+
+	if result.Error != nil {
+		return types.EnvVarCategory{}, result.Error
+	}
+
+	casted := *(result.Data).(*types.EnvVarCategory)
+
+	return casted, nil
+}
+
 func ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) (types.Intent, error) {
 
 	var callOpts callOption

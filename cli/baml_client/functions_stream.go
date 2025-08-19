@@ -40,6 +40,79 @@ func (s *StreamValue[TStream, TFinal]) Stream() TStream {
 	return *s.as_stream
 }
 
+// / Streaming version of DetermineEnvVarRoles
+func (*stream) DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCandidate, dbList []string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.EnvVarCategory, types.EnvVarCategory], error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"envVar": envVar, "dbList": dbList},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	encoded, err := baml.EncodeArgs(args)
+	if err != nil {
+		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
+		// and include the type of the args you're passing in.
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: DetermineEnvVarRoles: %w", err)
+		panic(wrapped_err)
+	}
+
+	internal_ctx := context.Background()
+	internal_channel, err := bamlRuntime.CallFunctionStream(internal_ctx, "DetermineEnvVarRoles", encoded)
+	if err != nil {
+		return nil, err
+	}
+
+	channel := make(chan StreamValue[stream_types.EnvVarCategory, types.EnvVarCategory])
+	go func() {
+		defer func() {
+			internal_ctx.Done()
+		}()
+		for {
+			select {
+			case <-ctx.Done():
+				close(channel)
+				return
+			case result, ok := <-internal_channel:
+				if !ok {
+					close(channel)
+					return
+				}
+				if result.Error != nil {
+					close(channel)
+					return
+				}
+				if result.HasData {
+					data := *(result.Data).(*types.EnvVarCategory)
+					channel <- StreamValue[stream_types.EnvVarCategory, types.EnvVarCategory]{
+						IsFinal:  true,
+						as_final: &data,
+					}
+				} else {
+					data := *(result.StreamData).(*stream_types.EnvVarCategory)
+					channel <- StreamValue[stream_types.EnvVarCategory, types.EnvVarCategory]{
+						IsFinal:   false,
+						as_stream: &data,
+					}
+				}
+			}
+		}
+	}()
+	return channel, nil
+}
+
 // / Streaming version of ExtractIntent
 func (*stream) ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Intent, types.Intent], error) {
 

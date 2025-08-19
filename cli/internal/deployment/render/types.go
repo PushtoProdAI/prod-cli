@@ -115,6 +115,7 @@ type CreateRedisRequest struct {
 type PostgresConnectionInfo struct {
 	InternalConnectionString string `json:"internalConnectionString"`
 	ExternalConnectionString string `json:"externalConnectionString"`
+	Password                 string `json:"password"`
 }
 
 type RedisConnectionInfo struct {

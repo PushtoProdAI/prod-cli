@@ -97,8 +97,8 @@ setup(name="test-project")`,
 			}
 
 			// Create analyzer
-			projectFS := os.DirFS(tmpDir)
-			analyzer := NewPythonAnalyzer(projectFS)
+			fs := os.DirFS(tmpDir)
+			analyzer := NewPythonAnalyzer(projectFS{FS: fs, rootPath: tmpDir})
 
 			// Test CanHandle
 			canHandle, err := analyzer.CanHandle()
@@ -199,8 +199,8 @@ redis = "*"`,
 			}
 
 			// Create analyzer
-			projectFS := os.DirFS(tmpDir)
-			analyzer := NewPythonAnalyzer(projectFS)
+			fs := os.DirFS(tmpDir)
+			analyzer := NewPythonAnalyzer(projectFS{FS: fs, rootPath: tmpDir})
 
 			// Test Analyze
 			result, err := analyzer.Analyze()
@@ -286,8 +286,8 @@ psycopg2-binary==2.9.0`,
 			}
 
 			// Create analyzer
-			projectFS := os.DirFS(tmpDir)
-			analyzer := NewPythonAnalyzer(projectFS).(*PythonAnalyzer)
+			fs := os.DirFS(tmpDir)
+			analyzer := NewPythonAnalyzer(projectFS{FS: fs, rootPath: tmpDir}).(*PythonAnalyzer)
 
 			// Test parsing
 			dependencies, err := analyzer.parseRequirementsTxt()
@@ -409,8 +409,8 @@ func TestPythonAnalyzer_detectFramework(t *testing.T) {
 			}
 
 			// Create analyzer
-			projectFS := os.DirFS(tmpDir)
-			analyzer := NewPythonAnalyzer(projectFS).(*PythonAnalyzer)
+			fs := os.DirFS(tmpDir)
+			analyzer := NewPythonAnalyzer(projectFS{FS: fs, rootPath: tmpDir}).(*PythonAnalyzer)
 
 			// Test framework detection
 			framework, err := analyzer.detectFramework(tt.dependencies)
@@ -474,8 +474,8 @@ func TestPythonAnalyzer_extractServiceRequirements(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create analyzer
-			projectFS := os.DirFS(".")
-			analyzer := NewPythonAnalyzer(projectFS).(*PythonAnalyzer)
+			fs := os.DirFS(".")
+			analyzer := NewPythonAnalyzer(projectFS{FS: fs, rootPath: "."}).(*PythonAnalyzer)
 
 			// Test service extraction
 			services, err := analyzer.extractServiceRequirements(tt.dependencies)

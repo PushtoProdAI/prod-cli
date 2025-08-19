@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/meroxa/prod/cli/internal/agent"
 	"github.com/meroxa/prod/cli/internal/output"
 )
 
@@ -135,6 +136,47 @@ func (w *TeaWriter) SendSelect(message string, options []string) {
 	})
 }
 
+func (w *TeaWriter) SendTextPrompt(message string) {
+	w.send(TextPrompt{
+		Message: message,
+	})
+}
+
+func (w *TeaWriter) SendTextPromptWithDefault(message string, defaultValue string) {
+	w.send(TextPrompt{
+		Message:      message,
+		DefaultValue: defaultValue,
+	})
+}
+
+// SendPlan implements the agent.PlanWriter interface exactly like ConfirmationWriter methods
+func (w *TeaWriter) SendPlan(plan agent.DeployPlan, dryRun bool) {
+	// Convert agent types to TUI types
+	tuiServices := make([]ServiceRequirement, len(plan.Spec.ServiceRequirements))
+	for i, s := range plan.Spec.ServiceRequirements {
+		tuiServices[i] = ServiceRequirement{Type: s.Type, Provider: s.Provider}
+	}
+
+	tuiEnvVars := make([]EnvVarRequirement, len(plan.Spec.EnvVars))
+	for i, e := range plan.Spec.EnvVars {
+		tuiEnvVars[i] = EnvVarRequirement{Name: e.VarName}
+	}
+
+	planMessage := PlanDisplayMessage{
+		Summary:  plan.Summary,
+		Action:   plan.Action.String(),
+		Platform: plan.Platform.String(),
+		Source:   plan.Source,
+		Name:     plan.Spec.Name,
+		Language: plan.Spec.Language,
+		DryRun:   dryRun,
+		Services: tuiServices,
+		EnvVars:  tuiEnvVars,
+	}
+
+	w.send(planMessage)
+}
+
 // PromptSelection implements AuthInteractor interface
 func (w *TeaWriter) PromptSelection(message string, options []string) (int, error) {
 	w.SendSelect(message, options)
@@ -165,7 +207,12 @@ func (w *TeaWriter) HideProgress() {
 	w.StopSpinner()
 }
 
-// Ensure TeaWriter implements both interfaces
+// IsTeaWriter returns true to identify this as a TeaWriter
+func (w *TeaWriter) IsTeaWriter() bool {
+	return true
+}
+
+// Ensure TeaWriter implements StatusWriter interface
 var (
 	_ output.StatusWriter = (*TeaWriter)(nil)
 )

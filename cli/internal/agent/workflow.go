@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"maps"
 	"time"
 
 	"github.com/cschleiden/go-workflows/client"
@@ -19,10 +20,11 @@ import (
 )
 
 const (
-	PlanDeployWorkflowName   = "agent.planDeploy"
-	DeployRenderWorkflowName = "agent.deploy.render"
-	DryRunDeployWorkflowName = "agent.dryRun.render"
-	DeployFlyioWorkflowName  = "agent.deploy.flyio"
+	PlanDeployWorkflowName        = "agent.planDeploy"
+	DeployRenderWorkflowName      = "agent.deploy.render"
+	DryRunDeployWorkflowName      = "agent.dryRun.render"
+	DeployFlyioWorkflowName       = "agent.deploy.flyio"
+	CategorizeEnvVarsWorkflowName = "agent.categorizeEnvVars"
 )
 
 var ActivityOpts = workflow.ActivityOptions{
@@ -82,6 +84,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: DeployRenderWorkflowName, WorkflowFunc: w.deployRender},
 		{Name: DryRunDeployWorkflowName, WorkflowFunc: w.dryRunDeployRender},
 		{Name: DeployFlyioWorkflowName, WorkflowFunc: w.deployFly},
+		{Name: CategorizeEnvVarsWorkflowName, WorkflowFunc: w.categorizeEnvVars},
 	}
 }
 
@@ -89,7 +92,7 @@ func (Workflows) PlanDeploy(ctx context.Context, c *client.Client, input string)
 	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", PlanDeployWorkflowName, time.Now().Unix())}, PlanDeployWorkflowName, input)
 }
 
-func (Workflows) Deploy(ctx context.Context, c *client.Client, input deployPlan) (*workflow.Instance, error) {
+func (Workflows) Deploy(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
 	slog.Info("Deploy", "platform", input.Platform, "action", input.Action)
 	switch input.Platform {
 	case Render:
@@ -101,7 +104,7 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input deployPlan)
 	}
 }
 
-func (Workflows) DryRunDeploy(ctx context.Context, c *client.Client, input deployPlan) (*workflow.Instance, error) {
+func (Workflows) DryRunDeploy(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
 	slog.Info("Dry run", "platform", input.Platform, "action", input.Action)
 	if input.Platform == Render {
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DryRunDeployWorkflowName, time.Now().Unix())}, DryRunDeployWorkflowName, input)
@@ -109,19 +112,14 @@ func (Workflows) DryRunDeploy(ctx context.Context, c *client.Client, input deplo
 	return nil, errors.New("unsupported platform for dry-run deployment")
 }
 
-func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (deployResult, error) {
+func (Workflows) CategorizeEnvVars(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
+	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", CategorizeEnvVarsWorkflowName, time.Now().Unix())}, CategorizeEnvVarsWorkflowName, input)
+}
+
+func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deployResult, error) {
 	if w.registry == nil {
 		return deployResult{}, errors.New("workflow registry is not set")
 	}
-
-	// Build deployment spec
-	db := deployment.NewDeploymentBuilder(&input.Spec)
-	spec, err := db.Build()
-	if err != nil {
-		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
-	}
-	spec.Metadata["buildContext"] = input.Source
-	spec.Metadata["tenantID"] = "test"
 
 	// Validate Docker availability for Render
 	if !deployment.IsDockerAvailable() {
@@ -131,6 +129,16 @@ func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (deploy
 		}
 		return deployResult{Error: summary}, nil
 	}
+
+	envVars := input.CollectedEnvVars
+	// Build deployment spec
+	db := deployment.NewDeploymentBuilder(&input.Spec, envVars)
+	spec, err := db.Build()
+	if err != nil {
+		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
+	}
+	spec.Metadata["buildContext"] = input.Source
+	spec.Metadata["tenantID"] = "test"
 
 	// Generate and summarize deployment steps (for UI feedback)
 	workspaceID, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderWorkspace).Get(ctx)
@@ -189,13 +197,15 @@ func (w *Workflows) deployRender(ctx workflow.Context, input deployPlan) (deploy
 	return deployResult{Url: url}, nil
 }
 
-func (w *Workflows) deployFly(ctx workflow.Context, input deployPlan) (deployResult, error) {
+func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployResult, error) {
 	if w.registry == nil {
 		return deployResult{}, errors.New("workflow registry is not set")
 	}
 
+	envVars := input.CollectedEnvVars
+
 	// Build deployment spec
-	db := deployment.NewDeploymentBuilder(&input.Spec)
+	db := deployment.NewDeploymentBuilder(&input.Spec, envVars)
 	spec, err := db.Build()
 	if err != nil {
 		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
@@ -248,7 +258,7 @@ func (w *Workflows) deployFly(ctx workflow.Context, input deployPlan) (deployRes
 	return deployResult{Url: url}, nil
 }
 
-func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (DryRunResult, error) {
+func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input DeployPlan) (DryRunResult, error) {
 	if w.registry == nil {
 		return DryRunResult{}, errors.New("workflow registry is not set")
 	}
@@ -261,8 +271,10 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 		credentialStatus["Render API"] = true
 	}
 
+	envVars := input.CollectedEnvVars
+
 	dockerGen := deployment.NewDockerGenerator(w.uiWriter)
-	db := deployment.NewDeploymentBuilder(&input.Spec)
+	db := deployment.NewDeploymentBuilder(&input.Spec, envVars)
 	spec, err := db.Build()
 	if err != nil {
 		return DryRunResult{}, errors.Errorf("failed to build deployment spec: %w", err)
@@ -301,6 +313,41 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input deployPlan) (
 		ConflictChecks:   conflictChecks,
 		ValidationErrors: validationErrors,
 	}, nil
+}
+
+func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPlan) ([]deployment.EnvVar, error) {
+	// as noted in the activites code for this, we could split this out so each env get's own activity instance that could be conccurent
+	envVars, err := workflow.ExecuteActivity[[]deployment.EnvVar](ctx, ActivityOpts, AgentCategorizeEnvVars, deployPlan.Spec).Get(ctx)
+	if err != nil {
+		return []deployment.EnvVar{}, errors.Errorf("failed to categorize environment variables: %w", err)
+	}
+	fromEnvFiles, err := workflow.ExecuteActivity[[]deployment.EnvVar](ctx, ActivityOpts, AgentReadEnvFiles, deployPlan.Source).Get(ctx)
+	if err != nil {
+		return []deployment.EnvVar{}, errors.Errorf("failed to read environment variables from .env files: %w", err)
+	}
+
+	// convert to a map to make the next step a little easier
+	envMap := maps.Collect(func(yield func(string, deployment.EnvVar) bool) {
+		for _, e := range fromEnvFiles {
+			if !yield(e.Name, e) {
+				return
+			}
+		}
+	})
+
+	// we will take values that in env files and use those as suggested values
+	for i := range envVars {
+		if envVars[i].IsNotDBRelated() {
+			fromEnvFile, ok := envMap[envVars[i].Name]
+			if !ok {
+				continue
+			}
+			log.Println(envVars[i].Name, "found in env file with value", fromEnvFile.Value)
+			envVars[i].Value = fromEnvFile.Value
+		}
+	}
+
+	return envVars, nil
 }
 
 // Helper functions for dry run workflow

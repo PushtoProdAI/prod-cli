@@ -4,7 +4,7 @@ import "github.com/charmbracelet/lipgloss"
 
 var (
 	// Dark theme colors
-	primaryColor    = lipgloss.Color("#00D4AA") // Teal
+	primaryColor    = lipgloss.Color("#05B55E") // Green as used in our branding
 	secondaryColor  = lipgloss.Color("#7C3AED") // Purple
 	accentColor     = lipgloss.Color("#F59E0B") // Amber
 	textColor       = lipgloss.Color("#F3F4F6") // Light gray
@@ -12,7 +12,7 @@ var (
 	backgroundColor = lipgloss.Color("#111827") // Dark gray
 	borderColor     = lipgloss.Color("#374151") // Medium gray
 	errorColor      = lipgloss.Color("#EF4444") // Red
-	successColor    = lipgloss.Color("#10B981") // Green
+	successColor    = lipgloss.Color("#05B55E") // Green
 	warningColor    = lipgloss.Color("#F59E0B") // Amber
 
 	// Output view styles
@@ -73,4 +73,34 @@ var (
 			Background(borderColor).
 			Foreground(textColor).
 			Padding(0, 1)
+
+	// Table styles
+	tableHeaderStyle = lipgloss.NewStyle().
+				Foreground(primaryColor).
+				Bold(true)
+
+	tableBorderStyle = lipgloss.NewStyle().
+				Foreground(borderColor)
+
+	tableKeyStyle = lipgloss.NewStyle().
+			Foreground(accentColor).
+			Bold(true)
+
+	tableValueStyle = lipgloss.NewStyle().
+			Foreground(textColor)
+
+	// List styles
+	listItemStyle = lipgloss.NewStyle().
+			Foreground(textColor)
+
+	listBulletStyle = lipgloss.NewStyle().
+			Foreground(primaryColor).
+			Bold(true)
+
+	listContainerStyle = lipgloss.NewStyle().
+				Background(backgroundColor).
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(borderColor).
+				Padding(1, 2).
+				Margin(0, 1)
 )

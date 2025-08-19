@@ -3,11 +3,13 @@ package render
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/xo/dburl"
 )
 
 // CreatePostgresStepConfig holds configuration for creating a PostgreSQL service
@@ -434,7 +436,7 @@ type CreateWebServiceStepConfig struct {
 	// TenantID is used for multi-tenant Docker registry configurations
 	TenantID string
 	// EnvVars are the environment variables to set on the service
-	EnvVars map[string]string
+	EnvVars []deployment.EnvVar
 	// ConnectionStepIDs are the IDs of steps that provide connection info (e.g., database URLs)
 	ConnectionStepIDs []string
 	// DependsOn lists the step IDs that must complete before this step runs
@@ -444,18 +446,18 @@ type CreateWebServiceStepConfig struct {
 // CreateWebServiceStep handles web service creation
 type CreateWebServiceStep struct {
 	BaseStep
-	Name               string            `json:"name"`
-	Type               string            `json:"type"`
-	OwnerID            string            `json:"ownerId"`
-	BuildCommand       string            `json:"buildCommand"`
-	StartCommand       string            `json:"startCommand"`
-	Environment        string            `json:"environment"`
-	Dockerfile         string            `json:"dockerfile,omitempty"`
-	DockerImageStepID  string            `json:"dockerImageStepId,omitempty"`  // ID of build & push step
-	RegistryCredStepID string            `json:"registryCredStepId,omitempty"` // ID of registry credential step
-	TenantID           string            `json:"tenantId,omitempty"`           // For Docker deployments
-	EnvVars            map[string]string `json:"envVars"`
-	ConnectionStepIDs  []string          `json:"connectionStepIds"` // IDs of connection info steps
+	Name               string              `json:"name"`
+	Type               string              `json:"type"`
+	OwnerID            string              `json:"ownerId"`
+	BuildCommand       string              `json:"buildCommand"`
+	StartCommand       string              `json:"startCommand"`
+	Environment        string              `json:"environment"`
+	Dockerfile         string              `json:"dockerfile,omitempty"`
+	DockerImageStepID  string              `json:"dockerImageStepId,omitempty"`  // ID of build & push step
+	RegistryCredStepID string              `json:"registryCredStepId,omitempty"` // ID of registry credential step
+	TenantID           string              `json:"tenantId,omitempty"`           // For Docker deployments
+	EnvVars            []deployment.EnvVar `json:"envVars"`
+	ConnectionStepIDs  []string            `json:"connectionStepIds"` // IDs of connection info steps
 }
 
 func NewCreateWebServiceStep(config CreateWebServiceStepConfig) *CreateWebServiceStep {
@@ -483,10 +485,10 @@ func NewCreateWebServiceStep(config CreateWebServiceStepConfig) *CreateWebServic
 func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error) {
 	// Resolve connection strings from previous steps
 	resolvedEnvVars := make(map[string]string)
-
-	// Copy static env vars
-	for k, v := range s.EnvVars {
-		resolvedEnvVars[k] = v
+	for _, envVar := range s.EnvVars {
+		if envVar.Value != "" {
+			resolvedEnvVars[envVar.Name] = envVar.Value
+		}
 	}
 
 	// Resolve dynamic connection strings
@@ -494,7 +496,38 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		if result, exists := stepResults[stepID]; exists {
 			switch connInfo := result.(type) {
 			case *PostgresConnectionInfo:
-				resolvedEnvVars["DATABASE_URL"] = connInfo.InternalConnectionString
+				var host, port, username, dbName string
+				url, err := dburl.Parse(connInfo.InternalConnectionString)
+				if err != nil {
+					slog.Warn("failed to parse connection string %s: %v", connInfo.InternalConnectionString, err)
+				} else {
+					host = url.Hostname()
+					port = url.Port()
+					username = url.User.Username()
+					dbName = strings.TrimPrefix(url.Path, "/")
+				}
+				for _, envVar := range s.EnvVars {
+					if envVar.Service == "postgresql" {
+						switch envVar.Role {
+						case deployment.EnvRoleFullURI:
+							resolvedEnvVars[envVar.Name] = connInfo.InternalConnectionString
+						case deployment.EnvRoleHostname:
+							resolvedEnvVars[envVar.Name] = host
+						case deployment.EnvRolePort:
+							resolvedEnvVars[envVar.Name] = port
+						case deployment.EnvRoleUsername:
+							resolvedEnvVars[envVar.Name] = username
+						case deployment.EnvRolePassword:
+							resolvedEnvVars[envVar.Name] = connInfo.Password
+						case deployment.EnvRoleDatabaseName:
+							resolvedEnvVars[envVar.Name] = dbName
+						}
+					}
+				}
+				// fallback
+				if len(resolvedEnvVars) == 0 {
+					resolvedEnvVars["DATABASE_URL"] = connInfo.InternalConnectionString
+				}
 			case *RedisConnectionInfo:
 				resolvedEnvVars["REDIS_URL"] = connInfo.InternalConnectionString
 			}

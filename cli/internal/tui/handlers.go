@@ -156,6 +156,7 @@ func (m Model) handleSpecialModeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.authSelectionPrompt = nil
 		m.apiKeyPrompt = nil
 		m.selectPrompt = nil
+		m.textPrompt = nil
 		m.textInput.SetValue("")
 		return m, nil
 	default:
@@ -183,6 +184,31 @@ func (m Model) handleUIMessage(msg UIMessage) (tea.Model, tea.Cmd) {
 	// Style each wrapped line and add to content
 	for _, line := range wrappedLines {
 		m.content = append(m.content, m.styleLogMessage(line))
+	}
+
+	// Update viewport content
+	m.viewport.SetContent(strings.Join(m.content, "\n"))
+
+	// Auto-scroll to bottom
+	m.viewport.GotoBottom()
+
+	return m, nil
+}
+
+// handlePlanDisplayMessage processes plan display messages and renders them as a table
+func (m Model) handlePlanDisplayMessage(msg PlanDisplayMessage) (tea.Model, tea.Cmd) {
+	// Add the summary first
+	m.content = append(m.content, m.styleLogMessage(msg.Summary))
+	m.content = append(m.content, "")
+
+	// Format the plan information as a table
+	tableContent := m.formatPlanAsTable(msg)
+
+	// Add each line of the table to content
+	for _, line := range strings.Split(tableContent, "\n") {
+		if line != "" {
+			m.content = append(m.content, line)
+		}
 	}
 
 	// Update viewport content

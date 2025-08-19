@@ -23,6 +23,7 @@ const (
 	ModeAuthSelection
 	ModeAPIKey
 	ModeSelect
+	ModeText
 )
 
 // Constants for UI layout and history
@@ -49,6 +50,7 @@ type Model struct {
 	authSelectionPrompt *AuthSelectionPrompt
 	apiKeyPrompt        *APIKeyPrompt
 	selectPrompt        *SelectPrompt
+	textPrompt          *TextPrompt
 	width               int
 	height              int
 	content             []string // Store raw content lines
@@ -153,6 +155,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMouse(msg)
 	case UIMessage:
 		return m.handleUIMessage(msg)
+	case PlanDisplayMessage:
+		return m.handlePlanDisplayMessage(msg)
 	case ConfirmationPrompt:
 		m.confirmationPrompt = &msg
 		m.setMode(ModeConfirmation)
@@ -172,6 +176,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selectPrompt = &msg
 		m.setMode(ModeSelect)
 		m.textInput.SetValue("")
+		return m, nil
+	case TextPrompt:
+		m.textPrompt = &msg
+		m.setMode(ModeText)
+		// Pre-fill with default value if provided
+		if msg.DefaultValue != "" {
+			m.textInput.SetValue(msg.DefaultValue)
+			m.textInput.CursorEnd()
+		} else {
+			m.textInput.SetValue("")
+		}
 		return m, nil
 	case SpinnerStartMsg:
 		m.spinnerActive = true
@@ -264,6 +279,8 @@ func (m Model) View() string {
 		promptPrefix = confirmationPromptStyle.Render(m.authSelectionPrompt.Message)
 	} else if m.isMode(ModeAPIKey) && m.apiKeyPrompt != nil {
 		promptPrefix = confirmationPromptStyle.Render(m.apiKeyPrompt.Message)
+	} else if m.isMode(ModeText) && m.textPrompt != nil {
+		promptPrefix = confirmationPromptStyle.Render(m.textPrompt.Message)
 	} else if m.isMode(ModeSelect) && m.selectPrompt != nil {
 		// Render select options in the prompt area
 		selectText := m.selectPrompt.Message + "\n"

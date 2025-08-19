@@ -21,6 +21,8 @@ const (
 	AgentIsURLLive            = "agent.isURLLive"
 	AgentSendProjectStats     = "agent.sendProjectStats"
 	AgentGetFlyIOAppURL       = "agent.getFlyIOAppURL"
+	AgentCategorizeEnvVars    = "agent.categorizeEnvVars"
+	AgentReadEnvFiles         = "agent.readEnvFiles"
 )
 
 type Activities struct {
@@ -44,5 +46,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentIsURLLive, ActFunc: a.isURLLive},
 		{Name: AgentSendProjectStats, ActFunc: a.sendProjectStats},
 		{Name: AgentGetFlyIOAppURL, ActFunc: a.getFlyIOAppURL},
+		{Name: AgentCategorizeEnvVars, ActFunc: a.categorizeEnvVarsForDeployment},
+		{Name: AgentReadEnvFiles, ActFunc: a.getEnvVarsFromEnvFiles},
 	}
 }

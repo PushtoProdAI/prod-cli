@@ -34,6 +34,19 @@ class ServiceRequirement{
 	provider string
 }
 
+class EnvVarCandidate {
+	varName string
+	file    string
+	line    int
+	context string
+}
+
+class EnvVarCategory {
+  isDBRelated bool
+  role string
+  dbType string
+  }
+
 
 function ExtractIntent(request: string) -> Intent {
   client "OllamaClient"
@@ -323,6 +336,82 @@ Your task:
   "#
 }
 
+function DetermineEnvVarRoles(envVar: EnvVarCandidate, dbList: string[]) -> EnvVarCategory {
+  client "OllamaClient"
+  prompt #"
+{{_.role("system")}}
+You are an expert at classifying environment variables and configuration values
+into database-related categories.
+
+Classification should be based primarily on:
+- The variable name
+- Its direct usage
+- Context around it in the provided snippet
+
+RULES:
+1. General environment variables that represent the app’s runtime stage or environment 
+   (e.g., production, development, staging, test) are NOT considered DB-related unless the 
+   variable name itself clearly contains database-related terms.
+   Examples: NODE_ENV, RAILS_ENV, APP_ENV, ENVIRONMENT
+   - These are `not_db_related` unless their name includes keywords like `db`, `database`, 
+     `sql`, `mysql`, `postgres`, `mongodb`, `pg`, etc.
+
+2. If a variable name or its value clearly relates to database hostnames, ports, credentials, 
+   connection strings, SSL settings, or database names, classify it as DB-related.
+   Include common naming patterns and generic aliases (e.g., DB_USER, PGHOST, DATABASE_URL).
+   Do not classify variables that relate to app-level configuration (e.g., admin users, 
+   API keys, secret keys, app modules) unless they directly configure database access.
+
+3. Contextual references to DB usage (e.g., used in a connection object, ORM config, 
+   connection pool setup) are a strong signal — but do not override rule #1 or #2.
+   Example: if a variable appears in `psycopg.connect(...)` or `mysql.connector.connect(...)`, 
+   that is a strong indication it is DB-related.
+
+4. Do not guess based on proximity or framework conventions alone.
+   - Example: `DJANGO_SUPERUSER_EMAIL` is app auth config, not DB config.  
+   - Example: `SECRET_KEY` is cryptography, not DB.  
+   - Example: `DEBUG` is runtime, not DB.
+
+Possible categories:
+- `full_uri` – complete database connection URL (e.g., postgres://user:pass@host:port/dbname)
+- `hostname` – host or server address for the database
+- `port` – database port number
+- `username` – database username
+- `password` – database password or auth token
+- `database_name` – logical DB name
+- `other_db_config` – database-related but not fitting above categories
+- `not_db_related` – unrelated to databases
+
+{{ _.role("user") }}
+The project uses the following database types: {{dbList}}.
+
+Variable name: {{envVar.varName}}
+File it was found in: {{envVar.file}}
+Line it was found on: {{envVar.line}}
+Code snippet:
+  {{envVar.context}}
+
+For the given environment variable, determine:
+- Is this variable related to database configuration? (true/false)  
+- Always provide a **Role** value:  
+  - If DB-related → exactly one from the allowed categories.  
+  - If not DB-related → return `not_db_related`.  
+- Which database type? (choose from {{dbList}} or "unknown")
+
+Examples:
+
+DATABASE_URL = "postgres://user:pass@host:5432/mydb" → full_uri  
+PGHOST = "db.example.com" → hostname  
+MYSQL_PORT = "3306" → port  
+DB_USER = "admin" → username  
+NODE_ENV = "production" → not_db_related  
+PGSSLMODE = "require" → other_db_config  
+SECRET_KEY = "s3cr3t" → not_db_related  
+DJANGO_SUPERUSER_EMAIL = "admin@example.com" → not_db_related 
+    {{ctx.output_format }}
+  "#
+
+  }
 
 // Place all test blocks after type and function definitions
 
@@ -376,5 +465,18 @@ test errorSummary {
       buildCommand "npm run build"
       startCommand "npm start"
     }
+  }
+}
+
+test envVarRoles {
+  functions [DetermineEnvVarRoles]
+  args {
+    envVar {
+      varName "DATABASE_URL"
+      file "/path/to/app/.env"
+      line 42
+      context "DATABASE_URL=postgres://user:password@localhost:5432/mydb"
+    }
+    dbList ["PostgreSQL", "MySQL", "MongoDB"]
   }
 }

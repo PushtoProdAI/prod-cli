@@ -16,7 +16,7 @@ import (
 )
 
 // planDeploy workflow handles the planning phase of deployment
-func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, error) {
+func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, error) {
 	intent, err := workflow.ExecuteActivity[types.Intent](ctx, ActivityOpts, AgentDetermineIntent, input).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to determine intent", "error", err)
@@ -66,7 +66,7 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (deployPlan, 
 		action = UnknownAction
 	}
 
-	plan := deployPlan{
+	plan := DeployPlan{
 		Action:           action,
 		Platform:         platform,
 		Source:           intent.Source,

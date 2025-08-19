@@ -140,3 +140,119 @@ func (m *Model) styleLogMessage(content string) string {
 	// Default styling
 	return logStyle.Render(content)
 }
+
+// formatPlanAsTable formats the deployment plan data as a nicely styled table
+func (m Model) formatPlanAsTable(plan PlanDisplayMessage) string {
+	var result strings.Builder
+
+	// Add dry run indicator if applicable
+	if plan.DryRun {
+		result.WriteString("🔍 DRY RUN MODE - No changes will be made\n")
+	}
+
+	// Create main deployment info table
+	result.WriteString(tableHeaderStyle.Render("📋 Deployment Configuration"))
+	result.WriteString("\n")
+	result.WriteString(tableBorderStyle.Render("┌──────────────────┬─────────────────────────────────────────────────────────┐"))
+	result.WriteString("\n")
+
+	// Table rows
+	rows := [][]string{
+		{"Action", plan.Action},
+		{"Platform", plan.Platform},
+		{"Source", plan.Source},
+		{"Name", plan.Name},
+		{"Language", plan.Language},
+	}
+
+	for _, row := range rows {
+		result.WriteString(m.formatTableRow(row[0], row[1]))
+		result.WriteString("\n")
+	}
+
+	result.WriteString(tableBorderStyle.Render("└──────────────────┴─────────────────────────────────────────────────────────┘"))
+	result.WriteString("\n")
+
+	// Services section if any
+	if len(plan.Services) > 0 {
+		result.WriteString("\n")
+		result.WriteString(tableHeaderStyle.Render("🔧 Services"))
+		result.WriteString("\n")
+		result.WriteString(tableBorderStyle.Render("┌──────────────────┬─────────────────────────────────────────────────────────┐"))
+		result.WriteString("\n")
+
+		for i, service := range plan.Services {
+			result.WriteString(m.formatTableRow(service.Type, service.Provider))
+			result.WriteString("\n")
+			if i < len(plan.Services)-1 {
+				result.WriteString(tableBorderStyle.Render("├──────────────────┼─────────────────────────────────────────────────────────┤"))
+				result.WriteString("\n")
+			}
+		}
+
+		result.WriteString(tableBorderStyle.Render("└──────────────────┴─────────────────────────────────────────────────────────┘"))
+		result.WriteString("\n")
+	}
+
+	// Environment Variables section if any - use list format
+	if len(plan.EnvVars) > 0 {
+		envVarsList := m.formatEnvVarsList(plan.EnvVars)
+		result.WriteString(envVarsList)
+	}
+
+	return result.String()
+}
+
+// formatTableRow formats a single table row with key and value
+func (m Model) formatTableRow(key, value string) string {
+	keyPadded := fmt.Sprintf("%-16s", key)
+	valuePadded := fmt.Sprintf("%-55s", value)
+
+	keyStyled := tableKeyStyle.Render(keyPadded)
+	valueStyled := tableValueStyle.Render(valuePadded)
+
+	return tableBorderStyle.Render("│ ") + keyStyled + tableBorderStyle.Render(" │ ") + valueStyled + tableBorderStyle.Render(" │")
+}
+
+// formatSingleColumnRow formats a single column table row
+func (m Model) formatSingleColumnRow(value string) string {
+	valuePadded := fmt.Sprintf("%-75s", value)
+	valueStyled := tableValueStyle.Render(valuePadded)
+
+	return tableBorderStyle.Render("│ ") + valueStyled + tableBorderStyle.Render(" │")
+}
+
+// formatEnvVarsList formats environment variables as a styled list
+func (m Model) formatEnvVarsList(envVars []EnvVarRequirement) string {
+	if len(envVars) == 0 {
+		return ""
+	}
+
+	var result strings.Builder
+
+	result.WriteString("\n")
+	result.WriteString(tableHeaderStyle.Render("🔐 Environment Variables"))
+	result.WriteString("\n")
+
+	// Create a list-style display with subtle background
+	listContainer := ""
+
+	for _, envVar := range envVars {
+		// Use consistent bullet for all items
+		bullet := "•"
+
+		// Style the bullet separately for better color control
+		styledBullet := listBulletStyle.Render(bullet)
+
+		// Create the list item with proper spacing
+		listItem := fmt.Sprintf("  %s %s", styledBullet, envVar.Name)
+		styledItem := listItemStyle.Render(listItem)
+		listContainer += styledItem + "\n"
+	}
+
+	// Add the list with a subtle border
+	result.WriteString(listContainerStyle.Render(listContainer))
+	result.WriteString("\n")
+
+	return result.String()
+}
