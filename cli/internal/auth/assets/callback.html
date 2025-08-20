@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Authentication - Prod CLI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black min-h-screen flex items-center justify-center p-5">
+  <div class="bg-zinc-900 rounded-xl border border-zinc-800 p-8 w-full max-w-md text-center">
+    <h1 class="text-2xl font-semibold text-white mb-4">🔐 Authenticating...</h1>
+    <div id="loading" class="my-6">
+      <svg class="animate-spin inline-block w-8 h-8 text-[#05B55E]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+    </div>
+    <p id="status" class="text-zinc-400">Processing authentication...</p>
+  </div>
+  
+  <script>
+    // Extract tokens from URL hash (Supabase returns them in fragment)
+    const hash = window.location.hash.substring(1);
+    const params = new URLSearchParams(hash);
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+    const expiresIn = params.get('expires_in');
+    const error = params.get('error');
+    const errorDescription = params.get('error_description');
+
+    if (error) {
+      document.getElementById('status').innerHTML = `
+        <span class="text-red-400">Error: ${errorDescription || error}</span>
+      `;
+      document.getElementById('loading').style.display = 'none';
+    } else if (accessToken && refreshToken) {
+      // Send tokens to CLI
+      fetch('/auth', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          expires_in: parseInt(expiresIn) || 3600
+        })
+      }).then(response => {
+        if (response.ok) {
+          document.querySelector('h1').innerHTML = '✅ Success!';
+          document.getElementById('loading').style.display = 'none';
+          document.getElementById('status').innerHTML = `
+            <span class="text-[#05B55E]">Authentication complete! You can close this window.</span>
+          `;
+        } else {
+          throw new Error('Failed to send tokens to CLI');
+        }
+      }).catch(err => {
+        document.getElementById('status').innerHTML = `
+          <span class="text-red-400">Error: ${err.message}</span>
+        `;
+        document.getElementById('loading').style.display = 'none';
+      });
+    } else {
+      // If no tokens in hash, check query params (for error cases)
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryError = urlParams.get('error');
+      if (queryError) {
+        document.getElementById('status').innerHTML = `
+          <span class="text-red-400">Error: ${urlParams.get('error_description') || queryError}</span>
+        `;
+      } else {
+        document.getElementById('status').innerHTML = `
+          <span class="text-red-400">No authentication tokens received</span>
+        `;
+      }
+      document.getElementById('loading').style.display = 'none';
+    }
+  </script>
+</body>
+</html>
