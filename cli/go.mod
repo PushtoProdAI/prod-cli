@@ -18,6 +18,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.3
 	github.com/render-oss/cli v1.1.2
 	github.com/stretchr/testify v1.10.0
+	github.com/xo/dburl v0.23.8
 )
 
 require (
@@ -83,7 +84,6 @@ require (
 	github.com/spf13/viper v1.20.1 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/xo/dburl v0.23.8 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 // indirect

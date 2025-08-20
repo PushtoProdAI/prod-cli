@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -141,56 +143,36 @@ func (m *Model) styleLogMessage(content string) string {
 	return logStyle.Render(content)
 }
 
-// formatPlanAsTable formats the deployment plan data as a nicely styled table
+// formatPlanAsTable formats the deployment plan data using clean lipgloss tables
 func (m Model) formatPlanAsTable(plan PlanDisplayMessage) string {
 	var result strings.Builder
 
 	// Add dry run indicator if applicable
 	if plan.DryRun {
-		result.WriteString("🔍 DRY RUN MODE - No changes will be made\n")
+		result.WriteString("🔍 DRY RUN MODE - No changes will be made\n\n")
 	}
 
-	// Create main deployment info table
-	result.WriteString(tableHeaderStyle.Render("📋 Deployment Configuration"))
+	// Create main deployment configuration table
+	header := lipgloss.NewStyle().
+		Margin(1, 0, 0, 0).
+		Render(tableHeaderStyle.Render("📋 Deployment Configuration"))
+	result.WriteString(header)
 	result.WriteString("\n")
-	result.WriteString(tableBorderStyle.Render("┌──────────────────┬─────────────────────────────────────────────────────────┐"))
-	result.WriteString("\n")
 
-	// Table rows
-	rows := [][]string{
-		{"Action", plan.Action},
-		{"Platform", plan.Platform},
-		{"Source", plan.Source},
-		{"Name", plan.Name},
-		{"Language", plan.Language},
-	}
-
-	for _, row := range rows {
-		result.WriteString(m.formatTableRow(row[0], row[1]))
-		result.WriteString("\n")
-	}
-
-	result.WriteString(tableBorderStyle.Render("└──────────────────┴─────────────────────────────────────────────────────────┘"))
+	configTable := m.createDeploymentConfigTable(plan)
+	result.WriteString(configTable)
 	result.WriteString("\n")
 
 	// Services section if any
 	if len(plan.Services) > 0 {
-		result.WriteString("\n")
-		result.WriteString(tableHeaderStyle.Render("🔧 Services"))
-		result.WriteString("\n")
-		result.WriteString(tableBorderStyle.Render("┌──────────────────┬─────────────────────────────────────────────────────────┐"))
+		header := lipgloss.NewStyle().
+			Margin(1, 0, 0, 0).
+			Render(tableHeaderStyle.Render("🔧 Services"))
+		result.WriteString(header)
 		result.WriteString("\n")
 
-		for i, service := range plan.Services {
-			result.WriteString(m.formatTableRow(service.Type, service.Provider))
-			result.WriteString("\n")
-			if i < len(plan.Services)-1 {
-				result.WriteString(tableBorderStyle.Render("├──────────────────┼─────────────────────────────────────────────────────────┤"))
-				result.WriteString("\n")
-			}
-		}
-
-		result.WriteString(tableBorderStyle.Render("└──────────────────┴─────────────────────────────────────────────────────────┘"))
+		servicesTable := m.createServicesTable(plan.Services)
+		result.WriteString(servicesTable)
 		result.WriteString("\n")
 	}
 
@@ -201,25 +183,6 @@ func (m Model) formatPlanAsTable(plan PlanDisplayMessage) string {
 	}
 
 	return result.String()
-}
-
-// formatTableRow formats a single table row with key and value
-func (m Model) formatTableRow(key, value string) string {
-	keyPadded := fmt.Sprintf("%-16s", key)
-	valuePadded := fmt.Sprintf("%-55s", value)
-
-	keyStyled := tableKeyStyle.Render(keyPadded)
-	valueStyled := tableValueStyle.Render(valuePadded)
-
-	return tableBorderStyle.Render("│ ") + keyStyled + tableBorderStyle.Render(" │ ") + valueStyled + tableBorderStyle.Render(" │")
-}
-
-// formatSingleColumnRow formats a single column table row
-func (m Model) formatSingleColumnRow(value string) string {
-	valuePadded := fmt.Sprintf("%-75s", value)
-	valueStyled := tableValueStyle.Render(valuePadded)
-
-	return tableBorderStyle.Render("│ ") + valueStyled + tableBorderStyle.Render(" │")
 }
 
 // formatEnvVarsList formats environment variables as a styled list
