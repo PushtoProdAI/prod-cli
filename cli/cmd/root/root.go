@@ -7,17 +7,19 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/conduitio/ecdysis"
+	"github.com/meroxa/prod/cli/cmd/auth"
 	"github.com/meroxa/prod/cli/internal/agent"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/tui"
 )
 
 var (
-	_ ecdysis.CommandWithFlags   = (*RootCommand)(nil)
-	_ ecdysis.CommandWithExecute = (*RootCommand)(nil)
-	_ ecdysis.CommandWithDocs    = (*RootCommand)(nil)
-	_ ecdysis.CommandWithOutput  = (*RootCommand)(nil)
-	_ ecdysis.CommandWithArgs    = (*RootCommand)(nil)
+	_ ecdysis.CommandWithFlags       = (*RootCommand)(nil)
+	_ ecdysis.CommandWithExecute     = (*RootCommand)(nil)
+	_ ecdysis.CommandWithDocs        = (*RootCommand)(nil)
+	_ ecdysis.CommandWithOutput      = (*RootCommand)(nil)
+	_ ecdysis.CommandWithArgs        = (*RootCommand)(nil)
+	_ ecdysis.CommandWithSubCommands = (*RootCommand)(nil)
 )
 
 const exitPrompt = "exit"
@@ -38,6 +40,15 @@ type RootCommand struct {
 	Agent        *agent.Agent
 	StatusWriter output.StatusWriter
 	WriterType   output.WriterType
+	
+	// Subcommands
+	Auth auth.AuthCommand `cmd:"" help:"Manage authentication"`
+}
+
+func (c *RootCommand) SubCommands() []ecdysis.Command {
+	return []ecdysis.Command{
+		&c.Auth,
+	}
 }
 
 func (c *RootCommand) Args(args []string) error {
