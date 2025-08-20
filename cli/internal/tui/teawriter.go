@@ -149,7 +149,6 @@ func (w *TeaWriter) SendTextPromptWithDefault(message string, defaultValue strin
 	})
 }
 
-// SendPlan implements the agent.PlanWriter interface exactly like ConfirmationWriter methods
 func (w *TeaWriter) SendPlan(plan agent.DeployPlan, dryRun bool) {
 	// Convert agent types to TUI types
 	tuiServices := make([]ServiceRequirement, len(plan.Spec.ServiceRequirements))
