@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"log/slog"
 	"os"
 	"os/exec"
 	"runtime"
@@ -20,16 +19,13 @@ import (
 	"github.com/meroxa/prod/cli/internal/output"
 )
 
-type ConfirmationWriter interface {
+type TUIWriter interface {
 	io.Writer
 	SendConfirmation(message string, callback func(bool))
 	SendAPIKeyPrompt(message string)
 	SendSelect(message string, options []string)
 	SendTextPrompt(message string)
 	SendTextPromptWithDefault(message string, defaultValue string)
-}
-
-type PlanWriter interface {
 	SendPlan(plan DeployPlan, dryRun bool)
 }
 
@@ -131,8 +127,38 @@ func (a *Agent) SetInteractive(interactive bool) {
 	a.interactive = interactive
 }
 
+// Helper methods for TUI operations - direct TUI calls
+func (a *Agent) sendPlan(out io.Writer, plan DeployPlan, dryRun bool) {
+	tuiWriter := out.(TUIWriter)
+	tuiWriter.SendPlan(plan, dryRun)
+}
+
+func (a *Agent) sendConfirmation(out io.Writer, message string) {
+	tuiWriter := out.(TUIWriter)
+	tuiWriter.SendConfirmation(message, nil)
+}
+
+func (a *Agent) sendSelect(out io.Writer, message string, options []string) {
+	tuiWriter := out.(TUIWriter)
+	tuiWriter.SendSelect(message, options)
+}
+
+func (a *Agent) sendAPIKeyPrompt(out io.Writer, message string) {
+	tuiWriter := out.(TUIWriter)
+	tuiWriter.SendAPIKeyPrompt(message)
+}
+
+func (a *Agent) sendTextPrompt(out io.Writer, message string) {
+	tuiWriter := out.(TUIWriter)
+	tuiWriter.SendTextPrompt(message)
+}
+
+func (a *Agent) sendTextPromptWithDefault(out io.Writer, message string, defaultValue string) {
+	tuiWriter := out.(TUIWriter)
+	tuiWriter.SendTextPromptWithDefault(message, defaultValue)
+}
+
 func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
-	// Use UIOutput if available, otherwise fall back to out parameter
 	log.Printf("Processing input: %s\n", input)
 	output := out
 	if a.UIOutput != nil {
@@ -158,45 +184,7 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 		fmt.Fprint(out, "🔍 Detected dry-run request from your prompt - simulating execution without making changes\n")
 	}
 
-	// Check if we have a PlanWriter (TUI interface) for structured display - exact same pattern as ConfirmationWriter
-	if planWriter, ok := out.(PlanWriter); ok {
-		// Send structured plan display using the original DeployPlan
-		planWriter.SendPlan(plan, a.dryRun)
-	} else {
-		// Fallback to original text format for non-TUI outputs
-		fmt.Fprintf(out, "%s\n", plan.Summary)
-		fmt.Fprint(out, "-------\n")
-		if a.dryRun {
-			fmt.Fprint(out, "🔍 DRY RUN MODE - No changes will be made\n")
-		}
-		fmt.Fprintf(out, "Action: %s\n", plan.Action)
-		fmt.Fprintf(out, "Platform: %s\n", plan.Platform)
-		fmt.Fprintf(out, "Source: %s\n", plan.Source)
-		fmt.Fprintf(out, "Name: %s\n", plan.Spec.Name)
-		fmt.Fprintf(out, "Language: %s\n", plan.Spec.Language)
-		if len(plan.Spec.ServiceRequirements) > 0 {
-			fmt.Fprint(out, "Services:\n")
-			fmt.Fprint(out, "-------\n")
-			for i, spec := range plan.Spec.ServiceRequirements {
-				fmt.Fprintf(out, "Service Type: %s\n", spec.Type)
-				fmt.Fprintf(out, "Service: %s\n", spec.Provider)
-				if i < len(plan.Spec.ServiceRequirements)-1 {
-					fmt.Fprint(out, "-------\n")
-				}
-			}
-		}
-		if len(plan.Spec.EnvVars) > 0 {
-			fmt.Fprint(out, "Environment Variables:\n")
-			fmt.Fprint(out, "-------\n")
-			for i, envVar := range plan.Spec.EnvVars {
-				fmt.Fprintf(out, "Env Var: %s\n", envVar.VarName)
-				if i < len(plan.Spec.EnvVars)-1 {
-					fmt.Fprint(out, "-------\n")
-				}
-			}
-		}
-		fmt.Fprint(out, "-------\n")
-	}
+	a.sendPlan(out, plan, a.dryRun)
 
 	if !shouldProceed(plan) {
 		fmt.Fprintf(out, "Cannot proceed with deployment plan\n")
@@ -218,22 +206,14 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 }
 
 func (a *Agent) confirmWithPrompt(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	// Check if we have a ConfirmationWriter (Bubble Tea UI)
-	if confirmWriter, ok := out.(ConfirmationWriter); ok {
-		// For Bubble Tea, we need to handle this differently
-		// Check if this is the initial call or a response to confirmation
-		if input == "" {
-			// Initial call - send confirmation prompt
-			confirmWriter.SendConfirmation("Do you want to proceed with the deployment?", nil)
-			return a.waitForConfirmation, nil
-		}
-		// This is a response to confirmation - process it
-		return a.processConfirmationResponse(ctx, input, out)
+	// Check if this is the initial call or a response to confirmation
+	if input == "" {
+		// Initial call - send confirmation prompt
+		a.sendConfirmation(out, "Do you want to proceed with the deployment?")
+		return a.waitForConfirmation, nil
 	}
-
-	// This should not happen in bubbletea mode, but handle gracefully
-	fmt.Fprintf(out, "Proceeding with deployment...\n")
-	return a.deploy(ctx, input, out)
+	// This is a response to confirmation - process it
+	return a.processConfirmationResponse(ctx, input, out)
 }
 
 func (a *Agent) waitForConfirmation(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -255,13 +235,8 @@ func (a *Agent) processConfirmationResponse(ctx context.Context, input string, o
 	}
 
 	// Invalid response - ask again
-	if confirmWriter, ok := out.(ConfirmationWriter); ok {
-		confirmWriter.SendConfirmation("Do you want to proceed with the deployment?", nil)
-		return a.waitForConfirmation, nil
-	}
-
-	// This should not happen in bubbletea mode
-	return a.confirmWithPrompt, nil
+	a.sendConfirmation(out, "Do you want to proceed with the deployment?")
+	return a.waitForConfirmation, nil
 }
 
 func (a *Agent) confirm(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -339,21 +314,14 @@ func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.W
 		return a.deploy(ctx, input, out)
 	}
 
-	// Check if we have a ConfirmationWriter (Bubble Tea UI)
-	if confirmWriter, ok := out.(ConfirmationWriter); ok {
-		promptMessage := fmt.Sprintf("Enter value for environment variable '%s':", currentEnvVar.Name)
-		if currentEnvVar.Value != "" {
-			// Use the enhanced method that pre-fills the input with the default value
-			confirmWriter.SendTextPromptWithDefault(promptMessage, currentEnvVar.Value)
-		} else {
-			confirmWriter.SendTextPrompt(promptMessage)
-		}
-		return a.waitForEnvVarValue, nil
+	promptMessage := fmt.Sprintf("Enter value for environment variable '%s':", currentEnvVar.Name)
+	if currentEnvVar.Value != "" {
+		// Use the enhanced method that pre-fills the input with the default value
+		a.sendTextPromptWithDefault(out, promptMessage, currentEnvVar.Value)
+	} else {
+		a.sendTextPrompt(out, promptMessage)
 	}
-
-	// Fallback for non-interactive mode - skip env var collection
-	fmt.Fprintf(out, "Interactive mode required for environment variable collection. Skipping...\n")
-	return a.deploy(ctx, input, out)
+	return a.waitForEnvVarValue, nil
 }
 
 func (a *Agent) waitForEnvVarValue(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -613,19 +581,12 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 		}
 
 		// In interactive mode, transition to auth selection state
-		if confirmWriter, ok := out.(ConfirmationWriter); ok {
-			// Use bubbletea select - no output writes, everything in input panel
-			confirmWriter.SendSelect("Choose authentication method:", []string{
-				"Interactive login (recommended)",
-				"Enter API key directly",
-			})
-			// Transition to waiting for auth selection
-			return a.waitForAuthSelection, nil
-		} else {
-			// we are not in interactive mode but don't have a way to send a select, so exit the state machine
-			slog.Info("Interactive mode is required for authentication selection")
-			return nil, nil
-		}
+		a.sendSelect(out, "Choose authentication method:", []string{
+			"Interactive login (recommended)",
+			"Enter API key directly",
+		})
+		// Transition to waiting for auth selection
+		return a.waitForAuthSelection, nil
 	}
 
 	// Already authenticated, proceed with deployment
@@ -656,24 +617,17 @@ func (a *Agent) waitForAuthSelection(ctx context.Context, input string, out io.W
 		return a.promptForAPIKey(ctx, input, out)
 	default:
 		// Invalid selection, ask again
-		if confirmWriter, ok := out.(ConfirmationWriter); ok {
-			confirmWriter.SendSelect("Choose authentication method:", []string{
-				"Interactive login (recommended)",
-				"Enter API key directly",
-			})
-			return a.waitForAuthSelection, nil
-		}
+		a.sendSelect(out, "Choose authentication method:", []string{
+			"Interactive login (recommended)",
+			"Enter API key directly",
+		})
 		return a.waitForAuthSelection, nil
 	}
 }
 
 func (a *Agent) promptForAPIKey(_ context.Context, _ string, out io.Writer) (stateFn, error) {
-	// Check if we have a ConfirmationWriter (Bubble Tea UI)
-	if confirmWriter, ok := out.(ConfirmationWriter); ok {
-		// In bubbletea mode, everything goes in the input panel
-		confirmWriter.SendAPIKeyPrompt(a.auth.APIKeyPrompt())
-		return a.waitForAPIKey, nil
-	}
+	// Send API key prompt
+	a.sendAPIKeyPrompt(out, a.auth.APIKeyPrompt())
 	return a.waitForAPIKey, nil
 }
 
@@ -744,16 +698,12 @@ func (a *Agent) checkRenderAuthenticationForDryRun(ctx context.Context, input st
 		}
 
 		// In interactive mode, transition to auth selection state
-		if confirmWriter, ok := out.(ConfirmationWriter); ok {
-			// Use bubbletea select - no output writes, everything in input panel
-			confirmWriter.SendSelect("Choose authentication method:", []string{
-				"Interactive login (recommended)",
-				"Enter API key directly",
-			})
-			// Transition to waiting for auth selection (but for dry run)
-			return a.waitForAuthSelectionDryRun, nil
-		}
-		return a.executeDryRun, nil
+		a.sendSelect(out, "Choose authentication method:", []string{
+			"Interactive login (recommended)",
+			"Enter API key directly",
+		})
+		// Transition to waiting for auth selection (but for dry run)
+		return a.waitForAuthSelectionDryRun, nil
 	}
 
 	// Already authenticated, proceed with dry run
@@ -770,24 +720,17 @@ func (a *Agent) waitForAuthSelectionDryRun(ctx context.Context, input string, ou
 		return a.promptForAPIKeyDryRun(ctx, input, out)
 	default:
 		// Invalid selection, ask again
-		if confirmWriter, ok := out.(ConfirmationWriter); ok {
-			confirmWriter.SendSelect("Choose authentication method:", []string{
-				"Interactive login (recommended)",
-				"Enter API key directly",
-			})
-			return a.waitForAuthSelectionDryRun, nil
-		}
+		a.sendSelect(out, "Choose authentication method:", []string{
+			"Interactive login (recommended)",
+			"Enter API key directly",
+		})
 		return a.waitForAuthSelectionDryRun, nil
 	}
 }
 
 func (a *Agent) promptForAPIKeyDryRun(_ context.Context, _ string, out io.Writer) (stateFn, error) {
-	// Check if we have a ConfirmationWriter (Bubble Tea UI)
-	if confirmWriter, ok := out.(ConfirmationWriter); ok {
-		// In bubbletea mode, everything goes in the input panel
-		confirmWriter.SendAPIKeyPrompt("🔑 Enter your Render API key (get it from https://dashboard.render.com/account/settings):")
-		return a.waitForAPIKeyDryRun, nil
-	}
+	// Send API key prompt
+	a.sendAPIKeyPrompt(out, "🔑 Enter your Render API key (get it from https://dashboard.render.com/account/settings):")
 	return a.waitForAPIKeyDryRun, nil
 }
 
