@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"time"
 )
@@ -18,10 +19,11 @@ type AuthProvider interface {
 type SupabaseAuth struct {
 	config *Config
 	store  *TokenStore
+	out    io.Writer
 }
 
 // NewSupabaseAuth creates a new Supabase auth client
-func NewSupabaseAuth() (*SupabaseAuth, error) {
+func NewSupabaseAuth(out io.Writer) (*SupabaseAuth, error) {
 	// Get Supabase configuration from environment
 	supabaseURL := os.Getenv("SUPABASE_URL")
 	if supabaseURL == "" {
@@ -44,6 +46,7 @@ func NewSupabaseAuth() (*SupabaseAuth, error) {
 			SupabaseAnonKey: supabaseAnonKey,
 		},
 		store: store,
+		out:   out,
 	}, nil
 }
 
@@ -86,7 +89,7 @@ func (sa *SupabaseAuth) Logout(ctx context.Context) error {
 		return fmt.Errorf("failed to delete session: %w", err)
 	}
 
-	fmt.Println("✅ Successfully logged out")
+	fmt.Fprintln(sa.out, "✅ Successfully logged out")
 	return nil
 }
 

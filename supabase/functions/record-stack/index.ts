@@ -12,17 +12,22 @@ interface ServiceRequirement {
   provider: string
 }
 
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-)
-
 Deno.serve(async (req) => {
   const { method } = req
   
   if (method !== 'POST') {
     return new Response("", { status: 405 })
   }
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY"),
+    {
+      global: {
+        headers: { Authorization: req.headers.get('Authorization')! },
+      },
+    }
+  )
 
   let usageData: UsageData
   try {

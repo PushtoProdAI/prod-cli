@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"runtime"
@@ -35,21 +36,27 @@ type EnvVarWithStatus struct {
 }
 
 type Agent struct {
-	sm          deploySM
-	wfClient    *client.Client
-	interactive bool
-	DeployPlan  *DeployPlan
-	dryRun      bool
-	UIOutput    io.Writer
-	auth        auth.AuthProvider
-	envVars     []EnvVarWithStatus
+	sm           deploySM
+	wfClient     *client.Client
+	interactive  bool
+	DeployPlan   *DeployPlan
+	dryRun       bool
+	UIOutput     io.Writer
+	auth         auth.AuthProvider
+	envVars      []EnvVarWithStatus
+	internalAuth *auth.SupabaseAuth
 }
 
-func NewAgent(wfClient *client.Client, interactive bool) *Agent {
+type agentContextKey string
+
+const agentAuthSession agentContextKey = "AuthSession"
+
+func NewAgent(wfClient *client.Client, internalAuth *auth.SupabaseAuth, interactive bool) *Agent {
 	a := &Agent{
-		wfClient:    wfClient,
-		interactive: interactive,
-		envVars:     make([]EnvVarWithStatus, 0),
+		wfClient:     wfClient,
+		interactive:  interactive,
+		envVars:      make([]EnvVarWithStatus, 0),
+		internalAuth: internalAuth,
 	}
 	sm := deploySM{currentState: a.plan}
 	a.sm = sm
@@ -164,7 +171,22 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 	if a.UIOutput != nil {
 		output = a.UIOutput
 	}
-	a.sm.next(ctx, input, output)
+	// handle auth before processing the input
+	if !a.internalAuth.IsAuthenticated() {
+		fmt.Fprint(output, "🔐 Before we proceed, let's get you logged in!\n")
+		authenticated := a.authenticateCLI(ctx)
+		if !authenticated {
+			fmt.Fprint(output, "❌ Authentication failed. Please try again.\n")
+			// don't proceed to the next state if auth failed
+			return
+		}
+	}
+	session, err := a.internalAuth.GetSession()
+	if err != nil {
+		slog.Error("Failed to get session", "error", err)
+	}
+
+	a.sm.next(WithCtxSession(ctx, session), input, output)
 }
 
 func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -820,6 +842,15 @@ func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) 
 	}
 	// In interactive mode, return to plan state for more commands
 	return a.plan, nil
+}
+
+func (a *Agent) authenticateCLI(ctx context.Context) bool {
+	err := a.internalAuth.LoginWithBrowser(ctx)
+	if err != nil {
+		slog.Error("Failed to authenticate CLI", "error", err)
+		return false
+	}
+	return true
 }
 
 func openInBrowser(url string) error {
