@@ -58,16 +58,16 @@ func (sa *SupabaseAuth) LoginWithBrowser(ctx context.Context) error {
 	// Open browser to local login page
 	loginURL := fmt.Sprintf("%s/login", serverURL)
 
-	fmt.Println("🌐 Opening browser for authentication...")
-	fmt.Println("If the browser doesn't open automatically, please visit:")
-	fmt.Printf("  %s\n\n", loginURL)
+	fmt.Fprintln(sa.out, "🌐 Opening browser for authentication...")
+	fmt.Fprintln(sa.out, "If the browser doesn't open automatically, please visit:")
+	fmt.Fprintf(sa.out, "  %s\n\n", loginURL)
 
 	if err := openBrowser(loginURL); err != nil {
-		fmt.Printf("⚠️  Could not open browser automatically: %v\n", err)
+		fmt.Fprintf(sa.out, "⚠️  Could not open browser automatically: %v\n", err)
 	}
 
 	// Wait for authentication
-	fmt.Println("⏳ Waiting for authentication...")
+	fmt.Fprintln(sa.out, "⏳ Waiting for authentication...")
 
 	select {
 	case session := <-sessionChan:
@@ -76,9 +76,9 @@ func (sa *SupabaseAuth) LoginWithBrowser(ctx context.Context) error {
 			return fmt.Errorf("failed to save session: %w", err)
 		}
 
-		fmt.Println("\n✅ Authentication successful!")
+		fmt.Fprintln(sa.out, "\n✅ Authentication successful!")
 		if session.User != nil && session.User.Email != "" {
-			fmt.Printf("👤 Logged in as: %s\n", session.User.Email)
+			fmt.Fprintf(sa.out, "👤 Logged in as: %s\n", session.User.Email)
 		}
 		return nil
 
@@ -97,7 +97,7 @@ func (sa *SupabaseAuth) LoginWithBrowser(ctx context.Context) error {
 func (sa *SupabaseAuth) createHandler(sessionChan chan *Session, errorChan chan error) http.Handler {
 	// Create a sub-filesystem for cleaner paths
 	assets, _ := fs.Sub(assetsFS, "assets")
-	
+
 	// Parse all templates at once
 	templates := template.Must(template.New("").Funcs(template.FuncMap{
 		"config": func() TemplateData {
@@ -127,7 +127,7 @@ func (sa *SupabaseAuth) createHandler(sessionChan chan *Session, errorChan chan 
 		case "/login", "/signup", "/callback", "/reset":
 			// Serve the appropriate HTML template
 			templateName := r.URL.Path[1:] + ".html"
-			
+
 			var buf bytes.Buffer
 			if err := templates.ExecuteTemplate(&buf, templateName, TemplateData{
 				SupabaseURL:     sa.config.SupabaseURL,

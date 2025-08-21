@@ -120,7 +120,11 @@ func (a *Activities) summarize(ctx context.Context, intent types.Intent, name st
 }
 
 func (a *Activities) sendProjectStats(ctx context.Context, platform string, spec analyzer.ProjectSpec) error {
-	err := a.beClient.RecordRequestedStack(ctx, platform, spec.Language, spec.ServiceRequirements)
+	session := CtxSession(ctx)
+	if session == nil {
+		return workflow.NewPermanentError(errors.New("no session found in context"))
+	}
+	err := a.beClient.RecordRequestedStack(ctx, session.AccessToken, platform, spec.Language, spec.ServiceRequirements)
 	if err != nil {
 		return errors.Errorf("failed to record project stats: %w", err)
 	}

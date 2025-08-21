@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/conduitio/ecdysis"
 	"github.com/meroxa/prod/cli/internal/auth"
@@ -17,7 +18,7 @@ var (
 type StatusCommand struct{}
 
 func (c *StatusCommand) Execute(ctx context.Context) error {
-	authClient, err := auth.NewSupabaseAuth()
+	authClient, err := auth.NewSupabaseAuth(os.Stdout)
 	if err != nil {
 		return fmt.Errorf("failed to initialize auth: %w", err)
 	}
@@ -50,3 +51,4 @@ func (c *StatusCommand) Docs() ecdysis.Docs {
 		Long:  `Displays your current authentication status and session information.`,
 	}
 }
+

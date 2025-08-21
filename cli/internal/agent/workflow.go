@@ -120,7 +120,11 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	if w.registry == nil {
 		return deployResult{}, errors.New("workflow registry is not set")
 	}
-
+	token := ""
+	session := CtxWorkflowSession(ctx)
+	if session != nil {
+		token = session.AccessToken
+	}
 	// Validate Docker availability for Render
 	if !deployment.IsDockerAvailable() {
 		summary, err := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, "not able to build docker image. cannot connect to local docker daemon", input).Get(ctx)
@@ -139,6 +143,7 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	}
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["tenantID"] = "test"
+	spec.Metadata["authToken"] = token
 
 	// Generate and summarize deployment steps (for UI feedback)
 	workspaceID, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderWorkspace).Get(ctx)
@@ -263,6 +268,12 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input DeployPlan) (
 		return DryRunResult{}, errors.New("workflow registry is not set")
 	}
 
+	token := ""
+	session := CtxWorkflowSession(ctx)
+	if session != nil {
+		token = session.AccessToken
+	}
+
 	credentialStatus := make(map[string]bool)
 	workspaceID, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderWorkspace).Get(ctx)
 	if err != nil {
@@ -282,6 +293,7 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input DeployPlan) (
 
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["tenantID"] = "test"
+	spec.Metadata["authToken"] = token
 
 	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true, w.uiWriter)
 	steps := d.GenerateAPISteps(workspaceID)

@@ -39,7 +39,7 @@ func NewClient() *Client {
 }
 
 // RecordRequestedStack sends usage data to the backend service. It will be the stack that we infered from the request so that we can see what users are requesting so we know what to support next
-func (c *Client) RecordRequestedStack(ctx context.Context, platform string, language string, serviceRequirements []analyzer.ServiceRequirement) error {
+func (c *Client) RecordRequestedStack(ctx context.Context, authToken string, platform string, language string, serviceRequirements []analyzer.ServiceRequirement) error {
 	data := map[string]any{
 		"platform":            platform,
 		"language":            language,
@@ -58,6 +58,9 @@ func (c *Client) RecordRequestedStack(ctx context.Context, platform string, lang
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -73,7 +76,7 @@ func (c *Client) RecordRequestedStack(ctx context.Context, platform string, lang
 }
 
 // GetPushRegistryCredentials fetches temporary Docker registry credentials for pushing images. These are scoped to JUST being able to push to registries for the specified tenant
-func (c *Client) GetPushRegistryCredentials(ctx context.Context, tenantID string) (*RegistryCredentials, error) {
+func (c *Client) GetPushRegistryCredentials(ctx context.Context, authToken string, tenantID string) (*RegistryCredentials, error) {
 	// Prepare request payload
 	payload := map[string]string{
 		"tenantId": tenantID,
@@ -91,6 +94,9 @@ func (c *Client) GetPushRegistryCredentials(ctx context.Context, tenantID string
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
 
 	// Make HTTP request
 	resp, err := c.httpClient.Do(req)
@@ -125,7 +131,7 @@ func (c *Client) GetPushRegistryCredentials(ctx context.Context, tenantID string
 }
 
 // GetPullRegistryCredentials fetches temporary Docker registry credentials for pulling images. These are scoped to JUST being able to pull from registries for the specified tenant
-func (c *Client) GetPullRegistryCredentials(ctx context.Context, tenantID string) (*RegistryCredentials, error) {
+func (c *Client) GetPullRegistryCredentials(ctx context.Context, authToken string, tenantID string) (*RegistryCredentials, error) {
 	// Prepare request payload
 	payload := map[string]string{
 		"tenantId": tenantID,
@@ -143,6 +149,9 @@ func (c *Client) GetPullRegistryCredentials(ctx context.Context, tenantID string
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
 
 	// Make HTTP request
 	resp, err := c.httpClient.Do(req)

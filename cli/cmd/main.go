@@ -13,6 +13,7 @@ import (
 	"github.com/cschleiden/go-workflows/backend"
 	"github.com/meroxa/prod/cli/cmd/root"
 	"github.com/meroxa/prod/cli/internal/agent"
+	"github.com/meroxa/prod/cli/internal/auth"
 	be "github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
@@ -35,7 +36,7 @@ func main() {
 
 	cfg := workflowext.WorkflowsConfig{
 		Logger:         logger,
-		BackendOptions: []backend.BackendOption{},
+		BackendOptions: []backend.BackendOption{backend.WithContextPropagator(agent.SessionPropagator)},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -77,7 +78,12 @@ func main() {
 		go http.ListenAndServe(":8080", mux)
 	}
 	e := ecdysis.New()
-	a := agent.NewAgent(provider.Client, true)
+	supabaseAuth, err := auth.NewSupabaseAuth(statusWriter)
+	if err != nil {
+		fmt.Println("failed to initialize auth:", err)
+		log.Fatalf("failed to initialize auth: %v", err)
+	}
+	a := agent.NewAgent(provider.Client, supabaseAuth, true)
 	cmd := e.MustBuildCobraCommand(&root.RootCommand{
 		Agent:        a,
 		StatusWriter: statusWriter,

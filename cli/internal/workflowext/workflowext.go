@@ -41,7 +41,7 @@ var DefaultActivityOptions = workflow.ActivityOptions{
 // Please make sure to call Provider.Shutdown before the application exits
 // to ensure that all workflow and activity tasks are completed.
 func InitWorkflows(ctx context.Context, cfg WorkflowsConfig, mux *http.ServeMux, workflows ...Registerer) (*Provider, error) {
-	sqliteBackend := sqlite.NewInMemoryBackend()
+	sqliteBackend := sqlite.NewInMemoryBackend(sqlite.WithBackendOptions(cfg.backendOptions()...))
 
 	if cfg.SQLitePath != "" {
 		err := os.MkdirAll(cfg.sqliteDir(), 0o750) //nolint:gomnd //Permission bits are customarily written in this form.
