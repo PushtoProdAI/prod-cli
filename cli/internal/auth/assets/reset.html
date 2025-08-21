@@ -71,9 +71,8 @@
       hideMessages()
       
       try {
-        // Note: We're using the base URL as redirect since we're not implementing the change password page
-        // In production, you'd want a proper change password URL
-        const redirectTo = window.location.origin + '/callback'
+        // Redirect to the update-password Edge Function
+        const redirectTo = SUPABASE_URL + '/functions/v1/update-password'
         
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: redirectTo
