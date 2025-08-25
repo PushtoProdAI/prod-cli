@@ -77,6 +77,23 @@ supabase-studio:
 	@echo "Opening Supabase Studio..."
 	@open http://localhost:54323
 
+.PHONY: supabase-test-connection
+supabase-test-connection:
+	@echo "Testing Supabase connection..."
+	@if [ -f ".env" ]; then \
+		echo "Loading environment variables..."; \
+		export $$(grep -v '^#' .env | grep -v '^$$' | xargs); \
+		echo "SUPABASE_URL: $$SUPABASE_URL"; \
+		echo "SUPABASE_ANON_KEY: $$(echo $$SUPABASE_ANON_KEY | cut -c1-20)..."; \
+		echo "Testing connection with authentication..."; \
+		curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" \
+			-H "apikey: $$SUPABASE_ANON_KEY" \
+			-H "Authorization: Bearer $$SUPABASE_ANON_KEY" \
+			"$$SUPABASE_URL/rest/v1/" || echo "Connection failed"; \
+	else \
+		echo "No .env file found. Please copy env.example to .env and configure your Supabase credentials."; \
+	fi
+
 .PHONY: supabase-init-force
 supabase-init-force:
 	@echo "Force initializing Supabase project..."
