@@ -76,10 +76,10 @@ func (c *Client) RecordRequestedStack(ctx context.Context, authToken string, pla
 }
 
 // GetPushRegistryCredentials fetches temporary Docker registry credentials for pushing images. These are scoped to JUST being able to push to registries for the specified tenant
-func (c *Client) GetPushRegistryCredentials(ctx context.Context, authToken string, tenantID string) (*RegistryCredentials, error) {
+func (c *Client) GetPushRegistryCredentials(ctx context.Context, authToken string, projectName string) (*RegistryCredentials, error) {
 	// Prepare request payload
 	payload := map[string]string{
-		"tenantId": tenantID,
+		"name": projectName,
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -131,10 +131,10 @@ func (c *Client) GetPushRegistryCredentials(ctx context.Context, authToken strin
 }
 
 // GetPullRegistryCredentials fetches temporary Docker registry credentials for pulling images. These are scoped to JUST being able to pull from registries for the specified tenant
-func (c *Client) GetPullRegistryCredentials(ctx context.Context, authToken string, tenantID string) (*RegistryCredentials, error) {
+func (c *Client) GetPullRegistryCredentials(ctx context.Context, authToken string, projectName string) (*RegistryCredentials, error) {
 	// Prepare request payload
 	payload := map[string]string{
-		"tenantId": tenantID,
+		"name": projectName,
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -183,4 +183,38 @@ func (c *Client) GetPullRegistryCredentials(ctx context.Context, authToken strin
 	creds.URL = strings.TrimPrefix(creds.URL, "http://")
 
 	return &creds, nil
+}
+
+func (c *Client) CreateDockerRepository(ctx context.Context, authToken string, projectName string) error {
+	data := map[string]any{
+		"name": projectName,
+	}
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return errors.Errorf("failed to repository name: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/create-repo", baseURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return errors.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return errors.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return errors.Errorf("request failed with status: %d", resp.StatusCode)
+	}
+
+	return nil
 }

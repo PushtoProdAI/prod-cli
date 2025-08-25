@@ -23,6 +23,7 @@ const (
 	AgentGetFlyIOAppURL       = "agent.getFlyIOAppURL"
 	AgentCategorizeEnvVars    = "agent.categorizeEnvVars"
 	AgentReadEnvFiles         = "agent.readEnvFiles"
+	AgentCreateDockerRepo     = "agent.createDockerRepo"
 )
 
 type Activities struct {
@@ -48,5 +49,6 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentGetFlyIOAppURL, ActFunc: a.getFlyIOAppURL},
 		{Name: AgentCategorizeEnvVars, ActFunc: a.categorizeEnvVarsForDeployment},
 		{Name: AgentReadEnvFiles, ActFunc: a.getEnvVarsFromEnvFiles},
+		{Name: AgentCreateDockerRepo, ActFunc: a.createDockerRepo},
 	}
 }

@@ -156,6 +156,15 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		return deployResult{Error: summary}, nil
 	}
 
+	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentCreateDockerRepo, input.Spec.Name).Get(ctx)
+	if err != nil {
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			log.Printf("Failed to get Render workspace: %v", e1)
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		return deployResult{Error: summary}, nil
+	}
 	dockerGen := deployment.NewDockerGenerator(w.uiWriter)
 	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true, w.uiWriter)
 	steps := d.GenerateAPISteps(workspaceID)

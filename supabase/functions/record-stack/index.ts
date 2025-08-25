@@ -15,10 +15,13 @@ interface ServiceRequirement {
 Deno.serve(async (req) => {
   const { method } = req
   
-  if (method !== 'POST') {
-    return new Response("", { status: 405 })
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
-
+ 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_ANON_KEY"),
