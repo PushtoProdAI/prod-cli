@@ -103,3 +103,12 @@ func (a *Activities) getEnvVarsFromEnvFiles(_ context.Context, path string) ([]d
 	a.uiWriter.SendStatusComplete("analyzing", "✅ Analyzed .env files")
 	return envVars, nil
 }
+
+func (a *Activities) createDockerRepo(ctx context.Context, projectName string) error {
+	session := CtxSession(ctx)
+	err := a.beClient.CreateDockerRepository(ctx, session.AccessToken, projectName)
+	if err != nil {
+		return errors.Errorf("failed to create docker repository: %w", err)
+	}
+	return nil
+}

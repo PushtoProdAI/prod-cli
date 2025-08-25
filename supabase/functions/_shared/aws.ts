@@ -5,8 +5,17 @@ import {
 import {
   ECRClient,
   GetAuthorizationTokenCommand,
-  DescribeRepositoriesCommand
+  DescribeRepositoriesCommand,
+  CreateRepositoryCommand,
+  RepositoryNotFoundException
 } from "npm:@aws-sdk/client-ecr";
+
+export interface EcrRepoResp {
+  exists: boolean;
+  created?: boolean;
+  repositoryName: string;
+  repositoryUri?: string;
+}
 
 export interface EcrTokenResp {
   dockerAuthToken: string;
@@ -17,12 +26,14 @@ export interface EcrTokenResp {
   accountId: string;
 }
 
-export async function ecrTokenRequest(tenantId: string, roleArn: string): Promise<EcrTokenResp | Error> {
+export async function ecrTokenRequest(tenantId: string, repoName: string, roleArn: string): Promise<EcrTokenResp | Error> {
   if (!tenantId || !roleArn) {
     return new Error("Missing tenantId or roleArn");
   }
 
   const region = Deno.env.get("AWS_REGION") || "us-east-1";
+  const sanitizedRepoName = repoName.replace(/\s+/g, '-');
+  const fullRepoName = `${tenantId}-${sanitizedRepoName}`;
 
   try {
     const stsClient = new STSClient({ 
@@ -56,14 +67,21 @@ export async function ecrTokenRequest(tenantId: string, roleArn: string): Promis
       },
     });
 
-
-    const describe = await ecrClient.send(new DescribeRepositoriesCommand({}));
-    const allowedRepos = describe.repositories?.filter((repo) =>
-      repo.repositoryArn &&
-      repo.repositoryArn.includes("arn:aws:ecr") &&
-      repo.repositoryName &&
-      repo.repositoryName.startsWith(`tenant-${tenantId}`) // filtering by naming convention
-     ).map((repo) => repo.repositoryName);
+    let repositoryUri = "";
+    try {
+      const describeResult = await ecrClient.send(
+        new DescribeRepositoriesCommand({
+          repositoryNames: [fullRepoName],
+        }),
+      );
+      if (describeResult.repositories && describeResult.repositories.length > 0) {
+        repositoryUri = describeResult.repositories[0].repositoryUri || "";
+      }
+    } catch (error) {
+      if (!(error instanceof RepositoryNotFoundException)) {
+        return error instanceof Error ? error : new Error("Unknown error occurred");
+      }
+    }
 
     const authResult = await ecrClient.send(new GetAuthorizationTokenCommand({}));
 
@@ -83,7 +101,7 @@ export async function ecrTokenRequest(tenantId: string, roleArn: string): Promis
     return {
       dockerAuthToken: password,
       dockerAuthUsername: "AWS",
-      dockerRepo: allowedRepos?.length ? allowedRepos[0] : "",
+      dockerRepo: fullRepoName,
       proxyEndpoint: authData.proxyEndpoint,
       expiresAt: authData.expiresAt,
       accountId: accountId,
@@ -93,3 +111,96 @@ export async function ecrTokenRequest(tenantId: string, roleArn: string): Promis
     return err instanceof Error ? err : new Error("Unknown error occurred");
   }
 }
+export async function checkAndCreateECRRepo(
+  tenantId: string,
+  repoName: string,
+  roleArn: string,
+): Promise<EcrRepoResp | Error> {
+  if (!tenantId || !repoName || !roleArn) {
+    return new Error('Missing userId, repoName, or roleArn');
+  }
+
+  const region = Deno.env.get('AWS_REGION') || 'us-east-1';
+  const sanitizedRepoName = repoName.replace(/\s+/g, '-');
+  const fullRepoName = `${tenantId}-${sanitizedRepoName}`;
+
+  try {
+    const stsClient = new STSClient({
+      region,
+      credentials: {
+        accessKeyId: Deno.env.get('AWS_ACCESS_KEY_ID') || '',
+        secretAccessKey: Deno.env.get('AWS_SECRET_ACCESS_KEY') || '',
+      },
+    });
+
+    const assumeRoleCommand = new AssumeRoleCommand({
+      RoleArn: roleArn,
+      RoleSessionName: `session-${tenantId}`,
+      DurationSeconds: 3600,
+      Tags: [{ Key: 'tenant', Value: tenantId }],
+      TransitiveTagKeys: ['tenant'],
+    });
+
+    const { Credentials } = await stsClient.send(assumeRoleCommand);
+
+    if (!Credentials) {
+      return new Error('No credentials returned from STS');
+    }
+
+    const ecrClient = new ECRClient({
+      region,
+      credentials: {
+        accessKeyId: Credentials.AccessKeyId!,
+        secretAccessKey: Credentials.SecretAccessKey!,
+        sessionToken: Credentials.SessionToken,
+      },
+    });
+
+    try {
+      const describeResult = await ecrClient.send(
+        new DescribeRepositoriesCommand({
+          repositoryNames: [fullRepoName],
+        }),
+      );
+
+      if (
+        describeResult.repositories &&
+        describeResult.repositories.length > 0
+      ) {
+        return {
+          exists: true,
+          repositoryName: fullRepoName,
+          repositoryUri: describeResult.repositories[0].repositoryUri,
+        };
+      }
+    } catch (error) {
+      if (error instanceof RepositoryNotFoundException) {
+        const createResult = await ecrClient.send(
+          new CreateRepositoryCommand({
+            repositoryName: fullRepoName,
+            tags: [
+              {
+                Key: 'tenant',
+                Value: tenantId,
+              },
+            ],
+          }),
+        );
+
+        return {
+          exists: false,
+          created: true,
+          repositoryName: fullRepoName,
+          repositoryUri: createResult.repository?.repositoryUri,
+        };
+      }
+      return error instanceof Error ? error : new Error("Unknown error occurred");
+    }
+
+    return { exists: false, repositoryName: fullRepoName };
+  } catch (err) {
+    console.error('ECR repository check/create error:', err);
+    return err instanceof Error ? err : new Error('Unknown error occurred');
+  }
+}
+

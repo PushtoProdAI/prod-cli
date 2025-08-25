@@ -574,8 +574,8 @@ func createTarFromDir(dir string) (io.ReadCloser, error) {
 }
 
 // GetPushCredentials fetches registry credentials from the push-token endpoint
-func (dg *DockerGenerator) GetPushCredentials(ctx context.Context, authToken, tenantId string) (*backend.RegistryCredentials, error) {
-	return dg.beClient.GetPushRegistryCredentials(ctx, authToken, tenantId)
+func (dg *DockerGenerator) GetPushCredentials(ctx context.Context, authToken, projectName string) (*backend.RegistryCredentials, error) {
+	return dg.beClient.GetPushRegistryCredentials(ctx, authToken, projectName)
 }
 
 // PushToRegistry tags and pushes a Docker image to a private registry
@@ -648,12 +648,12 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 }
 
 // GetPullCredentials fetches registry credentials from the pull-token endpoint
-func (dg *DockerGenerator) GetPullCredentials(ctx context.Context, authToken, tenantId string) (*backend.RegistryCredentials, error) {
-	return dg.beClient.GetPullRegistryCredentials(ctx, authToken, tenantId)
+func (dg *DockerGenerator) GetPullCredentials(ctx context.Context, authToken string, projectName string) (*backend.RegistryCredentials, error) {
+	return dg.beClient.GetPullRegistryCredentials(ctx, authToken, projectName)
 }
 
 // BuildAndPush is a convenience method that generates, builds, and pushes a Docker image in one step
-func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpec, buildContext string, authToken, tenantId string) (*DockerBuildResult, *DockerPushResult, error) {
+func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpec, buildContext string, authToken string) (*DockerBuildResult, *DockerPushResult, error) {
 	fmt.Fprintf(dg.writer, "Starting Docker build and push for %s...\n", spec.Name)
 
 	// Build the image first
@@ -668,7 +668,7 @@ func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpe
 	}
 
 	// Get push credentials
-	creds, err := dg.GetPushCredentials(ctx, authToken, tenantId)
+	creds, err := dg.GetPushCredentials(ctx, authToken, spec.Name)
 	if err != nil {
 		return buildResult, nil, fmt.Errorf("failed to get push credentials: %w", err)
 	}

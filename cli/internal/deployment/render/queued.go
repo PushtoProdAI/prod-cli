@@ -15,7 +15,6 @@ type QueuedDeployment struct {
 	dockerGenerator *deployment.DockerGenerator
 	useDockerfile   bool
 	buildContext    string
-	tenantID        string
 	authToken       string
 	writer          io.Writer
 }
@@ -29,12 +28,6 @@ func NewQueuedDeployment(client RenderClient, spec *deployment.DeploymentSpec, d
 	if bc, ok := spec.Metadata["buildContext"].(string); ok {
 		buildContext = bc
 	}
-
-	tenantID := ""
-	if tid, ok := spec.Metadata["tenantID"].(string); ok {
-		tenantID = tid
-	}
-
 	authToken := ""
 	if at, ok := spec.Metadata["authToken"].(string); ok {
 		authToken = at
@@ -46,7 +39,6 @@ func NewQueuedDeployment(client RenderClient, spec *deployment.DeploymentSpec, d
 		dockerGenerator: dockerGenerator,
 		useDockerfile:   useDockerfile,
 		buildContext:    buildContext,
-		tenantID:        tenantID,
 		authToken:       authToken,
 		writer:          writer,
 	}
@@ -227,7 +219,6 @@ func (qd *QueuedDeployment) createDockerDeploymentSteps(ownerID string, startCou
 		DeploymentSpec:  qd.spec,
 		DockerGenerator: qd.dockerGenerator,
 		BuildContext:    qd.buildContext,
-		TenantID:        qd.tenantID,
 		AuthToken:       qd.authToken,
 		DependsOn:       []string{},
 	})
@@ -239,8 +230,8 @@ func (qd *QueuedDeployment) createDockerDeploymentSteps(ownerID string, startCou
 		ID:          regCredStepID,
 		Description: "Create or find Docker registry credential in Render",
 		Name:        fmt.Sprintf("%s-registry-cred", qd.spec.Name),
-		TenantID:    qd.tenantID,
 		AuthToken:   qd.authToken,
+		ProjectName: qd.spec.Name,
 		OwnerID:     ownerID,
 		DependsOn:   []string{dockerStepID},
 	})
@@ -263,8 +254,8 @@ func (qd *QueuedDeployment) createWebServiceStep(ownerID string, envVars []deplo
 		Dockerfile:         config.dockerfile,
 		DockerImageStepID:  config.dockerImageStepID,
 		RegistryCredStepID: config.registryCredStepID,
-		TenantID:           qd.tenantID,
 		AuthToken:          qd.authToken,
+		ProjectName:        qd.spec.Name,
 		EnvVars:            envVars,
 		ConnectionStepIDs:  connectionStepIDs,
 		DependsOn:          config.dependencies,

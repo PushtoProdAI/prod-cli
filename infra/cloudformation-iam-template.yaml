@@ -1,0 +1,219 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM User and Roles for ECR Access'
+
+Parameters:
+  IAMUserName:
+    Type: String
+    Description: Name for the IAM user
+    Default: ECRUser
+  
+  ECRPullOnlyRoleName:
+    Type: String
+    Description: Name for the ECR Pull Only Role
+    Default: ECRPullOnlyRole
+  
+  ECRPushOnlyRoleName:
+    Type: String
+    Description: Name for the ECR Push Only Role
+    Default: ECRPushOnlyRole
+  
+  ECRRepositoryManagerRoleName:
+    Type: String
+    Description: Name for the ECR Repository Manager Role
+    Default: ECRRepositoryManagerRole
+
+Resources:
+  # IAM User
+  ECRIAMUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref IAMUserName
+
+  # User Permission Policy
+  UserPermissionPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: UserPermissionPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - sts:AssumeRole
+              - sts:TagSession
+              - iam:PassRole
+            Resource:
+              - !GetAtt ECRPullOnlyRole.Arn
+              - !GetAtt ECRPushOnlyRole.Arn
+              - !GetAtt ECRRepositoryManagerRole.Arn
+      Users:
+        - !Ref ECRIAMUser
+
+  # ECR Pull Only Role
+  ECRPullOnlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref ECRPullOnlyRoleName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt ECRIAMUser.Arn
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'sts:RequestedRegion': !Ref AWS::Region
+
+  # ECR Pull Only Policy
+  ECRPullOnlyPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ECRPullOnlyPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ECRLogin
+            Effect: Allow
+            Action: ecr:GetAuthorizationToken
+            Resource: '*'
+          - Sid: AllowECRDescribe
+            Effect: Allow
+            Action: ecr:DescribeRepositories
+            Resource: '*'
+          - Sid: AllowPullFromTaggedReposOnly
+            Effect: Allow
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:GetRepositoryPolicy
+              - ecr:DescribeImages
+              - ecr:ListImages
+              - ecr:DescribeRepositories
+            Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
+            Condition:
+              StringEquals:
+                'aws:ResourceTag/tenant': '${aws:PrincipalTag/tenant}'
+      Roles:
+        - !Ref ECRPullOnlyRole
+
+  # ECR Push Only Role
+  ECRPushOnlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref ECRPushOnlyRoleName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt ECRIAMUser.Arn
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'sts:RequestedRegion': !Ref AWS::Region
+
+  # ECR Push Only Policy
+  ECRPushOnlyPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ECRPushOnlyPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ECRLogin
+            Effect: Allow
+            Action: ecr:GetAuthorizationToken
+            Resource: '*'
+          - Sid: AllowECRDescribe
+            Effect: Allow
+            Action: ecr:DescribeRepositories
+            Resource: '*'
+          - Sid: AllowPushToTaggedReposOnly
+            Effect: Allow
+            Action:
+              - ecr:PutImage
+              - ecr:InitiateLayerUpload
+              - ecr:UploadLayerPart
+              - ecr:CompleteLayerUpload
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetDownloadUrlForLayer
+              - ecr:DescribeRepositories
+              - ecr:ListImages
+              - ecr:BatchGetImage
+              - ecr:DescribeImages
+              - ecr:GetRepositoryPolicy
+            Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
+            Condition:
+              StringEquals:
+                'aws:ResourceTag/tenant': '${aws:PrincipalTag/tenant}'
+      Roles:
+        - !Ref ECRPushOnlyRole
+
+  # ECR Repository Manager Role
+  ECRRepositoryManagerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref ECRRepositoryManagerRoleName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt ECRIAMUser.Arn
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'sts:RequestedRegion': !Ref AWS::Region
+
+  # ECR Repository Manager Policy
+  ECRRepositoryManagerPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ECRRepositoryManagerPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ECRRepositoryManagement
+            Effect: Allow
+            Action:
+              - ecr:CreateRepository
+              - ecr:DeleteRepository
+              - ecr:DescribeRepositories
+              - ecr:ListTagsForResource
+              - ecr:TagResource
+              - ecr:UntagResource
+            Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
+          - Sid: ECRDescribeAccess
+            Effect: Allow
+            Action:
+              - ecr:DescribeRepositories
+            Resource: '*'
+      Roles:
+        - !Ref ECRRepositoryManagerRole
+
+Outputs:
+  IAMUserArn:
+    Description: ARN of the created IAM user
+    Value: !GetAtt ECRIAMUser.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-IAMUserArn'
+
+  ECRPullOnlyRoleArn:
+    Description: ARN of the ECR Pull Only Role
+    Value: !GetAtt ECRPullOnlyRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ECRPullOnlyRoleArn'
+
+  ECRPushOnlyRoleArn:
+    Description: ARN of the ECR Push Only Role
+    Value: !GetAtt ECRPushOnlyRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ECRPushOnlyRoleArn'
+
+  ECRRepositoryManagerRoleArn:
+    Description: ARN of the ECR Repository Manager Role
+    Value: !GetAtt ECRRepositoryManagerRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ECRRepositoryManagerRoleArn'

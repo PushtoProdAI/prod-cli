@@ -282,9 +282,7 @@ type BuildAndPushStepConfig struct {
 	DockerGenerator *deployment.DockerGenerator
 	// BuildContext is the directory context for the Docker build (typically ".")
 	BuildContext string
-	// TenantID is used for multi-tenant Docker registry configurations
-	TenantID  string
-	AuthToken string
+	AuthToken    string
 	// DependsOn lists the step IDs that must complete before this step runs
 	DependsOn []string
 }
@@ -295,7 +293,6 @@ type BuildAndPushStep struct {
 	DeploymentSpec  *deployment.DeploymentSpec
 	DockerGenerator *deployment.DockerGenerator
 	BuildContext    string
-	TenantID        string
 	AuthToken       string
 }
 
@@ -310,13 +307,12 @@ func NewBuildAndPushStep(config BuildAndPushStepConfig) *BuildAndPushStep {
 		DockerGenerator: config.DockerGenerator,
 		BuildContext:    config.BuildContext,
 		AuthToken:       config.AuthToken,
-		TenantID:        config.TenantID,
 	}
 }
 
 func (s *BuildAndPushStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error) {
 	// Build and push the Docker image
-	_, _, err := s.DockerGenerator.BuildAndPush(ctx, s.DeploymentSpec, s.BuildContext, s.AuthToken, s.TenantID)
+	_, _, err := s.DockerGenerator.BuildAndPush(ctx, s.DeploymentSpec, s.BuildContext, s.AuthToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build and push Docker image: %w", err)
 	}
@@ -337,10 +333,9 @@ type CreateRegistryCredentialStepConfig struct {
 	// Description is a human-readable description of what this step does
 	Description string
 	// Name is the name of the registry credential to create
-	Name string
-	// TenantID is used for multi-tenant Docker registry configurations
-	TenantID  string
-	AuthToken string
+	Name        string
+	AuthToken   string
+	ProjectName string
 	// OwnerID is the Render workspace/owner ID where the credential will be created
 	OwnerID string
 	// DependsOn lists the step IDs that must complete before this step runs
@@ -350,10 +345,10 @@ type CreateRegistryCredentialStepConfig struct {
 // CreateRegistryCredentialStep handles creating Docker registry credentials in Render
 type CreateRegistryCredentialStep struct {
 	BaseStep
-	Name      string `json:"name"`
-	TenantID  string `json:"tenantId"`
-	AuthToken string `json:"authToken"`
-	OwnerID   string `json:"ownerId"`
+	Name        string `json:"name"`
+	AuthToken   string `json:"authToken"`
+	ProjectName string `json:"projectName"` // For Docker deployments
+	OwnerID     string `json:"ownerId"`
 }
 
 func NewCreateRegistryCredentialStep(config CreateRegistryCredentialStepConfig) *CreateRegistryCredentialStep {
@@ -363,10 +358,10 @@ func NewCreateRegistryCredentialStep(config CreateRegistryCredentialStepConfig) 
 			Description: config.Description,
 			DependsOn:   config.DependsOn,
 		},
-		Name:      config.Name,
-		TenantID:  config.TenantID,
-		AuthToken: config.AuthToken,
-		OwnerID:   config.OwnerID,
+		Name:        config.Name,
+		AuthToken:   config.AuthToken,
+		ProjectName: config.ProjectName,
+		OwnerID:     config.OwnerID,
 	}
 }
 
@@ -390,7 +385,7 @@ func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client Rende
 	dockerGenerator := deployment.NewDockerGenerator(output.NewNoOpWriter())
 	defer dockerGenerator.Close()
 
-	pullCreds, err := dockerGenerator.GetPullCredentials(ctx, s.AuthToken, s.TenantID)
+	pullCreds, err := dockerGenerator.GetPullCredentials(ctx, s.AuthToken, s.ProjectName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pull credentials: %w", err)
 	}
@@ -439,9 +434,8 @@ type CreateWebServiceStepConfig struct {
 	DockerImageStepID string
 	// RegistryCredStepID is the ID of the step that created registry credentials
 	RegistryCredStepID string
-	// TenantID is used for multi-tenant Docker registry configurations
-	TenantID  string
-	AuthToken string
+	AuthToken          string
+	ProjectName        string
 	// EnvVars are the environment variables to set on the service
 	EnvVars []deployment.EnvVar
 	// ConnectionStepIDs are the IDs of steps that provide connection info (e.g., database URLs)
@@ -462,8 +456,8 @@ type CreateWebServiceStep struct {
 	Dockerfile         string              `json:"dockerfile,omitempty"`
 	DockerImageStepID  string              `json:"dockerImageStepId,omitempty"`  // ID of build & push step
 	RegistryCredStepID string              `json:"registryCredStepId,omitempty"` // ID of registry credential step
-	TenantID           string              `json:"tenantId,omitempty"`           // For Docker deployments
 	AuthToken          string              `json:"authToken,omitempty"`          // For Docker deployments
+	ProjectName        string              `json:"projectName,omitempty"`        // For Docker deployments
 	EnvVars            []deployment.EnvVar `json:"envVars"`
 	ConnectionStepIDs  []string            `json:"connectionStepIds"` // IDs of connection info steps
 }
@@ -484,8 +478,8 @@ func NewCreateWebServiceStep(config CreateWebServiceStepConfig) *CreateWebServic
 		Dockerfile:         config.Dockerfile,
 		DockerImageStepID:  config.DockerImageStepID,
 		RegistryCredStepID: config.RegistryCredStepID,
-		TenantID:           config.TenantID,
 		AuthToken:          config.AuthToken,
+		ProjectName:        config.ProjectName,
 		EnvVars:            config.EnvVars,
 		ConnectionStepIDs:  config.ConnectionStepIDs,
 	}
@@ -577,7 +571,7 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		dockerGenerator := deployment.NewDockerGenerator(output.NewNoOpWriter())
 		defer dockerGenerator.Close()
 
-		pullCreds, err := dockerGenerator.GetPullCredentials(ctx, s.AuthToken, s.TenantID)
+		pullCreds, err := dockerGenerator.GetPullCredentials(ctx, s.AuthToken, s.ProjectName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get pull credentials: %w", err)
 		}
