@@ -25,6 +25,7 @@ import (
 
 type DockerArtifacts struct {
 	Dockerfile    string
+	DockerIgnore  string
 	DockerCompose string
 	BuildContext  map[string]string
 	ImageName     string
@@ -52,14 +53,15 @@ type DockerService struct {
 	DependsOn   []string
 }
 
-//go:embed templates/*.dockerfile
+//go:embed templates/*.dockerfile templates/*.dockerignore
 var templateFS embed.FS
 
 type DockerGenerator struct {
-	templates map[string]*template.Template
-	client    *client.Client
-	beClient  *backend.Client
-	writer    io.Writer
+	dockerignoreTemplates map[string]string
+	templates             map[string]*template.Template
+	client                *client.Client
+	beClient              *backend.Client
+	writer                io.Writer
 }
 
 func NewDockerGenerator(writer io.Writer) *DockerGenerator {
@@ -67,9 +69,10 @@ func NewDockerGenerator(writer io.Writer) *DockerGenerator {
 		writer = output.NewNoOpWriter()
 	}
 	dg := &DockerGenerator{
-		templates: make(map[string]*template.Template),
-		beClient:  backend.NewClient(),
-		writer:    writer,
+		templates:             make(map[string]*template.Template),
+		dockerignoreTemplates: make(map[string]string),
+		beClient:              backend.NewClient(),
+		writer:                writer,
 	}
 	dg.initTemplates()
 
@@ -108,6 +111,27 @@ func (dg *DockerGenerator) initTemplates() {
 	dg.templates["python"] = template.Must(template.New("python").Parse(string(pythonTemplate)))
 	dg.templates["go"] = template.Must(template.New("go").Parse(string(goTemplate)))
 	dg.templates["golang"] = dg.templates["go"]
+
+	nodeDockerignore, err := templateFS.ReadFile("templates/node.dockerignore")
+	if err != nil {
+		panic(fmt.Sprintf("failed to read node dockerignore: %v", err))
+	}
+	dg.dockerignoreTemplates["node"] = string(nodeDockerignore)
+	dg.dockerignoreTemplates["nodejs"] = string(nodeDockerignore)
+	dg.dockerignoreTemplates["javascript"] = string(nodeDockerignore)
+
+	pythonDockerignore, err := templateFS.ReadFile("templates/python.dockerignore")
+	if err != nil {
+		panic(fmt.Sprintf("failed to read python dockerignore: %v", err))
+	}
+	dg.dockerignoreTemplates["python"] = string(pythonDockerignore)
+
+	goDockerignore, err := templateFS.ReadFile("templates/go.dockerignore")
+	if err != nil {
+		panic(fmt.Sprintf("failed to read go dockerignore: %v", err))
+	}
+	dg.dockerignoreTemplates["go"] = string(goDockerignore)
+	dg.dockerignoreTemplates["golang"] = string(goDockerignore)
 }
 
 func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArtifacts, error) {
@@ -151,8 +175,12 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 		}
 	}
 
+	// Generate .dockerignore for the language
+	dockerIgnore := dg.generateDockerIgnore(spec.Language)
+
 	return &DockerArtifacts{
 		Dockerfile:    dockerfileBuf.String(),
+		DockerIgnore:  dockerIgnore,
 		DockerCompose: dockerCompose,
 		ImageName:     fmt.Sprintf("app-%s", spec.Name),
 		Services:      services,
@@ -361,6 +389,14 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 	dockerfilePath := filepath.Join(buildContext, "Dockerfile")
 	if err := os.WriteFile(dockerfilePath, []byte(artifacts.Dockerfile), 0644); err != nil {
 		return nil, fmt.Errorf("failed to write Dockerfile: %w", err)
+	}
+
+	// Write .dockerignore if provided
+	if artifacts.DockerIgnore != "" {
+		dockerignorePath := filepath.Join(buildContext, ".dockerignore")
+		if err := os.WriteFile(dockerignorePath, []byte(artifacts.DockerIgnore), 0644); err != nil {
+			return nil, fmt.Errorf("failed to write .dockerignore: %w", err)
+		}
 	}
 
 	// Create tar archive of build context
@@ -649,4 +685,39 @@ func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpe
 // stringPtr returns a pointer to a string
 func stringPtr(s string) *string {
 	return &s
+}
+
+// generateDockerIgnore returns the appropriate dockerignore content for the language
+func (dg *DockerGenerator) generateDockerIgnore(language string) string {
+	// Try to get language-specific dockerignore
+	if dockerignore, exists := dg.dockerignoreTemplates[strings.ToLower(language)]; exists {
+		return dockerignore
+	}
+
+	// Return a default dockerignore if language not found
+	return `# Version control
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# IDEs
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+.circleci
+`
 }
