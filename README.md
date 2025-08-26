@@ -38,6 +38,59 @@ This project includes a local Supabase instance for development. Follow these st
 
 2. The default local Supabase configuration is already set up in `env.example`
 
+## Connecting to Remote Supabase Instance
+
+To connect to a remote Supabase instance instead of the local one:
+
+### 1. Get Remote Credentials
+1. The credentials are in 1Password in a note called "Remote Supabase Credentials for Prod" 
+
+### 2. Update Environment Variables
+Edit your `.env` file and replace the local values:
+```bash
+# Comment out local development section
+# SUPABASE_URL=http://localhost:54321
+# SUPABASE_ANON_KEY=...
+
+# Add remote Supabase credentials
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_ANON_KEY=your-anon-key-from-supabase-dashboard
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-from-supabase-dashboard
+DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.your-project-ref.supabase.co:5432/postgres
+```
+
+### 3. Link with Supabase CLI (Optional)
+```bash
+# Login to Supabase
+supabase login
+
+# Link to your remote project
+supabase link --project-ref your-project-ref
+
+# Pull the remote schema (optional)
+supabase db pull
+```
+
+## Deployment Platform Configuration
+
+To deploy applications using the prod CLI, you'll need to configure API keys for your preferred deployment platforms:
+
+### Render
+1. Go to [Render API Documentation](https://render.com/docs/api)
+2. Generate an API key from your Render dashboard
+3. Add it to your `.env` file:
+   ```bash
+   RENDER_API_KEY=your-render-api-key-here
+   ```
+
+### Fly.io
+1. Go to [Fly.io API Documentation](https://fly.io/docs/reference/api/)
+2. Generate an API token from your Fly.io dashboard
+3. Add it to your `.env` file:
+   ```bash
+   FLY_API_TOKEN=your-fly-api-token-here
+   ```
+
 ### Available Make Commands
 
 - `make supabase-start` - Start Supabase local development
@@ -73,15 +126,14 @@ If you encounter issues:
    make supabase-start
    ```
 
-2. **Check Docker:**
+2. **Check Docker status:**
    ```bash
    docker ps
    ```
-   Ensure all Supabase containers are running.
 
 3. **View logs:**
    ```bash
-   supabase logs
+   supabase status
    ```
 ## Running the Prod CLI
    1. Install Ollama. Currently tested with Ollama3.1 model
@@ -93,7 +145,7 @@ If you encounter issues:
 
 ## Updating Prompts
    1. We are currently using BAML for handling our LLM interations. BAML requires a generation step to update the prompts and clients.
-   2. When you change a prompt, run `make generate` from `prod/cli` and this will generate updated code. When things are working, please commit this code. 
+   2. When you change a prompt, run `make generate` from `prod/cli` and this willy generate updated code. When things are working, please commit this code. 
 
 ## Output Pattern Guide
 
@@ -212,3 +264,4 @@ func TestSomethingElse(t *testing.T) {
     err := SomeFunction(context.Background(), io.Discard)
     assert.NoError(t, err)
 }
+```
