@@ -62,6 +62,15 @@ func (a *Activities) estimateRenderCosts(_ context.Context, spec deployment.Depl
 	return costs, nil
 }
 
+func (a *Activities) estimateFlyioCosts(_ context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+	fa := flyio.NewFlyioDeploymentAdapter(a.flyClient, a.uiWriter)
+	costs, err := fa.EstimateCost(&spec, strategy)
+	if err != nil {
+		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
+	}
+	return costs, nil
+}
+
 func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, spec analyzer.ProjectSpec) ([]deployment.EnvVar, error) {
 	a.uiWriter.SendStatus("summarizing", "Categorizing environment variables...")
 	categorizedEnvVars := make([]deployment.EnvVar, 0)
