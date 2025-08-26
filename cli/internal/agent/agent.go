@@ -825,8 +825,8 @@ func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) 
 		return a.plan, nil
 	}
 
-	// get the dry-run result with a shorter timeout since it's just planning
-	result, err := client.GetWorkflowResult[DryRunResult](ctx, a.wfClient, wf, 2*time.Minute)
+	// get the dry-run result with a longer timeout to accommodate LLM operations
+	result, err := client.GetWorkflowResult[DryRunResult](ctx, a.wfClient, wf, 5*time.Minute)
 	if err != nil {
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
 		fmt.Fprint(out, "Sorry that we had trouble creating the dry-run preview \n")

@@ -25,6 +25,8 @@ const (
 	DryRunDeployWorkflowName      = "agent.dryRun.render"
 	DeployFlyioWorkflowName       = "agent.deploy.flyio"
 	CategorizeEnvVarsWorkflowName = "agent.categorizeEnvVars"
+	DryRunRenderWorkflowName      = "agent.dryrun.render"
+	DryRunFlyioWorkflowName       = "agent.dryrun.flyio"
 )
 
 var ActivityOpts = workflow.ActivityOptions{
@@ -85,6 +87,8 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: DryRunDeployWorkflowName, WorkflowFunc: w.dryRunDeployRender},
 		{Name: DeployFlyioWorkflowName, WorkflowFunc: w.deployFly},
 		{Name: CategorizeEnvVarsWorkflowName, WorkflowFunc: w.categorizeEnvVars},
+		{Name: DryRunRenderWorkflowName, WorkflowFunc: w.dryRunDeployRender},
+		{Name: DryRunFlyioWorkflowName, WorkflowFunc: w.dryRunDeployFly},
 	}
 }
 
@@ -106,10 +110,14 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input DeployPlan)
 
 func (Workflows) DryRunDeploy(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
 	slog.Info("Dry run", "platform", input.Platform, "action", input.Action)
-	if input.Platform == Render {
+	switch input.Platform {
+	case Render:
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DryRunDeployWorkflowName, time.Now().Unix())}, DryRunDeployWorkflowName, input)
+	case FlyIO:
+		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DryRunFlyioWorkflowName, time.Now().Unix())}, DryRunFlyioWorkflowName, input)
+	default:
+		return nil, errors.New("unsupported platform for dry-run deployment")
 	}
-	return nil, errors.New("unsupported platform for dry-run deployment")
 }
 
 func (Workflows) CategorizeEnvVars(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
@@ -226,6 +234,17 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 	}
 	spec.Metadata["buildContext"] = input.Source
 
+	// Estimate costs before deployment
+	estimatedCosts, err := workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateFlyioCosts, *spec, deployment.StrategyFlyio).Get(ctx)
+	if err != nil {
+		log.Printf("Failed to estimate costs: %v", err)
+	} else {
+		log.Printf("Estimated monthly costs: $%.2f", estimatedCosts.Total)
+		for _, service := range estimatedCosts.Services {
+			log.Printf("  - %s (%s): $%.2f", service.Service.Name, service.Plan, service.Cost)
+		}
+	}
+
 	// Generate and summarize deployment steps
 	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, w.uiWriter)
 	steps := d.GenerateAPISteps()
@@ -325,6 +344,69 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input DeployPlan) (
 	}
 
 	conflictChecks := performConflictChecks(workspaceID, spec, w.renderClient)
+	validationErrors := validateDeploymentSpec(spec)
+
+	return DryRunResult{
+		Steps:            dryRunSteps,
+		EstimatedCosts:   estimatedCosts,
+		CredentialStatus: credentialStatus,
+		ConflictChecks:   conflictChecks,
+		ValidationErrors: validationErrors,
+	}, nil
+}
+
+func (w *Workflows) dryRunDeployFly(ctx workflow.Context, input DeployPlan) (DryRunResult, error) {
+	if w.registry == nil {
+		return DryRunResult{}, errors.New("workflow registry is not set")
+	}
+
+	credentialStatus := make(map[string]bool)
+	// Check Fly.io credentials by attempting to get an app (this will fail if not authenticated)
+	// Use a timeout to prevent hanging
+	checkCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := w.flyClient.GetApp(checkCtx, "test-app")
+	if err != nil {
+		credentialStatus["Fly.io API"] = false
+	} else {
+		credentialStatus["Fly.io API"] = true
+	}
+
+	envVars := input.CollectedEnvVars
+
+	// Build deployment spec
+	db := deployment.NewDeploymentBuilder(&input.Spec, envVars)
+	spec, err := db.Build()
+	if err != nil {
+		return DryRunResult{}, errors.Errorf("failed to build deployment spec: %w", err)
+	}
+
+	spec.Metadata["buildContext"] = input.Source
+
+	// Generate deployment steps
+	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, w.uiWriter)
+	steps := d.GenerateAPISteps()
+
+	dryRunSteps := make([]DryRunStep, len(steps))
+	for i, step := range steps {
+		dryRunSteps[i] = DryRunStep{
+			ID:          step.GetID(),
+			Description: step.GetDescription(),
+			Type:        getFlyioStepType(step),
+			Config:      extractFlyioStepConfig(step),
+			DependsOn:   step.GetDependencies(),
+		}
+	}
+
+	// Estimate costs
+	estimatedCosts, err := workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateFlyioCosts, *spec, deployment.StrategyFlyio).Get(ctx)
+	if err != nil {
+		log.Printf("Failed to estimate costs: %v", err)
+		estimatedCosts = deployment.CostEstimate{}
+	}
+
+	// Perform conflict checks and validation
+	conflictChecks := performFlyioConflictChecks(spec, w.flyClient)
 	validationErrors := validateDeploymentSpec(spec)
 
 	return DryRunResult{
@@ -449,4 +531,52 @@ func validateDeploymentSpec(spec *deployment.DeploymentSpec) []string {
 	}
 
 	return errors
+}
+
+// Helper functions for Fly.io dry run workflow
+
+func getFlyioStepType(step flyio.FlyioAPIStep) string {
+	switch step.(type) {
+	case *flyio.CreateFlyioAppStep:
+		return "app"
+	case *flyio.CreateFlyioServiceStep:
+		return "service"
+	case *flyio.DeployFlyioConfigStep:
+		return "config"
+	case *flyio.AttachPostgresStep:
+		return "attach"
+	default:
+		return "unknown"
+	}
+}
+
+func extractFlyioStepConfig(step flyio.FlyioAPIStep) map[string]interface{} {
+	config := make(map[string]interface{})
+
+	// Since the fields are unexported, we'll just use the step description
+	// and type information that's available through the interface
+	config["step_id"] = step.GetID()
+	config["description"] = step.GetDescription()
+
+	return config
+}
+
+func performFlyioConflictChecks(spec *deployment.DeploymentSpec, client flyio.FlyioClient) []ConflictCheck {
+	var conflicts []ConflictCheck
+
+	// Check for app name conflicts by attempting to get the app
+	// Use a timeout to prevent hanging
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := client.GetApp(ctx, spec.Name)
+	if err == nil {
+		// App exists, this is a conflict
+		conflicts = append(conflicts, ConflictCheck{
+			Resource: "app",
+			Status:   "conflict",
+			Message:  fmt.Sprintf("App name '%s' already exists", spec.Name),
+		})
+	}
+
+	return conflicts
 }
