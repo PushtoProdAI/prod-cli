@@ -13,6 +13,7 @@ import (
 	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
 // planDeploy workflow handles the planning phase of deployment
@@ -73,6 +74,34 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		Spec:             spec,
 		Summary:          summary,
 		DryRunFromPrompt: intent.DryRun,
+	}
+
+	// Estimate costs during planning phase
+	if action == Deploy && platform != UnknownPlatform {
+		w.uiWriter.SendStatus("pricing", "Calculating estimated costs...")
+
+		// Build deployment spec for cost estimation
+		db := deployment.NewDeploymentBuilder(&spec, []deployment.EnvVar{})
+		deploymentSpec, err := db.Build()
+		if err != nil {
+			log.Printf("Failed to build deployment spec for cost estimation: %v", err)
+		} else {
+			// Estimate costs based on platform
+			var estimatedCosts deployment.CostEstimate
+			switch platform {
+			case Render:
+				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateRenderCosts, *deploymentSpec, deployment.StrategyRenderQueued).Get(ctx)
+			case FlyIO:
+				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateFlyioCosts, *deploymentSpec, deployment.StrategyFlyio).Get(ctx)
+			}
+
+			if err != nil {
+				log.Printf("Failed to estimate costs: %v", err)
+			} else {
+				// Display pricing information
+				displayPricingInfo(w.uiWriter, estimatedCosts)
+			}
+		}
 	}
 
 	return plan, err
