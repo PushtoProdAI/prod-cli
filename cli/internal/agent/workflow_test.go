@@ -3,6 +3,7 @@ package agent
 import (
 	"testing"
 
+	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/output"
 )
@@ -90,4 +91,68 @@ func TestWorkflows_WorkflowRegistration(t *testing.T) {
 	for _, wf := range registeredWorkflows {
 		t.Logf("  - %s", wf.Name)
 	}
+}
+
+func TestDisplayPricingInfo(t *testing.T) {
+	// Create a mock writer to capture output
+	mockWriter := &MockStatusWriter{
+		messages: make([]string, 0),
+	}
+
+	// Create a sample cost estimate
+	costs := deployment.CostEstimate{
+		Total: 32.50,
+		Services: []deployment.CostService{
+			{
+				Service: deployment.Service{Name: "web", Provider: "web"},
+				Plan:    "standard",
+				Cost:    25.00,
+			},
+			{
+				Service: deployment.Service{Name: "db", Provider: "postgresql"},
+				Plan:    "basic_256mb",
+				Storage: 15,
+				Cost:    7.50,
+			},
+		},
+	}
+
+	// Call the function
+	displayPricingInfo(mockWriter, costs)
+
+	// Verify the output
+	expectedMessages := []string{
+		"💰 Estimated Monthly Costs:",
+		"  • web (standard): $25.00",
+		"  • postgresql (basic_256mb, 15GB storage): $7.50",
+		"  Total: $32.50/month",
+	}
+
+	if len(mockWriter.messages) != len(expectedMessages) {
+		t.Errorf("Expected %d messages, got %d", len(expectedMessages), len(mockWriter.messages))
+	}
+
+	for i, expected := range expectedMessages {
+		if i < len(mockWriter.messages) && mockWriter.messages[i] != expected {
+			t.Errorf("Message %d: expected '%s', got '%s'", i, expected, mockWriter.messages[i])
+		}
+	}
+}
+
+// MockStatusWriter is a mock implementation of StatusWriter for testing
+type MockStatusWriter struct {
+	messages []string
+}
+
+func (m *MockStatusWriter) Write(p []byte) (int, error) {
+	m.messages = append(m.messages, string(p))
+	return len(p), nil
+}
+
+func (m *MockStatusWriter) SendStatus(status, message string) {
+	m.messages = append(m.messages, message)
+}
+
+func (m *MockStatusWriter) SendStatusComplete(status, message string) {
+	m.messages = append(m.messages, message)
 }
