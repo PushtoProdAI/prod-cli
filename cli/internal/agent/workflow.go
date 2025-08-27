@@ -239,10 +239,7 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 	if err != nil {
 		log.Printf("Failed to estimate costs: %v", err)
 	} else {
-		log.Printf("Estimated monthly costs: $%.2f", estimatedCosts.Total)
-		for _, service := range estimatedCosts.Services {
-			log.Printf("  - %s (%s): $%.2f", service.Service.Name, service.Plan, service.Cost)
-		}
+		displayPricingInfo(w.uiWriter, estimatedCosts)
 	}
 
 	// Generate and summarize deployment steps
@@ -579,4 +576,31 @@ func performFlyioConflictChecks(spec *deployment.DeploymentSpec, client flyio.Fl
 	}
 
 	return conflicts
+}
+
+// displayPricingInfo displays pricing information in a user-friendly format
+func displayPricingInfo(writer output.StatusWriter, costs deployment.CostEstimate) {
+	if costs.Total <= 0 {
+		return
+	}
+
+	writer.SendStatus("pricing", "💰 Estimated Monthly Costs:")
+
+	// Display individual service costs
+	for _, service := range costs.Services {
+		var description string
+		if service.Plan != "" {
+			if service.Storage > 0 {
+				description = fmt.Sprintf("%s (%s, %dGB storage)", service.Provider, service.Plan, service.Storage)
+			} else {
+				description = fmt.Sprintf("%s (%s)", service.Provider, service.Plan)
+			}
+		} else {
+			description = service.Provider
+		}
+		writer.SendStatus("pricing", fmt.Sprintf("  • %s: $%.2f", description, service.Cost))
+	}
+
+	// Display total cost
+	writer.SendStatusComplete("pricing", fmt.Sprintf("  Total: $%.2f/month", costs.Total))
 }
