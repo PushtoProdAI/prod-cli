@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -144,6 +145,11 @@ func (ra *RenderAuth) PerformOAuthLogin(ctx context.Context) error {
 		// Try to get host from loaded config
 		if ra.config.Host != "" {
 			host = ra.config.Host
+			log.Printf("Host from config: %s", host)
+			// Ensure the host has a protocol scheme
+			if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
+				host = "https://" + host + "/v1"
+			}
 		}
 	}
 
@@ -155,6 +161,7 @@ func (ra *RenderAuth) PerformOAuthLogin(ctx context.Context) error {
 	}
 
 	ra.printf("🔧 Using OAuth host: %s\n", host)
+	log.Printf("OAuth host being used: %s", host)
 
 	// Set up custom HTTP client with proper user-agent like Render CLI and OAuth Content-Type fix
 	customClient := &http.Client{
@@ -181,6 +188,9 @@ func (ra *RenderAuth) PerformOAuthLogin(ctx context.Context) error {
 
 	deviceGrant, err := oauthClient.CreateGrant(ctx)
 	if err != nil {
+		// Log error to log file
+		log.Printf("Failed to create device grant: %v", err)
+
 		ra.printf("❌ Failed to connect to Render authentication server\n")
 		ra.printf("Error details: %v\n", err)
 		ra.println("\n💡 This might be due to:")
