@@ -20,6 +20,61 @@ import (
 	"github.com/boundaryml/baml/engine/language_client_go/pkg/cffi"
 )
 
+type CategorizedRoutes struct {
+	Routes      []Route `json:"routes"`
+	Recommended Route   `json:"recommended"`
+}
+
+func (c *CategorizedRoutes) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "CategorizedRoutes" {
+		panic(fmt.Sprintf("expected CategorizedRoutes, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "routes":
+			c.Routes = baml.DecodeList(valueHolder, func(inner *cffi.CFFIValueHolder) Route {
+				return *baml.Decode(inner).(*Route)
+			})
+
+		case "recommended":
+			c.Recommended = *baml.Decode(valueHolder).(*Route)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c CategorizedRoutes) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["routes"] = c.Routes
+
+	fields["recommended"] = c.Recommended
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c CategorizedRoutes) BamlTypeName() string {
+	return "CategorizedRoutes"
+}
+
+func (u CategorizedRoutes) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_TYPES,
+		Name:      "CategorizedRoutes",
+	}
+}
+
 type EnvVarCandidate struct {
 	VarName string `json:"varName"`
 	File    string `json:"file"`
@@ -442,6 +497,136 @@ func (u Remediation) BamlEncodeName() *cffi.CFFITypeName {
 	return &cffi.CFFITypeName{
 		Namespace: cffi.CFFITypeNamespace_TYPES,
 		Name:      "Remediation",
+	}
+}
+
+type Route struct {
+	Method     string  `json:"method"`
+	Path       string  `json:"path"`
+	Confidence float64 `json:"confidence"`
+}
+
+func (c *Route) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "Route" {
+		panic(fmt.Sprintf("expected Route, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "method":
+			c.Method = baml.Decode(valueHolder).(string)
+
+		case "path":
+			c.Path = baml.Decode(valueHolder).(string)
+
+		case "confidence":
+			c.Confidence = baml.Decode(valueHolder).(float64)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c Route) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["method"] = c.Method
+
+	fields["path"] = c.Path
+
+	fields["confidence"] = c.Confidence
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c Route) BamlTypeName() string {
+	return "Route"
+}
+
+func (u Route) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_TYPES,
+		Name:      "Route",
+	}
+}
+
+type RouteCandidate struct {
+	Method  string `json:"method"`
+	Path    string `json:"path"`
+	File    string `json:"file"`
+	Line    int64  `json:"line"`
+	Context string `json:"context"`
+}
+
+func (c *RouteCandidate) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "RouteCandidate" {
+		panic(fmt.Sprintf("expected RouteCandidate, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "method":
+			c.Method = baml.Decode(valueHolder).(string)
+
+		case "path":
+			c.Path = baml.Decode(valueHolder).(string)
+
+		case "file":
+			c.File = baml.Decode(valueHolder).(string)
+
+		case "line":
+			c.Line = baml.Decode(valueHolder).(int64)
+
+		case "context":
+			c.Context = baml.Decode(valueHolder).(string)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c RouteCandidate) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["method"] = c.Method
+
+	fields["path"] = c.Path
+
+	fields["file"] = c.File
+
+	fields["line"] = c.Line
+
+	fields["context"] = c.Context
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c RouteCandidate) BamlTypeName() string {
+	return "RouteCandidate"
+}
+
+func (u RouteCandidate) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_TYPES,
+		Name:      "RouteCandidate",
 	}
 }
 

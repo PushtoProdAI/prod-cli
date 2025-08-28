@@ -25,6 +25,7 @@ const (
 	AgentCategorizeEnvVars    = "agent.categorizeEnvVars"
 	AgentReadEnvFiles         = "agent.readEnvFiles"
 	AgentCreateDockerRepo     = "agent.createDockerRepo"
+	AgentDetermineRootPath    = "agent.determineRootPath"
 )
 
 type Activities struct {
@@ -52,5 +53,6 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentCategorizeEnvVars, ActFunc: a.categorizeEnvVarsForDeployment},
 		{Name: AgentReadEnvFiles, ActFunc: a.getEnvVarsFromEnvFiles},
 		{Name: AgentCreateDockerRepo, ActFunc: a.createDockerRepo},
+		{Name: AgentDetermineRootPath, ActFunc: a.determineRootPath},
 	}
 }

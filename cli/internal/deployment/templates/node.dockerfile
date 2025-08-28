@@ -1,4 +1,8 @@
+{{- if .BaseImage }}
+FROM {{ .BaseImage }}
+{{- else }}
 FROM node:18-alpine
+{{- end }}
 
 WORKDIR /app
 

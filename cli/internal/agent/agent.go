@@ -28,6 +28,7 @@ type TUIWriter interface {
 	SendTextPrompt(message string)
 	SendTextPromptWithDefault(message string, defaultValue string)
 	SendPlan(plan DeployPlan, dryRun bool)
+	StopSpinner()
 }
 
 type EnvVarWithStatus struct {
@@ -71,6 +72,7 @@ type DeployPlan struct {
 	Summary          string
 	DryRunFromPrompt bool
 	CollectedEnvVars []deployment.EnvVar
+	Pricing          deployment.CostEstimate
 }
 
 type deployResult struct {
@@ -163,6 +165,11 @@ func (a *Agent) sendTextPrompt(out io.Writer, message string) {
 func (a *Agent) sendTextPromptWithDefault(out io.Writer, message string, defaultValue string) {
 	tuiWriter := out.(TUIWriter)
 	tuiWriter.SendTextPromptWithDefault(message, defaultValue)
+}
+
+func (a *Agent) stopSpinner(out io.Writer) {
+	tuiWriter := out.(TUIWriter)
+	tuiWriter.StopSpinner()
 }
 
 func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
@@ -274,11 +281,13 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 		return a.deploy(ctx, input, out)
 	}
 
-	envVars, err := client.GetWorkflowResult[[]deployment.EnvVar](ctx, a.wfClient, wf, 30*time.Second)
+	envVars, err := client.GetWorkflowResult[[]deployment.EnvVar](ctx, a.wfClient, wf, 5*time.Minute)
 	if err != nil {
 		fmt.Fprintf(out, "❌ Error getting categorization result: %v\n", err)
 		return a.deploy(ctx, input, out)
 	}
+
+	fmt.Fprintf(out, "✅ Environment variables categorized\n")
 
 	// always initialize envVars slice to reset between deploys
 	a.envVars = make([]EnvVarWithStatus, 0)
@@ -310,7 +319,7 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 			}
 		}
 		fmt.Fprint(out, "\n")
-
+		fmt.Fprintf(out, "🔒 We'll display the values you enter in plaintext, but don't worry they are handled securely when we deploy!\n")
 		return a.promptForEnvVarValue(ctx, input, out)
 	}
 
@@ -320,7 +329,6 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 }
 
 func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	// Simply find the first pending env var - much cleaner!
 	var currentEnvVar *EnvVarWithStatus
 
 	for i := range a.envVars {
@@ -349,7 +357,6 @@ func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.W
 func (a *Agent) waitForEnvVarValue(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	userInput := strings.TrimSpace(input)
 
-	// Find and update the FIRST pending env var (much simpler!)
 	for i := range a.envVars {
 		if a.envVars[i].Status == "pending" {
 			var finalValue string
@@ -413,6 +420,9 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 
 	// give a generous timeout for the deployment to complete
 	result, err := client.GetWorkflowResult[deployResult](ctx, a.wfClient, wf, 20*time.Minute)
+	// manually stop the spinner in case anything is dangling from the deploy workflow
+	a.stopSpinner(out)
+
 	if err != nil {
 		log.Printf("Deployment workflow execution result: %v\n", err)
 		a.wfClient.CancelWorkflowInstance(ctx, wf)

@@ -18,11 +18,20 @@ type ProjectSpec struct {
 	BuildCommand        string
 	StartCommand        string
 	EnvVars             []EnvVarCandidate
+	Routes              []RouteCandidate
 }
 
 type ServiceRequirement struct {
 	Type     string `json:"type"`
 	Provider string `json:"provider"`
+}
+
+type RouteCandidate struct {
+	Method  string
+	Path    string
+	File    string
+	Line    int
+	Context string
 }
 
 type projectFS struct {

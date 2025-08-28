@@ -161,6 +161,22 @@ func (w *TeaWriter) SendPlan(plan agent.DeployPlan, dryRun bool) {
 		tuiEnvVars[i] = EnvVarRequirement{Name: e.VarName}
 	}
 
+	tuiRoutes := make([]RouteRequirement, len(plan.Spec.Routes))
+	for i, r := range plan.Spec.Routes {
+		tuiRoutes[i] = RouteRequirement{Path: r.Path}
+	}
+
+	// Convert pricing information
+	tuiPricingServices := make([]PricingService, len(plan.Pricing.Services))
+	for i, s := range plan.Pricing.Services {
+		tuiPricingServices[i] = PricingService{
+			Name:    s.Provider,
+			Plan:    s.Plan,
+			Storage: s.Storage,
+			Cost:    s.Cost,
+		}
+	}
+
 	planMessage := PlanDisplayMessage{
 		Summary:  plan.Summary,
 		Action:   plan.Action.String(),
@@ -171,6 +187,11 @@ func (w *TeaWriter) SendPlan(plan agent.DeployPlan, dryRun bool) {
 		DryRun:   dryRun,
 		Services: tuiServices,
 		EnvVars:  tuiEnvVars,
+		Routes:   tuiRoutes,
+		Pricing: PricingInfo{
+			Services: tuiPricingServices,
+			Total:    plan.Pricing.Total,
+		},
 	}
 
 	w.send(planMessage)

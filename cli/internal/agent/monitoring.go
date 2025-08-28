@@ -7,6 +7,9 @@ import (
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
+	"github.com/meroxa/prod/cli/baml_client"
+	"github.com/meroxa/prod/cli/baml_client/types"
+	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 )
 
@@ -71,4 +74,26 @@ func (a *Activities) isURLLive(ctx context.Context, url string) error {
 	}
 	a.uiWriter.SendStatusComplete("deploying", "✅ URL is live")
 	return nil
+}
+
+func (a *Activities) determineRootPath(ctx context.Context, routes []analyzer.RouteCandidate) (string, error) {
+	a.uiWriter.SendStatus("analyzing", "Determining root path of your application")
+	routeInputs := make([]types.RouteCandidate, len(routes))
+	for i, r := range routes {
+		routeInputs[i] = types.RouteCandidate{
+			Method:  r.Method,
+			Context: r.Context,
+			File:    r.File,
+			Path:    r.Path,
+			Line:    int64(r.Line),
+		}
+	}
+	r, err := baml_client.CategorizeRoutes(ctx, routeInputs)
+	if err != nil {
+		return "", errors.Errorf("failed to categorize routes: %w", err)
+	}
+	// just grab the recommend path from the LLM. The data comes back scored with a confidence, so
+	// we can do more verification if needed
+	a.uiWriter.SendStatusComplete("analyzing", "✅ root path determined")
+	return r.Recommended.Path, nil
 }

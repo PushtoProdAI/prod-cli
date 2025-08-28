@@ -21,6 +21,8 @@ import (
 )
 
 var typeMap = map[string]reflect.Type{
+	"TYPES.CategorizedRoutes":         reflect.TypeOf(types.CategorizedRoutes{}),
+	"STREAM_TYPES.CategorizedRoutes":  reflect.TypeOf(stream_types.CategorizedRoutes{}),
 	"TYPES.EnvVarCandidate":           reflect.TypeOf(types.EnvVarCandidate{}),
 	"STREAM_TYPES.EnvVarCandidate":    reflect.TypeOf(stream_types.EnvVarCandidate{}),
 	"TYPES.EnvVarCategory":            reflect.TypeOf(types.EnvVarCategory{}),
@@ -35,6 +37,10 @@ var typeMap = map[string]reflect.Type{
 	"STREAM_TYPES.ProjectSpec":        reflect.TypeOf(stream_types.ProjectSpec{}),
 	"TYPES.Remediation":               reflect.TypeOf(types.Remediation{}),
 	"STREAM_TYPES.Remediation":        reflect.TypeOf(stream_types.Remediation{}),
+	"TYPES.Route":                     reflect.TypeOf(types.Route{}),
+	"STREAM_TYPES.Route":              reflect.TypeOf(stream_types.Route{}),
+	"TYPES.RouteCandidate":            reflect.TypeOf(types.RouteCandidate{}),
+	"STREAM_TYPES.RouteCandidate":     reflect.TypeOf(stream_types.RouteCandidate{}),
 	"TYPES.ServicePricing":            reflect.TypeOf(types.ServicePricing{}),
 	"STREAM_TYPES.ServicePricing":     reflect.TypeOf(stream_types.ServicePricing{}),
 	"TYPES.ServiceRequirement":        reflect.TypeOf(types.ServiceRequirement{}),

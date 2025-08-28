@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"maps"
+	"net/url"
 	"time"
 
 	"github.com/cschleiden/go-workflows/client"
@@ -150,7 +151,6 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
 	}
 	spec.Metadata["buildContext"] = input.Source
-	spec.Metadata["tenantID"] = "test"
 	spec.Metadata["authToken"] = token
 
 	// Generate and summarize deployment steps (for UI feedback)
@@ -208,15 +208,34 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	}
 
 	// Get service URL and verify it's live
-	url, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderServiceURL, ws.ID).Get(ctx)
+	u, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderServiceURL, ws.ID).Get(ctx)
 	if err != nil {
 		return deployResult{}, errors.Errorf("failed to get service URL for %s: %w", ws.Name, err)
 	}
-	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, url).Get(ctx)
+
+	path, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineRootPath, input.Spec.Routes).Get(ctx)
 	if err != nil {
-		return deployResult{}, errors.Errorf("service URL %s is not live: %w", url, err)
+		// if there is an error, we will just default to /
+		log.Printf("Failed to determine root path for application: %v", err)
+		path = "/"
 	}
-	return deployResult{Url: url}, nil
+
+	fullUrl, err := url.JoinPath(u, path)
+	if err != nil {
+		log.Printf("Failed to combine paths: %v", err)
+		fullUrl = u
+	}
+	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
+	if err != nil {
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		log.Printf("service URL:%s is not live:%v", fullUrl, err)
+		return deployResult{Error: summary}, nil
+	}
+
+	return deployResult{Url: u}, nil
 }
 
 func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployResult, error) {
@@ -233,14 +252,6 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
 	}
 	spec.Metadata["buildContext"] = input.Source
-
-	// Estimate costs before deployment
-	estimatedCosts, err := workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateFlyioCosts, *spec, deployment.StrategyFlyio).Get(ctx)
-	if err != nil {
-		log.Printf("Failed to estimate costs: %v", err)
-	} else {
-		displayPricingInfo(w.uiWriter, estimatedCosts)
-	}
 
 	// Generate and summarize deployment steps
 	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, w.uiWriter)
@@ -277,15 +288,28 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 	}
 
 	// Get app URL and verify it's live
-	url, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetFlyIOAppURL, ws.ID).Get(ctx)
+	u, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetFlyIOAppURL, ws.ID).Get(ctx)
 	if err != nil {
 		return deployResult{}, errors.Errorf("failed to get service URL for %s: %w", ws.Name, err)
 	}
-	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, url).Get(ctx)
+	path, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineRootPath, input.Spec.Routes).Get(ctx)
 	if err != nil {
-		return deployResult{}, errors.Errorf("service URL %s is not live: %w", url, err)
+		// if there is an error, we will just default to /
+		log.Printf("Failed to determine root path for application: %v", err)
+		path = "/"
 	}
-	return deployResult{Url: url}, nil
+
+	fullUrl, err := url.JoinPath(u, path)
+	if err != nil {
+		log.Printf("Failed to combine paths: %v", err)
+		fullUrl = u
+	}
+
+	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
+	if err != nil {
+		return deployResult{}, errors.Errorf("service URL %s is not live: %w", fullUrl, err)
+	}
+	return deployResult{Url: fullUrl}, nil
 }
 
 func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input DeployPlan) (DryRunResult, error) {
@@ -416,11 +440,35 @@ func (w *Workflows) dryRunDeployFly(ctx workflow.Context, input DeployPlan) (Dry
 }
 
 func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPlan) ([]deployment.EnvVar, error) {
-	// as noted in the activites code for this, we could split this out so each env get's own activity instance that could be conccurent
-	envVars, err := workflow.ExecuteActivity[[]deployment.EnvVar](ctx, ActivityOpts, AgentCategorizeEnvVars, deployPlan.Spec).Get(ctx)
-	if err != nil {
-		return []deployment.EnvVar{}, errors.Errorf("failed to categorize environment variables: %w", err)
+	spec := deployPlan.Spec
+	dbList := make([]string, len(spec.ServiceRequirements))
+	for i, service := range spec.ServiceRequirements {
+		dbList[i] = service.Provider
 	}
+	envVars := make([]deployment.EnvVar, 0)
+
+	wg := workflow.NewWaitGroup()
+	wg.Add(len(spec.EnvVars))
+
+	// this could be a lot of env vars, so we will categorize them in parallel
+	for _, envVar := range spec.EnvVars {
+		workflow.Go(ctx, func(ctx workflow.Context) {
+			defer wg.Done()
+			ev, err := workflow.ExecuteActivity[deployment.EnvVar](ctx, ActivityOpts, AgentCategorizeEnvVars, dbList, envVar).Get(ctx)
+			if err != nil {
+				workflow.Logger(ctx).Error("failed to categorize environment variable", "var", envVar.VarName, "error", err)
+				// if there is an error, we will just add the env var as-is
+				ev = deployment.EnvVar{
+					Name: envVar.VarName,
+				}
+
+			}
+			envVars = append(envVars, ev)
+		})
+	}
+
+	wg.Wait(ctx)
+
 	fromEnvFiles, err := workflow.ExecuteActivity[[]deployment.EnvVar](ctx, ActivityOpts, AgentReadEnvFiles, deployPlan.Source).Get(ctx)
 	if err != nil {
 		return []deployment.EnvVar{}, errors.Errorf("failed to read environment variables from .env files: %w", err)
@@ -576,31 +624,4 @@ func performFlyioConflictChecks(spec *deployment.DeploymentSpec, client flyio.Fl
 	}
 
 	return conflicts
-}
-
-// displayPricingInfo displays pricing information in a user-friendly format
-func displayPricingInfo(writer output.StatusWriter, costs deployment.CostEstimate) {
-	if costs.Total <= 0 {
-		return
-	}
-
-	writer.SendStatus("pricing", "💰 Estimated Monthly Costs:")
-
-	// Display individual service costs
-	for _, service := range costs.Services {
-		var description string
-		if service.Plan != "" {
-			if service.Storage > 0 {
-				description = fmt.Sprintf("%s (%s, %dGB storage)", service.Provider, service.Plan, service.Storage)
-			} else {
-				description = fmt.Sprintf("%s (%s)", service.Provider, service.Plan)
-			}
-		} else {
-			description = service.Provider
-		}
-		writer.SendStatus("pricing", fmt.Sprintf("  • %s: $%.2f", description, service.Cost))
-	}
-
-	// Display total cost
-	writer.SendStatusComplete("pricing", fmt.Sprintf("  Total: $%.2f/month", costs.Total))
 }

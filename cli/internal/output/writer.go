@@ -25,6 +25,8 @@ var SpinnerTriggers = []string{
 	"🔍 Validating API key",
 	"🔗 Connecting to Render authentication server",
 	"Checking Render authentication",
+	// Environment variable operations
+	"🔍 Categorizing environment variables",
 }
 
 // SpinnerStopTriggers contains the patterns that should stop spinners
@@ -66,6 +68,7 @@ func ShouldShowSpinnerForStatus(status string) bool {
 		"summarizing",
 		"deploying",
 		"retrieving",
+		"pricing",
 	}
 
 	for _, spinnerStatus := range spinnerStatuses {
@@ -91,6 +94,8 @@ func ExtractSpinnerMessage(message string) string {
 		"🔍 Validating API key":                         "Validating API key...",
 		"🔗 Connecting to Render authentication server": "Connecting to authentication server...",
 		"Checking Render authentication":               "Checking authentication...",
+		// Environment variable operations
+		"🔍 Categorizing environment variables": "Categorizing environment variables...",
 	}
 
 	for trigger, spinnerMsg := range messageMap {

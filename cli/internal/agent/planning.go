@@ -98,8 +98,8 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 			if err != nil {
 				log.Printf("Failed to estimate costs: %v", err)
 			} else {
-				// Display pricing information
-				displayPricingInfo(w.uiWriter, estimatedCosts)
+				plan.Pricing = estimatedCosts
+				w.uiWriter.SendStatusComplete("pricing", "✅ Costs calculated")
 			}
 		}
 	}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -68,6 +69,43 @@ func (m Model) createTable(rows [][]string, columnWidths []int) string {
 		Render(tableContent)
 
 	return borderedTable
+}
+
+// createPricingTable creates a table for pricing information
+func (m Model) createPricingTable(pricing PricingInfo) string {
+	if len(pricing.Services) == 0 {
+		return ""
+	}
+
+	// Create rows for pricing
+	rows := make([][]string, len(pricing.Services)+1) // +1 for total row
+
+	// Service rows
+	for i, service := range pricing.Services {
+		var description string
+		if service.Plan != "" {
+			if service.Storage > 0 {
+				description = fmt.Sprintf("%s (%s, %dGB storage)", service.Name, service.Plan, service.Storage)
+			} else {
+				description = fmt.Sprintf("%s (%s)", service.Name, service.Plan)
+			}
+		} else {
+			description = service.Name
+		}
+		rows[i] = []string{description, fmt.Sprintf("$%.2f", service.Cost)}
+	}
+
+	// Total row
+	rows[len(pricing.Services)] = []string{"Total", fmt.Sprintf("$%.2f/month", pricing.Total)}
+
+	columnWidths := []int{50, 22}
+	table := m.createTable(rows, columnWidths)
+
+	styledTable := lipgloss.NewStyle().
+		Margin(0, 0, 1, 0).
+		Render(table)
+
+	return styledTable
 }
 
 // createTableRow creates a single table row with proper styling
