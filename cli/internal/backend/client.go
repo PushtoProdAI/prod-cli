@@ -12,11 +12,10 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/config"
 )
 
-const (
-	baseURL = "http://127.0.0.1:54321/functions/v1"
-)
+var baseURL = fmt.Sprintf("%s/%s", config.SupabaseURL, "functions/v1")
 
 type RegistryCredentials struct {
 	Username   string `json:"dockerAuthUsername"`

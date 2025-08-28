@@ -9,6 +9,11 @@ else
     VERSION := $(GIT_TAG)
 endif
 
+# Build flags for setting variables at build time
+LDFLAGS := -X 'github.com/meroxa/prod/cli/internal/config.SupabaseURL=$(SUPABASE_URL)' \
+           -X 'github.com/meroxa/prod/cli/internal/config.SupabaseAnonKey=$(SUPABASE_ANON_KEY)' \
+           -X 'github.com/meroxa/prod/cli/internal/config.ProdDebug=$(PROD_DEBUG)'
+
 .PHONY: build
 build: build-cli-darwin-arm64
 
@@ -16,19 +21,19 @@ build: build-cli-darwin-arm64
 build-cli-linux:
 	@echo "Building for Linux..."
 	@mkdir -p $(BUILD_DIR)
-	GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-linux-amd64 $(CMD_PATH)
+	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-linux-amd64 $(CMD_PATH)
 
 .PHONY: build-cli-darwin
 build-cli-darwin:
 	@echo "Building for macOS..."
 	@mkdir -p $(BUILD_DIR)
-	GOOS=darwin GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-darwin-amd64 $(CMD_PATH)
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-darwin-amd64 $(CMD_PATH)
 
 .PHONY: build-cli-darwin-arm64
 build-cli-darwin-arm64:
 	@echo "Building for macOS (Apple Silicon)..."
 	@mkdir -p $(BUILD_DIR)
-	GOOS=darwin GOARCH=arm64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-darwin-arm64 $(CMD_PATH)
+	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-darwin-arm64 $(CMD_PATH)
 
 .PHONY: clean
 clean:
@@ -38,4 +43,9 @@ clean:
 .PHONY: generate
 generate:
 	go tool baml-cli generate
+
+.PHONY: dev
+dev:
+	@echo "Running in development mode..."
+	PROD_DEBUG=true go run -ldflags "$(LDFLAGS)" $(CMD_PATH)
 
