@@ -15,6 +15,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/agent"
 	"github.com/meroxa/prod/cli/internal/auth"
 	be "github.com/meroxa/prod/cli/internal/backend"
+	"github.com/meroxa/prod/cli/internal/config"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/output"
@@ -73,8 +74,7 @@ func main() {
 		}
 	}()
 
-	debugEndpoint := os.Getenv("PROD_DEBUG")
-	if debugEndpoint != "" {
+	if config.DebugMode() {
 		go http.ListenAndServe(":8080", mux)
 	}
 	e := ecdysis.New()

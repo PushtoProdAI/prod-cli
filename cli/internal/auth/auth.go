@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"time"
+
+	"github.com/meroxa/prod/cli/internal/config"
 )
 
 type AuthProvider interface {
@@ -25,12 +26,12 @@ type SupabaseAuth struct {
 // NewSupabaseAuth creates a new Supabase auth client
 func NewSupabaseAuth(out io.Writer) (*SupabaseAuth, error) {
 	// Get Supabase configuration from environment
-	supabaseURL := os.Getenv("SUPABASE_URL")
+	supabaseURL := config.SupabaseURL
 	if supabaseURL == "" {
 		return nil, fmt.Errorf("SUPABASE_URL environment variable not set")
 	}
 
-	supabaseAnonKey := os.Getenv("SUPABASE_ANON_KEY")
+	supabaseAnonKey := config.SupabaseAnonKey
 	if supabaseAnonKey == "" {
 		return nil, fmt.Errorf("SUPABASE_ANON_KEY environment variable not set")
 	}
