@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,6 +61,7 @@ var templateFS embed.FS
 type DockerGenerator struct {
 	dockerignoreTemplates map[string]string
 	templates             map[string]*template.Template
+  baseImages            map[string]string
 	client                *client.Client
 	beClient              *backend.Client
 	writer                io.Writer
@@ -104,6 +107,13 @@ func (dg *DockerGenerator) initTemplates() {
 		panic(fmt.Sprintf("failed to read go template: %v", err))
 	}
 
+	// get the base images we will use in the templates
+	images, err := backend.NewClient().GetBaseDockerImages(context.Background())
+	if err != nil {
+		slog.Info("could not fetch base images from backend, using defaults", "error", err)
+		images = make(map[string]string)
+	}
+	dg.baseImages = images
 	// Parse and store templates
 	dg.templates["node"] = template.Must(template.New("node").Parse(string(nodeTemplate)))
 	dg.templates["nodejs"] = dg.templates["node"]
@@ -140,7 +150,12 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 	if !exists {
 		return nil, fmt.Errorf("unsupported language: %s", spec.Language)
 	}
+	baseImage, hasBaseImage := dg.baseImages[strings.ToLower(spec.Language)]
+	if !hasBaseImage {
+		baseImage = ""
+	}
 
+	log.Printf("Using base image for %s: %s", spec.Language, baseImage)
 	// Prepare template data
 	templateData := struct {
 		Name         string
@@ -148,12 +163,14 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 		BuildCommand string
 		StartCommand string
 		Port         int
+		BaseImage    string
 	}{
 		Name:         spec.Name,
 		Language:     spec.Language,
 		BuildCommand: spec.BuildCommand,
 		StartCommand: spec.StartCommand,
 		Port:         8080, // Default port, could be configurable
+		BaseImage:    baseImage,
 	}
 
 	// Execute template
@@ -412,10 +429,10 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 		Dockerfile:     "Dockerfile",
 		Remove:         true,
 		ForceRemove:    true,
-		PullParent:     false,
-		NoCache:        true,
+		PullParent:     true,
+		NoCache:        false,
 		SuppressOutput: false,
-		Platform:       "linux/amd64", // Ensure we build for the correct platform
+		Platform:       "linux/amd64", // Target platform for deployment
 		BuildArgs: map[string]*string{
 			"TARGETPLATFORM": stringPtr("linux/amd64"),
 		},

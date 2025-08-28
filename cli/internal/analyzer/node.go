@@ -9,6 +9,17 @@ import (
 
 const (
 	nodeEnvVarRegex = `\b(?:process\.env\.([A-Za-z_][A-Za-z0-9_]*)|{[^}]*\b([A-Za-z_][A-Za-z0-9_]*)\b[^}]*}\s*=\s*process\.env)`
+
+	nodeRouteRegex = `(?i)(?:` +
+		// Express.js app methods - must start with app. or have router.
+		`(?:app|router)\.(?:(get|post|put|delete|patch|head|options|all))\s*\(\s*["']([^"'\s,]+)["']|` +
+		// Fastify route definitions
+		`\.route\(\s*{\s*method:\s*["']([^"']+)["']\s*,\s*url:\s*["']([^"']+)["']|` +
+		// Hapi.js server routes
+		`server\.route\(\s*{\s*method:\s*["']([^"']+)["']\s*,\s*path:\s*["']([^"']+)["']|` +
+		// Next.js API routes (export function patterns) - only match if path starts with /
+		`export\s+(?:async\s+)?function\s+(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s*\(` +
+		`)`
 )
 
 type PackageJson struct {
@@ -96,6 +107,14 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	routeRe := regexp.MustCompile(nodeRouteRegex)
+	processor := NewDefaultRouteProcessor()
+	routes, err := walkProjectForRoutes(n.ProjectFS, []string{".js", ".ts", ".tsx", ".jsx"}, []string{"node_modules"}, routeRe, processor, 3, 5)
+	if err != nil {
+		return nil, err
+	}
+
 	return &ProjectSpec{
 		Name:                pkgJson.Name,
 		Language:            "node",
@@ -104,6 +123,7 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 		BuildCommand: "npm run build",
 		StartCommand: "npm run start",
 		EnvVars:      envVars,
+		Routes:       routes,
 	}, nil
 }
 

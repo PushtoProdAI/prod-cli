@@ -1,4 +1,8 @@
+{{- if .BaseImage }}
+FROM {{ .BaseImage }} AS builder
+{{- else }}
 FROM golang:1.21-alpine AS builder
+{{- end }}
 
 WORKDIR /app
 

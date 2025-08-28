@@ -176,6 +176,21 @@ func (m Model) formatPlanAsTable(plan PlanDisplayMessage) string {
 		result.WriteString("\n")
 	}
 
+	// Pricing section if any costs are available
+	if plan.Pricing.Total > 0 {
+		header := lipgloss.NewStyle().
+			Margin(1, 0, 0, 0).
+			Render(tableHeaderStyle.Render("💰 Estimated Monthly Costs"))
+		result.WriteString(header)
+		result.WriteString("\n")
+
+		pricingTable := m.createPricingTable(plan.Pricing)
+		result.WriteString(pricingTable)
+		result.WriteString("\n")
+	}
+
+	// Routes section removed per user request
+
 	// Environment Variables section if any - use list format
 	if len(plan.EnvVars) > 0 {
 		envVarsList := m.formatEnvVarsList(plan.EnvVars)

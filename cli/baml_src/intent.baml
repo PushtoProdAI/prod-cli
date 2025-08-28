@@ -47,6 +47,25 @@ class EnvVarCategory {
   dbType string
   }
 
+class RouteCandidate {
+	method  string
+	path    string
+	file    string
+	line    int
+	context string
+  }
+ 
+ class Route {
+    method string
+    path string
+    confidence float
+  }
+
+class CategorizedRoutes {
+    routes Route[]
+    recommended Route
+  }
+
 
 function ExtractIntent(request: string) -> Intent {
   client "OllamaClient"
@@ -412,6 +431,53 @@ DJANGO_SUPERUSER_EMAIL = "admin@example.com" → not_db_related
   "#
 
   }
+
+  function CategorizeRoutes(candidates: RouteCandidate[]) ->  CategorizedRoutes {
+  client "OllamaClient"
+  prompt #"
+{{_.role("system")}}
+You are an assistant that analyzes source code snippets to identify web routes in an application.
+
+You will receive a list of candidate routes, each with:
+
+- The HTTP method
+- The path
+- The file name and line number
+- A snippet of code (the “context”) showing how the route is implemented
+
+Your job is to:
+Categorize each route as one of:
+
+- homepage
+- health
+- api
+- static_asset
+- admin
+- auth
+- error
+- other
+
+Assign a confidence score between 0.0 and 1.0 for how well the route fits that category.
+Choose the most appropriate default route to probe in order to confirm a newly deployed 
+app is live. General rules:
+
+Prefer a root (/) or homepage route if one exists.
+Otherwise prefer a health/status route.
+Otherwise prefer a GET route likely to return something harmless (like /index.html or a read-only API).
+
+Avoid routes that look destructive (/delete, /reset, /admin/*, etc.).
+
+Return results in structured JSON.
+{{ _.role("user") }}
+
+Here are the route candidates from the deployed code:
+{{candidates}}
+
+    {{ctx.output_format }}
+  "#
+
+  }
+
 
 // Place all test blocks after type and function definitions
 

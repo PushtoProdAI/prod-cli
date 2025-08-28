@@ -217,3 +217,28 @@ func (c *Client) CreateDockerRepository(ctx context.Context, authToken string, p
 
 	return nil
 }
+
+func (c *Client) GetBaseDockerImages(ctx context.Context) (map[string]string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/base-images", baseURL), nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, errors.Errorf("failed to make request to GetBaseDockerImages endpoint: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, errors.Errorf("base-images endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var images map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&images); err != nil {
+		return nil, errors.Errorf("failed to decode push-token response: %w", err)
+	}
+
+	return images, nil
+}

@@ -71,30 +71,20 @@ func (a *Activities) estimateFlyioCosts(_ context.Context, spec deployment.Deplo
 	return costs, nil
 }
 
-func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, spec analyzer.ProjectSpec) ([]deployment.EnvVar, error) {
-	a.uiWriter.SendStatus("summarizing", "Categorizing environment variables...")
-	categorizedEnvVars := make([]deployment.EnvVar, 0)
-	dbList := make([]string, len(spec.ServiceRequirements))
-	for i, service := range spec.ServiceRequirements {
-		dbList[i] = service.Provider
+func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, dbList []string, envVar analyzer.EnvVarCandidate) (deployment.EnvVar, error) {
+	ev := types.EnvVarCandidate{
+		VarName: envVar.VarName,
+		Line:    int64(envVar.Line),
+		Context: envVar.Context,
+		File:    envVar.File,
 	}
-	// could consider pulling this up into the workflow, where this is the activitiy itself
-	// doing a prompt call per environment variable gives us better control over the context and results from the LLM
-	for _, envVar := range spec.EnvVars {
-		ev := types.EnvVarCandidate{
-			VarName: envVar.VarName,
-			Line:    int64(envVar.Line),
-			Context: envVar.Context,
-			File:    envVar.File,
-		}
-		cat, err := baml_client.DetermineEnvVarRoles(ctx, ev, dbList)
-		if err != nil {
-			return categorizedEnvVars, errors.Errorf("failed to determine env var roles: %w", err)
-		}
-		categorizedEnvVars = append(categorizedEnvVars, deployment.EnvVar{Name: envVar.VarName, Role: cat.Role, Service: cat.DbType})
+	cat, err := baml_client.DetermineEnvVarRoles(ctx, ev, dbList)
+	if err != nil {
+		return deployment.EnvVar{}, errors.Errorf("failed to determine env var roles: %w", err)
 	}
-	a.uiWriter.SendStatusComplete("summarizing", "✅ Categorized environment variables")
-	return categorizedEnvVars, nil
+	// Send individual completion message (no spinner start/stop to avoid conflicts)
+	a.uiWriter.SendStatus("info", fmt.Sprintf("✅ Environment variable: %s categorized", envVar.VarName))
+	return deployment.EnvVar{Name: envVar.VarName, Role: cat.Role, Service: cat.DbType}, nil
 }
 
 func (a *Activities) getEnvVarsFromEnvFiles(_ context.Context, path string) ([]deployment.EnvVar, error) {

@@ -86,6 +86,20 @@ type PlanDisplayMessage struct {
 	DryRun   bool
 	Services []ServiceRequirement
 	EnvVars  []EnvVarRequirement
+	Routes   []RouteRequirement
+	Pricing  PricingInfo
+}
+
+type PricingInfo struct {
+	Services []PricingService
+	Total    float64
+}
+
+type PricingService struct {
+	Name    string
+	Plan    string
+	Storage int
+	Cost    float64
 }
 
 type ServiceRequirement struct {
@@ -95,6 +109,10 @@ type ServiceRequirement struct {
 
 type EnvVarRequirement struct {
 	Name string
+}
+
+type RouteRequirement struct {
+	Path string
 }
 
 func (p PlanDisplayMessage) String() string {

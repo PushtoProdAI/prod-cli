@@ -20,6 +20,45 @@ import (
 	"github.com/meroxa/prod/cli/baml_client/types"
 )
 
+func CategorizeRoutes(ctx context.Context, candidates []types.RouteCandidate, opts ...CallOptionFunc) (types.CategorizedRoutes, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"candidates": candidates},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	encoded, err := baml.EncodeArgs(args)
+	if err != nil {
+		panic(err)
+	}
+
+	result, err := bamlRuntime.CallFunction(ctx, "CategorizeRoutes", encoded)
+	if err != nil {
+		return types.CategorizedRoutes{}, err
+	}
+
+	if result.Error != nil {
+		return types.CategorizedRoutes{}, result.Error
+	}
+
+	casted := *(result.Data).(*types.CategorizedRoutes)
+
+	return casted, nil
+}
+
 func DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCandidate, dbList []string, opts ...CallOptionFunc) (types.EnvVarCategory, error) {
 
 	var callOpts callOption

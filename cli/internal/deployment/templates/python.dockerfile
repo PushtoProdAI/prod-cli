@@ -1,4 +1,8 @@
+{{- if .BaseImage }}
+FROM {{ .BaseImage }}
+{{- else }}
 FROM python:3.11-slim
+{{- end }}
 
 WORKDIR /app
 
