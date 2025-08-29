@@ -135,13 +135,94 @@ If you encounter issues:
    ```bash
    supabase status
    ```
-## Running the Prod CLI
-   1. Install Ollama. Currently tested with Ollama3.1 model
-   2. Create a .env file in supabase/functions
-   3. The contents of that file are in a 1Password in a note called "Prod - Backend AWS"
-   4. From the supabase directory, run `supabase functions serve`
-   5. Run `PROD_DEBUG=true go run cmd/main.go`
-   6. logs will be sent to ~/.prod/logs.txt
+## Building and Running the Prod CLI
+
+### Prerequisites
+
+1. **Install Ollama** - Currently tested with Ollama 3.1 model
+2. **Set up environment variables** - The CLI requires Supabase configuration at build time
+
+### Environment Setup
+
+1. **Create environment file:**
+   ```bash
+   cp env.example .env
+   ```
+
+2. **Configure Supabase credentials** in your `.env` file:
+   - For local development: Use the default values in `env.example`
+   - For remote Supabase: Update with your remote credentials (see "Connecting to Remote Supabase Instance" section above)
+
+### Building and Running the CLI
+
+The CLI uses build-time configuration via environment variables. You have two main options:
+
+#### For Local Development and Testing
+Use `make dev` for local testing - this uses `go run` under the hood and doesn't require building a binary:
+
+```bash
+cd cli
+source ../.env  # Load environment variables
+make dev        # Run in development mode with hot reload
+```
+
+#### For Building the CLI Binary
+Use `make build` to produce the actual CLI binary:
+
+```bash
+cd cli
+source ../.env  # Load environment variables
+make build      # Build the CLI binary
+```
+
+Or build with explicit environment variables:
+```bash
+cd cli
+SUPABASE_URL=http://localhost:54321 SUPABASE_ANON_KEY=your-anon-key make build
+```
+
+### Additional Setup (Supabase Functions)
+
+You'll need to start the Supabase functions for the CLI to work properly:
+
+```bash
+cd supabase
+supabase functions serve
+```
+
+This is required for both local and remote Supabase instances.
+
+### Running the Built Binary
+
+After building with `make build`, you can run the binary directly:
+
+```bash
+./bin/prod-[version]-darwin-arm64
+```
+
+**Note:** Logs will be sent to `~/.prod/logs.txt`
+
+
+
+### Troubleshooting Build Issues
+
+If you encounter `SUPABASE_ANON_KEY environment variable not set`:
+
+1. **Ensure `.env` file exists:**
+   ```bash
+   cp env.example .env
+   ```
+
+2. **Verify environment variables are loaded:**
+   ```bash
+   echo $SUPABASE_ANON_KEY
+   ```
+
+3. **Build with explicit variables:**
+   ```bash
+   cd cli
+   SUPABASE_URL=http://localhost:54321 SUPABASE_ANON_KEY=your-anon-key make build
+   ```
 
 ## Updating Prompts
    1. We are currently using BAML for handling our LLM interations. BAML requires a generation step to update the prompts and clients.
