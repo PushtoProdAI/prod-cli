@@ -18,6 +18,8 @@ const (
 	StrategyRenderQueued    DeploymentStrategy = "render_queued"
 
 	StrategyFlyio DeploymentStrategy = "flyio"
+
+	StrategyNetlify DeploymentStrategy = "netlify"
 )
 
 type CreatedResource struct {
