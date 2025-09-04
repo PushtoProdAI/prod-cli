@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
@@ -11,6 +12,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
+	"github.com/meroxa/prod/cli/internal/deployment/netlify"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 )
 
@@ -23,6 +25,14 @@ func (a *Activities) deploySteps(ctx context.Context, spec deployment.Deployment
 		deployable = render.NewQueuedDeployment(a.renderClient, &spec, dockerGen, true, a.uiWriter)
 	case FlyIO:
 		deployable = flyio.NewFlyioQueuedDeployment(a.flyClient, &spec, a.uiWriter)
+	case Netlify:
+		// Use the Netlify deployment adapter
+		netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter)
+		var err error
+		deployable, err = netlifyAdapter.GenerateArtifacts(&spec, deployment.StrategyNetlify)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Netlify deployment: %w", err)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", platform)
 	}
@@ -72,6 +82,9 @@ func (a *Activities) estimateFlyioCosts(_ context.Context, spec deployment.Deplo
 }
 
 func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, dbList []string, envVar analyzer.EnvVarCandidate) (deployment.EnvVar, error) {
+	log.Printf("CategorizeEnvVarsForDeployment input: %+v", envVar)
+	log.Printf("CategorizeEnvVarsForDeployment dbList: %+v", dbList)
+	log.Printf("CategorizeEnvVarsForDeployment workflow name: %s", CategorizeEnvVarsWorkflowName)
 	ev := types.EnvVarCandidate{
 		VarName: envVar.VarName,
 		Line:    int64(envVar.Line),

@@ -89,6 +89,7 @@ You are a strict classifier. Your only job is to analyze deployment requests and
   Supported platforms:
     - Render
     - Fly.io
+    - Netlify
 
   If the user mentions one of these explicitly, extract it as `platform`.
   If they mention a platform NOT on this list (e.g., Heroku, Vercel, Kubernetes), set:

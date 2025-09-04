@@ -56,7 +56,7 @@ func (n *NetlifyDeploymentAdapter) GenerateArtifacts(spec *deployment.Deployment
 
 // EstimateCost estimates the cost of deployment on Netlify
 func (n *NetlifyDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	log.Printf("Estimating costs for Netlify deployment: %+v\n", spec)
+	log.Printf("Estimating costs for Netlify deployment: %s", spec.Name)
 
 	// Netlify's free tier is quite generous for static sites
 	ce := deployment.CostEstimate{

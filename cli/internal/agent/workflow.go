@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/cschleiden/go-workflows/client"
@@ -15,6 +16,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
+	"github.com/meroxa/prod/cli/internal/deployment/netlify"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
@@ -28,6 +30,8 @@ const (
 	CategorizeEnvVarsWorkflowName = "agent.categorizeEnvVars"
 	DryRunRenderWorkflowName      = "agent.dryrun.render"
 	DryRunFlyioWorkflowName       = "agent.dryrun.flyio"
+	DeployNetlifyWorkflowName     = "agent.deploy.netlify"
+	DryRunNetlifyWorkflowName     = "agent.dryrun.netlify"
 )
 
 var ActivityOpts = workflow.ActivityOptions{
@@ -90,6 +94,8 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: CategorizeEnvVarsWorkflowName, WorkflowFunc: w.categorizeEnvVars},
 		{Name: DryRunRenderWorkflowName, WorkflowFunc: w.dryRunDeployRender},
 		{Name: DryRunFlyioWorkflowName, WorkflowFunc: w.dryRunDeployFly},
+		{Name: DeployNetlifyWorkflowName, WorkflowFunc: w.deployNetlify},
+		{Name: DryRunNetlifyWorkflowName, WorkflowFunc: w.dryRunNetlify},
 	}
 }
 
@@ -104,6 +110,8 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input DeployPlan)
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployRenderWorkflowName, time.Now().Unix())}, DeployRenderWorkflowName, input)
 	case FlyIO:
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployFlyioWorkflowName, time.Now().Unix())}, DeployFlyioWorkflowName, input)
+	case Netlify:
+		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployNetlifyWorkflowName, time.Now().Unix())}, DeployNetlifyWorkflowName, input)
 	default:
 		return nil, errors.New("unsupported platform for deployment")
 	}
@@ -440,41 +448,97 @@ func (w *Workflows) dryRunDeployFly(ctx workflow.Context, input DeployPlan) (Dry
 }
 
 func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPlan) ([]deployment.EnvVar, error) {
+	startTime := time.Now()
+	workflow.Logger(ctx).Info("starting categorizeEnvVars", "total_env_vars", len(deployPlan.Spec.EnvVars))
+
 	spec := deployPlan.Spec
 	dbList := make([]string, len(spec.ServiceRequirements))
 	for i, service := range spec.ServiceRequirements {
 		dbList[i] = service.Provider
 	}
-	envVars := make([]deployment.EnvVar, 0)
+	workflow.Logger(ctx).Info("created db list", "providers", dbList)
+
+	// Early return if no environment variables to process
+	if len(spec.EnvVars) == 0 {
+		workflow.Logger(ctx).Info("no environment variables to process, skipping categorization")
+
+		// Still need to read env files for potential future use
+		envFilesStart := time.Now()
+		workflow.Logger(ctx).Info("starting to read env files (no env vars to categorize)")
+		fromEnvFiles, err := workflow.ExecuteActivity[[]deployment.EnvVar](ctx, ActivityOpts, AgentReadEnvFiles, deployPlan.Source).Get(ctx)
+		envFilesDuration := time.Since(envFilesStart)
+
+		if err != nil {
+			workflow.Logger(ctx).Error("failed to read environment variables from .env files", "error", err, "duration", envFilesDuration)
+			return []deployment.EnvVar{}, errors.Errorf("failed to read environment variables from .env files: %w", err)
+		}
+		workflow.Logger(ctx).Info("completed reading env files", "count", len(fromEnvFiles), "duration", envFilesDuration)
+
+		totalDuration := time.Since(startTime)
+		workflow.Logger(ctx).Info("categorizeEnvVars completed (no env vars)", "total_duration", totalDuration)
+
+		return []deployment.EnvVar{}, nil
+	}
+
+	// Use a mutex to safely append to the shared slice
+	var mu sync.Mutex
+	envVars := make([]deployment.EnvVar, 0, len(spec.EnvVars))
 
 	wg := workflow.NewWaitGroup()
 	wg.Add(len(spec.EnvVars))
 
 	// this could be a lot of env vars, so we will categorize them in parallel
-	for _, envVar := range spec.EnvVars {
+	categorizeStart := time.Now()
+	workflow.Logger(ctx).Info("starting parallel categorization", "count", len(spec.EnvVars))
+
+	for i, envVar := range spec.EnvVars {
+		workflow.Logger(ctx).Debug("scheduling categorization", "index", i, "var_name", envVar.VarName)
 		workflow.Go(ctx, func(ctx workflow.Context) {
 			defer wg.Done()
+			activityStart := time.Now()
+			workflow.Logger(ctx).Debug("starting categorization activity", "var_name", envVar.VarName)
+
 			ev, err := workflow.ExecuteActivity[deployment.EnvVar](ctx, ActivityOpts, AgentCategorizeEnvVars, dbList, envVar).Get(ctx)
+			activityDuration := time.Since(activityStart)
+
 			if err != nil {
-				workflow.Logger(ctx).Error("failed to categorize environment variable", "var", envVar.VarName, "error", err)
+				workflow.Logger(ctx).Error("failed to categorize environment variable", "var", envVar.VarName, "error", err, "duration", activityDuration)
 				// if there is an error, we will just add the env var as-is
 				ev = deployment.EnvVar{
 					Name: envVar.VarName,
 				}
-
+			} else {
+				workflow.Logger(ctx).Debug("completed categorization activity", "var_name", envVar.VarName, "duration", activityDuration, "is_db_related", !ev.IsNotDBRelated())
 			}
+
+			// Safely append to the shared slice using a mutex
+			mu.Lock()
 			envVars = append(envVars, ev)
+			mu.Unlock()
 		})
 	}
 
-	wg.Wait(ctx)
+	workflow.Logger(ctx).Info("waiting for all categorization activities to complete")
 
+	// Wait for all activities to complete
+	wg.Wait(ctx)
+	waitDuration := time.Since(categorizeStart)
+	workflow.Logger(ctx).Info("all categorization activities completed", "total_duration", waitDuration)
+
+	// Read env files
+	envFilesStart := time.Now()
+	workflow.Logger(ctx).Info("starting to read env files")
 	fromEnvFiles, err := workflow.ExecuteActivity[[]deployment.EnvVar](ctx, ActivityOpts, AgentReadEnvFiles, deployPlan.Source).Get(ctx)
+	envFilesDuration := time.Since(envFilesStart)
+
 	if err != nil {
+		workflow.Logger(ctx).Error("failed to read environment variables from .env files", "error", err, "duration", envFilesDuration)
 		return []deployment.EnvVar{}, errors.Errorf("failed to read environment variables from .env files: %w", err)
 	}
+	workflow.Logger(ctx).Info("completed reading env files", "count", len(fromEnvFiles), "duration", envFilesDuration)
 
 	// convert to a map to make the next step a little easier
+	mapStart := time.Now()
 	envMap := maps.Collect(func(yield func(string, deployment.EnvVar) bool) {
 		for _, e := range fromEnvFiles {
 			if !yield(e.Name, e) {
@@ -482,8 +546,13 @@ func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPla
 			}
 		}
 	})
+	mapDuration := time.Since(mapStart)
+	workflow.Logger(ctx).Debug("created env map", "size", len(envMap), "duration", mapDuration)
 
 	// we will take values that in env files and use those as suggested values
+	mergeStart := time.Now()
+	workflow.Logger(ctx).Info("starting to merge env file values")
+	mergedCount := 0
 	for i := range envVars {
 		if envVars[i].IsNotDBRelated() {
 			fromEnvFile, ok := envMap[envVars[i].Name]
@@ -492,8 +561,20 @@ func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPla
 			}
 			log.Println(envVars[i].Name, "found in env file with value", fromEnvFile.Value)
 			envVars[i].Value = fromEnvFile.Value
+			mergedCount++
 		}
 	}
+	mergeDuration := time.Since(mergeStart)
+	workflow.Logger(ctx).Info("completed merging env file values", "merged_count", mergedCount, "duration", mergeDuration)
+
+	totalDuration := time.Since(startTime)
+	workflow.Logger(ctx).Info("categorizeEnvVars completed",
+		"total_duration", totalDuration,
+		"categorization_duration", waitDuration,
+		"env_files_duration", envFilesDuration,
+		"map_creation_duration", mapDuration,
+		"merge_duration", mergeDuration,
+		"total_env_vars", len(envVars))
 
 	return envVars, nil
 }
@@ -624,4 +705,101 @@ func performFlyioConflictChecks(spec *deployment.DeploymentSpec, client flyio.Fl
 	}
 
 	return conflicts
+}
+
+func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deployResult, error) {
+	log.Printf("🔍 deployNetlify workflow started for platform: %s", input.Platform)
+	log.Printf("🔍 DeployPlan details: Action=%s, Source=%s, Spec.Name=%s, Spec.Language=%s",
+		input.Action, input.Source, input.Spec.Name, input.Spec.Language)
+
+	// Add timeout context to prevent hanging
+	deployCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	// Build deployment spec from the plan
+	log.Printf("🔍 Building deployment spec...")
+	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars)
+	deploymentSpec, err := db.Build()
+	if err != nil {
+		log.Printf("❌ Failed to build deployment spec: %v", err)
+		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to build deployment spec: %v", err)}}, nil
+	}
+	log.Printf("✅ Deployment spec built successfully")
+
+	// Add metadata
+	deploymentSpec.Metadata["buildContext"] = input.Source
+	deploymentSpec.Metadata["platform"] = "netlify"
+
+	// Create Netlify deployment adapter
+	log.Printf("🔍 Creating Netlify deployment adapter...")
+	netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(w.uiWriter)
+
+	// Generate deployment artifacts
+	log.Printf("🔍 Generating deployment artifacts...")
+	deployable, err := netlifyAdapter.GenerateArtifacts(deploymentSpec, deployment.StrategyNetlify)
+	if err != nil {
+		log.Printf("❌ Failed to generate deployment artifacts: %v", err)
+		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to generate deployment artifacts: %v", err)}}, nil
+	}
+	log.Printf("✅ Deployment artifacts generated successfully")
+
+	// Execute the deployment with timeout
+	log.Printf("🔍 Starting Netlify deployment (timeout: 10 minutes)...")
+
+	// Use a channel to handle the deployment with timeout
+	deployDone := make(chan struct{})
+	var createdResources []deployment.CreatedResource
+	var deployErr error
+
+	go func() {
+		defer close(deployDone)
+		log.Printf("🔍 Executing deployment in goroutine...")
+		createdResources, deployErr = deployable.Deploy(deployCtx)
+		log.Printf("🔍 Deployment goroutine completed")
+	}()
+
+	// Wait for deployment or timeout
+	select {
+	case <-deployDone:
+		log.Printf("🔍 Deployment completed, checking results...")
+	case <-deployCtx.Done():
+		log.Printf("❌ Deployment timed out after 10 minutes")
+		return deployResult{Error: deployError{Summary: "Netlify deployment timed out after 10 minutes"}}, nil
+	}
+
+	if deployErr != nil {
+		log.Printf("❌ Netlify deployment failed: %v", deployErr)
+		return deployResult{Error: deployError{Summary: fmt.Sprintf("Netlify deployment failed: %v", deployErr)}}, nil
+	}
+
+	log.Printf("✅ Netlify deployment completed successfully, created %d resources", len(createdResources))
+
+	// Extract deployment URL from created resources
+	var deploymentURL string
+	for _, resource := range createdResources {
+		if url, ok := resource.Metadata["url"].(string); ok {
+			deploymentURL = url
+			break
+		}
+	}
+
+	if deploymentURL == "" {
+		log.Printf("⚠️ No deployment URL found in created resources")
+		deploymentURL = "Deployment completed but URL not available"
+	}
+
+	log.Printf("🎉 Netlify deployment workflow completed successfully")
+	return deployResult{
+		Url: deploymentURL,
+	}, nil
+}
+
+func (w *Workflows) dryRunNetlify(ctx workflow.Context, input DeployPlan) (deployResult, error) {
+	log.Printf("🔍 dryRunNetlify workflow started for platform: %s", input.Platform)
+	log.Printf("🔍 DeployPlan details: Action=%s, Source=%s, Spec.Name=%s, Spec.Language=%s",
+		input.Action, input.Source, input.Spec.Name, input.Spec.Language)
+
+	// TODO: Implement Netlify dry run
+	log.Printf("⚠️ Netlify dry run not yet implemented, returning error")
+	return deployResult{Error: deployError{Summary: "Netlify dry run not yet implemented"}}, nil
 }

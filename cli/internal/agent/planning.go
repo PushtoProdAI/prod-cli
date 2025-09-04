@@ -55,6 +55,8 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		platform = Render
 	case "fly.io":
 		platform = FlyIO
+	case "netlify":
+		platform = Netlify
 	default:
 		platform = UnknownPlatform
 	}
@@ -93,6 +95,9 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateRenderCosts, *deploymentSpec, deployment.StrategyRenderQueued).Get(ctx)
 			case FlyIO:
 				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateFlyioCosts, *deploymentSpec, deployment.StrategyFlyio).Get(ctx)
+			case Netlify:
+				// TODO: Implement Netlify cost estimation
+				log.Printf("Netlify cost estimation not yet implemented")
 			}
 
 			if err != nil {

@@ -96,6 +96,7 @@ type Platform int
 const (
 	Render Platform = iota
 	FlyIO
+	Netlify
 	UnknownPlatform
 )
 
@@ -477,14 +478,19 @@ func (a *Agent) dryRunDeploy(ctx context.Context, input string, out io.Writer) (
 
 func shouldProceed(plan DeployPlan) bool {
 	if plan.Action == UnknownAction {
+		log.Printf("Validation failed: Action is UnknownAction")
 		return false
 	}
 	if plan.Platform == UnknownPlatform {
+		log.Printf("Validation failed: Platform is UnknownPlatform")
 		return false
 	}
 	if plan.Spec.Name == "" || plan.Spec.Language == "" {
+		log.Printf("Validation failed: Spec.Name or Spec.Language is empty")
 		return false
 	}
+
+	log.Printf("Validation passed: All checks successful")
 	return true
 }
 
@@ -634,6 +640,9 @@ func (a *Agent) getAuthProvider(out io.Writer) (auth.AuthProvider, error) {
 		return renderAuth, nil
 	case FlyIO:
 		return auth.NewFlyAuth(out), nil
+	case Netlify:
+		// TODO: Implement Netlify authentication
+		return nil, fmt.Errorf("Netlify authentication not yet implemented")
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", a.DeployPlan.Platform)
 	}
