@@ -176,8 +176,8 @@ func (m Model) formatPlanAsTable(plan PlanDisplayMessage) string {
 		result.WriteString("\n")
 	}
 
-	// Pricing section if any costs are available
-	if plan.Pricing.Total > 0 {
+	// Pricing section if any services are available
+	if len(plan.Pricing.Services) > 0 {
 		header := lipgloss.NewStyle().
 			Margin(1, 0, 0, 0).
 			Render(tableHeaderStyle.Render("💰 Estimated Monthly Costs"))

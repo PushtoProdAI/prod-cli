@@ -18,6 +18,7 @@ const (
 	AgentSummarizeError       = "agent.summarizeError"
 	AgentEstimateRenderCosts  = "agent.estimateRenderCosts"
 	AgentEstimateFlyioCosts   = "agent.estimateFlyioCosts"
+	AgentEstimateNetlifyCosts = "agent.estimateNetlifyCosts"
 	AgentGetRenderServiceURL  = "agent.getRenderServiceURL"
 	AgentIsURLLive            = "agent.isURLLive"
 	AgentSendProjectStats     = "agent.sendProjectStats"
@@ -46,6 +47,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentSummarizeError, ActFunc: a.summarizeError},
 		{Name: AgentEstimateRenderCosts, ActFunc: a.estimateRenderCosts},
 		{Name: AgentEstimateFlyioCosts, ActFunc: a.estimateFlyioCosts},
+		{Name: AgentEstimateNetlifyCosts, ActFunc: a.estimateNetlifyCosts},
 		{Name: AgentGetRenderServiceURL, ActFunc: a.getRenderServiceURL},
 		{Name: AgentIsURLLive, ActFunc: a.isURLLive},
 		{Name: AgentSendProjectStats, ActFunc: a.sendProjectStats},
