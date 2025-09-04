@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os/exec"
 	"strings"
 	"time"
@@ -32,28 +33,40 @@ func (c *CLINetlifyClient) CreateSite(req CreateSiteRequest) (*NetlifySite, erro
 		return nil, err
 	}
 
-	// Create site with netlify CLI
-	// Note: --disable-linking prevents auto-linking to current directory
-	args := []string{"sites:create", "--json", "--disable-linking"}
-	if req.Name != "" {
-		args = append(args, "--name", req.Name)
+	// Use the Netlify API instead of CLI to avoid interactive prompts
+	// The CLI sites:create command is interactive and asks for team selection
+	apiData := map[string]interface{}{
+		"name": req.Name,
 	}
 
+	// Convert to JSON
+	jsonData, err := json.Marshal(apiData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal API data: %w", err)
+	}
+
+	// Create site using the API
+	args := []string{"api", "createSite", "--data", string(jsonData)}
+
 	cmd := exec.Command("netlify", args...)
+	log.Printf("Creating Netlify site with name: %s", req.Name)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Check if name is taken and provide helpful error
 		outputStr := string(output)
-		if strings.Contains(outputStr, "already taken") || strings.Contains(outputStr, "already exists") {
+		if strings.Contains(outputStr, "already taken") || strings.Contains(outputStr, "already exists") || strings.Contains(outputStr, "already in use") {
 			return nil, fmt.Errorf("site name '%s' is already taken", req.Name)
 		}
 		return nil, fmt.Errorf("failed to create site: %w\nOutput: %s", err, outputStr)
 	}
 
-	// Parse the JSON response
+	// Parse the JSON response from the API
+	outputStr := string(output)
+	log.Printf("NetlifyCreateSite output: %s", outputStr)
+
 	var site NetlifySite
 	if err := json.Unmarshal(output, &site); err != nil {
-		return nil, fmt.Errorf("failed to parse site response: %w\nOutput: %s", err, string(output))
+		return nil, fmt.Errorf("failed to parse site response: %w\nOutput: %s", err, outputStr)
 	}
 
 	// Ensure we have a site ID
@@ -63,8 +76,24 @@ func (c *CLINetlifyClient) CreateSite(req CreateSiteRequest) (*NetlifySite, erro
 
 	// Note: Environment variables should be set separately after site creation
 	// The CLI doesn't support setting env vars during creation
-	
+
 	return &site, nil
+}
+
+// listSites retrieves all sites using CLI (helper method)
+func (c *CLINetlifyClient) listSites() ([]NetlifySite, error) {
+	cmd := exec.Command("netlify", "sites:list", "--json")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sites: %w", err)
+	}
+
+	var sites []NetlifySite
+	if err := json.Unmarshal(output, &sites); err != nil {
+		return nil, fmt.Errorf("failed to parse sites: %w", err)
+	}
+
+	return sites, nil
 }
 
 // GetSite retrieves site information using CLI
@@ -124,12 +153,12 @@ func (c *CLINetlifyClient) DeploySite(siteID string, path string, functionsPath 
 
 	// Build deploy command
 	args := []string{"deploy", "--prod", "--json", "--site", siteID}
-	
+
 	// Add directory to deploy
 	if path != "" {
 		args = append(args, "--dir", path)
 	}
-	
+
 	// Add functions directory if specified
 	if functionsPath != "" {
 		args = append(args, "--functions", functionsPath)
@@ -139,7 +168,7 @@ func (c *CLINetlifyClient) DeploySite(siteID string, path string, functionsPath 
 	// Note: using a longer timeout as deployments can take time
 	ctx, cancel := context.WithTimeout(context.Background(), deployTimeout)
 	defer cancel()
-	
+
 	cmd := exec.CommandContext(ctx, "netlify", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -172,7 +201,7 @@ func (c *CLINetlifyClient) DeploySite(siteID string, path string, functionsPath 
 				}
 			}
 		}
-		
+
 		if deployResult.DeployID == "" {
 			return nil, fmt.Errorf("failed to parse deployment response: %w\nOutput: %s", err, string(output))
 		}

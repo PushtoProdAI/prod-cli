@@ -72,7 +72,7 @@ func (s *CreateNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 			}
 		}
 	}
-	
+
 	site, err := client.CreateSite(CreateSiteRequest{
 		Name:    s.siteName,
 		EnvVars: s.envVars,
@@ -138,7 +138,7 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, st
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current directory: %w", err)
 	}
-	
+
 	if s.sourcePath != "." && s.sourcePath != "" {
 		if err := os.Chdir(s.sourcePath); err != nil {
 			return nil, fmt.Errorf("failed to change to source directory: %w", err)
@@ -156,35 +156,67 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, st
 	buildCtx, cancel := context.WithTimeout(ctx, defaultBuildTimeout)
 	defer cancel()
 
+	// Install dependencies first
+	fmt.Fprintf(s.writer, "  📦 Installing dependencies...\n")
+
+	// Check if package.json exists
+	if _, err := os.Stat("package.json"); err == nil {
+		// Try npm install first
+		installCmd := exec.CommandContext(buildCtx, "npm", "install")
+		installCmd.Env = env
+		installOutput, installErr := installCmd.CombinedOutput()
+
+		if installErr != nil {
+			// If npm install fails, try yarn install
+			fmt.Fprintf(s.writer, "  📦 npm install failed, trying yarn install...\n")
+			yarnCmd := exec.CommandContext(buildCtx, "yarn", "install")
+			yarnCmd.Env = env
+			yarnOutput, yarnErr := yarnCmd.CombinedOutput()
+
+			if yarnErr != nil {
+				// Both failed, show both outputs
+				fmt.Fprintf(s.writer, "  ❌ npm install failed:\n%s\n", string(installOutput))
+				fmt.Fprintf(s.writer, "  ❌ yarn install failed:\n%s\n", string(yarnOutput))
+				return nil, fmt.Errorf("failed to install dependencies: npm error: %w, yarn error: %w", installErr, yarnErr)
+			} else {
+				fmt.Fprintf(s.writer, "  ✅ Dependencies installed with yarn\n")
+			}
+		} else {
+			fmt.Fprintf(s.writer, "  ✅ Dependencies installed with npm\n")
+		}
+	} else {
+		fmt.Fprintf(s.writer, "  ⚠️  No package.json found, skipping dependency installation\n")
+	}
+
 	// Try netlify build first
 	fmt.Fprintf(s.writer, "  📦 Running Netlify build...\n")
 	cmd := exec.CommandContext(buildCtx, "netlify", "build")
 	cmd.Env = env
-	
+
 	// Capture output
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		// Check if it was a timeout
 		if buildCtx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("build timed out after %v", defaultBuildTimeout)
 		}
-		
+
 		// If netlify build fails, try running the build command directly
 		if s.buildCommand != "" {
 			fmt.Fprintf(s.writer, "  📦 Running custom build command: %s\n", s.buildCommand)
-			
+
 			// Use shell to handle complex commands properly
 			shellCmd := exec.CommandContext(buildCtx, "sh", "-c", s.buildCommand)
 			shellCmd.Env = env
-			
+
 			buildOutput, buildErr := shellCmd.CombinedOutput()
-			
+
 			// Write output to writer
 			if len(buildOutput) > 0 {
 				fmt.Fprintf(s.writer, "  Build output:\n%s\n", string(buildOutput))
 			}
-			
+
 			if buildErr != nil {
 				if buildCtx.Err() == context.DeadlineExceeded {
 					return nil, fmt.Errorf("build timed out after %v", defaultBuildTimeout)
@@ -222,10 +254,10 @@ func (s *BuildProjectStep) Rollback(ctx context.Context, client NetlifyClient, s
 // DeployNetlifySiteStep deploys a site to Netlify
 type DeployNetlifySiteStep struct {
 	BaseStep
-	siteStepID    string // ID of the step that created the site
-	buildStepID   string // ID of the step that ran the build
-	publishDir    string
-	functionsDir  string
+	siteStepID   string // ID of the step that created the site
+	buildStepID  string // ID of the step that ran the build
+	publishDir   string
+	functionsDir string
 }
 
 func NewDeployNetlifySiteStep(siteStepID, buildStepID, publishDir, functionsDir string) *DeployNetlifySiteStep {
@@ -254,7 +286,7 @@ func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 			siteID = resource.ID
 		}
 	}
-	
+
 	if siteID == "" {
 		return nil, fmt.Errorf("could not find site ID from step %s", s.siteStepID)
 	}
@@ -333,7 +365,7 @@ func (s *SetEnvironmentVariablesStep) Execute(ctx context.Context, client Netlif
 			siteID = resource.ID
 		}
 	}
-	
+
 	if siteID == "" {
 		return nil, fmt.Errorf("could not find site ID from step %s", s.siteStepID)
 	}
@@ -359,11 +391,11 @@ func (s *SetEnvironmentVariablesStep) Rollback(ctx context.Context, client Netli
 			siteID = resource.ID
 		}
 	}
-	
+
 	if siteID == "" {
 		return fmt.Errorf("could not find site ID for rollback")
 	}
-	
+
 	// Unset each environment variable
 	// Note: We're unsetting all vars we tried to set, even if some failed
 	for key := range s.envVars {
@@ -374,7 +406,7 @@ func (s *SetEnvironmentVariablesStep) Rollback(ctx context.Context, client Netli
 			fmt.Printf("Warning: failed to unset env var %s: %v\n", key, err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -407,15 +439,15 @@ func (s *UpdateBuildSettingsStep) Execute(ctx context.Context, client NetlifyCli
 			siteID = resource.ID
 		}
 	}
-	
+
 	if siteID == "" {
 		return nil, fmt.Errorf("could not find site ID from step %s", s.siteStepID)
 	}
 
 	// Update build settings
 	err := client.UpdateBuildSettings(siteID, BuildSettings{
-		Command:      s.buildCommand,
-		PublishDir:   s.publishDir,
+		Command:    s.buildCommand,
+		PublishDir: s.publishDir,
 	})
 	if err != nil {
 		// This is often not critical for CLI deployments
@@ -434,4 +466,3 @@ func (s *UpdateBuildSettingsStep) Rollback(ctx context.Context, client NetlifyCl
 	// Build settings rollback would require storing previous settings
 	return nil
 }
-
