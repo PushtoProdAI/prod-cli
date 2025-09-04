@@ -81,6 +81,15 @@ func (a *Activities) estimateFlyioCosts(_ context.Context, spec deployment.Deplo
 	return costs, nil
 }
 
+func (a *Activities) estimateNetlifyCosts(_ context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+	na := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter)
+	costs, err := na.EstimateCost(&spec, strategy)
+	if err != nil {
+		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
+	}
+	return costs, nil
+}
+
 func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, dbList []string, envVar analyzer.EnvVarCandidate) (deployment.EnvVar, error) {
 	log.Printf("CategorizeEnvVarsForDeployment input: %+v", envVar)
 	log.Printf("CategorizeEnvVarsForDeployment dbList: %+v", dbList)

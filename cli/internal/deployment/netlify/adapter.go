@@ -1,10 +1,13 @@
 package netlify
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
+	"strings"
 
+	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/output"
 )
@@ -58,30 +61,131 @@ func (n *NetlifyDeploymentAdapter) GenerateArtifacts(spec *deployment.Deployment
 func (n *NetlifyDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
 	log.Printf("Estimating costs for Netlify deployment: %s", spec.Name)
 
-	// Netlify's free tier is quite generous for static sites
-	ce := deployment.CostEstimate{
-		Services: []deployment.CostService{},
-		Total:    0.0, // Free tier
+	// Build cost request from deployment spec
+	cr := deployment.CostRequest{Services: make([]deployment.CostService, 0)}
+
+	// Add services from spec
+	for _, service := range spec.Services {
+		cs := deployment.CostService{}
+		switch service.Provider {
+		case "postgresql", "redis", "mysql", "mongodb":
+			// Netlify doesn't support these services, skip them
+			continue
+		default:
+			// For other services, add them to the cost estimation
+			cs.Service = service
+			cs.Plan = "free" // Default to free tier
+		}
+		cr.Services = append(cr.Services, cs)
 	}
 
-	// Add a note about the free tier limits
-	webService := deployment.CostService{
+	// Add a service representing the static site hosting
+	cs := deployment.CostService{
 		Service: deployment.Service{
 			Name:     "static-site",
 			Provider: "netlify",
 		},
-		Plan: "free",
-		Cost: 0.0,
+		Plan: "free", // Default to free tier
+	}
+	cr.Services = append(cr.Services, cs)
+
+	ce, err := estimateNetlifyCost(cr)
+	return ce, err
+}
+
+func estimateNetlifyCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
+	log.Printf("Estimating Netlify costs for %d services", len(cr.Services))
+
+	// Get current pricing from Netlify via LLM
+	pricing, err := fetchNetlifyPricingViaLLM(cr.Services)
+	if err != nil {
+		log.Printf("Failed to fetch pricing via LLM, using fallback: %v", err)
+		return estimateNetlifyCostFallback(cr)
 	}
 
-	ce.Services = append(ce.Services, webService)
+	log.Printf("Successfully fetched pricing via LLM: %+v", pricing)
 
-	// Pro plan starts at $19/month per member if they exceed free tier
-	// Free tier includes:
-	// - 100GB bandwidth
-	// - 300 build minutes
-	// - Unlimited static sites
+	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
+	ce.Total = 0.0
 
+	for i, service := range cr.Services {
+		if i < len(pricing) {
+			service.Cost = pricing[i]
+		} else {
+			service.Cost = 0.0
+		}
+		ce.Total += service.Cost
+		ce.Services = append(ce.Services, service)
+	}
+
+	log.Printf("Final cost estimate: Total=%.2f, Services=%+v", ce.Total, ce.Services)
+
+	return ce, nil
+}
+
+func fetchNetlifyPricingViaLLM(services []deployment.CostService) ([]float64, error) {
+	// Build service descriptions for LLM
+	var serviceDescriptions []string
+	for _, service := range services {
+		desc := fmt.Sprintf("Service: %s, Type: %s, Plan: %s", service.Service.Name, service.Service.Provider, service.Plan)
+		if service.Storage > 0 {
+			desc += fmt.Sprintf(", Storage: %dGB", service.Storage)
+		}
+		serviceDescriptions = append(serviceDescriptions, desc)
+	}
+
+	servicesText := strings.Join(serviceDescriptions, "\n")
+	log.Printf("Fetching Netlify pricing via LLM for services:\n%s", servicesText)
+
+	ctx := context.Background()
+	response, err := baml_client.FetchNetlifyPricing(ctx, servicesText)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch pricing via LLM: %v", err)
+	}
+
+	// Extract costs in order of input services
+	costs := make([]float64, len(services))
+	for i, service := range services {
+		// Find matching service in response
+		found := false
+		for _, pricedService := range response.Services {
+			if pricedService.Service_name == service.Service.Name || pricedService.Service_type == service.Service.Provider {
+				costs[i] = pricedService.Monthly_cost
+				found = true
+				break
+			}
+		}
+		if !found {
+			costs[i] = 0.0
+		}
+	}
+
+	return costs, nil
+}
+
+func estimateNetlifyCostFallback(cr deployment.CostRequest) (deployment.CostEstimate, error) {
+	log.Printf("Using fallback pricing for Netlify cost estimation")
+
+	// Fallback pricing when LLM is unavailable
+	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
+	ce.Total = 0.0
+
+	for _, service := range cr.Services {
+		// Default to free tier for most services
+		service.Cost = 0.0
+
+		// Add some basic pricing for premium features
+		if service.Service.Provider == "functions" && service.Plan != "free" {
+			service.Cost = 19.0 // Pro plan pricing
+		} else if service.Service.Provider == "forms" && service.Plan != "free" {
+			service.Cost = 19.0 // Pro plan pricing
+		}
+
+		ce.Total += service.Cost
+		ce.Services = append(ce.Services, service)
+	}
+
+	log.Printf("Fallback cost estimate: Total=%.2f, Services=%+v", ce.Total, ce.Services)
 	return ce, nil
 }
 

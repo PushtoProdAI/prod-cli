@@ -81,3 +81,57 @@ function FetchFlyioPricing(services: string) -> PricingResponse {
         {{ ctx.output_format }}
     "#
 }
+
+function FetchNetlifyPricing(services: string) -> PricingResponse {
+    client "OllamaClient"
+    prompt #"
+        {{ _.role("system") }}
+        You are a pricing expert that fetches current pricing from cloud providers.
+        
+        Your task is to:
+        1. Fetch current pricing information from https://www.netlify.com/pricing/
+        2. Extract pricing for the specific services requested
+        3. Return accurate monthly costs in USD
+        
+        IMPORTANT: Netlify has updated to a new credit-based pricing system as of September 2025:
+        
+        NEW PLANS:
+        - Free: $0 forever (300 credits/month included)
+        - Personal: $9/month (1,000 credits/month included)
+        - Pro: $20 per seat/month (5,000 credits/month included)
+        - Enterprise: Custom pricing
+        
+        CREDIT USAGE:
+        - Production deploys: 15 credits each
+        - Compute: 5 credits per GB-hour
+        - Form submissions: 1 credit each
+        - Bandwidth: 10 credits per GB
+        - Web requests: 3 credits per 10k requests
+        
+        For static sites on the Free plan, the cost is $0. For any service marked as "free" plan, the cost should be $0.
+        
+        OLD PLANS (legacy customers only):
+        - Static sites: Free ($0), Pro ($19), Business ($99), Enterprise (custom pricing)
+        - Functions: Free tier (125K invocations), Pro ($19 includes 500K invocations), Business ($99 includes 2M invocations)
+        - Forms: Free tier (100 submissions), Pro ($19 includes 1K submissions), Business ($99 includes 10K submissions)
+        - Background functions: Pro ($19 includes 500K invocations), Business ($99 includes 2M invocations)
+        - Large media: Pro ($19 includes 1TB), Business ($99 includes 5TB)
+        
+        Important: Only return actual current pricing from the website. If you cannot fetch current data, clearly indicate that in your response.
+        
+        {{ _.role("user") }}
+        Please fetch current pricing from https://www.netlify.com/pricing/ for these services and return the monthly costs:
+        
+        {{ services }}
+        
+        Return the response in the exact format specified by the schema. Include:
+        - service_name: name of the service (e.g., "static-site", "functions", "forms")
+        - service_type: provider type (e.g., "netlify", "static-site", "functions") 
+        - plan: the specific plan (e.g., "free", "pro", "business")
+        - monthly_cost: the monthly cost in USD as a number
+        
+        Calculate total_cost as the sum of all service costs.
+        
+        {{ ctx.output_format }}
+    "#
+}

@@ -96,8 +96,7 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 			case FlyIO:
 				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateFlyioCosts, *deploymentSpec, deployment.StrategyFlyio).Get(ctx)
 			case Netlify:
-				// TODO: Implement Netlify cost estimation
-				log.Printf("Netlify cost estimation not yet implemented")
+				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateNetlifyCosts, *deploymentSpec, deployment.StrategyNetlify).Get(ctx)
 			}
 
 			if err != nil {
