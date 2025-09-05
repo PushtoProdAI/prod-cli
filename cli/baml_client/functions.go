@@ -98,6 +98,45 @@ func DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCandidate, dbL
 	return casted, nil
 }
 
+func DetermineLaunchCommand(ctx context.Context, language string, frameworks []string, envVars []string, lc types.LaunchContext, opts ...CallOptionFunc) (types.LaunchCommand, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"language": language, "frameworks": frameworks, "envVars": envVars, "lc": lc},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	encoded, err := baml.EncodeArgs(args)
+	if err != nil {
+		panic(err)
+	}
+
+	result, err := bamlRuntime.CallFunction(ctx, "DetermineLaunchCommand", encoded)
+	if err != nil {
+		return types.LaunchCommand{}, err
+	}
+
+	if result.Error != nil {
+		return types.LaunchCommand{}, result.Error
+	}
+
+	casted := *(result.Data).(*types.LaunchCommand)
+
+	return casted, nil
+}
+
 func ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) (types.Intent, error) {
 
 	var callOpts callOption

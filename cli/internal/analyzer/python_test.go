@@ -3,6 +3,7 @@ package analyzer
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 )
 
@@ -501,6 +502,82 @@ func TestPythonAnalyzer_extractServiceRequirements(t *testing.T) {
 					t.Errorf("Expected service %+v not found in %+v", expectedService, services)
 				}
 			}
+		})
+	}
+}
+
+// TestPythonAnalyzer_environmentVariableRegexPatterns tests that the environment variable regex
+// correctly identifies environment variables and doesn't capture Django dictionary keys (the original bug).
+func TestPythonAnalyzer_environmentVariableRegexPatterns(t *testing.T) {
+	tests := []struct {
+		name            string
+		content         string
+		expectedVars    []string
+		unexpectedVars  []string
+	}{
+		{
+			name: "Basic os.environ patterns",
+			content: `import os
+api_key = os.environ.get('API_KEY')
+database_url = os.environ.get('DATABASE_URL', 'sqlite:///db.sqlite3')
+port = os.environ['PORT']
+log_level = os.environ.setdefault('LOG_LEVEL', 'INFO')
+env = os.getenv('ENVIRONMENT', 'development')`,
+			expectedVars: []string{"API_KEY", "DATABASE_URL", "PORT", "LOG_LEVEL", "ENVIRONMENT"},
+		},
+		{
+			name: "Django database configuration - the bug fix verification",
+			content: `import os
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DB_NAME', 'myapp'),
+        'USER': os.environ.get('DB_USER', 'postgres'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'password'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
+    }
+}
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'fallback-key')`,
+			expectedVars:   []string{"DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST", "DB_PORT", "DEBUG", "SECRET_KEY"},
+			unexpectedVars: []string{"NAME", "USER", "PASSWORD", "HOST", "PORT"}, // These should NOT be captured
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test the regex pattern directly
+			re := regexp.MustCompile(pyEnvVarRegex)
+			matches := re.FindAllStringSubmatch(tt.content, -1)
+			
+			// Collect found variable names
+			foundVars := make(map[string]bool)
+			for _, match := range matches {
+				// Find the first non-empty capture group (variable name)
+				for j := 1; j < len(match); j++ {
+					if match[j] != "" {
+						foundVars[match[j]] = true
+						break
+					}
+				}
+			}
+
+			// Check expected variables are found
+			for _, expectedVar := range tt.expectedVars {
+				if !foundVars[expectedVar] {
+					t.Errorf("Expected environment variable %q not found in %s", expectedVar, tt.name)
+				}
+			}
+
+			// Check unexpected variables are NOT found (important for Django dict key bug)
+			for _, unexpectedVar := range tt.unexpectedVars {
+				if foundVars[unexpectedVar] {
+					t.Errorf("Found unexpected variable %q in %s - this indicates the Django dict key bug has regressed", unexpectedVar, tt.name)
+				}
+			}
+
+			t.Logf("✅ %s: Found %d environment variables correctly", tt.name, len(foundVars))
 		})
 	}
 }

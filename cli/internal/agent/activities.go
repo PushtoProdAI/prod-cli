@@ -27,6 +27,7 @@ const (
 	AgentReadEnvFiles         = "agent.readEnvFiles"
 	AgentCreateDockerRepo     = "agent.createDockerRepo"
 	AgentDetermineRootPath    = "agent.determineRootPath"
+	AgentDetermineRunCommand  = "agent.determineRunCommand"
 )
 
 type Activities struct {
@@ -56,5 +57,6 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentReadEnvFiles, ActFunc: a.getEnvVarsFromEnvFiles},
 		{Name: AgentCreateDockerRepo, ActFunc: a.createDockerRepo},
 		{Name: AgentDetermineRootPath, ActFunc: a.determineRootPath},
+		{Name: AgentDetermineRunCommand, ActFunc: a.determineRunCommand},
 	}
 }

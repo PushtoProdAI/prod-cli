@@ -80,6 +80,17 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 
 	// Estimate costs during planning phase
 	if action == Deploy && platform != UnknownPlatform {
+
+		if plan.Spec.StartCommand == "" {
+			cmd, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineRunCommand, spec).Get(ctx)
+			if err != nil {
+				log.Printf("Failed to determine run command: %v", err)
+			}
+			if cmd != "" {
+				plan.Spec.StartCommand = cmd
+			}
+		}
+
 		w.uiWriter.SendStatus("pricing", "Calculating estimated costs...")
 
 		// Build deployment spec for cost estimation
@@ -162,4 +173,39 @@ func (a *Activities) sendProjectStats(ctx context.Context, platform string, spec
 		return errors.Errorf("failed to record project stats: %w", err)
 	}
 	return nil
+}
+
+func (a *Activities) determineRunCommand(ctx context.Context, spec analyzer.ProjectSpec) (string, error) {
+	a.uiWriter.SendStatus("planning", "Calculating run command")
+	var frameworks []string
+	for _, req := range spec.ServiceRequirements {
+		if req.Type == "framework" {
+			frameworks = append(frameworks, req.Provider)
+		}
+	}
+
+	envVars := make([]string, len(spec.EnvVars))
+	for i, ev := range spec.EnvVars {
+		envVars[i] = ev.VarName
+	}
+
+	lc := types.LaunchContext{
+		Launchers: make([]types.LauncherFile, len(spec.LaunchContext.Launchers)),
+		Readme:    spec.LaunchContext.Readme,
+	}
+
+	for _, l := range spec.LaunchContext.Launchers {
+		log.Println(l.Name)
+		lc.Launchers = append(lc.Launchers, types.LauncherFile{
+			Name:    l.Name,
+			Content: l.Content,
+		})
+	}
+	cmd, err := baml_client.DetermineLaunchCommand(ctx, spec.Language, frameworks, envVars, lc)
+	if err != nil {
+		a.uiWriter.SendStatusComplete("planning", "❌ Failed to calculate run command")
+		return "", errors.Errorf("failed to determine launch command: %w", err)
+	}
+	a.uiWriter.SendStatusComplete("planning", "✅ Run command determined")
+	return cmd.Command, nil
 }

@@ -233,7 +233,11 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		log.Printf("Failed to combine paths: %v", err)
 		fullUrl = u
 	}
-	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
+	liveCheckOpts := ActivityOpts
+	// I noticed some projects taking longer to online (on the PaaS side)
+	// so bumping this up a bit
+	liveCheckOpts.RetryOptions.MaxAttempts = 15
+	_, err = workflow.ExecuteActivity[string](ctx, liveCheckOpts, AgentIsURLLive, fullUrl).Get(ctx)
 	if err != nil {
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
@@ -243,7 +247,7 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		return deployResult{Error: summary}, nil
 	}
 
-	return deployResult{Url: u}, nil
+	return deployResult{Url: fullUrl}, nil
 }
 
 func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployResult, error) {
@@ -452,6 +456,9 @@ func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPla
 	workflow.Logger(ctx).Info("starting categorizeEnvVars", "total_env_vars", len(deployPlan.Spec.EnvVars))
 
 	spec := deployPlan.Spec
+	if len(spec.EnvVars) == 0 {
+		return []deployment.EnvVar{}, nil
+	}
 	dbList := make([]string, len(spec.ServiceRequirements))
 	for i, service := range spec.ServiceRequirements {
 		dbList[i] = service.Provider

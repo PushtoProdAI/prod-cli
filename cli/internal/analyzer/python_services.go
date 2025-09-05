@@ -1,6 +1,9 @@
 package analyzer
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 var PythonServiceMappings = map[string]ServiceRequirement{
 	// Database drivers
@@ -52,7 +55,7 @@ func (p *PythonAnalyzer) extractServiceRequirements(dependencies []Dependency) (
 	seen := make(map[string]bool)
 
 	for _, dep := range dependencies {
-		if service, exists := PythonServiceMappings[dep.Name]; exists {
+		if service, exists := PythonServiceMappings[strings.ToLower(dep.Name)]; exists {
 			key := fmt.Sprintf("%s-%s", service.Type, service.Provider)
 			if !seen[key] {
 				services = append(services, service)

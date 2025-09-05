@@ -26,12 +26,12 @@ import (
 )
 
 type DockerArtifacts struct {
-	Dockerfile    string
-	DockerIgnore  string
-	DockerCompose string
-	BuildContext  map[string]string
-	ImageName     string
-	Services      []DockerService
+	Dockerfile      string
+	DockerIgnore    string
+	DockerCompose   string
+	AdditionalFiles map[string]string
+	ImageName       string
+	Services        []DockerService
 }
 
 type DockerBuildResult struct {
@@ -61,7 +61,7 @@ var templateFS embed.FS
 type DockerGenerator struct {
 	dockerignoreTemplates map[string]string
 	templates             map[string]*template.Template
-  baseImages            map[string]string
+	baseImages            map[string]string
 	client                *client.Client
 	beClient              *backend.Client
 	writer                io.Writer
@@ -118,7 +118,11 @@ func (dg *DockerGenerator) initTemplates() {
 	dg.templates["node"] = template.Must(template.New("node").Parse(string(nodeTemplate)))
 	dg.templates["nodejs"] = dg.templates["node"]
 	dg.templates["javascript"] = dg.templates["node"]
-	dg.templates["python"] = template.Must(template.New("python").Parse(string(pythonTemplate)))
+	funcMap := template.FuncMap{
+		"contains": strings.Contains,
+		"and":      func(a, b bool) bool { return a && b },
+	}
+	dg.templates["python"] = template.Must(template.New("python").Funcs(funcMap).Parse(string(pythonTemplate)))
 	dg.templates["go"] = template.Must(template.New("go").Parse(string(goTemplate)))
 	dg.templates["golang"] = dg.templates["go"]
 
@@ -156,21 +160,24 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 	}
 
 	log.Printf("Using base image for %s: %s", spec.Language, baseImage)
+
 	// Prepare template data
 	templateData := struct {
-		Name         string
-		Language     string
-		BuildCommand string
-		StartCommand string
-		Port         int
-		BaseImage    string
+		Name             string
+		Language         string
+		BuildCommand     string
+		StartCommand     string
+		Port             int
+		BaseImage        string
+		HasStartupScript bool
 	}{
-		Name:         spec.Name,
-		Language:     spec.Language,
-		BuildCommand: spec.BuildCommand,
-		StartCommand: spec.StartCommand,
-		Port:         8080, // Default port, could be configurable
-		BaseImage:    baseImage,
+		Name:             spec.Name,
+		Language:         spec.Language,
+		BuildCommand:     spec.BuildCommand,
+		StartCommand:     spec.StartCommand,
+		Port:             8080, // Default port, could be configurable
+		BaseImage:        baseImage,
+		HasStartupScript: strings.ToLower(spec.Language) == "python",
 	}
 
 	// Execute template
@@ -195,13 +202,21 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 	// Generate .dockerignore for the language
 	dockerIgnore := dg.generateDockerIgnore(spec.Language)
 
+	// Initialize additional files for build context
+	additionalFiles := make(map[string]string)
+
+	// Add startup script for Python
+	if strings.ToLower(spec.Language) == "python" {
+		additionalFiles["start.sh"] = dg.generatePythonStartupScript()
+	}
+
 	return &DockerArtifacts{
-		Dockerfile:    dockerfileBuf.String(),
-		DockerIgnore:  dockerIgnore,
-		DockerCompose: dockerCompose,
-		ImageName:     fmt.Sprintf("app-%s", spec.Name),
-		Services:      services,
-		BuildContext:  map[string]string{".": "."}, // Default build context
+		Dockerfile:      dockerfileBuf.String(),
+		DockerIgnore:    dockerIgnore,
+		DockerCompose:   dockerCompose,
+		ImageName:       fmt.Sprintf("app-%s", spec.Name),
+		Services:        services,
+		AdditionalFiles: additionalFiles,
 	}, nil
 }
 
@@ -413,6 +428,14 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 		dockerignorePath := filepath.Join(buildContext, ".dockerignore")
 		if err := os.WriteFile(dockerignorePath, []byte(artifacts.DockerIgnore), 0644); err != nil {
 			return nil, fmt.Errorf("failed to write .dockerignore: %w", err)
+		}
+	}
+
+	// Write additional files to build context
+	for filename, content := range artifacts.AdditionalFiles {
+		filePath := filepath.Join(buildContext, filename)
+		if err := os.WriteFile(filePath, []byte(content), 0755); err != nil { // 0755 for executable files like start.sh
+			return nil, fmt.Errorf("failed to write additional file %s: %w", filename, err)
 		}
 	}
 
@@ -697,6 +720,44 @@ func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpe
 	}
 
 	return buildResult, pushResult, nil
+}
+
+// generatePythonStartupScript creates the startup script for Python applications
+func (dg *DockerGenerator) generatePythonStartupScript() string {
+	return `#!/bin/bash
+
+# Get PORT from environment, default to 8000
+export PORT=${PORT:-8000}
+export HOST=${HOST:-0.0.0.0}
+
+# Original command passed as arguments
+ORIGINAL_CMD="$*"
+
+# Detect and modify common Python server commands
+if [[ "$ORIGINAL_CMD" =~ uvicorn ]]; then
+    # Handle uvicorn (FastAPI)
+    # Remove any existing --host or --port arguments and add our own
+    MODIFIED_CMD=$(echo "$ORIGINAL_CMD" | sed -E 's/--host[= ][^ ]*//' | sed -E 's/--port[= ][^ ]*//')
+    exec $MODIFIED_CMD --host $HOST --port $PORT
+    
+elif [[ "$ORIGINAL_CMD" =~ gunicorn ]]; then
+    # Handle gunicorn
+    # Remove any existing --bind arguments and add our own  
+    MODIFIED_CMD=$(echo "$ORIGINAL_CMD" | sed -E 's/--bind[= ][^ ]*//' | sed -E 's/-b[= ][^ ]*//')
+    exec $MODIFIED_CMD --bind $HOST:$PORT
+    
+elif [[ "$ORIGINAL_CMD" =~ "manage.py runserver" ]]; then
+    # Handle Django runserver
+    # Remove any existing host:port argument and add our own
+    MODIFIED_CMD=$(echo "$ORIGINAL_CMD" | sed -E 's/(runserver) [0-9.]+:[0-9]+/\1/' | sed -E 's/(runserver) [0-9]+/\1/')
+    exec $MODIFIED_CMD $HOST:$PORT
+    
+else
+    # For other cases (like Flask app.run()), set environment variables and run as-is
+    export FLASK_RUN_HOST=$HOST
+    export FLASK_RUN_PORT=$PORT
+    exec $ORIGINAL_CMD
+fi`
 }
 
 // stringPtr returns a pointer to a string
