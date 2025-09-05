@@ -436,6 +436,197 @@ func (u Intent) BamlEncodeName() *cffi.CFFITypeName {
 	}
 }
 
+type LaunchCommand struct {
+	Command *string `json:"command"`
+}
+
+func (c *LaunchCommand) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "LaunchCommand" {
+		panic(fmt.Sprintf("expected LaunchCommand, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "command":
+			c.Command = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c LaunchCommand) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["command"] = c.Command
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c LaunchCommand) BamlTypeName() string {
+	return "LaunchCommand"
+}
+
+func (u LaunchCommand) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "LaunchCommand",
+	}
+}
+
+type LaunchContext struct {
+	Launchers []LauncherFile `json:"launchers"`
+	Readme    *string        `json:"readme"`
+}
+
+func (c *LaunchContext) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "LaunchContext" {
+		panic(fmt.Sprintf("expected LaunchContext, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "launchers":
+			c.Launchers = baml.DecodeList(valueHolder, func(inner *cffi.CFFIValueHolder) LauncherFile {
+				return *baml.Decode(inner).(*LauncherFile)
+			})
+
+		case "readme":
+			c.Readme = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c LaunchContext) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["launchers"] = c.Launchers
+
+	fields["readme"] = c.Readme
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c LaunchContext) BamlTypeName() string {
+	return "LaunchContext"
+}
+
+func (u LaunchContext) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "LaunchContext",
+	}
+}
+
+type LauncherFile struct {
+	Name    *string `json:"name"`
+	Content *string `json:"content"`
+}
+
+func (c *LauncherFile) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "LauncherFile" {
+		panic(fmt.Sprintf("expected LauncherFile, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "name":
+			c.Name = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "content":
+			c.Content = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c LauncherFile) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["name"] = c.Name
+
+	fields["content"] = c.Content
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c LauncherFile) BamlTypeName() string {
+	return "LauncherFile"
+}
+
+func (u LauncherFile) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "LauncherFile",
+	}
+}
+
 type PricingResponse struct {
 	Services   []ServicePricing `json:"services"`
 	Total_cost *float64         `json:"total_cost"`

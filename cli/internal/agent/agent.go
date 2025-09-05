@@ -203,7 +203,7 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 		log.Printf("Workflow execution result: %v\n", err)
 	}
 
-	plan, err := client.GetWorkflowResult[DeployPlan](ctx, a.wfClient, wf, 30*time.Second)
+	plan, err := client.GetWorkflowResult[DeployPlan](ctx, a.wfClient, wf, 5*time.Minute)
 	if err != nil {
 		fmt.Fprintf(out, "Error getting workflow result: %v\n", err)
 	}

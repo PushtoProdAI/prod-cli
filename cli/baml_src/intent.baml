@@ -66,6 +66,19 @@ class CategorizedRoutes {
     recommended Route
   }
 
+class LauncherFile {
+    name string
+    content string
+  }
+
+class LaunchContext {
+	launchers LauncherFile[]
+	readme    string
+}
+
+class LaunchCommand {
+    command string
+  }
 
 function ExtractIntent(request: string) -> Intent {
   client "OllamaClient"
@@ -479,6 +492,54 @@ Here are the route candidates from the deployed code:
 
   }
 
+function DetermineLaunchCommand(language: string, frameworks: string[], envVars: string[], lc: LaunchContext) -> LaunchCommand {
+  client "OllamaClient"
+  prompt #"
+{{_.role("system")}}
+ You are an expert in analyzing project launcher files to determine the correct command
+    to start the application server. Your output must be ONLY the exact shell command that
+    a developer would run to start the project, nothing else.
+
+Special rules:
+- If a project includes a launcher script that calls uvicorn/gunicorn/etc, prefer running it.
+- If the README shows a uvicorn/gunicorn/flask command, you may include that as an alternative,
+  but adapt it to respect environment variables instead of hardcoding.  
+- Do not hardcode values already provided by env vars or configs (e.g. HOST, PORT, RELOAD).
+- Only include flags clearly intended for developer convenience (e.g. --reload).
+
+{{ _.role("user") }}
+
+The project may use the following frameworks: {{frameworks}}
+The project uses the following environment variables: {{envVars}}
+
+  {% if lc.launchers | length > 0 %}
+  Here are the candidate launcher files:
+  {% for launcher in lc.launchers %}
+  File: {{launcher.name}}
+  ---
+  {{launcher.content}}
+  ---
+  {% endfor %}
+  {% endif %}
+
+  {% if lc.readme and lc.readme | trim != "" %}
+  Here is the README:
+  ---
+  {{lc.readme}}
+  ---
+  {% endif %}
+
+  Based on this information, infer the correct command to start the application.
+  Examples of possible commands include:
+  - uvicorn app.main:app --reload
+  - python manage.py runserver
+  - gunicorn myproject.wsgi:application
+  - flask run
+
+    {{ctx.output_format }}
+  "#
+
+  }
 
 // Place all test blocks after type and function definitions
 

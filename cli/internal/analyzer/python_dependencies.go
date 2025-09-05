@@ -41,27 +41,138 @@ type Pipfile struct {
 	DevPackages map[string]any `toml:"dev-packages"`
 }
 
+// DependencyManagementType represents the detected dependency management approach
+type DependencyManagementType int
+
+const (
+	DepMgmtUnknown DependencyManagementType = iota
+	DepMgmtPoetry
+	DepMgmtPipenv
+	DepMgmtPipTools
+	DepMgmtRequirementsTxt
+	DepMgmtPEP621
+	DepMgmtSetupPy
+	DepMgmtHatch
+)
+
+func (p *PythonAnalyzer) hasPoetryConfig() bool {
+	data, err := fs.ReadFile(p.ProjectFS, "pyproject.toml")
+	if err != nil {
+		return false
+	}
+
+	// Simple check for poetry section
+	content := string(data)
+	return strings.Contains(content, "[tool.poetry]")
+}
+
+func (p *PythonAnalyzer) hasPEP621Config() bool {
+	data, err := fs.ReadFile(p.ProjectFS, "pyproject.toml")
+	if err != nil {
+		return false
+	}
+
+	// Simple check for PEP 621 project section with dependencies
+	content := string(data)
+	return strings.Contains(content, "[project]") && strings.Contains(content, "dependencies")
+}
+
+func (p *PythonAnalyzer) hasHatchConfig() bool {
+	data, err := fs.ReadFile(p.ProjectFS, "pyproject.toml")
+	if err != nil {
+		return false
+	}
+
+	// Check for hatch-specific configuration
+	content := string(data)
+	return strings.Contains(content, "[tool.hatch]") || strings.Contains(content, "hatchling")
+}
+
+// detectDependencyManagement determines which dependency management approach is used
+func (p *PythonAnalyzer) detectDependencyManagement() DependencyManagementType {
+	// Check for Poetry (pyproject.toml with tool.poetry section)
+	if p.hasPoetryConfig() {
+		return DepMgmtPoetry
+	}
+
+	// Check for Hatch (pyproject.toml with tool.hatch section or hatchling)
+	if p.hasHatchConfig() {
+		return DepMgmtHatch
+	}
+
+	// Check for Pipenv (Pipfile)
+	if _, err := fs.Stat(p.ProjectFS, "Pipfile"); err == nil {
+		return DepMgmtPipenv
+	}
+
+	// Check for pip-tools (requirements.in)
+	if _, err := fs.Stat(p.ProjectFS, "requirements.in"); err == nil {
+		return DepMgmtPipTools
+	}
+
+	// Check for standard requirements.txt
+	if _, err := fs.Stat(p.ProjectFS, "requirements.txt"); err == nil {
+		return DepMgmtRequirementsTxt
+	}
+
+	// Check for pyproject.toml with PEP 621 dependencies
+	if p.hasPEP621Config() {
+		return DepMgmtPEP621
+	}
+
+	// Check for setup.py
+	if _, err := fs.Stat(p.ProjectFS, "setup.py"); err == nil {
+		return DepMgmtSetupPy
+	}
+
+	return DepMgmtUnknown
+}
+
 func (p *PythonAnalyzer) extractDependencies() ([]Dependency, error) {
 	var dependencies []Dependency
 
-	// Parse requirements.txt
-	if deps, err := p.parseRequirementsTxt(); err == nil {
-		dependencies = append(dependencies, deps...)
-	}
+	depMgmt := p.detectDependencyManagement()
 
-	// Parse Pipfile
-	if deps, err := p.parsePipfile(); err == nil {
-		dependencies = append(dependencies, deps...)
-	}
-
-	// Parse pyproject.toml
-	if deps, err := p.parsePyProjectToml(); err == nil {
-		dependencies = append(dependencies, deps...)
-	}
-
-	// Parse setup.py
-	if deps, err := p.parseSetupPy(); err == nil {
-		dependencies = append(dependencies, deps...)
+	switch depMgmt {
+	case DepMgmtPoetry:
+		if deps, err := p.parsePyProjectToml(); err == nil {
+			dependencies = append(dependencies, deps...)
+		}
+	case DepMgmtHatch:
+		if deps, err := p.parsePyProjectToml(); err == nil {
+			dependencies = append(dependencies, deps...)
+		}
+	case DepMgmtPipenv:
+		if deps, err := p.parsePipfile(); err == nil {
+			dependencies = append(dependencies, deps...)
+		}
+	case DepMgmtPipTools, DepMgmtRequirementsTxt:
+		if deps, err := p.parseRequirementsTxt(); err == nil {
+			dependencies = append(dependencies, deps...)
+		}
+	case DepMgmtPEP621:
+		if deps, err := p.parsePyProjectToml(); err == nil {
+			dependencies = append(dependencies, deps...)
+		}
+	case DepMgmtSetupPy:
+		if deps, err := p.parseSetupPy(); err == nil {
+			dependencies = append(dependencies, deps...)
+		}
+	default:
+		// Fallback: try all parsers if we couldn't detect the management type
+		// This maintains backward compatibility for edge cases
+		if deps, err := p.parseRequirementsTxt(); err == nil {
+			dependencies = append(dependencies, deps...)
+		}
+		if deps, err := p.parsePipfile(); err == nil {
+			dependencies = append(dependencies, deps...)
+		}
+		if deps, err := p.parsePyProjectToml(); err == nil {
+			dependencies = append(dependencies, deps...)
+		}
+		if deps, err := p.parseSetupPy(); err == nil {
+			dependencies = append(dependencies, deps...)
+		}
 	}
 
 	return dependencies, nil
@@ -188,6 +299,8 @@ func (p *PythonAnalyzer) parseSetupPy() ([]Dependency, error) {
 				dependencies = append(dependencies, dependency)
 			}
 		}
+
+		return dependencies, nil
 	}
 
 	return dependencies, nil

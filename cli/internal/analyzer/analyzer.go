@@ -19,6 +19,7 @@ type ProjectSpec struct {
 	StartCommand        string
 	EnvVars             []EnvVarCandidate
 	Routes              []RouteCandidate
+	LaunchContext       LaunchContext
 }
 
 type ServiceRequirement struct {

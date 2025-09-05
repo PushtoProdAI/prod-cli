@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"io/fs"
+	"path/filepath"
 	"regexp"
 	"sync"
 
@@ -36,6 +37,11 @@ func (p *PythonAnalyzer) extractProjectName(_ *RuntimeInfo, _ []Dependency) stri
 		}
 	}
 
+	// try to get the name from the folder name
+	base := filepath.Base(p.ProjectFS.rootPath)
+	if base != "" {
+		return base
+	}
 	// Default to "python-project"
 	return "python-project"
 }

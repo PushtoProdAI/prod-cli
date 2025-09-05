@@ -46,11 +46,11 @@ func (p *PythonAnalyzer) detectFramework(dependencies []Dependency) (*FrameworkI
 	if _, err := fs.Stat(p.ProjectFS, "app.py"); err == nil {
 		// Could be Flask or FastAPI, check content
 		if data, err := fs.ReadFile(p.ProjectFS, "app.py"); err == nil {
-			content := string(data)
-			if strings.Contains(content, "Flask") {
+			content := strings.ToLower(string(data))
+			if strings.Contains(content, strings.ToLower("Flask")) {
 				framework.Name = "flask"
 				framework.Detected = true
-			} else if strings.Contains(content, "FastAPI") {
+			} else if strings.Contains(content, strings.ToLower("FastAPI")) {
 				framework.Name = "fastapi"
 				framework.Detected = true
 			}
