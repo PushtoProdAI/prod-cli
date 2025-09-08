@@ -16,6 +16,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/auth"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/netlify"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/output"
 )
@@ -392,7 +393,7 @@ func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateF
 	}
 
 	// Check authentication before deployment
-	if a.DeployPlan.Platform == Render || a.DeployPlan.Platform == FlyIO {
+	if a.DeployPlan.Platform == Render || a.DeployPlan.Platform == FlyIO || a.DeployPlan.Platform == Netlify {
 		return a.checkAuthentication(ctx, input, out)
 	}
 
@@ -641,8 +642,9 @@ func (a *Agent) getAuthProvider(out io.Writer) (auth.AuthProvider, error) {
 	case FlyIO:
 		return auth.NewFlyAuth(out), nil
 	case Netlify:
-		// TODO: Implement Netlify authentication
-		return nil, fmt.Errorf("Netlify authentication not yet implemented")
+		netlifyClient := netlify.NewCLINetlifyClient()
+		netlifyAuth := auth.NewNetlifyAuth(netlifyClient, out)
+		return netlifyAuth, nil
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", a.DeployPlan.Platform)
 	}
