@@ -38,8 +38,6 @@ Thumbs.db
 
 # Documentation
 docs/
-README.md
-*.md
 
 # Version control
 .git
