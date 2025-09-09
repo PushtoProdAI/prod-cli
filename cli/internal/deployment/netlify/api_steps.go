@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -343,9 +344,10 @@ type SetEnvironmentVariablesStep struct {
 	BaseStep
 	siteStepID string
 	envVars    map[string]string
+	sourcePath string
 }
 
-func NewSetEnvironmentVariablesStep(siteStepID string, envVars map[string]string) *SetEnvironmentVariablesStep {
+func NewSetEnvironmentVariablesStep(siteStepID string, sourcePath string, envVars map[string]string) *SetEnvironmentVariablesStep {
 	return &SetEnvironmentVariablesStep{
 		BaseStep: BaseStep{
 			ID:           "set-env-vars",
@@ -354,6 +356,7 @@ func NewSetEnvironmentVariablesStep(siteStepID string, envVars map[string]string
 		},
 		siteStepID: siteStepID,
 		envVars:    envVars,
+		sourcePath: sourcePath,
 	}
 }
 
@@ -370,8 +373,26 @@ func (s *SetEnvironmentVariablesStep) Execute(ctx context.Context, client Netlif
 		return nil, fmt.Errorf("could not find site ID from step %s", s.siteStepID)
 	}
 
+	originalDir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	if s.sourcePath != "." && s.sourcePath != "" {
+		if err := os.Chdir(s.sourcePath); err != nil {
+			return nil, fmt.Errorf("failed to change to source directory: %w", err)
+		}
+		defer os.Chdir(originalDir)
+	}
+
 	// before we set the environment variables, we need to link the CLI to the site
-	err := client.LinkSite(siteID)
+	// a bit of a hack, but intermiittently there is an issue setting the env vars, that seems to go away when I delete .netlify
+	err = os.RemoveAll(".netlify")
+	if err != nil {
+		log.Printf("Warning: failed to remove .netlify directory: %v", err)
+	}
+
+	err = client.LinkSite(siteID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to link CLI to site: %w", err)
 	}
