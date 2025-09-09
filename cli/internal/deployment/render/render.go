@@ -70,7 +70,7 @@ func NewRenderDeploymentAdapter(client RenderClient, writer io.Writer) *RenderDe
 	}
 	return &RenderDeploymentAdapter{
 		client:          client,
-		dockerGenerator: deployment.NewDockerGenerator(writer),
+		dockerGenerator: deployment.NewDockerGenerator(writer, []deployment.EnvVar{}),
 		writer:          writer,
 	}
 }

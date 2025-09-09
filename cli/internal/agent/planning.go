@@ -149,7 +149,10 @@ func (a *Activities) analyze(_ context.Context, intent types.Intent) (analyzer.P
 		return analyzer.ProjectSpec{}, errors.Errorf("failed to get analyzer: %w", err)
 	}
 	spec, err := an.Analyze()
-	return *spec, err
+	if err != nil {
+		return analyzer.ProjectSpec{}, err
+	}
+	return *spec, nil
 }
 
 func (a *Activities) summarize(ctx context.Context, intent types.Intent, name string, language string) (string, error) {

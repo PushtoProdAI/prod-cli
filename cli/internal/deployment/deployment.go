@@ -54,6 +54,8 @@ type DeploymentSpec struct {
 	BuildCommand string
 	StartCommand string
 	EnvVars      []EnvVar
+	OutputDir    string
+	IsStatic     bool
 }
 
 type CostService struct {
@@ -142,6 +144,9 @@ func (db *DeploymentBuilder) Build() (*DeploymentSpec, error) {
 		services = append(services, service)
 	}
 
+	// Determine if it's a static app (has build command, no start command, and has output directory)
+	isStatic := db.projectSpec.BuildCommand != "" && db.projectSpec.StartCommand == "" && db.projectSpec.BuildOutput.Path != ""
+
 	return &DeploymentSpec{
 		Name:     db.projectSpec.Name,
 		Language: db.projectSpec.Language,
@@ -152,5 +157,7 @@ func (db *DeploymentBuilder) Build() (*DeploymentSpec, error) {
 		BuildCommand: db.projectSpec.BuildCommand,
 		StartCommand: db.projectSpec.StartCommand,
 		EnvVars:      db.serviceEnvVars,
+		OutputDir:    db.projectSpec.BuildOutput.Path,
+		IsStatic:     isStatic,
 	}, nil
 }

@@ -65,9 +65,10 @@ type DockerGenerator struct {
 	client                *client.Client
 	beClient              *backend.Client
 	writer                io.Writer
+	envVars               []EnvVar // Environment variables to pass as build args
 }
 
-func NewDockerGenerator(writer io.Writer) *DockerGenerator {
+func NewDockerGenerator(writer io.Writer, envVars []EnvVar) *DockerGenerator {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}
@@ -76,6 +77,7 @@ func NewDockerGenerator(writer io.Writer) *DockerGenerator {
 		dockerignoreTemplates: make(map[string]string),
 		beClient:              backend.NewClient(),
 		writer:                writer,
+		envVars:               envVars,
 	}
 	dg.initTemplates()
 
@@ -170,6 +172,9 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 		Port             int
 		BaseImage        string
 		HasStartupScript bool
+		OutputDir        string
+		IsStatic         bool
+		EnvVars          []EnvVar
 	}{
 		Name:             spec.Name,
 		Language:         spec.Language,
@@ -178,8 +183,10 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 		Port:             8080, // Default port, could be configurable
 		BaseImage:        baseImage,
 		HasStartupScript: strings.ToLower(spec.Language) == "python",
+		OutputDir:        spec.OutputDir,
+		IsStatic:         spec.IsStatic,
+		EnvVars:          dg.envVars,
 	}
-
 	// Execute template
 	var dockerfileBuf bytes.Buffer
 	if err := tmpl.Execute(&dockerfileBuf, templateData); err != nil {
@@ -456,9 +463,7 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 		NoCache:        false,
 		SuppressOutput: false,
 		Platform:       "linux/amd64", // Target platform for deployment
-		BuildArgs: map[string]*string{
-			"TARGETPLATFORM": stringPtr("linux/amd64"),
-		},
+		BuildArgs:      dg.prepareBuildArgs(),
 	}
 
 	// Build the image
@@ -555,14 +560,108 @@ func (dg *DockerGenerator) Close() error {
 	return nil
 }
 
+// parseDockerIgnore parses a .dockerignore file and returns the patterns
+func parseDockerIgnore(dockerignorePath string) ([]string, error) {
+	var patterns []string
+
+	// Check if .dockerignore exists
+	if _, err := os.Stat(dockerignorePath); os.IsNotExist(err) {
+		return patterns, nil // No .dockerignore file, return empty patterns
+	}
+
+	content, err := os.ReadFile(dockerignorePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read .dockerignore: %w", err)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		patterns = append(patterns, line)
+	}
+
+	return patterns, nil
+}
+
+// matchDockerIgnorePattern checks if a path matches a .dockerignore pattern
+func matchDockerIgnorePattern(path string, pattern string) bool {
+	// Handle negation patterns (starting with !)
+	if strings.HasPrefix(pattern, "!") {
+		return false // We'll handle negation in the caller
+	}
+
+	// Convert pattern to filepath pattern
+	pattern = strings.ReplaceAll(pattern, "**", "*")
+
+	// If pattern ends with /, it only matches directories
+	if strings.HasSuffix(pattern, "/") {
+		pattern = strings.TrimSuffix(pattern, "/")
+		// For directory patterns, check if path starts with pattern
+		return strings.HasPrefix(path, pattern+"/") || path == pattern
+	}
+
+	// Try exact match first
+	if matched, _ := filepath.Match(pattern, path); matched {
+		return true
+	}
+
+	// Try matching any part of the path
+	pathParts := strings.Split(path, "/")
+	for i := range pathParts {
+		subPath := strings.Join(pathParts[i:], "/")
+		if matched, _ := filepath.Match(pattern, subPath); matched {
+			return true
+		}
+		// Also try matching just the filename
+		if matched, _ := filepath.Match(pattern, pathParts[i]); matched {
+			return true
+		}
+	}
+
+	return false
+}
+
+// shouldIgnoreFile determines if a file should be ignored based on .dockerignore patterns
+func shouldIgnoreFile(relPath string, patterns []string) bool {
+	ignored := false
+
+	for _, pattern := range patterns {
+		if strings.HasPrefix(pattern, "!") {
+			// Negation pattern - if it matches, don't ignore
+			negPattern := strings.TrimPrefix(pattern, "!")
+			if matchDockerIgnorePattern(relPath, negPattern) {
+				ignored = false
+			}
+		} else {
+			// Normal pattern - if it matches, ignore
+			if matchDockerIgnorePattern(relPath, pattern) {
+				ignored = true
+			}
+		}
+	}
+
+	return ignored
+}
+
 // createTarFromDir creates a tar archive from a directory
 func createTarFromDir(dir string) (io.ReadCloser, error) {
 	buf := new(bytes.Buffer)
 	tw := tar.NewWriter(buf)
 	defer tw.Close()
 
+	// Parse .dockerignore file if it exists
+	dockerignorePath := filepath.Join(dir, ".dockerignore")
+	ignorePatterns, err := parseDockerIgnore(dockerignorePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse .dockerignore: %w", err)
+	}
+
 	fileCount := 0
-	err := filepath.Walk(dir, func(file string, fi os.FileInfo, err error) error {
+	err = filepath.Walk(dir, func(file string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -576,6 +675,11 @@ func createTarFromDir(dir string) (io.ReadCloser, error) {
 		relPath, err := filepath.Rel(dir, file)
 		if err != nil {
 			return err
+		}
+
+		// Check if file should be ignored based on .dockerignore patterns
+		if shouldIgnoreFile(relPath, ignorePatterns) {
+			return nil // Skip this file
 		}
 
 		fileCount++
@@ -758,6 +862,22 @@ else
     export FLASK_RUN_PORT=$PORT
     exec $ORIGINAL_CMD
 fi`
+}
+
+// prepareBuildArgs converts environment variables to Docker build arguments
+func (dg *DockerGenerator) prepareBuildArgs() map[string]*string {
+	buildArgs := map[string]*string{
+		"TARGETPLATFORM": stringPtr("linux/amd64"),
+	}
+
+	// Add environment variables as build args (for import.meta.env support)
+	for _, envVar := range dg.envVars {
+		if envVar.Value != "" {
+			buildArgs[envVar.Name] = stringPtr(envVar.Value)
+		}
+	}
+
+	return buildArgs
 }
 
 // stringPtr returns a pointer to a string

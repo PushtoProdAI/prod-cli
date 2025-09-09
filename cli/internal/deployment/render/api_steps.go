@@ -382,7 +382,7 @@ func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client Rende
 	// No existing credential found, create a new one
 
 	// Get pull credentials from the Docker generator
-	dockerGenerator := deployment.NewDockerGenerator(output.NewNoOpWriter())
+	dockerGenerator := deployment.NewDockerGenerator(output.NewNoOpWriter(), []deployment.EnvVar{})
 	defer dockerGenerator.Close()
 
 	pullCreds, err := dockerGenerator.GetPullCredentials(ctx, s.AuthToken, s.ProjectName)
@@ -568,7 +568,7 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		}
 
 		// Get pull credentials to construct the image path
-		dockerGenerator := deployment.NewDockerGenerator(output.NewNoOpWriter())
+		dockerGenerator := deployment.NewDockerGenerator(output.NewNoOpWriter(), []deployment.EnvVar{})
 		defer dockerGenerator.Close()
 
 		pullCreds, err := dockerGenerator.GetPullCredentials(ctx, s.AuthToken, s.ProjectName)

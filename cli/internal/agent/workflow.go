@@ -181,7 +181,7 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		}
 		return deployResult{Error: summary}, nil
 	}
-	dockerGen := deployment.NewDockerGenerator(w.uiWriter)
+	dockerGen := deployment.NewDockerGenerator(w.uiWriter, spec.EnvVars)
 	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true, w.uiWriter)
 	steps := d.GenerateAPISteps(workspaceID)
 	descriptions := make([]string, len(steps))
@@ -191,6 +191,15 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
 	if err != nil {
 		log.Printf("Failed to summarize deployment steps: %v", err)
+	}
+
+	buildOutputPath, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineBuildOutput, input.Spec.BuildOutput).Get(ctx)
+	if err != nil {
+		log.Printf("Failed to determine build output path: %v", err)
+	} else {
+		log.Printf("Using build output path: %s", buildOutputPath)
+		// Update the deployment spec's OutputDir with the final resolved build output path
+		spec.OutputDir = buildOutputPath
 	}
 
 	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
@@ -345,12 +354,12 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input DeployPlan) (
 
 	envVars := input.CollectedEnvVars
 
-	dockerGen := deployment.NewDockerGenerator(w.uiWriter)
 	db := deployment.NewDeploymentBuilder(&input.Spec, envVars)
 	spec, err := db.Build()
 	if err != nil {
 		return DryRunResult{}, errors.Errorf("failed to build deployment spec: %w", err)
 	}
+	dockerGen := deployment.NewDockerGenerator(w.uiWriter, spec.EnvVars)
 
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["tenantID"] = "test"
@@ -459,6 +468,7 @@ func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPla
 	if len(spec.EnvVars) == 0 {
 		return []deployment.EnvVar{}, nil
 	}
+
 	dbList := make([]string, len(spec.ServiceRequirements))
 	for i, service := range spec.ServiceRequirements {
 		dbList[i] = service.Provider

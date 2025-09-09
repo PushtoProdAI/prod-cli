@@ -64,7 +64,19 @@ class RouteCandidate {
 class CategorizedRoutes {
     routes Route[]
     recommended Route
-  }
+}
+
+class BuildOutputCandidate {
+	default       string
+	source        string
+	framework     string
+	context       string
+}
+
+class BuildOutput {
+    path string
+}
+ 
 
 class LauncherFile {
     name string
@@ -492,20 +504,64 @@ Here are the route candidates from the deployed code:
 
   }
 
+function DetermineBuildOutput(candidate: BuildOutputCandidate) -> BuildOutput {
+  client "OllamaClient"
+  prompt #"
+{{_.role("system")}}
+You are an expert software deployment assistant. 
+You are given information about a project's build output configuration, including a default directory detected by static analysis. 
+Your job is to determine the correct build output directory for production deployment.
+
+- First, check the configuration contents for an explicit output directory override.
+- If an override is found, return that directory.
+- If not, return the provided default directory.
+- If neither is available, return a safe generic default such as "dist" or "build".
+- Respond only with the final output directory path (e.g. ".next", "dist", "build").
+
+{{_.role("user")}}
+Framework: {{candidate.framework}}
+Source: {{candidate.source}}
+DefaultPath: {{candidate.default}}
+ConfigContents: {{candidate.context}}
+
+{{ctx.output_format}}
+
+"#
+}
 function DetermineLaunchCommand(language: string, frameworks: string[], envVars: string[], lc: LaunchContext) -> LaunchCommand {
   client "OllamaClient"
   prompt #"
 {{_.role("system")}}
- You are an expert in analyzing project launcher files to determine the correct command
-    to start the application server. Your output must be ONLY the exact shell command that
-    a developer would run to start the project, nothing else.
+You are an expert in analyzing project launcher files to determine both:
 
-Special rules:
-- If a project includes a launcher script that calls uvicorn/gunicorn/etc, prefer running it.
+1. Whether the application produces a purely static build that can be hosted directly without running a server (`command` will be an empty string).
+2. If it requires a server runtime, the exact shell command a developer would run in production to start the server (`command` will be set).
+
+Your output must be ONLY valid JSON with the following shape:
+    {{ctx.output_format }}
+
+
+Rules:
+
+Python projects:
+- If a project includes a Python launcher script that calls uvicorn/gunicorn/flask/etc, prefer running it.
 - If the README shows a uvicorn/gunicorn/flask command, you may include that as an alternative,
-  but adapt it to respect environment variables instead of hardcoding.  
+  but adapt it to respect environment variables instead of hardcoding.
 - Do not hardcode values already provided by env vars or configs (e.g. HOST, PORT, RELOAD).
-- Only include flags clearly intended for developer convenience (e.g. --reload).
+- Prefer production-ready commands. Do not include flags intended only for development (e.g. --reload, --debug).
+
+Node/JavaScript projects:
+- Only use commands that appear in the `scripts` section of `package.json`. 
+  Do NOT invent commands that are not explicitly defined.
+- Prefer production-ready scripts such as `start:prod`, `serve:ssr`, or equivalents over plain `start`.
+- If only `start` exists, you may use it, but otherwise favor scripts that clearly indicate production usage.
+- Do not expand npm/yarn/pnpm scripts into their underlying commands — run the script as defined.
+- For monorepos or workspaces, use the appropriate workspace syntax if evident (e.g. `npm run start --workspace=frontend`).
+- Do NOT use `preview` scripts (e.g. `astro preview`, `vite preview`) for production. These are only for locally testing a static build.
+- If the only scripts are `build` and `preview` (common in Astro, Vite, Gatsby, Angular without SSR, etc.), 
+  treat the project as a static-site build (`"command": ""`).
+- If the project includes an SSR/server runtime script (e.g. `serve:ssr`, `node dist/server.js`), 
+  infer the correct `"command"` using the defined script.
 
 {{ _.role("user") }}
 
