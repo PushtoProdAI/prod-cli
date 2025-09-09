@@ -729,14 +729,10 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	log.Printf("🔍 DeployPlan details: Action=%s, Source=%s, Spec.Name=%s, Spec.Language=%s",
 		input.Action, input.Source, input.Spec.Name, input.Spec.Language)
 
-	// Add timeout context to prevent hanging
-	deployCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-
 	// Build deployment spec from the plan
 	log.Printf("🔍 Building deployment spec...")
 	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars)
-	deploymentSpec, err := db.Build()
+	spec, err := db.Build()
 	if err != nil {
 		log.Printf("❌ Failed to build deployment spec: %v", err)
 		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to build deployment spec: %v", err)}}, nil
@@ -744,52 +740,29 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	log.Printf("✅ Deployment spec built successfully")
 
 	// Add metadata
-	deploymentSpec.Metadata["buildContext"] = input.Source
-	deploymentSpec.Metadata["platform"] = "netlify"
+	spec.Metadata["buildContext"] = input.Source
+	spec.Metadata["platform"] = "netlify"
 
-	// Create Netlify deployment adapter
-	log.Printf("🔍 Creating Netlify deployment adapter...")
-	netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(w.uiWriter)
-
-	// Generate deployment artifacts
-	log.Printf("🔍 Generating deployment artifacts...")
-	deployable, err := netlifyAdapter.GenerateArtifacts(deploymentSpec, deployment.StrategyNetlify)
+	d := netlify.NewNetlifyQueuedDeployment(&netlify.CLINetlifyClient{}, spec, w.uiWriter)
+	steps := d.GenerateAPISteps()
+	descriptions := make([]string, len(steps))
+	for i, step := range steps {
+		descriptions[i] = step.GetDescription()
+	}
+	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
 	if err != nil {
-		log.Printf("❌ Failed to generate deployment artifacts: %v", err)
-		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to generate deployment artifacts: %v", err)}}, nil
-	}
-	log.Printf("✅ Deployment artifacts generated successfully")
-
-	// Execute the deployment with timeout
-	log.Printf("🔍 Starting Netlify deployment (timeout: 10 minutes)...")
-
-	// Use a channel to handle the deployment with timeout
-	deployDone := make(chan struct{})
-	var createdResources []deployment.CreatedResource
-	var deployErr error
-
-	go func() {
-		defer close(deployDone)
-		log.Printf("🔍 Executing deployment in goroutine...")
-		createdResources, deployErr = deployable.Deploy(deployCtx)
-		log.Printf("🔍 Deployment goroutine completed")
-	}()
-
-	// Wait for deployment or timeout
-	select {
-	case <-deployDone:
-		log.Printf("🔍 Deployment completed, checking results...")
-	case <-deployCtx.Done():
-		log.Printf("❌ Deployment timed out after 10 minutes")
-		return deployResult{Error: deployError{Summary: "Netlify deployment timed out after 10 minutes"}}, nil
+		log.Printf("Failed to summarize deployment steps: %v", err)
 	}
 
-	if deployErr != nil {
-		log.Printf("❌ Netlify deployment failed: %v", deployErr)
-		return deployResult{Error: deployError{Summary: fmt.Sprintf("Netlify deployment failed: %v", deployErr)}}, nil
+	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
+	if err != nil {
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		log.Printf("Deployment failed: %v", err)
+		return deployResult{Error: summary}, nil
 	}
-
-	log.Printf("✅ Netlify deployment completed successfully, created %d resources", len(createdResources))
 
 	// Extract deployment URL from created resources
 	var deploymentURL string

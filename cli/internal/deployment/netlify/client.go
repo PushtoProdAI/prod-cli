@@ -250,7 +250,7 @@ func (c *CLINetlifyClient) SetEnvironmentVariables(siteID string, vars map[strin
 
 // setEnvVar sets a single environment variable
 func (c *CLINetlifyClient) setEnvVar(siteID, key, value string) error {
-	cmd := exec.Command("netlify", "env:set", key, value, "--site", siteID)
+	cmd := exec.Command("netlify", "env:set", key, value)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to set env var: %w\nOutput: %s", err, string(output))
