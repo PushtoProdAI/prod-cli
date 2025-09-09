@@ -544,7 +544,9 @@ Your output must be ONLY valid JSON with the following shape:
 Rules:
 
 Python projects:
-- If a project includes a Python launcher script that calls uvicorn/gunicorn/flask/etc, prefer running it.
+- ALWAYS prefer running a main launcher script if one exists (e.g. run.py, main.py, app.py at project root).
+- If a project includes a Python launcher script that calls uvicorn/gunicorn/flask/etc, prefer running it with `python <script_name>`.
+- Only fall back to framework-specific commands (flask run, uvicorn, etc.) if no main launcher script exists.
 - If the README shows a uvicorn/gunicorn/flask command, you may include that as an alternative,
   but adapt it to respect environment variables instead of hardcoding.
 - Do not hardcode values already provided by env vars or configs (e.g. HOST, PORT, RELOAD).
