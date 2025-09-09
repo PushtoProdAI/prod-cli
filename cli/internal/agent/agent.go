@@ -407,28 +407,28 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
 			return a.confirmWithPrompt(ctx, "", out)
 		}
-		if result.SvelteConfigDiff != "" {
+		if len(result.SvelteConfigDiff) > 0 {
 			fmt.Fprint(out, "\n📝 Configuration changes made:\n")
 			fmt.Fprint(out, "────────────────────────────────────────\n")
 
-			// Split diff into lines for better formatting
-			diffLines := strings.Split(result.SvelteConfigDiff, "\n")
-			for _, line := range diffLines {
-				if strings.HasPrefix(line, "@@") {
+			// Use structured diff data for better formatting
+			for _, line := range result.SvelteConfigDiff {
+				switch line.Type {
+				case "header":
 					// Context line - show in blue/cyan
-					fmt.Fprintf(out, "\033[36m%s\033[0m\n", line)
-				} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+					fmt.Fprintf(out, "\033[36m%s\033[0m\n", line.Content)
+				case "added":
 					// Addition - show in green
-					fmt.Fprintf(out, "\033[32m%s\033[0m\n", line)
-				} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+					fmt.Fprintf(out, "\033[32m%s\033[0m\n", line.Content)
+				case "removed":
 					// Deletion - show in red
-					fmt.Fprintf(out, "\033[31m%s\033[0m\n", line)
-				} else if strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") {
+					fmt.Fprintf(out, "\033[31m%s\033[0m\n", line.Content)
+				case "fileheader":
 					// File headers - show in bold
-					fmt.Fprintf(out, "\033[1m%s\033[0m\n", line)
-				} else {
+					fmt.Fprintf(out, "\033[1m%s\033[0m\n", line.Content)
+				default:
 					// Regular context lines
-					fmt.Fprintf(out, "%s\n", line)
+					fmt.Fprintf(out, "%s\n", line.Content)
 				}
 			}
 			fmt.Fprint(out, "────────────────────────────────────────\n")

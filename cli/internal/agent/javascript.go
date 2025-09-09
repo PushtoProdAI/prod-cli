@@ -82,7 +82,7 @@ func (a *Activities) createPackageLock(ctx context.Context, plan DeployPlan, for
 }
 
 // update svelte.config.js
-func (a *Activities) updateSvelteConfig(_ context.Context, plan DeployPlan) (string, error) {
+func (a *Activities) updateSvelteConfig(_ context.Context, plan DeployPlan) ([]DiffLine, error) {
 	projectPath := plan.Source
 
 	a.uiWriter.SendStatus("configuring", "Checking for Svelte configuration...")
@@ -96,7 +96,7 @@ func (a *Activities) updateSvelteConfig(_ context.Context, plan DeployPlan) (str
 		newAdapter = "@sveltejs/adapter-netlify"
 	default:
 		a.uiWriter.SendStatusComplete("configuring", "❌ Unsupported platform for Svelte")
-		return "", errors.Errorf("unsupported platform for Svelte: %s", plan.Platform)
+		return nil, errors.Errorf("unsupported platform for Svelte: %s", plan.Platform)
 	}
 
 	// Find svelte config file (prefer TS, fallback to JS)
@@ -110,7 +110,7 @@ func (a *Activities) updateSvelteConfig(_ context.Context, plan DeployPlan) (str
 		configPath = svelteConfigJS
 	} else {
 		a.uiWriter.SendStatusComplete("configuring", "✅ No Svelte config found, skipping")
-		return "", nil
+		return nil, nil
 	}
 
 	a.uiWriter.SendStatus("configuring", fmt.Sprintf("Updating Svelte config for %s platform...", plan.Platform))
@@ -119,7 +119,7 @@ func (a *Activities) updateSvelteConfig(_ context.Context, plan DeployPlan) (str
 	origConfig, err := os.ReadFile(configPath)
 	if err != nil {
 		a.uiWriter.SendStatusComplete("configuring", "❌ Failed to read Svelte config")
-		return "", errors.Errorf("failed to read %s: %w", configPath, err)
+		return nil, errors.Errorf("failed to read %s: %w", configPath, err)
 	}
 
 	// Patch the config
@@ -129,20 +129,20 @@ func (a *Activities) updateSvelteConfig(_ context.Context, plan DeployPlan) (str
 	prodDir := filepath.Join(projectPath, ".prod")
 	if err := os.MkdirAll(prodDir, 0755); err != nil {
 		a.uiWriter.SendStatusComplete("configuring", "❌ Failed to create backup directory")
-		return "", errors.Errorf("failed to create .prod directory: %w", err)
+		return nil, errors.Errorf("failed to create .prod directory: %w", err)
 	}
 
 	configFilename := filepath.Base(configPath)
 	backupPath := filepath.Join(prodDir, fmt.Sprintf("%s.%s.bak", configFilename, time.Now().Format("20060102-150405")))
 	if err := os.WriteFile(backupPath, origConfig, 0644); err != nil {
 		a.uiWriter.SendStatusComplete("configuring", "❌ Failed to create backup")
-		return "", errors.Errorf("failed to create backup at %s: %w", backupPath, err)
+		return nil, errors.Errorf("failed to create backup at %s: %w", backupPath, err)
 	}
 
 	// Write updated config
 	if err := os.WriteFile(configPath, updatedConfig, 0644); err != nil {
 		a.uiWriter.SendStatusComplete("configuring", "❌ Failed to update Svelte config")
-		return "", errors.Errorf("failed to write updated config to %s: %w", configPath, err)
+		return nil, errors.Errorf("failed to write updated config to %s: %w", configPath, err)
 	}
 
 	// Update package.json to add the adapter dependency
@@ -151,7 +151,7 @@ func (a *Activities) updateSvelteConfig(_ context.Context, plan DeployPlan) (str
 		origPackageJson, err := os.ReadFile(packageJsonPath)
 		if err != nil {
 			a.uiWriter.SendStatusComplete("configuring", "❌ Failed to read package.json")
-			return "", errors.Errorf("failed to read package.json: %w", err)
+			return nil, errors.Errorf("failed to read package.json: %w", err)
 		}
 
 		// Determine adapter version - using latest stable versions
@@ -165,18 +165,18 @@ func (a *Activities) updateSvelteConfig(_ context.Context, plan DeployPlan) (str
 		packageJsonBackupPath := filepath.Join(prodDir, fmt.Sprintf("%s.%s.bak", packageJsonFilename, time.Now().Format("20060102-150405")))
 		if err := os.WriteFile(packageJsonBackupPath, origPackageJson, 0644); err != nil {
 			a.uiWriter.SendStatusComplete("configuring", "❌ Failed to create package.json backup")
-			return "", errors.Errorf("failed to create package.json backup at %s: %w", packageJsonBackupPath, err)
+			return nil, errors.Errorf("failed to create package.json backup at %s: %w", packageJsonBackupPath, err)
 		}
 
 		updatedPackageJson, err := patchPackageJSON(origPackageJson, newAdapter, version)
 		if err != nil {
 			a.uiWriter.SendStatusComplete("configuring", "❌ Failed to update package.json")
-			return "", errors.Errorf("failed to patch package.json: %w", err)
+			return nil, errors.Errorf("failed to patch package.json: %w", err)
 		}
 
 		if err := os.WriteFile(packageJsonPath, updatedPackageJson, 0644); err != nil {
 			a.uiWriter.SendStatusComplete("configuring", "❌ Failed to write package.json")
-			return "", errors.Errorf("failed to write updated package.json: %w", err)
+			return nil, errors.Errorf("failed to write updated package.json: %w", err)
 		}
 	}
 
@@ -191,10 +191,10 @@ func (a *Activities) updateSvelteConfig(_ context.Context, plan DeployPlan) (str
 		Context:  3,
 	})
 	if err != nil {
-		return "", errors.Errorf("failed to generate diff: %w", err)
+		return nil, errors.Errorf("failed to generate diff: %w", err)
 	}
 
-	return diff, nil
+	return parseDiffString(diff), nil
 }
 
 // patchSvelteConfig updates the Svelte config to use the specified adapter
@@ -252,8 +252,41 @@ func patchPackageJSON(input []byte, adapter, version string) ([]byte, error) {
 	return json.MarshalIndent(pkg, "", "  ")
 }
 
+// parseDiffString converts a unified diff string into structured DiffLine data
+func parseDiffString(diffStr string) []DiffLine {
+	if diffStr == "" {
+		return nil
+	}
+
+	lines := strings.Split(diffStr, "\n")
+	var diffLines []DiffLine
+
+	for _, line := range lines {
+		var lineType string
+
+		if strings.HasPrefix(line, "@@") {
+			lineType = "header"
+		} else if strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") {
+			lineType = "fileheader"
+		} else if strings.HasPrefix(line, "+") {
+			lineType = "added"
+		} else if strings.HasPrefix(line, "-") {
+			lineType = "removed"
+		} else {
+			lineType = "context"
+		}
+
+		diffLines = append(diffLines, DiffLine{
+			Type:    lineType,
+			Content: line,
+		})
+	}
+
+	return diffLines
+}
+
 // restoreFromBackup restores svelte.config.js|ts from the latest backup
-func (a *Activities) restoreFromBackup(_ context.Context, plan DeployPlan) (string, error) {
+func (a *Activities) restoreFromBackup(_ context.Context, plan DeployPlan) ([]DiffLine, error) {
 	projectPath := plan.Source
 	prodDir := filepath.Join(projectPath, ".prod")
 
@@ -262,7 +295,7 @@ func (a *Activities) restoreFromBackup(_ context.Context, plan DeployPlan) (stri
 	// Check if .prod directory exists
 	if _, err := os.Stat(prodDir); err != nil {
 		a.uiWriter.SendStatusComplete("restoring", "❌ No backup directory found")
-		return "", errors.Errorf("no .prod backup directory found in %s", projectPath)
+		return nil, errors.Errorf("no .prod backup directory found in %s", projectPath)
 	}
 
 	// Find svelte config file that should be restored (prefer TS, fallback to JS)
@@ -279,7 +312,7 @@ func (a *Activities) restoreFromBackup(_ context.Context, plan DeployPlan) (stri
 		configFilename = "svelte.config.js"
 	} else {
 		a.uiWriter.SendStatusComplete("restoring", "❌ No Svelte config found to restore")
-		return "", errors.Errorf("no svelte.config.{ts,js} found to restore in %s", projectPath)
+		return nil, errors.Errorf("no svelte.config.{ts,js} found to restore in %s", projectPath)
 	}
 
 	a.uiWriter.SendStatus("restoring", fmt.Sprintf("Finding latest backup for %s...", configFilename))
@@ -288,27 +321,27 @@ func (a *Activities) restoreFromBackup(_ context.Context, plan DeployPlan) (stri
 	backupPath, err := findLatestBackup(prodDir, configFilename)
 	if err != nil {
 		a.uiWriter.SendStatusComplete("restoring", "❌ No backup files found")
-		return "", errors.Errorf("failed to find backup for %s: %w", configFilename, err)
+		return nil, errors.Errorf("failed to find backup for %s: %w", configFilename, err)
 	}
 
 	// Read current config for diff
 	currentConfig, err := os.ReadFile(configPath)
 	if err != nil {
 		a.uiWriter.SendStatusComplete("restoring", "❌ Failed to read current config")
-		return "", errors.Errorf("failed to read current config %s: %w", configPath, err)
+		return nil, errors.Errorf("failed to read current config %s: %w", configPath, err)
 	}
 
 	// Read backup
 	backupConfig, err := os.ReadFile(backupPath)
 	if err != nil {
 		a.uiWriter.SendStatusComplete("restoring", "❌ Failed to read backup file")
-		return "", errors.Errorf("failed to read backup %s: %w", backupPath, err)
+		return nil, errors.Errorf("failed to read backup %s: %w", backupPath, err)
 	}
 
 	// Restore from backup
 	if err := os.WriteFile(configPath, backupConfig, 0644); err != nil {
 		a.uiWriter.SendStatusComplete("restoring", "❌ Failed to restore from backup")
-		return "", errors.Errorf("failed to restore config from backup: %w", err)
+		return nil, errors.Errorf("failed to restore config from backup: %w", err)
 	}
 
 	a.uiWriter.SendStatusComplete("restoring", "✅ Svelte config restored from backup")
@@ -322,10 +355,10 @@ func (a *Activities) restoreFromBackup(_ context.Context, plan DeployPlan) (stri
 		Context:  3,
 	})
 	if err != nil {
-		return "", errors.Errorf("failed to generate diff: %w", err)
+		return nil, errors.Errorf("failed to generate diff: %w", err)
 	}
 
-	return diff, nil
+	return parseDiffString(diff), nil
 }
 
 // findLatestBackup finds the most recent backup file for a given config filename

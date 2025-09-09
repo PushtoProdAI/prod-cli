@@ -52,11 +52,17 @@ type Workflows struct {
 	uiWriter     output.StatusWriter
 }
 
+// DiffLine represents a single line in a diff
+type DiffLine struct {
+	Type    string `json:"type"`    // "context", "added", "removed", "header", "fileheader"
+	Content string `json:"content"` // the actual line content
+}
+
 // SetupJavaScriptProjectResult contains the results of setting up a JavaScript project
 type SetupJavaScriptProjectResult struct {
 	PackageLockCreated  bool        `json:"packageLockCreated"`
 	SvelteConfigUpdated bool        `json:"svelteConfigUpdated"`
-	SvelteConfigDiff    string      `json:"svelteConfigDiff,omitempty"`
+	SvelteConfigDiff    []DiffLine  `json:"svelteConfigDiff,omitempty"`
 	Error               deployError `json:"error,omitempty"`
 }
 
@@ -820,7 +826,7 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 
 	// Step 1: Update Svelte config if this is a Svelte project
 	log.Printf("⚙️ Updating Svelte configuration...")
-	diff, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentUpdateSvelteConfig, input).Get(ctx)
+	diff, err := workflow.ExecuteActivity[[]DiffLine](ctx, ActivityOpts, AgentUpdateSvelteConfig, input).Get(ctx)
 	if err != nil {
 		log.Printf("❌ Failed to update Svelte config: %v", err)
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
@@ -831,7 +837,7 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 		return SetupJavaScriptProjectResult{Error: summary}, nil
 	}
 
-	if diff != "" {
+	if len(diff) > 0 {
 		result.SvelteConfigUpdated = true
 		result.SvelteConfigDiff = diff
 		log.Printf("✅ Svelte configuration updated")
