@@ -20,6 +20,163 @@ import (
 	"github.com/boundaryml/baml/engine/language_client_go/pkg/cffi"
 )
 
+type BuildOutput struct {
+	Path *string `json:"path"`
+}
+
+func (c *BuildOutput) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "BuildOutput" {
+		panic(fmt.Sprintf("expected BuildOutput, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "path":
+			c.Path = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c BuildOutput) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["path"] = c.Path
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c BuildOutput) BamlTypeName() string {
+	return "BuildOutput"
+}
+
+func (u BuildOutput) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "BuildOutput",
+	}
+}
+
+type BuildOutputCandidate struct {
+	Default   *string `json:"default"`
+	Source    *string `json:"source"`
+	Framework *string `json:"framework"`
+	Context   *string `json:"context"`
+}
+
+func (c *BuildOutputCandidate) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "BuildOutputCandidate" {
+		panic(fmt.Sprintf("expected BuildOutputCandidate, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "default":
+			c.Default = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "source":
+			c.Source = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "framework":
+			c.Framework = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "context":
+			c.Context = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c BuildOutputCandidate) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["default"] = c.Default
+
+	fields["source"] = c.Source
+
+	fields["framework"] = c.Framework
+
+	fields["context"] = c.Context
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c BuildOutputCandidate) BamlTypeName() string {
+	return "BuildOutputCandidate"
+}
+
+func (u BuildOutputCandidate) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "BuildOutputCandidate",
+	}
+}
+
 type CategorizedRoutes struct {
 	Routes      []Route `json:"routes"`
 	Recommended *Route  `json:"recommended"`

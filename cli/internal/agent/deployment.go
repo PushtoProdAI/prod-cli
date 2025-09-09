@@ -21,7 +21,7 @@ func (a *Activities) deploySteps(ctx context.Context, spec deployment.Deployment
 	var deployable deployment.Deployable
 	switch platform {
 	case Render:
-		dockerGen := deployment.NewDockerGenerator(a.uiWriter)
+		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
 		deployable = render.NewQueuedDeployment(a.renderClient, &spec, dockerGen, true, a.uiWriter)
 	case FlyIO:
 		deployable = flyio.NewFlyioQueuedDeployment(a.flyClient, &spec, a.uiWriter)
@@ -132,4 +132,18 @@ func (a *Activities) createDockerRepo(ctx context.Context, projectName string) e
 		return errors.Errorf("failed to create docker repository: %w", err)
 	}
 	return nil
+}
+
+func (a *Activities) determineBuildOutput(ctx context.Context, candidate analyzer.BuildOutputCandidate) (string, error) {
+	bo := types.BuildOutputCandidate{
+		Framework: candidate.Framework,
+		Context:   candidate.ConfigContents,
+		Default:   candidate.Path,
+		Source:    candidate.Source,
+	}
+	output, err := baml_client.DetermineBuildOutput(ctx, bo)
+	if err != nil {
+		return "", errors.Errorf("failed to determine build output: %w", err)
+	}
+	return output.Path, nil
 }

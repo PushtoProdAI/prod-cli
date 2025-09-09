@@ -41,7 +41,7 @@ func TestGenerateDockerfile_Python(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dg := NewDockerGenerator(io.Discard)
+			dg := NewDockerGenerator(io.Discard, []EnvVar{})
 			spec := &DeploymentSpec{
 				Name:         "test-app",
 				Language:     "python",
@@ -70,7 +70,7 @@ func TestGenerateDockerfile_Python(t *testing.T) {
 }
 
 func TestGenerateDockerfile_PythonFallback(t *testing.T) {
-	dg := NewDockerGenerator(io.Discard)
+	dg := NewDockerGenerator(io.Discard, []EnvVar{})
 	spec := &DeploymentSpec{
 		Name:         "test-app",
 		Language:     "python",

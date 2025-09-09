@@ -12,6 +12,14 @@ import (
 	"github.com/go-errors/errors"
 )
 
+type RouteCandidate struct {
+	Method  string
+	Path    string
+	File    string
+	Line    int
+	Context string
+}
+
 // RouteMatch represents a raw regex match that needs to be processed
 type RouteMatch struct {
 	FullMatch     string   // The complete matched text
@@ -141,7 +149,6 @@ func scanFileForRoutes(filePath string, re *regexp.Regexp, processor RouteProces
 				Line:          lineNum,
 				Context:       context,
 			}
-
 		}
 
 		// Let the processor handle the language-specific logic

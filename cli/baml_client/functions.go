@@ -59,6 +59,45 @@ func CategorizeRoutes(ctx context.Context, candidates []types.RouteCandidate, op
 	return casted, nil
 }
 
+func DetermineBuildOutput(ctx context.Context, candidate types.BuildOutputCandidate, opts ...CallOptionFunc) (types.BuildOutput, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"candidate": candidate},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	encoded, err := baml.EncodeArgs(args)
+	if err != nil {
+		panic(err)
+	}
+
+	result, err := bamlRuntime.CallFunction(ctx, "DetermineBuildOutput", encoded)
+	if err != nil {
+		return types.BuildOutput{}, err
+	}
+
+	if result.Error != nil {
+		return types.BuildOutput{}, result.Error
+	}
+
+	casted := *(result.Data).(*types.BuildOutput)
+
+	return casted, nil
+}
+
 func DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCandidate, dbList []string, opts ...CallOptionFunc) (types.EnvVarCategory, error) {
 
 	var callOpts callOption

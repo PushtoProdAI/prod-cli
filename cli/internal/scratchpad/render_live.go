@@ -136,7 +136,7 @@ func LiveTestRenderDeployment() {
 	httpClient := render.NewHTTPRenderClient(apiKey, out)
 
 	// Create Docker generator
-	dockerGen := deployment.NewDockerGenerator(out)
+	dockerGen := deployment.NewDockerGenerator(out, []deployment.EnvVar{})
 	defer dockerGen.Close()
 
 	// Create queued deployment strategy
@@ -224,7 +224,7 @@ func TestDockerBuildLocal(out output.StatusWriter) {
 	}
 
 	// Create Docker generator
-	dockerGen := deployment.NewDockerGenerator(out)
+	dockerGen := deployment.NewDockerGenerator(out, []deployment.EnvVar{})
 	defer dockerGen.Close()
 
 	// Build and push
@@ -279,7 +279,7 @@ func TestRenderDeploymentOnly(out io.Writer) {
 	fmt.Fprintf(out, "Using workspace: %s (ID: %s)\n", workspaces[0].Owner.Name, ownerID)
 
 	// Create Docker generator for getting pull credentials
-	dockerGen := deployment.NewDockerGenerator(out)
+	dockerGen := deployment.NewDockerGenerator(out, []deployment.EnvVar{})
 	defer dockerGen.Close()
 
 	// Step 1: Create registry credential
