@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -151,6 +152,7 @@ func (c *CLINetlifyClient) LinkSite(siteID string) error {
 		return err
 	}
 
+	log.Println(os.Getwd())
 	cmd := exec.Command("netlify", "link", "--id", siteID)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
