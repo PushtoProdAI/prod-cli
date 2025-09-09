@@ -407,7 +407,32 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
 			return a.confirmWithPrompt(ctx, "", out)
 		}
-		fmt.Fprintf(out, "✅ %s\n", result.SvelteConfigDiff)
+		if result.SvelteConfigDiff != "" {
+			fmt.Fprint(out, "\n📝 Configuration changes made:\n")
+			fmt.Fprint(out, "────────────────────────────────────────\n")
+
+			// Split diff into lines for better formatting
+			diffLines := strings.Split(result.SvelteConfigDiff, "\n")
+			for _, line := range diffLines {
+				if strings.HasPrefix(line, "@@") {
+					// Context line - show in blue/cyan
+					fmt.Fprintf(out, "\033[36m%s\033[0m\n", line)
+				} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+					// Addition - show in green
+					fmt.Fprintf(out, "\033[32m%s\033[0m\n", line)
+				} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+					// Deletion - show in red
+					fmt.Fprintf(out, "\033[31m%s\033[0m\n", line)
+				} else if strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") {
+					// File headers - show in bold
+					fmt.Fprintf(out, "\033[1m%s\033[0m\n", line)
+				} else {
+					// Regular context lines
+					fmt.Fprintf(out, "%s\n", line)
+				}
+			}
+			fmt.Fprint(out, "────────────────────────────────────────\n")
+		}
 		fmt.Fprint(out, "✅ JavaScript environment prepared successfully!\n")
 
 	}
