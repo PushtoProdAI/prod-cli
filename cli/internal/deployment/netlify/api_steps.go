@@ -370,8 +370,13 @@ func (s *SetEnvironmentVariablesStep) Execute(ctx context.Context, client Netlif
 		return nil, fmt.Errorf("could not find site ID from step %s", s.siteStepID)
 	}
 
+	// before we set the environment variables, we need to link the CLI to the site
+	err := client.LinkSite(siteID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to link CLI to site: %w", err)
+	}
 	// Set environment variables
-	err := client.SetEnvironmentVariables(siteID, s.envVars)
+	err = client.SetEnvironmentVariables(siteID, s.envVars)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set environment variables: %w", err)
 	}

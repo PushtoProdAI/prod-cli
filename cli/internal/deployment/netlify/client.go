@@ -145,6 +145,22 @@ func (c *CLINetlifyClient) DeleteSite(siteID string) error {
 	return nil
 }
 
+// LinkSite links the current directory to a Netlify site using CLI
+func (c *CLINetlifyClient) LinkSite(siteID string) error {
+	if err := c.ensureNetlifyCLI(); err != nil {
+		return err
+	}
+
+	cmd := exec.Command("netlify", "link", "--id", siteID)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to link site: %w\nOutput: %s", err, string(output))
+	}
+
+	log.Printf("Successfully linked site %s to current directory", siteID)
+	return nil
+}
+
 // DeploySite deploys a site to Netlify using CLI
 func (c *CLINetlifyClient) DeploySite(siteID string, path string, functionsPath string) (*NetlifyDeploy, error) {
 	if err := c.ensureNetlifyCLI(); err != nil {
