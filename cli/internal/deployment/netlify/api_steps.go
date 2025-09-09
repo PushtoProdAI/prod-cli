@@ -345,9 +345,10 @@ type SetEnvironmentVariablesStep struct {
 	siteStepID string
 	envVars    map[string]string
 	sourcePath string
+	writer     io.Writer
 }
 
-func NewSetEnvironmentVariablesStep(siteStepID string, sourcePath string, envVars map[string]string) *SetEnvironmentVariablesStep {
+func NewSetEnvironmentVariablesStep(siteStepID string, sourcePath string, envVars map[string]string, writer io.Writer) *SetEnvironmentVariablesStep {
 	return &SetEnvironmentVariablesStep{
 		BaseStep: BaseStep{
 			ID:           "set-env-vars",
@@ -357,6 +358,7 @@ func NewSetEnvironmentVariablesStep(siteStepID string, sourcePath string, envVar
 		siteStepID: siteStepID,
 		envVars:    envVars,
 		sourcePath: sourcePath,
+		writer:     writer,
 	}
 }
 
@@ -429,7 +431,7 @@ func (s *SetEnvironmentVariablesStep) Rollback(ctx context.Context, client Netli
 		cmd := exec.Command("netlify", "env:unset", key, "--site", siteID)
 		if err := cmd.Run(); err != nil {
 			// Log error but continue trying to unset others
-			fmt.Printf("Warning: failed to unset env var %s: %v\n", key, err)
+			fmt.Fprintf(s.writer, "  ⚠️ Warning: failed to unset env var: %s: %v\n", key, err)
 		}
 	}
 

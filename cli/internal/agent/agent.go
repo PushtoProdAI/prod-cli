@@ -325,9 +325,9 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 		return a.promptForEnvVarValue(ctx, input, out)
 	}
 
-	// All env vars are database-related or already have values, proceed with deployment
-	fmt.Fprintf(out, "✅ All environment variables are ready. Proceeding with deployment...\n")
-	return a.deploy(ctx, input, out)
+	// All env vars are database-related or already have values, proceed with PrepareJS
+	fmt.Fprintf(out, "✅ All environment variables are ready. Proceeding to JavaScript preparation...\n")
+	return a.prepareJS(ctx, input, out)
 }
 
 func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -341,9 +341,9 @@ func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.W
 	}
 
 	if currentEnvVar == nil {
-		// No more pending env vars, proceed with deployment
-		fmt.Fprintf(out, "All environment variable values collected. Proceeding with deployment...\n")
-		return a.deploy(ctx, input, out)
+		// No more pending env vars, proceed with PrepareJS
+		fmt.Fprintf(out, "All environment variable values collected. Proceeding to JavaScript preparation...\n")
+		return a.prepareJS(ctx, input, out)
 	}
 
 	promptMessage := fmt.Sprintf("Enter value for environment variable '%s':", currentEnvVar.Name)
@@ -385,6 +385,35 @@ func (a *Agent) waitForEnvVarValue(ctx context.Context, input string, out io.Wri
 
 	// Continue to next env var (no counter needed - we just find the next pending one)
 	return a.promptForEnvVarValue(ctx, input, out)
+}
+
+func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	if a.DeployPlan.Spec.Language == "node" {
+		fmt.Fprintf(out, "🔧 Preparing JavaScript environment...\n")
+		wf, err := Workflows{}.SetupJavaScriptProject(ctx, a.wfClient, *a.DeployPlan)
+		if err != nil {
+			log.Printf("Workflow execution result: %v\n", err)
+			fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
+			return a.plan, nil
+		}
+
+		result, err := client.GetWorkflowResult[SetupJavaScriptProjectResult](ctx, a.wfClient, wf, 2*time.Minute)
+		if err != nil {
+			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
+			return a.confirmWithPrompt(ctx, "", out)
+		}
+		if result.Error.Summary != "" {
+			fmt.Fprintf(out, "❌ %s\n", result.Error.Summary)
+			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
+			return a.confirmWithPrompt(ctx, "", out)
+		}
+		fmt.Fprintf(out, "✅ %s\n", result.SvelteConfigDiff)
+		fmt.Fprint(out, "✅ JavaScript environment prepared successfully!\n")
+
+	}
+
+	// After PrepareJS completion, proceed with deployment
+	return a.deploy(ctx, input, out)
 }
 
 func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {

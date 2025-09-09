@@ -23,15 +23,16 @@ import (
 )
 
 const (
-	PlanDeployWorkflowName        = "agent.planDeploy"
-	DeployRenderWorkflowName      = "agent.deploy.render"
-	DryRunDeployWorkflowName      = "agent.dryRun.render"
-	DeployFlyioWorkflowName       = "agent.deploy.flyio"
-	CategorizeEnvVarsWorkflowName = "agent.categorizeEnvVars"
-	DryRunRenderWorkflowName      = "agent.dryrun.render"
-	DryRunFlyioWorkflowName       = "agent.dryrun.flyio"
-	DeployNetlifyWorkflowName     = "agent.deploy.netlify"
-	DryRunNetlifyWorkflowName     = "agent.dryrun.netlify"
+	PlanDeployWorkflowName             = "agent.planDeploy"
+	DeployRenderWorkflowName           = "agent.deploy.render"
+	DryRunDeployWorkflowName           = "agent.dryRun.render"
+	DeployFlyioWorkflowName            = "agent.deploy.flyio"
+	CategorizeEnvVarsWorkflowName      = "agent.categorizeEnvVars"
+	DryRunRenderWorkflowName           = "agent.dryrun.render"
+	DryRunFlyioWorkflowName            = "agent.dryrun.flyio"
+	DeployNetlifyWorkflowName          = "agent.deploy.netlify"
+	DryRunNetlifyWorkflowName          = "agent.dryrun.netlify"
+	SetupJavaScriptProjectWorkflowName = "agent.setupJavaScriptProject"
 )
 
 var ActivityOpts = workflow.ActivityOptions{
@@ -49,6 +50,14 @@ type Workflows struct {
 	renderClient render.RenderClient
 	flyClient    flyio.FlyioClient
 	uiWriter     output.StatusWriter
+}
+
+// SetupJavaScriptProjectResult contains the results of setting up a JavaScript project
+type SetupJavaScriptProjectResult struct {
+	PackageLockCreated  bool        `json:"packageLockCreated"`
+	SvelteConfigUpdated bool        `json:"svelteConfigUpdated"`
+	SvelteConfigDiff    string      `json:"svelteConfigDiff,omitempty"`
+	Error               deployError `json:"error,omitempty"`
 }
 
 var _ workflowext.Registerer = (*Workflows)(nil)
@@ -96,6 +105,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: DryRunFlyioWorkflowName, WorkflowFunc: w.dryRunDeployFly},
 		{Name: DeployNetlifyWorkflowName, WorkflowFunc: w.deployNetlify},
 		{Name: DryRunNetlifyWorkflowName, WorkflowFunc: w.dryRunNetlify},
+		{Name: SetupJavaScriptProjectWorkflowName, WorkflowFunc: w.setupJavaScriptProject},
 	}
 }
 
@@ -131,6 +141,12 @@ func (Workflows) DryRunDeploy(ctx context.Context, c *client.Client, input Deplo
 
 func (Workflows) CategorizeEnvVars(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
 	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", CategorizeEnvVarsWorkflowName, time.Now().Unix())}, CategorizeEnvVarsWorkflowName, input)
+}
+
+func (Workflows) SetupJavaScriptProject(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
+	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{
+		InstanceID: fmt.Sprintf("%s.%d", SetupJavaScriptProjectWorkflowName, time.Now().Unix()),
+	}, SetupJavaScriptProjectWorkflowName, input)
 }
 
 func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deployResult, error) {
@@ -792,4 +808,52 @@ func (w *Workflows) dryRunNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	// TODO: Implement Netlify dry run
 	log.Printf("⚠️ Netlify dry run not yet implemented, returning error")
 	return deployResult{Error: deployError{Summary: "Netlify dry run not yet implemented"}}, nil
+}
+
+// setupJavaScriptProject sets up a JavaScript/Node.js project for deployment
+func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPlan) (SetupJavaScriptProjectResult, error) {
+	log.Printf("🔍 setupJavaScriptProject workflow started for platform: %s", input.Platform)
+	log.Printf("🔍 DeployPlan details: Action=%s, Source=%s, Spec.Name=%s, Spec.Language=%s",
+		input.Action, input.Source, input.Spec.Name, input.Spec.Language)
+
+	result := SetupJavaScriptProjectResult{}
+
+	// Step 1: Update Svelte config if this is a Svelte project
+	log.Printf("⚙️ Updating Svelte configuration...")
+	diff, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentUpdateSvelteConfig, input).Get(ctx)
+	if err != nil {
+		log.Printf("❌ Failed to update Svelte config: %v", err)
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			log.Printf("Failed to summarize Svelte config error: %v", e1)
+			return SetupJavaScriptProjectResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		return SetupJavaScriptProjectResult{Error: summary}, nil
+	}
+
+	if diff != "" {
+		result.SvelteConfigUpdated = true
+		result.SvelteConfigDiff = diff
+		log.Printf("✅ Svelte configuration updated")
+	} else {
+		log.Printf("ℹ️ No Svelte configuration found or no changes needed")
+	}
+
+	// Step 2: Create/update package-lock.json (after Svelte config changes)
+	log.Printf("📦 Creating/updating package-lock.json...")
+	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentCreatePackageLock, input, result.SvelteConfigUpdated).Get(ctx)
+	if err != nil {
+		log.Printf("❌ Failed to create package-lock.json: %v", err)
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			log.Printf("Failed to summarize package-lock error: %v", e1)
+			return SetupJavaScriptProjectResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		return SetupJavaScriptProjectResult{Error: summary}, nil
+	}
+	result.PackageLockCreated = true
+	log.Printf("✅ Package-lock.json handling completed")
+
+	log.Printf("🎉 JavaScript project setup completed successfully")
+	return result, nil
 }

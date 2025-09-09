@@ -97,7 +97,7 @@ func (nqd *NetlifyQueuedDeployment) GenerateAPISteps() []NetlifyAPIStep {
 		for _, env := range nqd.spec.EnvVars {
 			envVars[env.Name] = env.Value
 		}
-		envStep := NewSetEnvironmentVariablesStep("create-site", nqd.getSourcePath(), envVars)
+		envStep := NewSetEnvironmentVariablesStep("create-site", nqd.getSourcePath(), envVars, nqd.writer)
 		steps = append(steps, envStep)
 	}
 
@@ -180,4 +180,3 @@ func (nqd *NetlifyQueuedDeployment) getFunctionsDir() string {
 	// No functions directory found
 	return ""
 }
-
