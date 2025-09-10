@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
@@ -302,11 +301,24 @@ func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 		}
 	}
 
-	// Construct full paths
-	deployPath := filepath.Join(sourcePath, s.publishDir)
+	// Change to source directory to run deployment
+	originalDir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	if sourcePath != "." && sourcePath != "" {
+		if err := os.Chdir(sourcePath); err != nil {
+			return nil, fmt.Errorf("failed to change to source directory: %w", err)
+		}
+		defer os.Chdir(originalDir)
+	}
+
+	// Construct relative paths (now that we're in the source directory)
+	deployPath := s.publishDir
 	functionsPath := ""
 	if s.functionsDir != "" {
-		functionsPath = filepath.Join(sourcePath, s.functionsDir)
+		functionsPath = s.functionsDir
 		// Check if functions directory exists
 		if _, err := os.Stat(functionsPath); os.IsNotExist(err) {
 			functionsPath = "" // Don't deploy functions if directory doesn't exist
@@ -339,30 +351,28 @@ func (s *DeployNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClie
 	return fmt.Errorf("deployment rollback not implemented - use Netlify UI to rollback")
 }
 
-// SetEnvironmentVariablesStep sets environment variables for a Netlify site
-type SetEnvironmentVariablesStep struct {
+// LinkNetlifySiteStep links the Netlify CLI to a site
+type LinkNetlifySiteStep struct {
 	BaseStep
 	siteStepID string
-	envVars    map[string]string
 	sourcePath string
 	writer     io.Writer
 }
 
-func NewSetEnvironmentVariablesStep(siteStepID string, sourcePath string, envVars map[string]string, writer io.Writer) *SetEnvironmentVariablesStep {
-	return &SetEnvironmentVariablesStep{
+func NewLinkNetlifySiteStep(siteStepID string, sourcePath string, writer io.Writer) *LinkNetlifySiteStep {
+	return &LinkNetlifySiteStep{
 		BaseStep: BaseStep{
-			ID:           "set-env-vars",
-			Description:  fmt.Sprintf("Set %d environment variables", len(envVars)),
+			ID:           "link-site",
+			Description:  "Link CLI to Netlify site",
 			Dependencies: []string{siteStepID},
 		},
 		siteStepID: siteStepID,
-		envVars:    envVars,
 		sourcePath: sourcePath,
 		writer:     writer,
 	}
 }
 
-func (s *SetEnvironmentVariablesStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *LinkNetlifySiteStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error) {
 	// Get site ID from create step
 	siteID := ""
 	if siteResult, ok := stepResults[s.siteStepID]; ok {
@@ -387,8 +397,7 @@ func (s *SetEnvironmentVariablesStep) Execute(ctx context.Context, client Netlif
 		defer os.Chdir(originalDir)
 	}
 
-	// before we set the environment variables, we need to link the CLI to the site
-	// a bit of a hack, but intermiittently there is an issue setting the env vars, that seems to go away when I delete .netlify
+	// Remove .netlify directory to fix intermittent issues with env vars
 	err = os.RemoveAll(".netlify")
 	if err != nil {
 		log.Printf("Warning: failed to remove .netlify directory: %v", err)
@@ -398,8 +407,76 @@ func (s *SetEnvironmentVariablesStep) Execute(ctx context.Context, client Netlif
 	if err != nil {
 		return nil, fmt.Errorf("failed to link CLI to site: %w", err)
 	}
+
+	// Return success indicator
+	return map[string]interface{}{
+		"site_id": siteID,
+		"linked":  true,
+	}, nil
+}
+
+func (s *LinkNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) error {
+	// Remove .netlify directory to unlink
+	originalDir, err := os.Getwd()
+	if err != nil {
+		log.Printf("Warning: failed to get current directory during rollback: %v", err)
+		return nil
+	}
+
+	if s.sourcePath != "." && s.sourcePath != "" {
+		if err := os.Chdir(s.sourcePath); err != nil {
+			log.Printf("Warning: failed to change to source directory during rollback: %v", err)
+			return nil
+		}
+		defer os.Chdir(originalDir)
+	}
+
+	err = os.RemoveAll(".netlify")
+	if err != nil {
+		log.Printf("Warning: failed to remove .netlify directory during rollback: %v", err)
+	}
+
+	return nil
+}
+
+// SetEnvironmentVariablesStep sets environment variables for a Netlify site
+type SetEnvironmentVariablesStep struct {
+	BaseStep
+	siteStepID string
+	envVars    map[string]string
+	sourcePath string
+	writer     io.Writer
+}
+
+func NewSetEnvironmentVariablesStep(siteStepID string, linkStepID string, sourcePath string, envVars map[string]string, writer io.Writer) *SetEnvironmentVariablesStep {
+	return &SetEnvironmentVariablesStep{
+		BaseStep: BaseStep{
+			ID:           "set-env-vars",
+			Description:  fmt.Sprintf("Set %d environment variables", len(envVars)),
+			Dependencies: []string{siteStepID, linkStepID},
+		},
+		siteStepID: siteStepID,
+		envVars:    envVars,
+		sourcePath: sourcePath,
+		writer:     writer,
+	}
+}
+
+func (s *SetEnvironmentVariablesStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error) {
+	// Get site ID from create step
+	siteID := ""
+	if siteResult, ok := stepResults[s.siteStepID]; ok {
+		if resource, ok := siteResult.(deployment.CreatedResource); ok {
+			siteID = resource.ID
+		}
+	}
+
+	if siteID == "" {
+		return nil, fmt.Errorf("could not find site ID from step %s", s.siteStepID)
+	}
+
 	// Set environment variables
-	err = client.SetEnvironmentVariables(siteID, s.envVars)
+	err := client.SetEnvironmentVariables(siteID, s.envVars)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set environment variables: %w", err)
 	}

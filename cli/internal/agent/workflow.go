@@ -64,6 +64,7 @@ type SetupJavaScriptProjectResult struct {
 	SvelteConfigUpdated bool        `json:"svelteConfigUpdated"`
 	SvelteConfigDiff    []DiffLine  `json:"svelteConfigDiff,omitempty"`
 	Error               deployError `json:"error,omitempty"`
+	UpdatedPlan         DeployPlan  `json:"updatedPlan,omitempty"`
 }
 
 var _ workflowext.Registerer = (*Workflows)(nil)
@@ -761,6 +762,8 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	}
 	log.Printf("✅ Deployment spec built successfully")
 
+	log.Println("FFSDF")
+	log.Println(spec.OutputDir)
 	// Add metadata
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["platform"] = "netlify"
@@ -860,6 +863,8 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 	result.PackageLockCreated = true
 	log.Printf("✅ Package-lock.json handling completed")
 
+	plan, _ := workflow.ExecuteActivity[DeployPlan](ctx, ActivityOpts, AgentPrepareNuxtBuild, input).Get(ctx)
+	result.UpdatedPlan = plan
 	log.Printf("🎉 JavaScript project setup completed successfully")
 	return result, nil
 }

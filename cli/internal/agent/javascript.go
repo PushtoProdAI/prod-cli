@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/pmezard/go-difflib/difflib"
 )
 
@@ -195,6 +196,33 @@ func (a *Activities) updateSvelteConfig(_ context.Context, plan DeployPlan) ([]D
 	}
 
 	return parseDiffString(diff), nil
+}
+
+func (a *Activities) prepareNuxtBuild(_ context.Context, plan DeployPlan) (DeployPlan, error) {
+	a.uiWriter.SendStatus("configuring", "Checking for Nuxt configuration...")
+
+	isNuxt := false
+	for _, sr := range plan.Spec.ServiceRequirements {
+		if strings.ToLower(sr.Provider) == "nuxt" {
+			isNuxt = true
+			break
+		}
+	}
+	if !isNuxt {
+		a.uiWriter.SendStatusComplete("configuring", "✅ No Nuxt config found, skipping")
+		return plan, nil
+	}
+
+	switch plan.Platform {
+	case Render, FlyIO:
+		plan.Spec.StartCommand = "node .output/server/index.mjs"
+		plan.CollectedEnvVars = append(plan.CollectedEnvVars, deployment.EnvVar{Name: "NITRO_PRESET", Value: "node-server"})
+	case Netlify:
+		plan.CollectedEnvVars = append(plan.CollectedEnvVars, deployment.EnvVar{Name: "SERVER_PRESET", Value: "netlify_edge"})
+		plan.Spec.BuildOutput.Path = "dist"
+	}
+	a.uiWriter.SendStatusComplete("configuring", "✅ Nuxt configuration complete")
+	return plan, nil
 }
 
 // patchSvelteConfig updates the Svelte config to use the specified adapter
