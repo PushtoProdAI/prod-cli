@@ -433,6 +433,7 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 			}
 			fmt.Fprint(out, "────────────────────────────────────────\n")
 		}
+		a.DeployPlan = &result.UpdatedPlan
 		fmt.Fprint(out, "✅ JavaScript environment prepared successfully!\n")
 
 	}
@@ -465,7 +466,8 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 			collectedEnvVars = append(collectedEnvVars, envVar.EnvVar)
 		}
 	}
-	DeployPlanWithEnvVars.CollectedEnvVars = collectedEnvVars
+	// make sure if we have collected any other env vars along the way they are captured
+	DeployPlanWithEnvVars.CollectedEnvVars = append(DeployPlanWithEnvVars.CollectedEnvVars, collectedEnvVars...)
 
 	wf, err := Workflows{}.Deploy(ctx, a.wfClient, DeployPlanWithEnvVars)
 	if err != nil {

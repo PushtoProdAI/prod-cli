@@ -8,24 +8,24 @@ import (
 const (
 	// API configuration
 	defaultAPIURL = "https://api.netlify.com/api/v1"
-	
+
 	// Deployment timeouts
-	deployTimeout       = 10 * time.Minute
-	deployPollInterval  = 5 * time.Second
-	deployMaxAttempts   = 60 // 5 minutes with 5-second intervals
-	
+	deployTimeout      = 10 * time.Minute
+	deployPollInterval = 5 * time.Second
+	deployMaxAttempts  = 60 // 5 minutes with 5-second intervals
+
 	// Build configuration
 	defaultBuildTimeout = 15 * time.Minute
-	
+
 	// Retry configuration
 	maxRetries   = 3
 	retryDelay   = 2 * time.Second
 	retryBackoff = 1.5
-	
+
 	// File upload configuration
 	maxConcurrentUploads = 10
 	uploadTimeout        = 30 * time.Second
-	
+
 	// Function configuration
 	functionRuntime = "js"
 )
@@ -46,6 +46,7 @@ var commonFunctionDirs = []string{
 	"netlify/functions",
 	"functions",
 	".netlify/functions",
+	".netlify/edge-functions",
 	"api",
 }
 
@@ -107,3 +108,4 @@ func GetCommonBuildDirs() []string {
 func GetCommonFunctionDirs() []string {
 	return commonFunctionDirs
 }
+

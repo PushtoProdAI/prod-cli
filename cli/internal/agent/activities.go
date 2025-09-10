@@ -32,6 +32,7 @@ const (
 	AgentCreatePackageLock    = "agent.createPackageLock"
 	AgentUpdateSvelteConfig   = "agent.updateSvelteConfig"
 	AgentRevertSvelteConfig   = "agent.revertSvelteConfig"
+	AgentPrepareNuxtBuild     = "agent.prepareNuxtBuild"
 )
 
 type Activities struct {
@@ -66,5 +67,6 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentCreatePackageLock, ActFunc: a.createPackageLock},
 		{Name: AgentUpdateSvelteConfig, ActFunc: a.updateSvelteConfig},
 		{Name: AgentRevertSvelteConfig, ActFunc: a.restoreFromBackup},
+		{Name: AgentPrepareNuxtBuild, ActFunc: a.prepareNuxtBuild},
 	}
 }

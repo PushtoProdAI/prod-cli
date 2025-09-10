@@ -91,29 +91,33 @@ func (nqd *NetlifyQueuedDeployment) GenerateAPISteps() []NetlifyAPIStep {
 	createSiteStep := NewCreateNetlifySiteStep(nqd.spec.Name, nil)
 	steps = append(steps, createSiteStep)
 
-	// Step 2: Set all environment variables after site creation
+	// Step 2: Link CLI to site (always required)
+	linkStep := NewLinkNetlifySiteStep("create-site", nqd.getSourcePath(), nqd.writer)
+	steps = append(steps, linkStep)
+
+	// Step 3: Set all environment variables after linking
 	if len(nqd.spec.EnvVars) > 0 {
 		envVars := make(map[string]string)
 		for _, env := range nqd.spec.EnvVars {
 			envVars[env.Name] = env.Value
 		}
-		envStep := NewSetEnvironmentVariablesStep("create-site", nqd.getSourcePath(), envVars, nqd.writer)
+		envStep := NewSetEnvironmentVariablesStep("create-site", "link-site", nqd.getSourcePath(), envVars, nqd.writer)
 		steps = append(steps, envStep)
 	}
 
-	// Step 3: Update build settings (optional, mainly for UI visibility)
+	// Step 4: Update build settings (optional, mainly for UI visibility)
 	if nqd.spec.BuildCommand != "" || nqd.getPublishDir() != "." {
 		buildSettingsStep := NewUpdateBuildSettingsStep("create-site", nqd.spec.BuildCommand, nqd.getPublishDir())
 		steps = append(steps, buildSettingsStep)
 	}
 
-	// Step 4: Build project (validation step)
+	// Step 5: Build project (validation step)
 	if nqd.spec.BuildCommand != "" {
 		buildStep := NewBuildProjectStep(nqd.spec.BuildCommand, nqd.getSourcePath(), nqd.spec.EnvVars, nqd.writer)
 		steps = append(steps, buildStep)
 	}
 
-	// Step 5: Deploy the site
+	// Step 6: Deploy the site
 	deployStep := NewDeployNetlifySiteStep(
 		"create-site",
 		nqd.getBuildStepID(),
