@@ -189,8 +189,6 @@ func (c *CLINetlifyClient) DeploySite(siteID string, path string, functionsPath 
 
 	cmd := exec.CommandContext(ctx, "netlify", args...)
 	output, err := cmd.CombinedOutput()
-	log.Println(cmd.String())
-	log.Printf("Netlify deploy output: %s", string(output))
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("deployment timed out after %v", deployTimeout)

@@ -762,8 +762,6 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	}
 	log.Printf("✅ Deployment spec built successfully")
 
-	log.Println("FFSDF")
-	log.Println(spec.OutputDir)
 	// Add metadata
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["platform"] = "netlify"
