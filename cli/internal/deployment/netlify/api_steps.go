@@ -188,7 +188,7 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, st
 		fmt.Fprintf(s.writer, "  ⚠️  No package.json found, skipping dependency installation\n")
 	}
 
-	// Try netlify build first
+	// Always try netlify build first
 	fmt.Fprintf(s.writer, "  📦 Running Netlify build...\n")
 	cmd := exec.CommandContext(buildCtx, "netlify", "build")
 	cmd.Env = env
@@ -316,14 +316,7 @@ func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 
 	// Construct relative paths (now that we're in the source directory)
 	deployPath := s.publishDir
-	functionsPath := ""
-	if s.functionsDir != "" {
-		functionsPath = s.functionsDir
-		// Check if functions directory exists
-		if _, err := os.Stat(functionsPath); os.IsNotExist(err) {
-			functionsPath = "" // Don't deploy functions if directory doesn't exist
-		}
-	}
+	functionsPath := s.discoverFunctionsDir()
 
 	// Deploy using CLI client
 	deploy, err := client.DeploySite(siteID, deployPath, functionsPath)
@@ -349,6 +342,33 @@ func (s *DeployNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClie
 	// Netlify deployments can be rolled back through the UI or API
 	// For now, we'll just log that rollback would require a previous deploy ID
 	return fmt.Errorf("deployment rollback not implemented - use Netlify UI to rollback")
+}
+
+// discoverFunctionsDir dynamically discovers the functions directory at execution time
+// This is important because the build step may create new function directories (e.g., .netlify/functions for SvelteKit)
+func (s *DeployNetlifySiteStep) discoverFunctionsDir() string {
+	// First check if we already have a functions directory from step generation
+	if s.functionsDir != "" {
+		// Check if it still exists
+		if _, err := os.Stat(s.functionsDir); err == nil {
+			return s.functionsDir
+		}
+	}
+
+	// Check common function directories (especially those created during build)
+	commonDirs := GetCommonFunctionDirs()
+	for _, dir := range commonDirs {
+		if _, err := os.Stat(dir); err == nil {
+			// Log when we discover a functions directory that wasn't detected during step generation
+			if s.functionsDir == "" {
+				log.Printf("Discovered functions directory during deployment: %s", dir)
+			}
+			return dir
+		}
+	}
+
+	// No functions directory found
+	return ""
 }
 
 // LinkNetlifySiteStep links the Netlify CLI to a site

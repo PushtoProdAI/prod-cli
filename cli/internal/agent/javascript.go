@@ -243,6 +243,7 @@ func patchSvelteConfig(input []byte, newAdapter string) []byte {
 }
 
 // patchPackageJSON adds the adapter dependency to dependencies, ensuring only one Svelte adapter exists
+// and updates build scripts for Netlify adapter
 func patchPackageJSON(input []byte, adapter, version string) ([]byte, error) {
 	var pkg map[string]any
 	if err := json.Unmarshal(input, &pkg); err != nil {
@@ -277,7 +278,61 @@ func patchPackageJSON(input []byte, adapter, version string) ([]byte, error) {
 	deps[adapter] = version
 	pkg["dependencies"] = deps
 
+	// Handle scripts section based on adapter
+	scripts, ok := pkg["scripts"].(map[string]any)
+	if !ok {
+		scripts = map[string]any{}
+	}
+
+	// Clean up any existing Netlify-specific scripts first
+	cleanupNetlifyScripts(scripts)
+
+	// If this is the Netlify adapter, add Netlify-specific scripts
+	if adapter == "@sveltejs/adapter-netlify" {
+		// Add netlify-functions-build script
+		scripts["netlify-functions-build"] = "netlify functions:build --functions .netlify/functions --src .netlify/functions-internal"
+
+		// Update build script to include functions build
+		currentBuild, hasBuild := scripts["build"]
+		if hasBuild {
+			if buildStr, ok := currentBuild.(string); ok {
+				// Append the functions build to the existing build command
+				scripts["build"] = buildStr + " && npm run netlify-functions-build"
+			}
+		} else {
+			// No existing build script, create one
+			scripts["build"] = "vite build && npm run netlify-functions-build"
+		}
+	}
+
+	pkg["scripts"] = scripts
+
 	return json.MarshalIndent(pkg, "", "  ")
+}
+
+// cleanupNetlifyScripts removes Netlify-specific scripts and cleans up build scripts
+func cleanupNetlifyScripts(scripts map[string]any) {
+	// Remove netlify-functions-build script
+	delete(scripts, "netlify-functions-build")
+
+	// Clean up build script if it contains Netlify-specific commands
+	if buildScript, exists := scripts["build"]; exists {
+		if buildStr, ok := buildScript.(string); ok {
+			// Remove all variations of netlify-functions-build from the build script
+			cleanedBuild := strings.ReplaceAll(buildStr, " && npm run netlify-functions-build", "")
+			cleanedBuild = strings.ReplaceAll(cleanedBuild, "npm run netlify-functions-build && ", "")
+
+			// Handle case where it might be the only command
+			if cleanedBuild == "npm run netlify-functions-build" {
+				cleanedBuild = "vite build" // Default SvelteKit build command
+			}
+
+			// Update the script if it changed
+			if cleanedBuild != buildStr {
+				scripts["build"] = cleanedBuild
+			}
+		}
+	}
 }
 
 // parseDiffString converts a unified diff string into structured DiffLine data
