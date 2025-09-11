@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"runtime"
 	"strings"
 
@@ -43,7 +43,7 @@ func (a *Activities) summarizeError(ctx context.Context, error string, input Dep
 			break
 		}
 
-		log.Printf("Found %d violations in summary, re-prompting: %v", len(violations), violations)
+		slog.Info("Found violations in summary, re-prompting", "violationCount", len(violations), "violations", violations)
 	}
 
 	deployError := deployError{
@@ -59,8 +59,8 @@ func (a *Activities) summarizeError(ctx context.Context, error string, input Dep
 	}
 
 	a.uiWriter.SendStatusComplete("summarizing", "✅ Errors summarized")
-	log.Printf("Error summary: %s", deployError.Summary)
-	log.Printf("Remediations: %v", deployError.Remediations)
+	slog.Info("Error summary", "summary", deployError.Summary)
+	slog.Info("Remediations", "remediations", deployError.Remediations)
 
 	return deployError, nil
 }
