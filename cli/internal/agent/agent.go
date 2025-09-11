@@ -391,7 +391,7 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 		fmt.Fprintf(out, "🔧 Preparing JavaScript environment...\n")
 		wf, err := Workflows{}.SetupJavaScriptProject(ctx, a.wfClient, *a.DeployPlan)
 		if err != nil {
-			log.Printf("Workflow execution result: %v\n", err)
+			slog.Error("Workflow execution result", "error", err)
 			fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
 			return a.plan, nil
 		}
