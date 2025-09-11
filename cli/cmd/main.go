@@ -18,6 +18,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/config"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
+	prod_log "github.com/meroxa/prod/cli/internal/log"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
 )
@@ -75,6 +76,9 @@ func main() {
 	}()
 
 	if config.DebugMode() {
+		logdyHandler := prod_log.NewLogdyHandler(handler, true, mux)
+		logger := slog.New(logdyHandler)
+		slog.SetDefault(logger)
 		go http.ListenAndServe(":8080", mux)
 	}
 	e := ecdysis.New()

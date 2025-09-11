@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/meroxa/prod/cli/baml_client"
@@ -59,7 +59,7 @@ func (n *NetlifyDeploymentAdapter) GenerateArtifacts(spec *deployment.Deployment
 
 // EstimateCost estimates the cost of deployment on Netlify
 func (n *NetlifyDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	log.Printf("Estimating costs for Netlify deployment: %s", spec.Name)
+	slog.Info("Estimating costs for Netlify deployment", "name", spec.Name)
 
 	// Build cost request from deployment spec
 	cr := deployment.CostRequest{Services: make([]deployment.CostService, 0)}
@@ -94,16 +94,16 @@ func (n *NetlifyDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec,
 }
 
 func estimateNetlifyCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
-	log.Printf("Estimating Netlify costs for %d services", len(cr.Services))
+	slog.Info("Estimating Netlify costs", "serviceCount", len(cr.Services))
 
 	// Get current pricing from Netlify via LLM
 	pricing, err := fetchNetlifyPricingViaLLM(cr.Services)
 	if err != nil {
-		log.Printf("Failed to fetch pricing via LLM, using fallback: %v", err)
+		slog.Info("Failed to fetch pricing via LLM, using fallback", "error", err)
 		return estimateNetlifyCostFallback(cr)
 	}
 
-	log.Printf("Successfully fetched pricing via LLM: %+v", pricing)
+	slog.Info("Successfully fetched pricing via LLM", "pricing", pricing)
 
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
@@ -118,7 +118,7 @@ func estimateNetlifyCost(cr deployment.CostRequest) (deployment.CostEstimate, er
 		ce.Services = append(ce.Services, service)
 	}
 
-	log.Printf("Final cost estimate: Total=%.2f, Services=%+v", ce.Total, ce.Services)
+	slog.Info("Final cost estimate", "total", ce.Total, "services", ce.Services)
 
 	return ce, nil
 }
@@ -135,7 +135,7 @@ func fetchNetlifyPricingViaLLM(services []deployment.CostService) ([]float64, er
 	}
 
 	servicesText := strings.Join(serviceDescriptions, "\n")
-	log.Printf("Fetching Netlify pricing via LLM for services:\n%s", servicesText)
+	slog.Info("Fetching Netlify pricing via LLM for services", "services", servicesText)
 
 	ctx := context.Background()
 	response, err := baml_client.FetchNetlifyPricing(ctx, servicesText)
@@ -164,7 +164,7 @@ func fetchNetlifyPricingViaLLM(services []deployment.CostService) ([]float64, er
 }
 
 func estimateNetlifyCostFallback(cr deployment.CostRequest) (deployment.CostEstimate, error) {
-	log.Printf("Using fallback pricing for Netlify cost estimation")
+	slog.Info("Using fallback pricing for Netlify cost estimation")
 
 	// Fallback pricing when LLM is unavailable
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
@@ -185,7 +185,7 @@ func estimateNetlifyCostFallback(cr deployment.CostRequest) (deployment.CostEsti
 		ce.Services = append(ce.Services, service)
 	}
 
-	log.Printf("Fallback cost estimate: Total=%.2f, Services=%+v", ce.Total, ce.Services)
+	slog.Info("Fallback cost estimate", "total", ce.Total, "services", ce.Services)
 	return ce, nil
 }
 
@@ -212,7 +212,7 @@ func (n *NetlifyDeploymentAdapter) validateSpec(spec *deployment.DeploymentSpec)
 		}
 
 		if !isStatic && spec.StartCommand != "" {
-			log.Printf("Warning: Netlify is designed for static sites. Start command '%s' suggests a backend service which won't work on Netlify", spec.StartCommand)
+			slog.Info("Warning: Netlify is designed for static sites", "startCommand", spec.StartCommand)
 		}
 	}
 

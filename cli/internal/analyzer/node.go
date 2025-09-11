@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -162,7 +162,7 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 	data, err := getReadmeContents(n.ProjectFS)
 	if err != nil {
 		// just log, readme was a nice to have for additional context but not necessary
-		log.Printf("Could not read readme file: %v", err)
+		slog.Info("Could not read readme file", "error", err)
 	}
 	launchCtx = LaunchContext{
 		Launchers: []LauncherFile{lf},

@@ -502,7 +502,7 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 				var host, port, username, dbName string
 				url, err := dburl.Parse(connInfo.InternalConnectionString)
 				if err != nil {
-					slog.Warn("failed to parse connection string %s: %v", connInfo.InternalConnectionString, err)
+					slog.Warn("Failed to parse connection string", "connectionString", connInfo.InternalConnectionString, "error", err)
 				} else {
 					host = url.Hostname()
 					port = url.Port()
