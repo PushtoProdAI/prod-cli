@@ -186,3 +186,124 @@ func TestPatchPackageJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestPatchPackageJSONCleanup(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		adapter        string
+		wantScripts    map[string]string
+		wantDependency string
+	}{
+		{
+			name: "Netlify to Render - cleanup Netlify scripts",
+			input: `{
+  "dependencies": {
+    "@sveltejs/adapter-netlify": "^4.3.0"
+  },
+  "scripts": {
+    "build": "vite build && npm run netlify-functions-build",
+    "netlify-functions-build": "netlify functions:build --functions .netlify/functions --src .netlify/functions-internal",
+    "dev": "vite dev"
+  }
+}`,
+			adapter: "@sveltejs/adapter-node",
+			wantScripts: map[string]string{
+				"build": "vite build",
+				"dev":   "vite dev",
+			},
+			wantDependency: "@sveltejs/adapter-node",
+		},
+		{
+			name: "Render to Netlify - add Netlify scripts",
+			input: `{
+  "dependencies": {
+    "@sveltejs/adapter-node": "^5.2.0"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite dev"
+  }
+}`,
+			adapter: "@sveltejs/adapter-netlify",
+			wantScripts: map[string]string{
+				"build":                   "vite build && npm run netlify-functions-build",
+				"netlify-functions-build": "netlify functions:build --functions .netlify/functions --src .netlify/functions-internal",
+				"dev":                     "vite dev",
+			},
+			wantDependency: "@sveltejs/adapter-netlify",
+		},
+		{
+			name: "Clean package.json with only netlify-functions-build as build script",
+			input: `{
+  "dependencies": {
+    "@sveltejs/adapter-netlify": "^4.3.0"
+  },
+  "scripts": {
+    "build": "npm run netlify-functions-build",
+    "netlify-functions-build": "netlify functions:build --functions .netlify/functions --src .netlify/functions-internal"
+  }
+}`,
+			adapter: "@sveltejs/adapter-node",
+			wantScripts: map[string]string{
+				"build": "vite build",
+			},
+			wantDependency: "@sveltejs/adapter-node",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := patchPackageJSON([]byte(tt.input), tt.adapter, "^5.2.0")
+			if err != nil {
+				t.Fatalf("patchPackageJSON() error = %v", err)
+			}
+
+			var pkg map[string]any
+			if err := json.Unmarshal(result, &pkg); err != nil {
+				t.Fatalf("Failed to unmarshal result: %v", err)
+			}
+
+			// Check scripts
+			scripts, ok := pkg["scripts"].(map[string]any)
+			if !ok {
+				t.Fatal("scripts section not found")
+			}
+
+			for wantScript, wantValue := range tt.wantScripts {
+				if got, exists := scripts[wantScript]; !exists {
+					t.Errorf("script %q not found", wantScript)
+				} else if got != wantValue {
+					t.Errorf("script %q = %q, want %q", wantScript, got, wantValue)
+				}
+			}
+
+			// Check that netlify-functions-build is removed when not using Netlify adapter
+			if tt.adapter != "@sveltejs/adapter-netlify" {
+				if _, exists := scripts["netlify-functions-build"]; exists {
+					t.Error("netlify-functions-build script should be removed for non-Netlify adapters")
+				}
+			}
+
+			// Check dependencies
+			deps, ok := pkg["dependencies"].(map[string]any)
+			if !ok {
+				t.Fatal("dependencies section not found")
+			}
+
+			if _, exists := deps[tt.wantDependency]; !exists {
+				t.Errorf("dependency %q not found", tt.wantDependency)
+			}
+
+			// Check that old adapters are removed
+			oldAdapters := []string{"@sveltejs/adapter-auto", "@sveltejs/adapter-netlify", "@sveltejs/adapter-node"}
+			for _, oldAdapter := range oldAdapters {
+				if oldAdapter != tt.wantDependency {
+					if _, exists := deps[oldAdapter]; exists {
+						t.Errorf("old adapter %q should be removed", oldAdapter)
+					}
+				}
+			}
+		})
+	}
+}
