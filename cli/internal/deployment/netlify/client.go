@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"time"
@@ -49,7 +49,7 @@ func (c *CLINetlifyClient) CreateSite(req CreateSiteRequest) (*NetlifySite, erro
 	args := []string{"api", "createSite", "--data", string(jsonData)}
 
 	cmd := exec.Command("netlify", args...)
-	log.Printf("Creating Netlify site with name: %s", req.Name)
+	slog.Info("Creating Netlify site", "name", req.Name)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Check if name is taken and provide helpful error
@@ -62,7 +62,7 @@ func (c *CLINetlifyClient) CreateSite(req CreateSiteRequest) (*NetlifySite, erro
 
 	// Parse the JSON response from the API
 	outputStr := string(output)
-	log.Printf("NetlifyCreateSite output: %s", outputStr)
+	slog.Info("NetlifyCreateSite output", "output", outputStr)
 
 	var site NetlifySite
 	if err := json.Unmarshal(output, &site); err != nil {

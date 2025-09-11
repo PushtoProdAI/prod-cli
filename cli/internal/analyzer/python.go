@@ -3,7 +3,7 @@ package analyzer
 import (
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -134,7 +134,7 @@ func (p *PythonAnalyzer) Analyze() (*ProjectSpec, error) {
 
 	buildCmd, err := p.extractBuildCommand()
 	if err != nil {
-		log.Printf("Could not determine build command: %v", err)
+		slog.Info("Could not determine build command", "error", err)
 	}
 
 	_, err = p.detectFramework(dependencies)
@@ -150,7 +150,7 @@ func (p *PythonAnalyzer) Analyze() (*ProjectSpec, error) {
 	runCmd, err := p.extractRunCommand()
 	if err != nil {
 		// if we can't detect the run command we'll log and eventually try to infer it downstream
-		log.Printf("Could not find a start command: %v", err)
+		slog.Info("Could not find a start command", "error", err)
 	}
 	var launchCtx LaunchContext
 	if runCmd == "" {
@@ -177,7 +177,7 @@ func (p *PythonAnalyzer) Analyze() (*ProjectSpec, error) {
 		data, err := getReadmeContents(p.ProjectFS)
 		if err != nil {
 			// just log, readme was a nice to have for additional context but not necessary
-			log.Printf("Could not read readme file: %v", err)
+			slog.Info("Could not read readme file", "error", err)
 		}
 		launchCtx = LaunchContext{
 			Launchers: launchers,
@@ -202,7 +202,7 @@ func (p *PythonAnalyzer) Analyze() (*ProjectSpec, error) {
 	processor := NewPythonRouteProcessor()
 	err = p.extractRouterMounts(processor)
 	if err != nil {
-		log.Printf("Warning: Could not extract router mounts: %v", err)
+		slog.Info("Warning: Could not extract router mounts", "error", err)
 	}
 
 	// Second pass: Extract routes with prefix information

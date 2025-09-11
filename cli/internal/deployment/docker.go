@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -161,7 +160,7 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 		baseImage = ""
 	}
 
-	log.Printf("Using base image for %s: %s", spec.Language, baseImage)
+	slog.Info("Using base image", "language", spec.Language, "baseImage", baseImage)
 
 	// Prepare template data
 	templateData := struct {
