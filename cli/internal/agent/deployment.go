@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
@@ -91,9 +91,9 @@ func (a *Activities) estimateNetlifyCosts(_ context.Context, spec deployment.Dep
 }
 
 func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, dbList []string, envVar analyzer.EnvVarCandidate) (deployment.EnvVar, error) {
-	log.Printf("CategorizeEnvVarsForDeployment input: %+v", envVar)
-	log.Printf("CategorizeEnvVarsForDeployment dbList: %+v", dbList)
-	log.Printf("CategorizeEnvVarsForDeployment workflow name: %s", CategorizeEnvVarsWorkflowName)
+	slog.Info("CategorizeEnvVarsForDeployment input", "envVar", envVar)
+	slog.Info("CategorizeEnvVarsForDeployment dbList", "dbList", dbList)
+	slog.Info("CategorizeEnvVarsForDeployment workflow name", "workflowName", CategorizeEnvVarsWorkflowName)
 	ev := types.EnvVarCandidate{
 		VarName: envVar.VarName,
 		Line:    int64(envVar.Line),

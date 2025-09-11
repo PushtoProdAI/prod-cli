@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/meroxa/prod/cli/baml_client"
@@ -65,7 +65,7 @@ func (fda *FlyioDeploymentAdapter) GenerateArtifactsWithSource(spec *deployment.
 
 // EstimateCost estimates the cost of deployment on Fly.io
 func (fda *FlyioDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	log.Printf("Estimating costs for spec: %+v with strategy: %s\n", spec, strategy)
+	slog.Info("Estimating costs for spec", "spec", spec, "strategy", strategy)
 
 	// Build cost request from deployment spec
 	cr := deployment.CostRequest{Services: make([]deployment.CostService, 0)}
@@ -102,12 +102,12 @@ func (fda *FlyioDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec,
 }
 
 func estimateFlyioCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
-	log.Printf("Estimating Fly.io costs for request: %+v\n", cr)
+	slog.Info("Estimating Fly.io costs for request", "request", cr)
 
 	// Get current pricing from Fly.io via LLM
 	pricing, err := fetchFlyioPricingViaLLM(cr.Services)
 	if err != nil {
-		log.Printf("Failed to fetch pricing via LLM, using fallback: %v\n", err)
+		slog.Info("Failed to fetch pricing via LLM, using fallback", "error", err)
 		return estimateFlyioCostFallback(cr)
 	}
 
@@ -139,7 +139,7 @@ func fetchFlyioPricingViaLLM(services []deployment.CostService) ([]float64, erro
 	}
 
 	servicesText := strings.Join(serviceDescriptions, "\n")
-	log.Printf("Fetching Fly.io pricing via LLM for services:\n%s", servicesText)
+	slog.Info("Fetching Fly.io pricing via LLM for services", "services", servicesText)
 
 	ctx := context.Background()
 	response, err := baml_client.FetchFlyioPricing(ctx, servicesText)
@@ -164,12 +164,12 @@ func fetchFlyioPricingViaLLM(services []deployment.CostService) ([]float64, erro
 		}
 	}
 
-	log.Printf("LLM returned Fly.io pricing: %v (total: $%.2f)", costs, response.Total_cost)
+	slog.Info("LLM returned Fly.io pricing", "costs", costs, "totalCost", response.Total_cost)
 	return costs, nil
 }
 
 func estimateFlyioCostFallback(cr deployment.CostRequest) (deployment.CostEstimate, error) {
-	log.Printf("Using Fly.io fallback pricing")
+	slog.Info("Using Fly.io fallback pricing")
 
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0

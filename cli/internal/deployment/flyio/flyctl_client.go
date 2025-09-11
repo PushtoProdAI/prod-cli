@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -256,7 +256,7 @@ func (c *FlyctlClient) DeployApp(ctx context.Context, appID string, config *Flyi
 			return fmt.Errorf("deployment status: %s", deployResp.Status)
 		}
 	}
-	log.Printf("App deployed successfully. URL: %s", deployResp.URL)
+	slog.Info("App deployed successfully", "url", deployResp.URL)
 	return nil
 }
 

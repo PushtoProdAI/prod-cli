@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -122,7 +121,7 @@ func (sm *deploySM) next(ctx context.Context, input string, out io.Writer) error
 
 	nextState, err := sm.currentState(ctx, input, out)
 	if err != nil {
-		log.Printf("Error in state %T: %v\n", sm.currentState, err)
+		slog.Info("Error in state", "stateType", fmt.Sprintf("%T", sm.currentState), "error", err)
 		return err
 	}
 
@@ -175,7 +174,7 @@ func (a *Agent) stopSpinner(out io.Writer) {
 }
 
 func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
-	log.Printf("Processing input: %s\n", input)
+	slog.Info("Processing input", "input", input)
 	output := out
 	if a.UIOutput != nil {
 		output = a.UIOutput
@@ -201,7 +200,7 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	wf, err := Workflows{}.PlanDeploy(ctx, a.wfClient, input)
 	if err != nil {
-		log.Printf("Workflow execution result: %v\n", err)
+		slog.Info("Workflow execution result", "error", err)
 	}
 
 	plan, err := client.GetWorkflowResult[DeployPlan](ctx, a.wfClient, wf, 5*time.Minute)
@@ -471,7 +470,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 
 	wf, err := Workflows{}.Deploy(ctx, a.wfClient, DeployPlanWithEnvVars)
 	if err != nil {
-		log.Printf("Workflow execution result: %v\n", err)
+		slog.Info("Workflow execution result", "error", err)
 		fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
 		return a.plan, nil
 	}
@@ -482,7 +481,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 	a.stopSpinner(out)
 
 	if err != nil {
-		log.Printf("Deployment workflow execution result: %v\n", err)
+		slog.Info("Deployment workflow execution result", "error", err)
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
 		fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
 		return a.plan, nil
@@ -535,19 +534,19 @@ func (a *Agent) dryRunDeploy(ctx context.Context, input string, out io.Writer) (
 
 func shouldProceed(plan DeployPlan) bool {
 	if plan.Action == UnknownAction {
-		log.Printf("Validation failed: Action is UnknownAction")
+		slog.Info("Validation failed", "reason", "unknown action", "action", plan.Action)
 		return false
 	}
 	if plan.Platform == UnknownPlatform {
-		log.Printf("Validation failed: Platform is UnknownPlatform")
+		slog.Info("Validation failed", "reason", "unknown platform", "platform", plan.Platform)
 		return false
 	}
 	if plan.Spec.Name == "" || plan.Spec.Language == "" {
-		log.Printf("Validation failed: Spec.Name or Spec.Language is empty")
+		slog.Info("Validation failed", "reason", "missing spec fields", "name", plan.Spec.Name, "language", plan.Spec.Language)
 		return false
 	}
 
-	log.Printf("Validation passed: All checks successful")
+	slog.Info("Validation passed", "status", "successful")
 	return true
 }
 
@@ -897,7 +896,7 @@ func (a *Agent) performOAuthLoginDryRun(ctx context.Context, input string, out i
 func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	wf, err := Workflows{}.DryRunDeploy(ctx, a.wfClient, *a.DeployPlan)
 	if err != nil {
-		log.Printf("Dry-run workflow execution result: %v\n", err)
+		slog.Info("Dry-run workflow execution result", "error", err)
 		fmt.Fprint(out, "Sorry, couldn't create a dry-run deployment plan \n")
 		return a.plan, nil
 	}

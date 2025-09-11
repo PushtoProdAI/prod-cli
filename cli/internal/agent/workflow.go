@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"maps"
 	"net/url"
@@ -189,7 +188,7 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	if err != nil {
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
-			log.Printf("Failed to get Render workspace: %v", e1)
+			slog.Info("Failed to get Render workspace", "error", e1)
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		return deployResult{Error: summary}, nil
@@ -199,7 +198,7 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	if err != nil {
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
-			log.Printf("Failed to get Render workspace: %v", e1)
+			slog.Info("Failed to get Render workspace", "error", e1)
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		return deployResult{Error: summary}, nil
@@ -213,14 +212,14 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	}
 	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
 	if err != nil {
-		log.Printf("Failed to summarize deployment steps: %v", err)
+		slog.Info("Failed to summarize deployment steps", "error", err)
 	}
 
 	buildOutputPath, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineBuildOutput, input.Spec.BuildOutput).Get(ctx)
 	if err != nil {
-		log.Printf("Failed to determine build output path: %v", err)
+		slog.Info("Failed to determine build output path", "error", err)
 	} else {
-		log.Printf("Using build output path: %s", buildOutputPath)
+		slog.Info("Using build output path", "path", buildOutputPath)
 		// Update the deployment spec's OutputDir with the final resolved build output path
 		spec.OutputDir = buildOutputPath
 	}
@@ -231,7 +230,7 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		if e1 != nil {
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
-		log.Printf("Deployment failed: %v", err)
+		slog.Info("Deployment failed", "error", err)
 		return deployResult{Error: summary}, nil
 	}
 
@@ -256,13 +255,13 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	path, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineRootPath, input.Spec.Routes).Get(ctx)
 	if err != nil {
 		// if there is an error, we will just default to /
-		log.Printf("Failed to determine root path for application: %v", err)
+		slog.Info("Failed to determine root path for application", "error", err)
 		path = "/"
 	}
 
 	fullUrl, err := url.JoinPath(u, path)
 	if err != nil {
-		log.Printf("Failed to combine paths: %v", err)
+		slog.Info("Failed to combine paths", "error", err)
 		fullUrl = u
 	}
 	liveCheckOpts := ActivityOpts
@@ -275,7 +274,7 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		if e1 != nil {
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
-		log.Printf("service URL:%s is not live:%v", fullUrl, err)
+		slog.Info("service URL is not live", "url", fullUrl, "error", err)
 		return deployResult{Error: summary}, nil
 	}
 
@@ -306,7 +305,7 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 	}
 	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
 	if err != nil {
-		log.Printf("Failed to summarize deployment steps: %v", err)
+		slog.Info("Failed to summarize deployment steps", "error", err)
 	}
 
 	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
@@ -315,7 +314,7 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 		if e1 != nil {
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
-		log.Printf("Deployment failed: %v", err)
+		slog.Info("Deployment failed", "error", err)
 		return deployResult{Error: summary}, nil
 	}
 
@@ -339,13 +338,13 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 	path, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineRootPath, input.Spec.Routes).Get(ctx)
 	if err != nil {
 		// if there is an error, we will just default to /
-		log.Printf("Failed to determine root path for application: %v", err)
+		slog.Info("Failed to determine root path for application", "error", err)
 		path = "/"
 	}
 
 	fullUrl, err := url.JoinPath(u, path)
 	if err != nil {
-		log.Printf("Failed to combine paths: %v", err)
+		slog.Info("Failed to combine paths", "error", err)
 		fullUrl = u
 	}
 
@@ -466,7 +465,7 @@ func (w *Workflows) dryRunDeployFly(ctx workflow.Context, input DeployPlan) (Dry
 	// Estimate costs
 	estimatedCosts, err := workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateFlyioCosts, *spec, deployment.StrategyFlyio).Get(ctx)
 	if err != nil {
-		log.Printf("Failed to estimate costs: %v", err)
+		slog.Info("Failed to estimate costs", "error", err)
 		estimatedCosts = deployment.CostEstimate{}
 	}
 
@@ -599,7 +598,7 @@ func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPla
 			if !ok {
 				continue
 			}
-			log.Println(envVars[i].Name, "found in env file with value", fromEnvFile.Value)
+			slog.Info("env var found in env file", "name", envVars[i].Name, "value", fromEnvFile.Value)
 			envVars[i].Value = fromEnvFile.Value
 			mergedCount++
 		}
@@ -748,19 +747,18 @@ func performFlyioConflictChecks(spec *deployment.DeploymentSpec, client flyio.Fl
 }
 
 func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deployResult, error) {
-	log.Printf("🔍 deployNetlify workflow started for platform: %s", input.Platform)
-	log.Printf("🔍 DeployPlan details: Action=%s, Source=%s, Spec.Name=%s, Spec.Language=%s",
-		input.Action, input.Source, input.Spec.Name, input.Spec.Language)
+	slog.Info("deployNetlify workflow started", "platform", input.Platform)
+	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
 	// Build deployment spec from the plan
-	log.Printf("🔍 Building deployment spec...")
+	slog.Info("Building deployment spec")
 	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars)
 	spec, err := db.Build()
 	if err != nil {
-		log.Printf("❌ Failed to build deployment spec: %v", err)
+		slog.Info("Failed to build deployment spec", "error", err)
 		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to build deployment spec: %v", err)}}, nil
 	}
-	log.Printf("✅ Deployment spec built successfully")
+	slog.Info("Deployment spec built successfully")
 
 	// Add metadata
 	spec.Metadata["buildContext"] = input.Source
@@ -774,7 +772,7 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	}
 	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
 	if err != nil {
-		log.Printf("Failed to summarize deployment steps: %v", err)
+		slog.Error("Failed to summarize deployment steps", "error", err)
 	}
 
 	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
@@ -783,7 +781,7 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 		if e1 != nil {
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
-		log.Printf("Deployment failed: %v", err)
+		slog.Error("Deployment failed", "error", err)
 		return deployResult{Error: summary}, nil
 	}
 
@@ -797,42 +795,40 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	}
 
 	if deploymentURL == "" {
-		log.Printf("⚠️ No deployment URL found in created resources")
+		slog.Info("No deployment URL found in created resources")
 		deploymentURL = "Deployment completed but URL not available"
 	}
 
-	log.Printf("🎉 Netlify deployment workflow completed successfully")
+	slog.Info("Netlify deployment workflow completed successfully")
 	return deployResult{
 		Url: deploymentURL,
 	}, nil
 }
 
 func (w *Workflows) dryRunNetlify(ctx workflow.Context, input DeployPlan) (deployResult, error) {
-	log.Printf("🔍 dryRunNetlify workflow started for platform: %s", input.Platform)
-	log.Printf("🔍 DeployPlan details: Action=%s, Source=%s, Spec.Name=%s, Spec.Language=%s",
-		input.Action, input.Source, input.Spec.Name, input.Spec.Language)
+	slog.Info("dryRunNetlify workflow started", "platform", input.Platform)
+	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
 	// TODO: Implement Netlify dry run
-	log.Printf("⚠️ Netlify dry run not yet implemented, returning error")
+	slog.Info("Netlify dry run not yet implemented")
 	return deployResult{Error: deployError{Summary: "Netlify dry run not yet implemented"}}, nil
 }
 
 // setupJavaScriptProject sets up a JavaScript/Node.js project for deployment
 func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPlan) (SetupJavaScriptProjectResult, error) {
-	log.Printf("🔍 setupJavaScriptProject workflow started for platform: %s", input.Platform)
-	log.Printf("🔍 DeployPlan details: Action=%s, Source=%s, Spec.Name=%s, Spec.Language=%s",
-		input.Action, input.Source, input.Spec.Name, input.Spec.Language)
+	slog.Info("setupJavaScriptProject workflow started", "platform", input.Platform)
+	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
 	result := SetupJavaScriptProjectResult{}
 
 	// Step 1: Update Svelte config if this is a Svelte project
-	log.Printf("⚙️ Updating Svelte configuration...")
+	slog.Info("Updating Svelte configuration")
 	diff, err := workflow.ExecuteActivity[[]DiffLine](ctx, ActivityOpts, AgentUpdateSvelteConfig, input).Get(ctx)
 	if err != nil {
-		log.Printf("❌ Failed to update Svelte config: %v", err)
+		slog.Error("Failed to update Svelte config", "error", err)
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
-			log.Printf("Failed to summarize Svelte config error: %v", e1)
+			slog.Error("Failed to summarize Svelte config error", "error", e1)
 			return SetupJavaScriptProjectResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		return SetupJavaScriptProjectResult{Error: summary}, nil
@@ -841,28 +837,28 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 	if len(diff) > 0 {
 		result.SvelteConfigUpdated = true
 		result.SvelteConfigDiff = diff
-		log.Printf("✅ Svelte configuration updated")
+		slog.Info("Svelte configuration updated")
 	} else {
-		log.Printf("ℹ️ No Svelte configuration found or no changes needed")
+		slog.Info("No Svelte configuration found or no changes needed")
 	}
 
 	// Step 2: Create/update package-lock.json (after Svelte config changes)
-	log.Printf("📦 Creating/updating package-lock.json...")
+	slog.Info("Creating/updating package-lock.json")
 	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentCreatePackageLock, input, result.SvelteConfigUpdated).Get(ctx)
 	if err != nil {
-		log.Printf("❌ Failed to create package-lock.json: %v", err)
+		slog.Error("Failed to create package-lock.json", "error", err)
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
-			log.Printf("Failed to summarize package-lock error: %v", e1)
+			slog.Error("Failed to summarize package-lock error", "error", e1)
 			return SetupJavaScriptProjectResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		return SetupJavaScriptProjectResult{Error: summary}, nil
 	}
 	result.PackageLockCreated = true
-	log.Printf("✅ Package-lock.json handling completed")
+	slog.Info("Package-lock.json handling completed")
 
 	plan, _ := workflow.ExecuteActivity[DeployPlan](ctx, ActivityOpts, AgentPrepareNuxtBuild, input).Get(ctx)
 	result.UpdatedPlan = plan
-	log.Printf("🎉 JavaScript project setup completed successfully")
+	slog.Info("JavaScript project setup completed successfully")
 	return result, nil
 }
