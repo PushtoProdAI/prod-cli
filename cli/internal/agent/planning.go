@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"log"
 	"log/slog"
 	"os"
 	"strings"
@@ -84,7 +83,7 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		if plan.Spec.StartCommand == "" {
 			cmd, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineRunCommand, spec).Get(ctx)
 			if err != nil {
-				log.Printf("Failed to determine run command: %v", err)
+				slog.Info("Failed to determine run command", "error", err)
 			}
 			if cmd != "" {
 				plan.Spec.StartCommand = cmd
@@ -97,7 +96,7 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		db := deployment.NewDeploymentBuilder(&spec, []deployment.EnvVar{})
 		deploymentSpec, err := db.Build()
 		if err != nil {
-			log.Printf("Failed to build deployment spec for cost estimation: %v", err)
+			slog.Info("Failed to build deployment spec for cost estimation", "error", err)
 		} else {
 			// Estimate costs based on platform
 			var estimatedCosts deployment.CostEstimate
@@ -111,7 +110,7 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 			}
 
 			if err != nil {
-				log.Printf("Failed to estimate costs: %v", err)
+				slog.Info("Failed to estimate costs", "error", err)
 			} else {
 				plan.Pricing = estimatedCosts
 				w.uiWriter.SendStatusComplete("pricing", "✅ Costs calculated")
@@ -133,7 +132,7 @@ func (a *Activities) determineIntent(ctx context.Context, prompt string) (types.
 		path, err := os.Getwd()
 		if err != nil {
 			intent.Source = ""
-			log.Printf("failed to get current working directory: %v", err)
+			slog.Info("failed to get current working directory", "error", err)
 			a.uiWriter.SendStatusComplete("planning", "✅ Request understood")
 			return intent, nil
 		}
@@ -198,7 +197,7 @@ func (a *Activities) determineRunCommand(ctx context.Context, spec analyzer.Proj
 	}
 
 	for _, l := range spec.LaunchContext.Launchers {
-		log.Println(l.Name)
+		slog.Info("launcher file", "name", l.Name)
 		lc.Launchers = append(lc.Launchers, types.LauncherFile{
 			Name:    l.Name,
 			Content: l.Content,
