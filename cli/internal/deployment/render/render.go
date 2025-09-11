@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -127,7 +127,7 @@ func (rda *RenderDeploymentAdapter) shouldUseDockerfile(spec *deployment.Deploym
 }
 
 func (rda *RenderDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	log.Printf("Estimating costs for spec: %+v with strategy: %s\n", spec, strategy)
+	slog.Info("Estimating costs for spec", "spec", spec, "strategy", strategy)
 	cr := deployment.CostRequest{Services: make([]deployment.CostService, 0)}
 	for _, service := range spec.Services {
 		cs := deployment.CostService{}
@@ -158,12 +158,12 @@ func (rda *RenderDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec
 }
 
 func estimateCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
-	log.Printf("Estimating costs for request: %+v\n", cr)
+	slog.Info("Estimating costs for request", "request", cr)
 
 	// Get current pricing from Render via LLM
 	pricing, err := fetchPricingViaLLM(cr.Services)
 	if err != nil {
-		log.Printf("Failed to fetch pricing via LLM, using fallback: %v\n", err)
+		slog.Info("Failed to fetch pricing via LLM, using fallback", "error", err)
 		return estimateCostFallback(cr)
 	}
 
@@ -195,7 +195,7 @@ func fetchPricingViaLLM(services []deployment.CostService) ([]float64, error) {
 	}
 
 	servicesText := strings.Join(serviceDescriptions, "\n")
-	log.Printf("Fetching pricing via LLM for services:\n%s", servicesText)
+	slog.Info("Fetching pricing via LLM for services", "services", servicesText)
 
 	ctx := context.Background()
 	response, err := baml_client.FetchRenderPricing(ctx, servicesText)
@@ -220,12 +220,12 @@ func fetchPricingViaLLM(services []deployment.CostService) ([]float64, error) {
 		}
 	}
 
-	log.Printf("LLM returned pricing: %v (total: $%.2f)", costs, response.Total_cost)
+	slog.Info("LLM returned pricing", "costs", costs, "totalCost", response.Total_cost)
 	return costs, nil
 }
 
 func estimateCostFallback(cr deployment.CostRequest) (deployment.CostEstimate, error) {
-	log.Printf("Using fallback pricing (last updated: %s)", fallbackPricing.LastFetched.Format("2006-01-02"))
+	slog.Info("Using fallback pricing", "lastUpdated", fallbackPricing.LastFetched.Format("2006-01-02"))
 
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0

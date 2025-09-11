@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -291,7 +291,7 @@ func (c *HTTPRenderClient) GetWebService(ctx context.Context, serviceID string) 
 	if err := c.handleResponse(resp, &webService); err != nil {
 		return nil, err
 	}
-	log.Printf("Retrieved web service: %+v", webService)
+	slog.Info("Retrieved web service", "service", webService)
 	return &webService, nil
 }
 
