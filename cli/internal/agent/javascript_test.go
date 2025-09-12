@@ -1,0 +1,309 @@
+package agent
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestPatchSvelteConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		adapter     string
+		wantImports string
+		wantOther   []string
+	}{
+		{
+			name: "JS replace adapter import",
+			input: `import adapter from '@sveltejs/adapter-auto';
+
+const config = {
+  kit: {
+    adapter: adapter()
+  }
+};
+
+export default config;`,
+			adapter:     "@sveltejs/adapter-vercel",
+			wantImports: "import adapter from '@sveltejs/adapter-vercel';",
+			wantOther:   []string{"adapter: adapter()"},
+		},
+		{
+			name: "JS inject adapter if missing",
+			input: `import adapter from '@sveltejs/adapter-auto';
+
+const config = {
+  kit: {
+  }
+};
+
+export default config;`,
+			adapter:     "@sveltejs/adapter-vercel",
+			wantImports: "import adapter from '@sveltejs/adapter-vercel';",
+			wantOther:   []string{"adapter: adapter(),"},
+		},
+		{
+			name: "TS with satisfies, replace adapter",
+			input: `import adapter from '@sveltejs/adapter-auto';
+import { sveltekit } from '@sveltejs/kit/vite';
+
+const config = {
+  kit: {
+    adapter: adapter()
+  }
+} satisfies import('@sveltejs/kit').Config;
+
+export default config;`,
+			adapter:     "@sveltejs/adapter-vercel",
+			wantImports: "import adapter from '@sveltejs/adapter-vercel';",
+			wantOther:   []string{"adapter: adapter()", "} satisfies import('@sveltejs/kit').Config;"},
+		},
+		{
+			name: "TS with satisfies, inject adapter",
+			input: `import adapter from '@sveltejs/adapter-auto';
+import { sveltekit } from '@sveltejs/kit/vite';
+
+const config = {
+  kit: {
+  }
+} satisfies import('@sveltejs/kit').Config;
+
+export default config;`,
+			adapter:     "@sveltejs/adapter-netlify",
+			wantImports: "import adapter from '@sveltejs/adapter-netlify';",
+			wantOther:   []string{"adapter: adapter(),", "} satisfies import('@sveltejs/kit').Config;"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := patchSvelteConfig([]byte(tt.input), tt.adapter)
+			outStr := string(out)
+
+			// import line should be replaced
+			if !strings.Contains(outStr, tt.wantImports) {
+				t.Errorf("expected import line %q\nGot:\n%s", tt.wantImports, outStr)
+			}
+
+			// other expectations
+			for _, want := range tt.wantOther {
+				if !strings.Contains(outStr, want) {
+					t.Errorf("expected output to contain %q\nGot:\n%s", want, outStr)
+				}
+			}
+		})
+	}
+}
+
+func TestPatchPackageJSON(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		adapter      string
+		version      string
+		wantContains []string
+	}{
+		{
+			name: "add adapter to existing devDependencies",
+			input: `{
+  "name": "my-app",
+  "devDependencies": {
+    "@sveltejs/kit": "next"
+  }
+}`,
+			adapter: "@sveltejs/adapter-vercel",
+			version: "^5.2.0",
+			wantContains: []string{
+				`"@sveltejs/adapter-vercel": "^5.2.0"`,
+			},
+		},
+		{
+			name: "update adapter version if already present",
+			input: `{
+  "name": "my-app",
+  "devDependencies": {
+    "@sveltejs/kit": "next",
+    "@sveltejs/adapter-vercel": "^1.0.0"
+  }
+}`,
+			adapter: "@sveltejs/adapter-vercel",
+			version: "^5.2.0",
+			wantContains: []string{
+				`"@sveltejs/adapter-vercel": "^5.2.0"`,
+			},
+		},
+		{
+			name: "create devDependencies if missing",
+			input: `{
+  "name": "my-app",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}`,
+			adapter: "@sveltejs/adapter-netlify",
+			version: "^5.3.0",
+			wantContains: []string{
+				`"@sveltejs/adapter-netlify": "^5.3.0"`,
+			},
+		},
+		{
+			name: "dependencies has adapter, but we enforce devDependencies",
+			input: `{
+  "name": "my-app",
+  "dependencies": {
+    "@sveltejs/adapter-vercel": "^1.0.0"
+  }
+}`,
+			adapter: "@sveltejs/adapter-vercel",
+			version: "^5.2.0",
+			wantContains: []string{
+				`"@sveltejs/adapter-vercel": "^5.2.0"`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := patchPackageJSON([]byte(tt.input), tt.adapter, tt.version)
+			if err != nil {
+				t.Fatal(err)
+			}
+			outStr := string(out)
+
+			// check expectations
+			for _, want := range tt.wantContains {
+				if !strings.Contains(outStr, want) {
+					t.Errorf("expected output to contain %q\nGot:\n%s", want, outStr)
+				}
+			}
+
+			// also check valid JSON
+			var tmp map[string]any
+			if err := json.Unmarshal(out, &tmp); err != nil {
+				t.Errorf("output is not valid JSON: %v\nGot:\n%s", err, outStr)
+			}
+		})
+	}
+}
+
+func TestPatchPackageJSONCleanup(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		adapter        string
+		wantScripts    map[string]string
+		wantDependency string
+	}{
+		{
+			name: "Netlify to Render - cleanup Netlify scripts",
+			input: `{
+  "dependencies": {
+    "@sveltejs/adapter-netlify": "^4.3.0"
+  },
+  "scripts": {
+    "build": "vite build && npm run netlify-functions-build",
+    "netlify-functions-build": "netlify functions:build --functions .netlify/functions --src .netlify/functions-internal",
+    "dev": "vite dev"
+  }
+}`,
+			adapter: "@sveltejs/adapter-node",
+			wantScripts: map[string]string{
+				"build": "vite build",
+				"dev":   "vite dev",
+			},
+			wantDependency: "@sveltejs/adapter-node",
+		},
+		{
+			name: "Render to Netlify - add Netlify scripts",
+			input: `{
+  "dependencies": {
+    "@sveltejs/adapter-node": "^5.2.0"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite dev"
+  }
+}`,
+			adapter: "@sveltejs/adapter-netlify",
+			wantScripts: map[string]string{
+				"build":                   "vite build && npm run netlify-functions-build",
+				"netlify-functions-build": "netlify functions:build --functions .netlify/functions --src .netlify/functions-internal",
+				"dev":                     "vite dev",
+			},
+			wantDependency: "@sveltejs/adapter-netlify",
+		},
+		{
+			name: "Clean package.json with only netlify-functions-build as build script",
+			input: `{
+  "dependencies": {
+    "@sveltejs/adapter-netlify": "^4.3.0"
+  },
+  "scripts": {
+    "build": "npm run netlify-functions-build",
+    "netlify-functions-build": "netlify functions:build --functions .netlify/functions --src .netlify/functions-internal"
+  }
+}`,
+			adapter: "@sveltejs/adapter-node",
+			wantScripts: map[string]string{
+				"build": "vite build",
+			},
+			wantDependency: "@sveltejs/adapter-node",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := patchPackageJSON([]byte(tt.input), tt.adapter, "^5.2.0")
+			if err != nil {
+				t.Fatalf("patchPackageJSON() error = %v", err)
+			}
+
+			var pkg map[string]any
+			if err := json.Unmarshal(result, &pkg); err != nil {
+				t.Fatalf("Failed to unmarshal result: %v", err)
+			}
+
+			// Check scripts
+			scripts, ok := pkg["scripts"].(map[string]any)
+			if !ok {
+				t.Fatal("scripts section not found")
+			}
+
+			for wantScript, wantValue := range tt.wantScripts {
+				if got, exists := scripts[wantScript]; !exists {
+					t.Errorf("script %q not found", wantScript)
+				} else if got != wantValue {
+					t.Errorf("script %q = %q, want %q", wantScript, got, wantValue)
+				}
+			}
+
+			// Check that netlify-functions-build is removed when not using Netlify adapter
+			if tt.adapter != "@sveltejs/adapter-netlify" {
+				if _, exists := scripts["netlify-functions-build"]; exists {
+					t.Error("netlify-functions-build script should be removed for non-Netlify adapters")
+				}
+			}
+
+			// Check dependencies
+			deps, ok := pkg["dependencies"].(map[string]any)
+			if !ok {
+				t.Fatal("dependencies section not found")
+			}
+
+			if _, exists := deps[tt.wantDependency]; !exists {
+				t.Errorf("dependency %q not found", tt.wantDependency)
+			}
+
+			// Check that old adapters are removed
+			oldAdapters := []string{"@sveltejs/adapter-auto", "@sveltejs/adapter-netlify", "@sveltejs/adapter-node"}
+			for _, oldAdapter := range oldAdapters {
+				if oldAdapter != tt.wantDependency {
+					if _, exists := deps[oldAdapter]; exists {
+						t.Errorf("old adapter %q should be removed", oldAdapter)
+					}
+				}
+			}
+		})
+	}
+}

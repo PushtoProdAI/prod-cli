@@ -30,20 +30,20 @@ func NewNetlifyQueuedDeployment(client NetlifyClient, spec *deployment.Deploymen
 // Deploy performs the queued deployment to Netlify
 func (nqd *NetlifyQueuedDeployment) Deploy(ctx context.Context) ([]deployment.CreatedResource, error) {
 	steps := nqd.GenerateAPISteps()
-	
+
 	var createdResources []deployment.CreatedResource
 	stepResults := make(map[string]interface{})
-	
+
 	// Track executed steps for rollback
 	var executedSteps []NetlifyAPIStep
-	
+
 	for _, step := range steps {
 		fmt.Fprintf(nqd.writer, "🔄 Executing: %s...\n", step.GetDescription())
-		
+
 		result, err := step.Execute(ctx, nqd.client, stepResults)
 		if err != nil {
 			fmt.Fprintf(nqd.writer, "❌ Failed: %s - %v\n", step.GetDescription(), err)
-			
+
 			// Attempt rollback of executed steps
 			if len(executedSteps) > 0 {
 				fmt.Fprintf(nqd.writer, "🔄 Rolling back...\n")
@@ -55,21 +55,21 @@ func (nqd *NetlifyQueuedDeployment) Deploy(ctx context.Context) ([]deployment.Cr
 					}
 				}
 			}
-			
+
 			return nil, fmt.Errorf("step %s failed: %w", step.GetID(), err)
 		}
-		
+
 		stepResults[step.GetID()] = result
 		executedSteps = append(executedSteps, step)
-		
+
 		// Convert result to CreatedResource if applicable
 		if resource, ok := result.(deployment.CreatedResource); ok {
 			createdResources = append(createdResources, resource)
 		}
-		
+
 		fmt.Fprintf(nqd.writer, "✅ Completed: %s\n", step.GetDescription())
 	}
-	
+
 	// Print final deployment URL if available
 	if deployResult, ok := stepResults["deploy-site"]; ok {
 		if resource, ok := deployResult.(deployment.CreatedResource); ok {
@@ -79,41 +79,45 @@ func (nqd *NetlifyQueuedDeployment) Deploy(ctx context.Context) ([]deployment.Cr
 			}
 		}
 	}
-	
+
 	return createdResources, nil
 }
 
 // GenerateAPISteps generates the deployment steps for Netlify
 func (nqd *NetlifyQueuedDeployment) GenerateAPISteps() []NetlifyAPIStep {
 	var steps []NetlifyAPIStep
-	
+
 	// Step 1: Create site (without environment variables - CLI doesn't support it)
 	createSiteStep := NewCreateNetlifySiteStep(nqd.spec.Name, nil)
 	steps = append(steps, createSiteStep)
-	
-	// Step 2: Set all environment variables after site creation
+
+	// Step 2: Link CLI to site (always required)
+	linkStep := NewLinkNetlifySiteStep("create-site", nqd.getSourcePath(), nqd.writer)
+	steps = append(steps, linkStep)
+
+	// Step 3: Set all environment variables after linking
 	if len(nqd.spec.EnvVars) > 0 {
 		envVars := make(map[string]string)
 		for _, env := range nqd.spec.EnvVars {
 			envVars[env.Name] = env.Value
 		}
-		envStep := NewSetEnvironmentVariablesStep("create-site", envVars)
+		envStep := NewSetEnvironmentVariablesStep("create-site", "link-site", nqd.getSourcePath(), envVars, nqd.writer)
 		steps = append(steps, envStep)
 	}
-	
-	// Step 3: Update build settings (optional, mainly for UI visibility)
+
+	// Step 4: Update build settings (optional, mainly for UI visibility)
 	if nqd.spec.BuildCommand != "" || nqd.getPublishDir() != "." {
 		buildSettingsStep := NewUpdateBuildSettingsStep("create-site", nqd.spec.BuildCommand, nqd.getPublishDir())
 		steps = append(steps, buildSettingsStep)
 	}
-	
-	// Step 4: Build project (validation step)
+
+	// Step 5: Build project (validation step)
 	if nqd.spec.BuildCommand != "" {
 		buildStep := NewBuildProjectStep(nqd.spec.BuildCommand, nqd.getSourcePath(), nqd.spec.EnvVars, nqd.writer)
 		steps = append(steps, buildStep)
 	}
-	
-	// Step 5: Deploy the site
+
+	// Step 6: Deploy the site
 	deployStep := NewDeployNetlifySiteStep(
 		"create-site",
 		nqd.getBuildStepID(),
@@ -121,10 +125,9 @@ func (nqd *NetlifyQueuedDeployment) GenerateAPISteps() []NetlifyAPIStep {
 		nqd.getFunctionsDir(),
 	)
 	steps = append(steps, deployStep)
-	
+
 	return steps
 }
-
 
 // getBuildStepID returns the ID of the build step if it exists
 func (nqd *NetlifyQueuedDeployment) getBuildStepID() string {
@@ -148,7 +151,7 @@ func (nqd *NetlifyQueuedDeployment) getPublishDir() string {
 	if dir, ok := nqd.spec.Metadata["publishDir"].(string); ok && dir != "" {
 		return dir
 	}
-	
+
 	// Check common build output directories
 	sourcePath := nqd.getSourcePath()
 	for _, dir := range GetCommonBuildDirs() {
@@ -156,7 +159,7 @@ func (nqd *NetlifyQueuedDeployment) getPublishDir() string {
 			return dir
 		}
 	}
-	
+
 	// Default to current directory
 	return "."
 }
@@ -167,17 +170,17 @@ func (nqd *NetlifyQueuedDeployment) getFunctionsDir() string {
 	if dir, ok := nqd.spec.Metadata["functionsDir"].(string); ok && dir != "" {
 		return dir
 	}
-	
+
 	// Common functions directories
 	commonDirs := GetCommonFunctionDirs()
-	
+
 	sourcePath := nqd.getSourcePath()
 	for _, dir := range commonDirs {
 		if _, err := os.Stat(filepath.Join(sourcePath, dir)); err == nil {
 			return dir
 		}
 	}
-	
+
 	// No functions directory found
 	return ""
 }

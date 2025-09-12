@@ -22,15 +22,16 @@ import (
 )
 
 const (
-	PlanDeployWorkflowName        = "agent.planDeploy"
-	DeployRenderWorkflowName      = "agent.deploy.render"
-	DryRunDeployWorkflowName      = "agent.dryRun.render"
-	DeployFlyioWorkflowName       = "agent.deploy.flyio"
-	CategorizeEnvVarsWorkflowName = "agent.categorizeEnvVars"
-	DryRunRenderWorkflowName      = "agent.dryrun.render"
-	DryRunFlyioWorkflowName       = "agent.dryrun.flyio"
-	DeployNetlifyWorkflowName     = "agent.deploy.netlify"
-	DryRunNetlifyWorkflowName     = "agent.dryrun.netlify"
+	PlanDeployWorkflowName             = "agent.planDeploy"
+	DeployRenderWorkflowName           = "agent.deploy.render"
+	DryRunDeployWorkflowName           = "agent.dryRun.render"
+	DeployFlyioWorkflowName            = "agent.deploy.flyio"
+	CategorizeEnvVarsWorkflowName      = "agent.categorizeEnvVars"
+	DryRunRenderWorkflowName           = "agent.dryrun.render"
+	DryRunFlyioWorkflowName            = "agent.dryrun.flyio"
+	DeployNetlifyWorkflowName          = "agent.deploy.netlify"
+	DryRunNetlifyWorkflowName          = "agent.dryrun.netlify"
+	SetupJavaScriptProjectWorkflowName = "agent.setupJavaScriptProject"
 )
 
 var ActivityOpts = workflow.ActivityOptions{
@@ -48,6 +49,21 @@ type Workflows struct {
 	renderClient render.RenderClient
 	flyClient    flyio.FlyioClient
 	uiWriter     output.StatusWriter
+}
+
+// DiffLine represents a single line in a diff
+type DiffLine struct {
+	Type    string `json:"type"`    // "context", "added", "removed", "header", "fileheader"
+	Content string `json:"content"` // the actual line content
+}
+
+// SetupJavaScriptProjectResult contains the results of setting up a JavaScript project
+type SetupJavaScriptProjectResult struct {
+	PackageLockCreated  bool        `json:"packageLockCreated"`
+	SvelteConfigUpdated bool        `json:"svelteConfigUpdated"`
+	SvelteConfigDiff    []DiffLine  `json:"svelteConfigDiff,omitempty"`
+	Error               deployError `json:"error,omitempty"`
+	UpdatedPlan         DeployPlan  `json:"updatedPlan,omitempty"`
 }
 
 var _ workflowext.Registerer = (*Workflows)(nil)
@@ -95,6 +111,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: DryRunFlyioWorkflowName, WorkflowFunc: w.dryRunDeployFly},
 		{Name: DeployNetlifyWorkflowName, WorkflowFunc: w.deployNetlify},
 		{Name: DryRunNetlifyWorkflowName, WorkflowFunc: w.dryRunNetlify},
+		{Name: SetupJavaScriptProjectWorkflowName, WorkflowFunc: w.setupJavaScriptProject},
 	}
 }
 
@@ -130,6 +147,12 @@ func (Workflows) DryRunDeploy(ctx context.Context, c *client.Client, input Deplo
 
 func (Workflows) CategorizeEnvVars(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
 	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", CategorizeEnvVarsWorkflowName, time.Now().Unix())}, CategorizeEnvVarsWorkflowName, input)
+}
+
+func (Workflows) SetupJavaScriptProject(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
+	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{
+		InstanceID: fmt.Sprintf("%s.%d", SetupJavaScriptProjectWorkflowName, time.Now().Unix()),
+	}, SetupJavaScriptProjectWorkflowName, input)
 }
 
 func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deployResult, error) {
@@ -727,14 +750,10 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	slog.Info("deployNetlify workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
-	// Add timeout context to prevent hanging
-	deployCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-
 	// Build deployment spec from the plan
 	slog.Info("Building deployment spec")
 	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars)
-	deploymentSpec, err := db.Build()
+	spec, err := db.Build()
 	if err != nil {
 		slog.Info("Failed to build deployment spec", "error", err)
 		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to build deployment spec: %v", err)}}, nil
@@ -742,52 +761,29 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	slog.Info("Deployment spec built successfully")
 
 	// Add metadata
-	deploymentSpec.Metadata["buildContext"] = input.Source
-	deploymentSpec.Metadata["platform"] = "netlify"
+	spec.Metadata["buildContext"] = input.Source
+	spec.Metadata["platform"] = "netlify"
 
-	// Create Netlify deployment adapter
-	slog.Info("🔍 Creating Netlify deployment adapter...")
-	netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(w.uiWriter)
-
-	// Generate deployment artifacts
-	slog.Info("Generating deployment artifacts")
-	deployable, err := netlifyAdapter.GenerateArtifacts(deploymentSpec, deployment.StrategyNetlify)
+	d := netlify.NewNetlifyQueuedDeployment(&netlify.CLINetlifyClient{}, spec, w.uiWriter)
+	steps := d.GenerateAPISteps()
+	descriptions := make([]string, len(steps))
+	for i, step := range steps {
+		descriptions[i] = step.GetDescription()
+	}
+	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
 	if err != nil {
-		slog.Info("Failed to generate deployment artifacts", "error", err)
-		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to generate deployment artifacts: %v", err)}}, nil
-	}
-	slog.Info("Deployment artifacts generated successfully")
-
-	// Execute the deployment with timeout
-	slog.Info("Starting Netlify deployment", "timeout", "10 minutes")
-
-	// Use a channel to handle the deployment with timeout
-	deployDone := make(chan struct{})
-	var createdResources []deployment.CreatedResource
-	var deployErr error
-
-	go func() {
-		defer close(deployDone)
-		slog.Info("Executing deployment in goroutine")
-		createdResources, deployErr = deployable.Deploy(deployCtx)
-		slog.Info("Deployment goroutine completed")
-	}()
-
-	// Wait for deployment or timeout
-	select {
-	case <-deployDone:
-		slog.Info("Deployment completed, checking results")
-	case <-deployCtx.Done():
-		slog.Info("Deployment timed out", "timeout", "10 minutes")
-		return deployResult{Error: deployError{Summary: "Netlify deployment timed out after 10 minutes"}}, nil
+		slog.Error("Failed to summarize deployment steps", "error", err)
 	}
 
-	if deployErr != nil {
-		slog.Info("Netlify deployment failed", "error", deployErr)
-		return deployResult{Error: deployError{Summary: fmt.Sprintf("Netlify deployment failed: %v", deployErr)}}, nil
+	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
+	if err != nil {
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		slog.Error("Deployment failed", "error", err)
+		return deployResult{Error: summary}, nil
 	}
-
-	slog.Info("Netlify deployment completed successfully", "resourcesCreated", len(createdResources))
 
 	// Extract deployment URL from created resources
 	var deploymentURL string
@@ -816,4 +812,53 @@ func (w *Workflows) dryRunNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	// TODO: Implement Netlify dry run
 	slog.Info("Netlify dry run not yet implemented")
 	return deployResult{Error: deployError{Summary: "Netlify dry run not yet implemented"}}, nil
+}
+
+// setupJavaScriptProject sets up a JavaScript/Node.js project for deployment
+func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPlan) (SetupJavaScriptProjectResult, error) {
+	slog.Info("setupJavaScriptProject workflow started", "platform", input.Platform)
+	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
+
+	result := SetupJavaScriptProjectResult{}
+
+	// Step 1: Update Svelte config if this is a Svelte project
+	slog.Info("Updating Svelte configuration")
+	diff, err := workflow.ExecuteActivity[[]DiffLine](ctx, ActivityOpts, AgentUpdateSvelteConfig, input).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to update Svelte config", "error", err)
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			slog.Error("Failed to summarize Svelte config error", "error", e1)
+			return SetupJavaScriptProjectResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		return SetupJavaScriptProjectResult{Error: summary}, nil
+	}
+
+	if len(diff) > 0 {
+		result.SvelteConfigUpdated = true
+		result.SvelteConfigDiff = diff
+		slog.Info("Svelte configuration updated")
+	} else {
+		slog.Info("No Svelte configuration found or no changes needed")
+	}
+
+	// Step 2: Create/update package-lock.json (after Svelte config changes)
+	slog.Info("Creating/updating package-lock.json")
+	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentCreatePackageLock, input, result.SvelteConfigUpdated).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to create package-lock.json", "error", err)
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			slog.Error("Failed to summarize package-lock error", "error", e1)
+			return SetupJavaScriptProjectResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		return SetupJavaScriptProjectResult{Error: summary}, nil
+	}
+	result.PackageLockCreated = true
+	slog.Info("Package-lock.json handling completed")
+
+	plan, _ := workflow.ExecuteActivity[DeployPlan](ctx, ActivityOpts, AgentPrepareNuxtBuild, input).Get(ctx)
+	result.UpdatedPlan = plan
+	slog.Info("JavaScript project setup completed successfully")
+	return result, nil
 }

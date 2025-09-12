@@ -29,6 +29,10 @@ const (
 	AgentDetermineRootPath    = "agent.determineRootPath"
 	AgentDetermineBuildOutput = "agent.determineBuildOutput"
 	AgentDetermineRunCommand  = "agent.determineRunCommand"
+	AgentCreatePackageLock    = "agent.createPackageLock"
+	AgentUpdateSvelteConfig   = "agent.updateSvelteConfig"
+	AgentRevertSvelteConfig   = "agent.revertSvelteConfig"
+	AgentPrepareNuxtBuild     = "agent.prepareNuxtBuild"
 )
 
 type Activities struct {
@@ -60,5 +64,9 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentDetermineRootPath, ActFunc: a.determineRootPath},
 		{Name: AgentDetermineBuildOutput, ActFunc: a.determineBuildOutput},
 		{Name: AgentDetermineRunCommand, ActFunc: a.determineRunCommand},
+		{Name: AgentCreatePackageLock, ActFunc: a.createPackageLock},
+		{Name: AgentUpdateSvelteConfig, ActFunc: a.updateSvelteConfig},
+		{Name: AgentRevertSvelteConfig, ActFunc: a.restoreFromBackup},
+		{Name: AgentPrepareNuxtBuild, ActFunc: a.prepareNuxtBuild},
 	}
 }

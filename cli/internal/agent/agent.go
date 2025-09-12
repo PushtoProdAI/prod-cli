@@ -324,9 +324,9 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 		return a.promptForEnvVarValue(ctx, input, out)
 	}
 
-	// All env vars are database-related or already have values, proceed with deployment
-	fmt.Fprintf(out, "✅ All environment variables are ready. Proceeding with deployment...\n")
-	return a.deploy(ctx, input, out)
+	// All env vars are database-related or already have values, proceed with PrepareJS
+	fmt.Fprintf(out, "✅ All environment variables are ready. Proceeding to JavaScript preparation...\n")
+	return a.prepareJS(ctx, input, out)
 }
 
 func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -340,9 +340,9 @@ func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.W
 	}
 
 	if currentEnvVar == nil {
-		// No more pending env vars, proceed with deployment
-		fmt.Fprintf(out, "All environment variable values collected. Proceeding with deployment...\n")
-		return a.deploy(ctx, input, out)
+		// No more pending env vars, proceed with PrepareJS
+		fmt.Fprintf(out, "All environment variable values collected. Proceeding to JavaScript preparation...\n")
+		return a.prepareJS(ctx, input, out)
 	}
 
 	promptMessage := fmt.Sprintf("Enter value for environment variable '%s':", currentEnvVar.Name)
@@ -386,6 +386,61 @@ func (a *Agent) waitForEnvVarValue(ctx context.Context, input string, out io.Wri
 	return a.promptForEnvVarValue(ctx, input, out)
 }
 
+func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	if a.DeployPlan.Spec.Language == "node" {
+		fmt.Fprintf(out, "🔧 Preparing JavaScript environment...\n")
+		wf, err := Workflows{}.SetupJavaScriptProject(ctx, a.wfClient, *a.DeployPlan)
+		if err != nil {
+			slog.Error("Workflow execution result", "error", err)
+			fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
+			return a.plan, nil
+		}
+
+		result, err := client.GetWorkflowResult[SetupJavaScriptProjectResult](ctx, a.wfClient, wf, 2*time.Minute)
+		if err != nil {
+			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
+			return a.confirmWithPrompt(ctx, "", out)
+		}
+		if result.Error.Summary != "" {
+			fmt.Fprintf(out, "❌ %s\n", result.Error.Summary)
+			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
+			return a.confirmWithPrompt(ctx, "", out)
+		}
+		if len(result.SvelteConfigDiff) > 0 {
+			fmt.Fprint(out, "\n📝 Configuration changes made:\n")
+			fmt.Fprint(out, "────────────────────────────────────────\n")
+
+			// Use structured diff data for better formatting
+			for _, line := range result.SvelteConfigDiff {
+				switch line.Type {
+				case "header":
+					// Context line - show in blue/cyan
+					fmt.Fprintf(out, "\033[36m%s\033[0m\n", line.Content)
+				case "added":
+					// Addition - show in green
+					fmt.Fprintf(out, "\033[32m%s\033[0m\n", line.Content)
+				case "removed":
+					// Deletion - show in red
+					fmt.Fprintf(out, "\033[31m%s\033[0m\n", line.Content)
+				case "fileheader":
+					// File headers - show in bold
+					fmt.Fprintf(out, "\033[1m%s\033[0m\n", line.Content)
+				default:
+					// Regular context lines
+					fmt.Fprintf(out, "%s\n", line.Content)
+				}
+			}
+			fmt.Fprint(out, "────────────────────────────────────────\n")
+		}
+		a.DeployPlan = &result.UpdatedPlan
+		fmt.Fprint(out, "✅ JavaScript environment prepared successfully!\n")
+
+	}
+
+	// After PrepareJS completion, proceed with deployment
+	return a.deploy(ctx, input, out)
+}
+
 func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	if a.dryRun {
 		return a.dryRunDeploy(ctx, input, out)
@@ -410,7 +465,8 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 			collectedEnvVars = append(collectedEnvVars, envVar.EnvVar)
 		}
 	}
-	DeployPlanWithEnvVars.CollectedEnvVars = collectedEnvVars
+	// make sure if we have collected any other env vars along the way they are captured
+	DeployPlanWithEnvVars.CollectedEnvVars = append(DeployPlanWithEnvVars.CollectedEnvVars, collectedEnvVars...)
 
 	wf, err := Workflows{}.Deploy(ctx, a.wfClient, DeployPlanWithEnvVars)
 	if err != nil {

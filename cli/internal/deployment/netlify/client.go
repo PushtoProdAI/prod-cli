@@ -145,6 +145,22 @@ func (c *CLINetlifyClient) DeleteSite(siteID string) error {
 	return nil
 }
 
+// LinkSite links the current directory to a Netlify site using CLI
+func (c *CLINetlifyClient) LinkSite(siteID string) error {
+	if err := c.ensureNetlifyCLI(); err != nil {
+		return err
+	}
+
+	cmd := exec.Command("netlify", "link", "--id", siteID)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to link site: %w\nOutput: %s", err, string(output))
+	}
+
+	slog.Info("Successfully linked site to current directory", "siteID", siteID)
+	return nil
+}
+
 // DeploySite deploys a site to Netlify using CLI
 func (c *CLINetlifyClient) DeploySite(siteID string, path string, functionsPath string) (*NetlifyDeploy, error) {
 	if err := c.ensureNetlifyCLI(); err != nil {
@@ -152,7 +168,7 @@ func (c *CLINetlifyClient) DeploySite(siteID string, path string, functionsPath 
 	}
 
 	// Build deploy command
-	args := []string{"deploy", "--prod", "--json", "--site", siteID}
+	args := []string{"deploy", "--prod", "--json"}
 
 	// Add directory to deploy
 	if path != "" {
@@ -250,7 +266,7 @@ func (c *CLINetlifyClient) SetEnvironmentVariables(siteID string, vars map[strin
 
 // setEnvVar sets a single environment variable
 func (c *CLINetlifyClient) setEnvVar(siteID, key, value string) error {
-	cmd := exec.Command("netlify", "env:set", key, value, "--site", siteID)
+	cmd := exec.Command("netlify", "env:set", key, value)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to set env var: %w\nOutput: %s", err, string(output))
