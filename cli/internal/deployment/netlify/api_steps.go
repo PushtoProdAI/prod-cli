@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
@@ -188,7 +188,7 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, st
 		fmt.Fprintf(s.writer, "  ⚠️  No package.json found, skipping dependency installation\n")
 	}
 
-	// Try netlify build first
+	// Always try netlify build first
 	fmt.Fprintf(s.writer, "  📦 Running Netlify build...\n")
 	cmd := exec.CommandContext(buildCtx, "netlify", "build")
 	cmd.Env = env
@@ -301,16 +301,22 @@ func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 		}
 	}
 
-	// Construct full paths
-	deployPath := filepath.Join(sourcePath, s.publishDir)
-	functionsPath := ""
-	if s.functionsDir != "" {
-		functionsPath = filepath.Join(sourcePath, s.functionsDir)
-		// Check if functions directory exists
-		if _, err := os.Stat(functionsPath); os.IsNotExist(err) {
-			functionsPath = "" // Don't deploy functions if directory doesn't exist
-		}
+	// Change to source directory to run deployment
+	originalDir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current directory: %w", err)
 	}
+
+	if sourcePath != "." && sourcePath != "" {
+		if err := os.Chdir(sourcePath); err != nil {
+			return nil, fmt.Errorf("failed to change to source directory: %w", err)
+		}
+		defer os.Chdir(originalDir)
+	}
+
+	// Construct relative paths (now that we're in the source directory)
+	deployPath := s.publishDir
+	functionsPath := s.discoverFunctionsDir()
 
 	// Deploy using CLI client
 	deploy, err := client.DeploySite(siteID, deployPath, functionsPath)
@@ -338,22 +344,141 @@ func (s *DeployNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClie
 	return fmt.Errorf("deployment rollback not implemented - use Netlify UI to rollback")
 }
 
+// discoverFunctionsDir dynamically discovers the functions directory at execution time
+// This is important because the build step may create new function directories (e.g., .netlify/functions for SvelteKit)
+func (s *DeployNetlifySiteStep) discoverFunctionsDir() string {
+	// First check if we already have a functions directory from step generation
+	if s.functionsDir != "" {
+		// Check if it still exists
+		if _, err := os.Stat(s.functionsDir); err == nil {
+			return s.functionsDir
+		}
+	}
+
+	// Check common function directories (especially those created during build)
+	commonDirs := GetCommonFunctionDirs()
+	for _, dir := range commonDirs {
+		if _, err := os.Stat(dir); err == nil {
+			// Log when we discover a functions directory that wasn't detected during step generation
+			if s.functionsDir == "" {
+				log.Printf("Discovered functions directory during deployment: %s", dir)
+			}
+			return dir
+		}
+	}
+
+	// No functions directory found
+	return ""
+}
+
+// LinkNetlifySiteStep links the Netlify CLI to a site
+type LinkNetlifySiteStep struct {
+	BaseStep
+	siteStepID string
+	sourcePath string
+	writer     io.Writer
+}
+
+func NewLinkNetlifySiteStep(siteStepID string, sourcePath string, writer io.Writer) *LinkNetlifySiteStep {
+	return &LinkNetlifySiteStep{
+		BaseStep: BaseStep{
+			ID:           "link-site",
+			Description:  "Link CLI to Netlify site",
+			Dependencies: []string{siteStepID},
+		},
+		siteStepID: siteStepID,
+		sourcePath: sourcePath,
+		writer:     writer,
+	}
+}
+
+func (s *LinkNetlifySiteStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error) {
+	// Get site ID from create step
+	siteID := ""
+	if siteResult, ok := stepResults[s.siteStepID]; ok {
+		if resource, ok := siteResult.(deployment.CreatedResource); ok {
+			siteID = resource.ID
+		}
+	}
+
+	if siteID == "" {
+		return nil, fmt.Errorf("could not find site ID from step %s", s.siteStepID)
+	}
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	if s.sourcePath != "." && s.sourcePath != "" {
+		if err := os.Chdir(s.sourcePath); err != nil {
+			return nil, fmt.Errorf("failed to change to source directory: %w", err)
+		}
+		defer os.Chdir(originalDir)
+	}
+
+	// Remove .netlify directory to fix intermittent issues with env vars
+	err = os.RemoveAll(".netlify")
+	if err != nil {
+		log.Printf("Warning: failed to remove .netlify directory: %v", err)
+	}
+
+	err = client.LinkSite(siteID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to link CLI to site: %w", err)
+	}
+
+	// Return success indicator
+	return map[string]interface{}{
+		"site_id": siteID,
+		"linked":  true,
+	}, nil
+}
+
+func (s *LinkNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) error {
+	// Remove .netlify directory to unlink
+	originalDir, err := os.Getwd()
+	if err != nil {
+		log.Printf("Warning: failed to get current directory during rollback: %v", err)
+		return nil
+	}
+
+	if s.sourcePath != "." && s.sourcePath != "" {
+		if err := os.Chdir(s.sourcePath); err != nil {
+			log.Printf("Warning: failed to change to source directory during rollback: %v", err)
+			return nil
+		}
+		defer os.Chdir(originalDir)
+	}
+
+	err = os.RemoveAll(".netlify")
+	if err != nil {
+		log.Printf("Warning: failed to remove .netlify directory during rollback: %v", err)
+	}
+
+	return nil
+}
+
 // SetEnvironmentVariablesStep sets environment variables for a Netlify site
 type SetEnvironmentVariablesStep struct {
 	BaseStep
 	siteStepID string
 	envVars    map[string]string
+	sourcePath string
+	writer     io.Writer
 }
 
-func NewSetEnvironmentVariablesStep(siteStepID string, envVars map[string]string) *SetEnvironmentVariablesStep {
+func NewSetEnvironmentVariablesStep(siteStepID string, linkStepID string, sourcePath string, envVars map[string]string, writer io.Writer) *SetEnvironmentVariablesStep {
 	return &SetEnvironmentVariablesStep{
 		BaseStep: BaseStep{
 			ID:           "set-env-vars",
 			Description:  fmt.Sprintf("Set %d environment variables", len(envVars)),
-			Dependencies: []string{siteStepID},
+			Dependencies: []string{siteStepID, linkStepID},
 		},
 		siteStepID: siteStepID,
 		envVars:    envVars,
+		sourcePath: sourcePath,
+		writer:     writer,
 	}
 }
 
@@ -403,7 +528,7 @@ func (s *SetEnvironmentVariablesStep) Rollback(ctx context.Context, client Netli
 		cmd := exec.Command("netlify", "env:unset", key, "--site", siteID)
 		if err := cmd.Run(); err != nil {
 			// Log error but continue trying to unset others
-			fmt.Printf("Warning: failed to unset env var %s: %v\n", key, err)
+			fmt.Fprintf(s.writer, "  ⚠️ Warning: failed to unset env var: %s: %v\n", key, err)
 		}
 	}
 
