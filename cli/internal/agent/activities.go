@@ -9,30 +9,30 @@ import (
 )
 
 const (
-	AgentDetermineIntent      = "agent.determineIntent"
-	AgentAnalyzeProject       = "agent.analyzeProject"
-	AgentSummarizeIntent      = "agent.summarize"
-	AgentGetRenderWorkspace   = "agent.getRenderWorkspace"
-	AgentDeploySteps          = "agent.deploySteps"
-	AgentSummarizeDeploySteps = "agent.summarizeDeploySteps"
-	AgentSummarizeError       = "agent.summarizeError"
-	AgentEstimateRenderCosts  = "agent.estimateRenderCosts"
-	AgentEstimateFlyioCosts   = "agent.estimateFlyioCosts"
-	AgentEstimateNetlifyCosts = "agent.estimateNetlifyCosts"
-	AgentGetRenderServiceURL  = "agent.getRenderServiceURL"
-	AgentIsURLLive            = "agent.isURLLive"
-	AgentSendProjectStats     = "agent.sendProjectStats"
-	AgentGetFlyIOAppURL       = "agent.getFlyIOAppURL"
-	AgentCategorizeEnvVars    = "agent.categorizeEnvVars"
-	AgentReadEnvFiles         = "agent.readEnvFiles"
-	AgentCreateDockerRepo     = "agent.createDockerRepo"
-	AgentDetermineRootPath    = "agent.determineRootPath"
-	AgentDetermineBuildOutput = "agent.determineBuildOutput"
-	AgentDetermineRunCommand  = "agent.determineRunCommand"
-	AgentCreatePackageLock    = "agent.createPackageLock"
-	AgentUpdateSvelteConfig   = "agent.updateSvelteConfig"
-	AgentRevertSvelteConfig   = "agent.revertSvelteConfig"
-	AgentPrepareNuxtBuild     = "agent.prepareNuxtBuild"
+	AgentDetermineIntent        = "agent.determineIntent"
+	AgentAnalyzeProject         = "agent.analyzeProject"
+	AgentSummarizeIntent        = "agent.summarize"
+	AgentGetRenderWorkspace     = "agent.getRenderWorkspace"
+	AgentDeploySteps            = "agent.deploySteps"
+	AgentSummarizeDeploySteps   = "agent.summarizeDeploySteps"
+	AgentSummarizeError         = "agent.summarizeError"
+	AgentEstimateRenderCosts    = "agent.estimateRenderCosts"
+	AgentEstimateFlyioCosts     = "agent.estimateFlyioCosts"
+	AgentEstimateNetlifyCosts   = "agent.estimateNetlifyCosts"
+	AgentGetRenderServiceURL    = "agent.getRenderServiceURL"
+	AgentIsURLLive              = "agent.isURLLive"
+	AgentSendProjectStats       = "agent.sendProjectStats"
+	AgentGetFlyIOAppURL         = "agent.getFlyIOAppURL"
+	AgentCategorizeEnvVars      = "agent.categorizeEnvVars"
+	AgentReadEnvFiles           = "agent.readEnvFiles"
+	AgentCreateDockerRepo       = "agent.createDockerRepo"
+	AgentDetermineRootPath      = "agent.determineRootPath"
+	AgentDetermineBuildOutput   = "agent.determineBuildOutput"
+	AgentDetermineRunCommand    = "agent.determineRunCommand"
+	AgentCreatePackageLock      = "agent.createPackageLock"
+	AgentUpdateJavaScriptConfig = "agent.updateJavaScriptConfig"
+	AgentRevertSvelteConfig     = "agent.revertSvelteConfig"
+	AgentPrepareNuxtBuild       = "agent.prepareNuxtBuild"
 )
 
 type Activities struct {
@@ -65,7 +65,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentDetermineBuildOutput, ActFunc: a.determineBuildOutput},
 		{Name: AgentDetermineRunCommand, ActFunc: a.determineRunCommand},
 		{Name: AgentCreatePackageLock, ActFunc: a.createPackageLock},
-		{Name: AgentUpdateSvelteConfig, ActFunc: a.updateSvelteConfig},
+		{Name: AgentUpdateJavaScriptConfig, ActFunc: a.updateJavaScriptConfig},
 		{Name: AgentRevertSvelteConfig, ActFunc: a.restoreFromBackup},
 		{Name: AgentPrepareNuxtBuild, ActFunc: a.prepareNuxtBuild},
 	}

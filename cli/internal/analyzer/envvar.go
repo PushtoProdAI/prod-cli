@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"io/fs"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -127,6 +128,8 @@ func scanFileForCandidates(path string, re *regexp.Regexp, minContextLines, maxC
 		contextAfter := int(math.Min(float64(len(lines)), float64(lineNum-1+maxContextLines+1)))
 
 		context := strings.Join(lines[contextBefore:contextAfter], "\n")
+
+		log.Printf("Name: %s, File: %s, Line: %d", varName, path, lineNum)
 
 		candidates = append(candidates, EnvVarCandidate{
 			VarName: varName,

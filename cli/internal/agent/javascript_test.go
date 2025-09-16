@@ -307,3 +307,128 @@ func TestPatchPackageJSONCleanup(t *testing.T) {
 		})
 	}
 }
+
+func TestPatchPackageJSONForPlatformWithFrameworkDetection(t *testing.T) {
+	tests := []struct {
+		name            string
+		framework       string // runtime framework from ServiceRequirements
+		platform        Platform
+		wantPackageJSON string
+		wantChanged     bool
+	}{
+		{
+			name:      "SvelteKit project gets patched for Vercel",
+			framework: "SvelteKit",
+			platform:  Vercel,
+			wantPackageJSON: `{
+  "dependencies": {
+    "@sveltejs/adapter-vercel": "^5.10.2"
+  }
+}`,
+			wantChanged: true,
+		},
+		{
+			name:      "Next.js project does NOT get patched for Vercel",
+			framework: "Next.js",
+			platform:  Vercel,
+			wantPackageJSON: `{
+  "name": "test"
+}`,
+			wantChanged: false,
+		},
+		{
+			name:      "No runtime framework does NOT get patched",
+			framework: "",
+			platform:  Vercel,
+			wantPackageJSON: `{
+  "name": "test"
+}`,
+			wantChanged: false,
+		},
+		{
+			name:      "Vite build tool only does NOT get patched for Vercel",
+			framework: "", // No runtime framework, just build tool
+			platform:  Vercel,
+			wantPackageJSON: `{
+  "name": "test"
+}`,
+			wantChanged: false,
+		},
+		{
+			name:      "Angular project does NOT get patched for Vercel",
+			framework: "Angular",
+			platform:  Vercel,
+			wantPackageJSON: `{
+  "name": "test"
+}`,
+			wantChanged: false,
+		},
+		{
+			name:      "Vue project does NOT get patched for Vercel",
+			framework: "Vue",
+			platform:  Vercel,
+			wantPackageJSON: `{
+  "name": "test"
+}`,
+			wantChanged: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Original package.json
+			origPackageJSON := `{
+  "name": "test"
+}`
+
+			// Test the function
+			updatedJSON, changed, err := patchPackageJSONForPlatform([]byte(origPackageJSON), tt.platform, tt.framework)
+			if err != nil {
+				t.Fatalf("patchPackageJSONForPlatform failed: %v", err)
+			}
+
+			if changed != tt.wantChanged {
+				t.Errorf("expected changed=%v, got changed=%v", tt.wantChanged, changed)
+			}
+
+			// Parse the result to check the content
+			var result map[string]any
+			if err := json.Unmarshal(updatedJSON, &result); err != nil {
+				t.Fatalf("failed to parse result JSON: %v", err)
+			}
+
+			var expected map[string]any
+			if err := json.Unmarshal([]byte(tt.wantPackageJSON), &expected); err != nil {
+				t.Fatalf("failed to parse expected JSON: %v", err)
+			}
+
+			// Check if the result matches expectations
+			if tt.wantChanged {
+				// For SvelteKit projects, check that the adapter was added
+				deps, ok := result["dependencies"].(map[string]any)
+				if !ok {
+					t.Fatal("expected dependencies section in result")
+				}
+				expectedDeps := expected["dependencies"].(map[string]any)
+				for adapter := range expectedDeps {
+					if _, exists := deps[adapter]; !exists {
+						t.Errorf("expected adapter %q to be added", adapter)
+					}
+				}
+			} else {
+				// For non-SvelteKit projects, check that no adapters were added
+				if deps, ok := result["dependencies"].(map[string]any); ok {
+					svelteAdapters := []string{
+						"@sveltejs/adapter-auto", "@sveltejs/adapter-netlify",
+						"@sveltejs/adapter-node", "@sveltejs/adapter-vercel",
+					}
+					for _, adapter := range svelteAdapters {
+						if _, exists := deps[adapter]; exists {
+							t.Errorf("unexpected adapter %q was added to non-SvelteKit project", adapter)
+						}
+					}
+				}
+			}
+		})
+	}
+}

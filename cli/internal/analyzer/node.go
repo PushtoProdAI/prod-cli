@@ -112,7 +112,7 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 	}
 
 	re := regexp.MustCompile(nodeEnvVarRegex)
-	envVars, err := walkProjectForCandidates(n.ProjectFS, []string{".js", ".ts", ".tsx", ".jsx"}, []string{"node_modules"}, re, 3, 5)
+	envVars, err := walkProjectForCandidates(n.ProjectFS, []string{".js", ".ts", ".tsx", ".jsx"}, []string{"node_modules", ".next", ".netlify"}, re, 3, 5)
 	if err != nil {
 		return nil, err
 	}
@@ -129,11 +129,12 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 		return nil, err
 	}
 
-	// mixing of concerns, so we can probably clean up but since the build output further refines to specific JS frameworks, let's include it for display
-	if buildOutputCandidate.Framework != "Unknown" && buildOutputCandidate.Framework != "None" {
+	// Detect runtime framework separately from build tools and add as service requirement
+	runtimeFramework := findRuntimeFramework(n.ProjectFS.rootPath)
+	if runtimeFramework != "" {
 		serviceRequirements = append(serviceRequirements, ServiceRequirement{
 			Type:     "framework",
-			Provider: buildOutputCandidate.Framework,
+			Provider: runtimeFramework,
 		})
 	}
 
@@ -169,8 +170,17 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 		Readme:    data,
 	}
 
+	name := pkgJson.Name
+	if name == "" {
+		base := filepath.Base(n.ProjectFS.rootPath)
+		if base != "" {
+			name = base
+		}
+
+	}
+
 	return &ProjectSpec{
-		Name:                pkgJson.Name,
+		Name:                name,
 		Language:            "node",
 		ServiceRequirements: serviceRequirements,
 		BuildCommand:        buildCommand,
@@ -211,8 +221,22 @@ func unmarshalPkgJson(projectFS fs.FS) (*PackageJson, error) {
 }
 
 func findBuildOutputCandidate(root string) (BuildOutputCandidate, error) {
-	if exists(filepath.Join(root, "next.config.js")) {
-		contents, _ := os.ReadFile(filepath.Join(root, "next.config.js"))
+	// Check for Next.js first (prioritize next.config.ts over .js)
+	nextConfigTS := filepath.Join(root, "next.config.ts")
+	nextConfigJS := filepath.Join(root, "next.config.js")
+
+	if exists(nextConfigTS) {
+		contents, _ := os.ReadFile(nextConfigTS)
+		return BuildOutputCandidate{
+			Path:           ".next",
+			Source:         "next.config.ts",
+			Framework:      "Next.js",
+			ConfigContents: string(contents),
+		}, nil
+	}
+
+	if exists(nextConfigJS) {
+		contents, _ := os.ReadFile(nextConfigJS)
 		return BuildOutputCandidate{
 			Path:           ".next",
 			Source:         "next.config.js",
@@ -358,4 +382,92 @@ func extractScriptsJSON(pkg *PackageJson) (string, error) {
 		return "", err
 	}
 	return string(bytes), nil
+}
+
+// findRuntimeFramework detects the runtime framework (what runs the app) as opposed to build tools
+// Detection order matters: more specific frameworks are checked first (e.g., SvelteKit before generic Vue)
+func findRuntimeFramework(root string) string {
+	// Check for SvelteKit (has svelte.config.js|ts)
+	if exists(filepath.Join(root, "svelte.config.ts")) || exists(filepath.Join(root, "svelte.config.js")) {
+		return "SvelteKit"
+	}
+
+	// Check for Next.js (has next.config.js|ts)
+	if exists(filepath.Join(root, "next.config.ts")) || exists(filepath.Join(root, "next.config.js")) {
+		return "Next.js"
+	}
+
+	// Check for Nuxt (has nuxt.config.*)
+	if exists(filepath.Join(root, "nuxt.config.ts")) ||
+		exists(filepath.Join(root, "nuxt.config.js")) ||
+		exists(filepath.Join(root, "nuxt.config.mjs")) ||
+		exists(filepath.Join(root, "nuxt.config.cjs")) {
+		return "Nuxt"
+	}
+
+	// Check for Remix (has remix.config.js)
+	if exists(filepath.Join(root, "remix.config.js")) {
+		return "Remix"
+	}
+
+	// Check for Astro (has astro.config.*)
+	if exists(filepath.Join(root, "astro.config.mjs")) ||
+		exists(filepath.Join(root, "astro.config.ts")) ||
+		exists(filepath.Join(root, "astro.config.js")) ||
+		exists(filepath.Join(root, "astro.config.cjs")) {
+		return "Astro"
+	}
+
+	// Check for Angular (has angular.json)
+	if exists(filepath.Join(root, "angular.json")) {
+		return "Angular"
+	}
+
+	// Check for Vue (has vue.config.js, but not if Nuxt is already detected)
+	if exists(filepath.Join(root, "vue.config.js")) || exists(filepath.Join(root, "vue.config.ts")) {
+		return "Vue"
+	}
+
+	// Check for Vue via package.json dependencies (if no other framework config found)
+	if hasVueDependency(root) {
+		return "Vue"
+	}
+
+	// No runtime framework detected
+	return ""
+}
+
+// hasVueDependency checks if the project has Vue as a dependency in package.json
+// This helps detect "pure" Vue projects that don't have vue.config.js
+func hasVueDependency(root string) bool {
+	packageJsonPath := filepath.Join(root, "package.json")
+	if !exists(packageJsonPath) {
+		return false
+	}
+
+	data, err := os.ReadFile(packageJsonPath)
+	if err != nil {
+		return false
+	}
+
+	var pkg PackageJson
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return false
+	}
+
+	// Check dependencies
+	if pkg.Dependencies != nil {
+		if _, hasVue := pkg.Dependencies["vue"]; hasVue {
+			return true
+		}
+	}
+
+	// Check devDependencies
+	if pkg.DevDependencies != nil {
+		if _, hasVue := pkg.DevDependencies["vue"]; hasVue {
+			return true
+		}
+	}
+
+	return false
 }

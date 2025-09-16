@@ -56,6 +56,8 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		platform = FlyIO
 	case "netlify":
 		platform = Netlify
+	case "vercel":
+		platform = Vercel
 	default:
 		platform = UnknownPlatform
 	}

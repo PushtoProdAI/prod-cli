@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/pmezard/go-difflib/difflib"
 )
@@ -82,45 +83,94 @@ func (a *Activities) createPackageLock(ctx context.Context, plan DeployPlan, for
 	return nil
 }
 
-// update svelte.config.js
-func (a *Activities) updateSvelteConfig(_ context.Context, plan DeployPlan) ([]DiffLine, error) {
-	projectPath := plan.Source
+// JavaScript configuration result containing both svelte and package.json diffs
+type JavaScriptConfigResult struct {
+	SvelteConfigDiff   []DiffLine `json:"svelteConfigDiff,omitempty"`
+	PackageJsonDiff    []DiffLine `json:"packageJsonDiff,omitempty"`
+	SvelteConfigPath   string     `json:"svelteConfigPath,omitempty"`
+	PackageJsonUpdated bool       `json:"packageJsonUpdated"`
+}
 
-	a.uiWriter.SendStatus("configuring", "Checking for Svelte configuration...")
-
-	// Determine which adapter to use based on platform
-	var newAdapter string
-	switch plan.Platform {
-	case Render, FlyIO:
-		newAdapter = "@sveltejs/adapter-node"
-	case Netlify:
-		newAdapter = "@sveltejs/adapter-netlify"
-	default:
-		a.uiWriter.SendStatusComplete("configuring", "❌ Unsupported platform for Svelte")
-		return nil, errors.Errorf("unsupported platform for Svelte: %s", plan.Platform)
+// patchPackageJSONForPlatform applies platform-specific package.json changes and returns updated content, changed flag, and error
+func patchPackageJSONForPlatform(origPackageJson []byte, platform Platform, framework string) ([]byte, bool, error) {
+	// Only apply SvelteKit adapter patches if this is actually a SvelteKit project
+	if framework != "SvelteKit" {
+		return origPackageJson, false, nil
 	}
 
+	// For platforms that need Svelte adapters
+	switch platform {
+	case Render, FlyIO:
+		updatedPackageJson, err := patchPackageJSON(origPackageJson, "@sveltejs/adapter-node", "^5.2.0")
+		if err != nil {
+			return nil, false, err
+		}
+		// Check if anything changed
+		changed := !bytes.Equal(origPackageJson, updatedPackageJson)
+		return updatedPackageJson, changed, nil
+	case Netlify:
+		updatedPackageJson, err := patchPackageJSON(origPackageJson, "@sveltejs/adapter-netlify", "^4.3.0")
+		if err != nil {
+			return nil, false, err
+		}
+		// Check if anything changed
+		changed := !bytes.Equal(origPackageJson, updatedPackageJson)
+		return updatedPackageJson, changed, nil
+	case Vercel:
+		updatedPackageJson, err := patchPackageJSON(origPackageJson, "@sveltejs/adapter-vercel", "^5.10.2")
+		if err != nil {
+			return nil, false, err
+		}
+		// Check if anything changed
+		changed := !bytes.Equal(origPackageJson, updatedPackageJson)
+		return updatedPackageJson, changed, nil
+
+	default:
+		// For other platforms, just return the original content unchanged
+		return origPackageJson, false, nil
+	}
+}
+
+// handleSvelteConfig processes Svelte configuration updates for the specified platform
+func (a *Activities) handleSvelteConfig(projectPath string, platform Platform) ([]DiffLine, string, error) {
 	// Find svelte config file (prefer TS, fallback to JS)
-	configPath := ""
 	svelteConfigTS := filepath.Join(projectPath, "svelte.config.ts")
 	svelteConfigJS := filepath.Join(projectPath, "svelte.config.js")
+	var configPath string
 
 	if _, err := os.Stat(svelteConfigTS); err == nil {
 		configPath = svelteConfigTS
 	} else if _, err := os.Stat(svelteConfigJS); err == nil {
 		configPath = svelteConfigJS
-	} else {
-		a.uiWriter.SendStatusComplete("configuring", "✅ No Svelte config found, skipping")
-		return nil, nil
 	}
 
-	a.uiWriter.SendStatus("configuring", fmt.Sprintf("Updating Svelte config for %s platform...", plan.Platform))
+	// No Svelte config found, return empty results
+	if configPath == "" {
+		return nil, "", nil
+	}
+
+	// This is a Svelte project
+	a.uiWriter.SendStatus("configuring", fmt.Sprintf("Updating Svelte config for %s platform...", platform))
+
+	// Determine which adapter to use based on platform
+	var newAdapter string
+	switch platform {
+	case Render, FlyIO:
+		newAdapter = "@sveltejs/adapter-node"
+	case Netlify:
+		newAdapter = "@sveltejs/adapter-netlify"
+	case Vercel:
+		newAdapter = "@sveltejs/adapter-vercel"
+	default:
+		a.uiWriter.SendStatusComplete("configuring", "❌ Unsupported platform for Svelte")
+		return nil, "", errors.Errorf("unsupported platform for Svelte: %s", platform)
+	}
 
 	// Read original config
 	origConfig, err := os.ReadFile(configPath)
 	if err != nil {
 		a.uiWriter.SendStatusComplete("configuring", "❌ Failed to read Svelte config")
-		return nil, errors.Errorf("failed to read %s: %w", configPath, err)
+		return nil, "", errors.Errorf("failed to read %s: %w", configPath, err)
 	}
 
 	// Patch the config
@@ -130,60 +180,23 @@ func (a *Activities) updateSvelteConfig(_ context.Context, plan DeployPlan) ([]D
 	prodDir := filepath.Join(projectPath, ".prod")
 	if err := os.MkdirAll(prodDir, 0755); err != nil {
 		a.uiWriter.SendStatusComplete("configuring", "❌ Failed to create backup directory")
-		return nil, errors.Errorf("failed to create .prod directory: %w", err)
+		return nil, "", errors.Errorf("failed to create .prod directory: %w", err)
 	}
 
 	configFilename := filepath.Base(configPath)
 	backupPath := filepath.Join(prodDir, fmt.Sprintf("%s.%s.bak", configFilename, time.Now().Format("20060102-150405")))
 	if err := os.WriteFile(backupPath, origConfig, 0644); err != nil {
-		a.uiWriter.SendStatusComplete("configuring", "❌ Failed to create backup")
-		return nil, errors.Errorf("failed to create backup at %s: %w", backupPath, err)
+		a.uiWriter.SendStatusComplete("configuring", "❌ Failed to create Svelte config backup")
+		return nil, "", errors.Errorf("failed to create backup at %s: %w", backupPath, err)
 	}
 
 	// Write updated config
 	if err := os.WriteFile(configPath, updatedConfig, 0644); err != nil {
 		a.uiWriter.SendStatusComplete("configuring", "❌ Failed to update Svelte config")
-		return nil, errors.Errorf("failed to write updated config to %s: %w", configPath, err)
+		return nil, "", errors.Errorf("failed to write updated config to %s: %w", configPath, err)
 	}
 
-	// Update package.json to add the adapter dependency
-	packageJsonPath := filepath.Join(projectPath, "package.json")
-	if _, err := os.Stat(packageJsonPath); err == nil {
-		origPackageJson, err := os.ReadFile(packageJsonPath)
-		if err != nil {
-			a.uiWriter.SendStatusComplete("configuring", "❌ Failed to read package.json")
-			return nil, errors.Errorf("failed to read package.json: %w", err)
-		}
-
-		// Determine adapter version - using latest stable versions
-		version := "^5.2.0"
-		if newAdapter == "@sveltejs/adapter-netlify" {
-			version = "^4.3.0"
-		}
-
-		// Create backup for package.json as well
-		packageJsonFilename := "package.json"
-		packageJsonBackupPath := filepath.Join(prodDir, fmt.Sprintf("%s.%s.bak", packageJsonFilename, time.Now().Format("20060102-150405")))
-		if err := os.WriteFile(packageJsonBackupPath, origPackageJson, 0644); err != nil {
-			a.uiWriter.SendStatusComplete("configuring", "❌ Failed to create package.json backup")
-			return nil, errors.Errorf("failed to create package.json backup at %s: %w", packageJsonBackupPath, err)
-		}
-
-		updatedPackageJson, err := patchPackageJSON(origPackageJson, newAdapter, version)
-		if err != nil {
-			a.uiWriter.SendStatusComplete("configuring", "❌ Failed to update package.json")
-			return nil, errors.Errorf("failed to patch package.json: %w", err)
-		}
-
-		if err := os.WriteFile(packageJsonPath, updatedPackageJson, 0644); err != nil {
-			a.uiWriter.SendStatusComplete("configuring", "❌ Failed to write package.json")
-			return nil, errors.Errorf("failed to write updated package.json: %w", err)
-		}
-	}
-
-	a.uiWriter.SendStatusComplete("configuring", fmt.Sprintf("✅ Svelte config updated for %s", newAdapter))
-
-	// Generate diff
+	// Generate Svelte config diff
 	diff, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
 		A:        difflib.SplitLines(string(origConfig)),
 		B:        difflib.SplitLines(string(updatedConfig)),
@@ -192,10 +205,109 @@ func (a *Activities) updateSvelteConfig(_ context.Context, plan DeployPlan) ([]D
 		Context:  3,
 	})
 	if err != nil {
-		return nil, errors.Errorf("failed to generate diff: %w", err)
+		return nil, "", errors.Errorf("failed to generate Svelte config diff: %w", err)
 	}
 
-	return parseDiffString(diff), nil
+	a.uiWriter.SendStatusComplete("configuring", fmt.Sprintf("✅ Svelte config updated for %s", newAdapter))
+
+	return parseDiffString(diff), configPath, nil
+}
+
+// findRuntimeFramework extracts the runtime framework from ServiceRequirements
+func findRuntimeFrameworkFromServiceRequirements(serviceRequirements []analyzer.ServiceRequirement) string {
+	for _, sr := range serviceRequirements {
+		if sr.Type == "framework" {
+			return sr.Provider
+		}
+	}
+	return ""
+}
+
+// updateJavaScriptConfig handles both Svelte config and package.json updates for JavaScript projects
+func (a *Activities) updateJavaScriptConfig(_ context.Context, plan DeployPlan) (JavaScriptConfigResult, error) {
+	projectPath := plan.Source
+	result := JavaScriptConfigResult{}
+	runtimeFramework := findRuntimeFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
+
+	a.uiWriter.SendStatus("configuring", "Configuring JavaScript project...")
+
+	// First, handle package.json updates for all platforms
+	packageJsonPath := filepath.Join(projectPath, "package.json")
+	if _, err := os.Stat(packageJsonPath); err == nil {
+		origPackageJson, err := os.ReadFile(packageJsonPath)
+		if err != nil {
+			a.uiWriter.SendStatusComplete("configuring", "❌ Failed to read package.json")
+			return JavaScriptConfigResult{}, errors.Errorf("failed to read package.json: %w", err)
+		}
+
+		// Apply platform-specific package.json patches
+		updatedPackageJson, packageUpdated, err := patchPackageJSONForPlatform(origPackageJson, plan.Platform, runtimeFramework)
+		if err != nil {
+			a.uiWriter.SendStatusComplete("configuring", "❌ Failed to patch package.json")
+			return JavaScriptConfigResult{}, errors.Errorf("failed to patch package.json: %w", err)
+		}
+
+		if packageUpdated {
+			// Create backup directory
+			prodDir := filepath.Join(projectPath, ".prod")
+			if err := os.MkdirAll(prodDir, 0755); err != nil {
+				a.uiWriter.SendStatusComplete("configuring", "❌ Failed to create backup directory")
+				return JavaScriptConfigResult{}, errors.Errorf("failed to create .prod directory: %w", err)
+			}
+
+			// Create backup for package.json
+			packageJsonBackupPath := filepath.Join(prodDir, fmt.Sprintf("package.json.%s.bak", time.Now().Format("20060102-150405")))
+			if err := os.WriteFile(packageJsonBackupPath, origPackageJson, 0644); err != nil {
+				a.uiWriter.SendStatusComplete("configuring", "❌ Failed to create package.json backup")
+				return JavaScriptConfigResult{}, errors.Errorf("failed to create package.json backup at %s: %w", packageJsonBackupPath, err)
+			}
+
+			// Write updated package.json
+			if err := os.WriteFile(packageJsonPath, updatedPackageJson, 0644); err != nil {
+				a.uiWriter.SendStatusComplete("configuring", "❌ Failed to write package.json")
+				return JavaScriptConfigResult{}, errors.Errorf("failed to write updated package.json: %w", err)
+			}
+
+			// Generate package.json diff
+			diff, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
+				A:        difflib.SplitLines(string(origPackageJson)),
+				B:        difflib.SplitLines(string(updatedPackageJson)),
+				FromFile: "package.json (before)",
+				ToFile:   "package.json (after)",
+				Context:  3,
+			})
+			if err != nil {
+				a.uiWriter.SendStatusComplete("configuring", "❌ Failed to generate package.json diff")
+				return JavaScriptConfigResult{}, errors.Errorf("failed to generate package.json diff: %w", err)
+			}
+
+			result.PackageJsonDiff = parseDiffString(diff)
+			result.PackageJsonUpdated = true
+		}
+	}
+
+	// Handle Svelte config if this is a SvelteKit project
+	var svelteConfigDiff []DiffLine
+	var svelteConfigPath string
+	if runtimeFramework == "SvelteKit" {
+		var err error
+		svelteConfigDiff, svelteConfigPath, err = a.handleSvelteConfig(projectPath, plan.Platform)
+		if err != nil {
+			return JavaScriptConfigResult{}, err
+		}
+	}
+
+	result.SvelteConfigDiff = svelteConfigDiff
+	result.SvelteConfigPath = svelteConfigPath
+
+	// Summary message
+	if result.PackageJsonUpdated || len(result.SvelteConfigDiff) > 0 {
+		a.uiWriter.SendStatusComplete("configuring", "✅ JavaScript project configuration completed")
+	} else {
+		a.uiWriter.SendStatusComplete("configuring", "✅ No configuration changes needed")
+	}
+
+	return result, nil
 }
 
 func (a *Activities) prepareNuxtBuild(_ context.Context, plan DeployPlan) (DeployPlan, error) {
@@ -220,6 +332,8 @@ func (a *Activities) prepareNuxtBuild(_ context.Context, plan DeployPlan) (Deplo
 	case Netlify:
 		plan.CollectedEnvVars = append(plan.CollectedEnvVars, deployment.EnvVar{Name: "SERVER_PRESET", Value: "netlify_edge"})
 		plan.Spec.BuildOutput.Path = "dist"
+	case Vercel:
+		plan.CollectedEnvVars = append(plan.CollectedEnvVars, deployment.EnvVar{Name: "SERVER_PRESET", Value: "vercel_edge"})
 	}
 	a.uiWriter.SendStatusComplete("configuring", "✅ Nuxt configuration complete")
 	return plan, nil
@@ -307,7 +421,23 @@ func patchPackageJSON(input []byte, adapter, version string) ([]byte, error) {
 
 	pkg["scripts"] = scripts
 
-	return json.MarshalIndent(pkg, "", "  ")
+	// Use custom encoder to prevent HTML escaping (e.g., && becoming \u0026)
+	buffer := &bytes.Buffer{}
+	encoder := json.NewEncoder(buffer)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+
+	if err := encoder.Encode(pkg); err != nil {
+		return nil, err
+	}
+
+	// Remove the trailing newline that Encode adds
+	result := buffer.Bytes()
+	if len(result) > 0 && result[len(result)-1] == '\n' {
+		result = result[:len(result)-1]
+	}
+
+	return result, nil
 }
 
 // cleanupNetlifyScripts removes Netlify-specific scripts and cleans up build scripts

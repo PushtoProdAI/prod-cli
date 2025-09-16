@@ -20,6 +20,8 @@ const (
 	StrategyFlyio DeploymentStrategy = "flyio"
 
 	StrategyNetlify DeploymentStrategy = "netlify"
+
+	StrategyVercel DeploymentStrategy = "vercel"
 )
 
 type CreatedResource struct {

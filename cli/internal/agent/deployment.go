@@ -14,6 +14,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
+	"github.com/meroxa/prod/cli/internal/deployment/vercel"
 )
 
 func (a *Activities) deploySteps(ctx context.Context, spec deployment.DeploymentSpec, platform Platform) ([]deployment.CreatedResource, error) {
@@ -31,7 +32,14 @@ func (a *Activities) deploySteps(ctx context.Context, spec deployment.Deployment
 		var err error
 		deployable, err = netlifyAdapter.GenerateArtifacts(&spec, deployment.StrategyNetlify)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create Netlify deployment: %w", err)
+			return nil, errors.Errorf("failed to create Netlify deployment: %w", err)
+		}
+	case Vercel:
+		vercelAdapter := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter)
+		var err error
+		deployable, err = vercelAdapter.GenerateArtifacts(&spec, deployment.StrategyVercel)
+		if err != nil {
+			return nil, errors.Errorf("failed to create Vercel deployment: %w", err)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", platform)
