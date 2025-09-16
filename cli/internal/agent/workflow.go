@@ -17,6 +17,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
+	"github.com/meroxa/prod/cli/internal/deployment/vercel"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
 )
@@ -32,6 +33,7 @@ const (
 	DeployNetlifyWorkflowName          = "agent.deploy.netlify"
 	DryRunNetlifyWorkflowName          = "agent.dryrun.netlify"
 	SetupJavaScriptProjectWorkflowName = "agent.setupJavaScriptProject"
+	DeployVercelWorkflowName           = "agent.deploy.vercel"
 )
 
 var ActivityOpts = workflow.ActivityOptions{
@@ -62,6 +64,8 @@ type SetupJavaScriptProjectResult struct {
 	PackageLockCreated  bool        `json:"packageLockCreated"`
 	SvelteConfigUpdated bool        `json:"svelteConfigUpdated"`
 	SvelteConfigDiff    []DiffLine  `json:"svelteConfigDiff,omitempty"`
+	PackageJsonUpdated  bool        `json:"packageJsonUpdated"`
+	PackageJsonDiff     []DiffLine  `json:"packageJsonDiff,omitempty"`
 	Error               deployError `json:"error,omitempty"`
 	UpdatedPlan         DeployPlan  `json:"updatedPlan,omitempty"`
 }
@@ -112,6 +116,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: DeployNetlifyWorkflowName, WorkflowFunc: w.deployNetlify},
 		{Name: DryRunNetlifyWorkflowName, WorkflowFunc: w.dryRunNetlify},
 		{Name: SetupJavaScriptProjectWorkflowName, WorkflowFunc: w.setupJavaScriptProject},
+		{Name: DeployVercelWorkflowName, WorkflowFunc: w.deployVercel},
 	}
 }
 
@@ -128,6 +133,8 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input DeployPlan)
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployFlyioWorkflowName, time.Now().Unix())}, DeployFlyioWorkflowName, input)
 	case Netlify:
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployNetlifyWorkflowName, time.Now().Unix())}, DeployNetlifyWorkflowName, input)
+	case Vercel:
+		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployVercelWorkflowName, time.Now().Unix())}, DeployVercelWorkflowName, input)
 	default:
 		return nil, errors.New("unsupported platform for deployment")
 	}
@@ -715,8 +722,8 @@ func getFlyioStepType(step flyio.FlyioAPIStep) string {
 	}
 }
 
-func extractFlyioStepConfig(step flyio.FlyioAPIStep) map[string]interface{} {
-	config := make(map[string]interface{})
+func extractFlyioStepConfig(step flyio.FlyioAPIStep) map[string]any {
+	config := make(map[string]any)
 
 	// Since the fields are unexported, we'll just use the step description
 	// and type information that's available through the interface
@@ -805,6 +812,81 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	}, nil
 }
 
+func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deployResult, error) {
+	slog.Info("deployNetlify workflow started", "platform", input.Platform)
+	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
+
+	// Build deployment spec from the plan
+	slog.Info("Building deployment spec")
+	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars)
+	spec, err := db.Build()
+	if err != nil {
+		slog.Info("Failed to build deployment spec", "error", err)
+		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to build deployment spec: %v", err)}}, nil
+	}
+	slog.Info("Deployment spec built successfully")
+
+	// Add metadata
+	spec.Metadata["buildContext"] = input.Source
+	spec.Metadata["platform"] = "vercel"
+
+	d := vercel.NewVercelQueuedDeployment(vercel.NewCLIVercelClient(), spec, w.uiWriter)
+	steps := d.GenerateAPISteps()
+	descriptions := make([]string, len(steps))
+	for i, step := range steps {
+		descriptions[i] = step.GetDescription()
+	}
+	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to summarize deployment steps", "error", err)
+	}
+
+	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
+	if err != nil {
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		slog.Error("Deployment failed", "error", err)
+		return deployResult{Error: summary}, nil
+	}
+
+	// Extract deployment URL from created resources
+	var deploymentURL string
+	for _, resource := range createdResources {
+		if url, ok := resource.Metadata["url"].(string); ok {
+			deploymentURL = url
+			break
+		}
+	}
+
+	if deploymentURL == "" {
+		slog.Info("No deployment URL found in created resources")
+		deploymentURL = "Deployment completed but URL not available"
+	}
+
+	path, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineRootPath, input.Spec.Routes).Get(ctx)
+	if err != nil {
+		// if there is an error, we will just default to /
+		slog.Info("Failed to determine root path for application", "error", err)
+		path = "/"
+	}
+
+	fullUrl, err := url.JoinPath(deploymentURL, path)
+	if err != nil {
+		slog.Info("Failed to combine paths", "error", err)
+		fullUrl = deploymentURL
+	}
+
+	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
+	if err != nil {
+		return deployResult{}, errors.Errorf("service URL %s is not live: %w", fullUrl, err)
+	}
+	slog.Info("Netlify deployment workflow completed successfully")
+
+	return deployResult{Url: fullUrl}, nil
+}
+
 func (w *Workflows) dryRunNetlify(ctx workflow.Context, input DeployPlan) (deployResult, error) {
 	slog.Info("dryRunNetlify workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
@@ -821,30 +903,40 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 
 	result := SetupJavaScriptProjectResult{}
 
-	// Step 1: Update Svelte config if this is a Svelte project
-	slog.Info("Updating Svelte configuration")
-	diff, err := workflow.ExecuteActivity[[]DiffLine](ctx, ActivityOpts, AgentUpdateSvelteConfig, input).Get(ctx)
+	// Step 1: Update JavaScript project configuration (Svelte config + package.json)
+	slog.Info("Updating JavaScript project configuration")
+	jsConfig, err := workflow.ExecuteActivity[JavaScriptConfigResult](ctx, ActivityOpts, AgentUpdateJavaScriptConfig, input).Get(ctx)
 	if err != nil {
-		slog.Error("Failed to update Svelte config", "error", err)
+		slog.Error("Failed to update JavaScript configuration", "error", err)
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
-			slog.Error("Failed to summarize Svelte config error", "error", e1)
+			slog.Error("Failed to summarize JavaScript config error", "error", e1)
 			return SetupJavaScriptProjectResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		return SetupJavaScriptProjectResult{Error: summary}, nil
 	}
 
-	if len(diff) > 0 {
+	// Update result with configuration changes
+	if len(jsConfig.SvelteConfigDiff) > 0 {
 		result.SvelteConfigUpdated = true
-		result.SvelteConfigDiff = diff
+		result.SvelteConfigDiff = jsConfig.SvelteConfigDiff
 		slog.Info("Svelte configuration updated")
 	} else {
 		slog.Info("No Svelte configuration found or no changes needed")
 	}
 
-	// Step 2: Create/update package-lock.json (after Svelte config changes)
+	if jsConfig.PackageJsonUpdated {
+		result.PackageJsonUpdated = true
+		result.PackageJsonDiff = jsConfig.PackageJsonDiff
+		slog.Info("Package.json configuration updated")
+	} else {
+		slog.Info("No package.json changes needed")
+	}
+
+	// Step 2: Create/update package-lock.json (after config changes)
 	slog.Info("Creating/updating package-lock.json")
-	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentCreatePackageLock, input, result.SvelteConfigUpdated).Get(ctx)
+	configUpdated := result.SvelteConfigUpdated || result.PackageJsonUpdated
+	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentCreatePackageLock, input, configUpdated).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to create package-lock.json", "error", err)
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)

@@ -97,6 +97,7 @@ const (
 	Render Platform = iota
 	FlyIO
 	Netlify
+	Vercel
 	UnknownPlatform
 )
 
@@ -386,6 +387,11 @@ func (a *Agent) waitForEnvVarValue(ctx context.Context, input string, out io.Wri
 	return a.promptForEnvVarValue(ctx, input, out)
 }
 
+// unescapeJSONUnicode converts JSON unicode escapes like \u0026 back to their original characters
+func unescapeJSONUnicode(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\\u0026", "&"), "\\u0026\\u0026", "&&")
+}
+
 func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	if a.DeployPlan.Spec.Language == "node" {
 		fmt.Fprintf(out, "🔧 Preparing JavaScript environment...\n")
@@ -406,28 +412,47 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
 			return a.confirmWithPrompt(ctx, "", out)
 		}
+		// Display Svelte config diff if available
 		if len(result.SvelteConfigDiff) > 0 {
-			fmt.Fprint(out, "\n📝 Configuration changes made:\n")
+			fmt.Fprint(out, "\n⚙️ Svelte configuration changes:\n")
 			fmt.Fprint(out, "────────────────────────────────────────\n")
 
-			// Use structured diff data for better formatting
 			for _, line := range result.SvelteConfigDiff {
+				content := unescapeJSONUnicode(line.Content)
 				switch line.Type {
 				case "header":
-					// Context line - show in blue/cyan
-					fmt.Fprintf(out, "\033[36m%s\033[0m\n", line.Content)
+					fmt.Fprintf(out, "\033[36m%s\033[0m\n", content)
 				case "added":
-					// Addition - show in green
-					fmt.Fprintf(out, "\033[32m%s\033[0m\n", line.Content)
+					fmt.Fprintf(out, "\033[32m%s\033[0m\n", content)
 				case "removed":
-					// Deletion - show in red
-					fmt.Fprintf(out, "\033[31m%s\033[0m\n", line.Content)
+					fmt.Fprintf(out, "\033[31m%s\033[0m\n", content)
 				case "fileheader":
-					// File headers - show in bold
-					fmt.Fprintf(out, "\033[1m%s\033[0m\n", line.Content)
+					fmt.Fprintf(out, "\033[1m%s\033[0m\n", content)
 				default:
-					// Regular context lines
-					fmt.Fprintf(out, "%s\n", line.Content)
+					fmt.Fprintf(out, "%s\n", content)
+				}
+			}
+			fmt.Fprint(out, "────────────────────────────────────────\n")
+		}
+
+		// Display package.json diff if available
+		if len(result.PackageJsonDiff) > 0 {
+			fmt.Fprint(out, "\n📦 Package.json changes:\n")
+			fmt.Fprint(out, "────────────────────────────────────────\n")
+
+			for _, line := range result.PackageJsonDiff {
+				content := unescapeJSONUnicode(line.Content)
+				switch line.Type {
+				case "header":
+					fmt.Fprintf(out, "\033[36m%s\033[0m\n", content)
+				case "added":
+					fmt.Fprintf(out, "\033[32m%s\033[0m\n", content)
+				case "removed":
+					fmt.Fprintf(out, "\033[31m%s\033[0m\n", content)
+				case "fileheader":
+					fmt.Fprintf(out, "\033[1m%s\033[0m\n", content)
+				default:
+					fmt.Fprintf(out, "%s\n", content)
 				}
 			}
 			fmt.Fprint(out, "────────────────────────────────────────\n")
@@ -447,11 +472,7 @@ func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateF
 	}
 
 	// Check authentication before deployment
-	if a.DeployPlan.Platform == Render || a.DeployPlan.Platform == FlyIO || a.DeployPlan.Platform == Netlify {
-		return a.checkAuthentication(ctx, input, out)
-	}
-
-	return a.executeDeployment(ctx, input, out)
+	return a.checkAuthentication(ctx, input, out)
 }
 
 func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) (stateFn, error) {
@@ -700,6 +721,9 @@ func (a *Agent) getAuthProvider(out io.Writer) (auth.AuthProvider, error) {
 		netlifyClient := netlify.NewCLINetlifyClient()
 		netlifyAuth := auth.NewNetlifyAuth(netlifyClient, out)
 		return netlifyAuth, nil
+	case Vercel:
+		vercelAuth := auth.NewVercelAuth(out)
+		return vercelAuth, nil
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", a.DeployPlan.Platform)
 	}

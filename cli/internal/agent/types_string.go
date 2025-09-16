@@ -11,12 +11,13 @@ func _() {
 	_ = x[Render-0]
 	_ = x[FlyIO-1]
 	_ = x[Netlify-2]
-	_ = x[UnknownPlatform-3]
+	_ = x[Vercel-3]
+	_ = x[UnknownPlatform-4]
 }
 
-const _Platform_name = "RenderFlyIONetlifyUnknownPlatform"
+const _Platform_name = "RenderFlyIONetlifyVercelUnknownPlatform"
 
-var _Platform_index = [...]uint8{0, 6, 11, 18, 33}
+var _Platform_index = [...]uint8{0, 6, 11, 18, 24, 39}
 
 func (i Platform) String() string {
 	if i < 0 || i >= Platform(len(_Platform_index)-1) {
