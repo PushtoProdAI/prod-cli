@@ -33,9 +33,9 @@ func (c *LoginCommand) Execute(ctx context.Context) error {
 		}
 	}
 
-	// Perform browser-based login
+	// Perform browser-based login using Supabase function
 	fmt.Println("🚀 Starting authentication...")
-	if err := authClient.LoginWithBrowser(ctx); err != nil {
+	if err := authClient.LoginWithSupabaseFunction(ctx); err != nil {
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
@@ -46,8 +46,15 @@ func (c *LoginCommand) Usage() string { return "login" }
 
 func (c *LoginCommand) Docs() ecdysis.Docs {
 	return ecdysis.Docs{
-		Short: "Authenticate with Prod",
-		Long:  `Opens your browser to authenticate with Prod using Supabase authentication.`,
+		Short: "Authenticate with PushToProd",
+		Long: `Opens your browser to authenticate with PushToProd using OAuth providers or email/password.
+		
+This command will:
+1. Open your browser to the PushToProd authentication page
+2. Allow you to sign in with GitHub, Google, or email/password
+3. Prompt you to enter the token you receive after authentication
+4. Automatically save your session for future CLI use
+
+The authentication session will be stored locally and used for all subsequent CLI commands.`,
 	}
 }
-

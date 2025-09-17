@@ -80,22 +80,22 @@ enable_signup = true
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-enable_confirmations = false
+enable_confirmations = true
 
 # Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+[auth.email.template.invite]
+subject = "You've Been Invited to PushToProd"
+content_path = "./supabase/templates/invite.html"
 
 # Uncomment to customize email template
-# [auth.email.template.confirmation]
-# subject = "Confirm your signup"
-# content_path = "./supabase/templates/confirmation.html"
+[auth.email.template.confirmation]
+subject = "Welcome to PushToProd - Confirm Your Email"
+content_path = "./supabase/templates/confirmation.html"
 
 # Uncomment to customize email template
-# [auth.email.template.recovery]
-# subject = "Reset your password"
-# content_path = "./supabase/templates/recovery.html"
+[auth.email.template.recovery]
+subject = "Reset Your PushToProd Password"
+content_path = "./supabase/templates/recovery.html"
 
 # Uncomment to customize email template
 # [auth.email.template.email_change]
@@ -398,3 +398,14 @@ entrypoint = "./functions/create-repo/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/create-repo/*.html" ]
+
+[functions.cli-auth]
+enabled = true
+verify_jwt = false
+import_map = "./functions/cli-auth/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/cli-auth/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/cli-auth/*.html" ]

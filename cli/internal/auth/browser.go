@@ -124,7 +124,7 @@ func (sa *SupabaseAuth) createHandler(sessionChan chan *Session, errorChan chan 
 			http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
 			return
 
-		case "/login", "/signup", "/callback", "/reset":
+		case "/login", "/signup", "/callback", "/reset", "/reset-password":
 			// Serve the appropriate HTML template
 			templateName := r.URL.Path[1:] + ".html"
 

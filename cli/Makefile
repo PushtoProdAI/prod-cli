@@ -9,6 +9,16 @@ else
     VERSION := $(GIT_TAG)
 endif
 
+# Load .env file if it exists (check parent directory first, then current directory)
+# This is the default for build targets
+ifneq (,$(wildcard ../.env))
+    include ../.env
+    export
+else ifneq (,$(wildcard .env))
+    include .env
+    export
+endif
+
 # Build flags for setting variables at build time
 LDFLAGS := -X 'github.com/meroxa/prod/cli/internal/config.SupabaseURL=$(SUPABASE_URL)' \
            -X 'github.com/meroxa/prod/cli/internal/config.SupabaseAnonKey=$(SUPABASE_ANON_KEY)' \
@@ -46,6 +56,28 @@ generate:
 
 .PHONY: dev
 dev:
-	@echo "Running in development mode..."
-	PROD_DEBUG=true go run -ldflags "$(LDFLAGS)" $(CMD_PATH)
+	@echo "Running in development mode (local environment)..."
+	@if [ -f ../.env.local ]; then \
+		echo "Loading ../.env.local..."; \
+		set -a; . ../.env.local; set +a; \
+	fi
+	ENVIRONMENT=local PROD_DEBUG=true go run -ldflags "$(LDFLAGS)" $(CMD_PATH)
+
+.PHONY: dev-staging
+dev-staging:
+	@echo "Running in development mode (staging environment)..."
+	@if [ -f ../.env ]; then \
+		echo "Loading ../.env..."; \
+		set -a; . ../.env; set +a; \
+	fi
+	ENVIRONMENT=staging PROD_DEBUG=true go run -ldflags "$(LDFLAGS)" $(CMD_PATH)
+
+.PHONY: dev-production
+dev-production:
+	@echo "Running in development mode (production environment)..."
+	@if [ -f ../.env ]; then \
+		echo "Loading ../.env..."; \
+		set -a; . ../.env; set +a; \
+	fi
+	ENVIRONMENT=production PROD_DEBUG=true go run -ldflags "$(LDFLAGS)" $(CMD_PATH)
 

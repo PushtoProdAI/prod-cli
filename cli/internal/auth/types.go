@@ -18,6 +18,14 @@ type User struct {
 
 // Config holds auth configuration
 type Config struct {
-	SupabaseURL   string
+	SupabaseURL     string
 	SupabaseAnonKey string
+}
+
+// CLITokenData represents the token data from the Supabase function
+type CLITokenData struct {
+	UserID      string `json:"user_id"`
+	AccessToken string `json:"access_token"`
+	IssuedAt    int64  `json:"issued_at"`
+	ExpiresAt   int64  `json:"expires_at"`
 }

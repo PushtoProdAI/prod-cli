@@ -36,7 +36,19 @@ This project includes a local Supabase instance for development. Follow these st
    cp env.example .env
    ```
 
-2. The default local Supabase configuration is already set up in `env.example`
+2. Configure your environment:
+   ```bash
+   # For local development with staging authentication (default)
+   ENVIRONMENT=staging
+   
+   # For local Supabase development
+   ENVIRONMENT=local
+   
+   # For production
+   ENVIRONMENT=production
+   ```
+
+3. The default configuration uses staging for local development, which provides a stable authentication environment while you develop locally.
 
 ## Connecting to Remote Supabase Instance
 
@@ -93,6 +105,7 @@ To deploy applications using the prod CLI, you'll need to configure API keys for
 
 ### Available Make Commands
 
+#### Supabase Commands
 - `make supabase-start` - Start Supabase local development
 - `make supabase-stop` - Stop Supabase local development
 - `make supabase-status` - Check Supabase status
@@ -101,6 +114,17 @@ To deploy applications using the prod CLI, you'll need to configure API keys for
 - `make supabase-migration-up` - Apply migrations
 - `make supabase-seed` - Seed the database
 - `make supabase-studio` - Open Supabase Studio in browser
+
+#### CLI Development Commands (from `cli/` directory)
+- `make dev` - Run CLI in development mode (local environment, uses `../.env.local`)
+- `make dev-staging` - Run CLI in development mode (staging environment, uses `../.env`)
+- `make dev-production` - Run CLI in development mode (production environment, uses `../.env`)
+- `make build` - Build CLI binary for current platform
+- `make build-cli-linux` - Build CLI binary for Linux
+- `make build-cli-darwin` - Build CLI binary for macOS (Intel)
+- `make build-cli-darwin-arm64` - Build CLI binary for macOS (Apple Silicon)
+- `make clean` - Clean build artifacts
+- `make generate` - Generate BAML code (run after updating prompts)
 
 ### Local Supabase URLs
 
@@ -155,30 +179,56 @@ If you encounter issues:
 
 ### Building and Running the CLI
 
-The CLI uses build-time configuration via environment variables. You have two main options:
+The CLI uses build-time configuration via environment variables loaded from `.env` files. The Makefile automatically loads the appropriate environment file based on the command you use.
 
 #### For Local Development and Testing
-Use `make dev` for local testing - this uses `go run` under the hood and doesn't require building a binary:
+
+The CLI provides three development modes that automatically load different environment files:
 
 ```bash
 cd cli
-source ../.env  # Load environment variables
-make dev        # Run in development mode with hot reload
+
+# Local development (uses ../.env.local)
+make dev
+
+# Staging development (uses ../.env)  
+make dev-staging
+
+# Production development (uses ../.env)
+make dev-production
 ```
 
+**Environment File Loading:**
+- `make dev` - Loads `../.env.local` for local development
+- `make dev-staging` - Loads `../.env` for staging environment
+- `make dev-production` - Loads `../.env` for production environment
+
 #### For Building the CLI Binary
+
 Use `make build` to produce the actual CLI binary:
 
 ```bash
 cd cli
-source ../.env  # Load environment variables
-make build      # Build the CLI binary
+make build      # Build the CLI binary (uses ../.env by default)
 ```
 
-Or build with explicit environment variables:
+The build process automatically loads environment variables from `../.env` and embeds them into the binary at build time for security.
+
+#### Platform-Specific Builds
+
+You can also build for specific platforms:
+
 ```bash
 cd cli
-SUPABASE_URL=http://localhost:54321 SUPABASE_ANON_KEY=your-anon-key make build
+
+# Build for Linux
+make build-cli-linux
+
+# Build for macOS (Intel)
+make build-cli-darwin
+
+# Build for macOS (Apple Silicon) - default
+make build-cli-darwin-arm64
 ```
 
 ### Additional Setup (Supabase Functions)
@@ -202,7 +252,102 @@ After building with `make build`, you can run the binary directly:
 
 **Note:** Logs will be sent to `~/.prod/logs.txt`
 
+## CLI Authentication System
 
+The Prod CLI uses a modern web-based authentication system that supports both OAuth and email/password authentication.
+
+### Authentication Flow
+
+1. **Start Authentication:**
+   ```bash
+   ./prod auth login
+   ```
+
+2. **Browser Opens:** The CLI automatically opens your browser to the authentication page
+
+3. **Choose Authentication Method:**
+   - **OAuth:** Sign in with GitHub, Google, or other providers
+   - **Email/Password:** Use email and password authentication
+   - **Sign Up:** Create a new account with email/password
+
+4. **Automatic Token Storage:** The CLI automatically receives and stores your authentication token
+
+### Authentication Commands
+
+```bash
+# Login to the CLI
+./prod auth login
+
+# Check authentication status
+./prod auth status
+
+# Logout from the CLI
+./prod auth logout
+```
+
+### Environment Support
+
+The authentication system supports multiple environments:
+
+- **Local:** `http://localhost:5175/cli-auth` (for local Supabase development)
+- **Staging:** `https://staging--prodai-landing.netlify.app/cli-auth` (default for local development)
+- **Production:** `https://pushtoprod.ai/cli-auth`
+
+The environment is automatically determined by the `ENVIRONMENT` variable in your `.env` file:
+
+```bash
+# Default: staging (recommended for local development)
+ENVIRONMENT=staging
+
+# For local Supabase development
+ENVIRONMENT=local
+
+# For production use
+ENVIRONMENT=production
+```
+
+#### Environment Configuration Details
+
+- **Local Environment (`ENVIRONMENT=local`):**
+  - Uses local Supabase instance (`http://localhost:54321`)
+  - Authentication page runs on `http://localhost:5175/cli-auth`
+  - Requires local Supabase and website to be running
+
+- **Staging Environment (`ENVIRONMENT=staging`):**
+  - Uses remote Supabase instance
+  - Authentication page: `https://staging--prodai-landing.netlify.app/cli-auth`
+  - Recommended for local development (stable, no local setup required)
+
+- **Production Environment (`ENVIRONMENT=production`):**
+  - Uses production Supabase instance
+  - Authentication page: `https://pushtoprod.ai/cli-auth`
+  - For production deployments
+
+### Authentication Features
+
+- **✅ OAuth Integration:** GitHub, Google, and other providers
+- **✅ Email/Password Authentication:** Traditional login with validation
+- **✅ Account Creation:** Sign up with email confirmation
+- **✅ Password Security:** Strong password requirements and validation
+- **✅ Automatic Token Management:** No manual token copying required
+- **✅ Error Handling:** Clear error messages with retry options
+- **✅ Multi-Environment Support:** Works with staging and production
+
+### Troubleshooting Authentication
+
+If authentication fails:
+
+1. **Check Network Connection:** Ensure you can access the authentication website
+2. **Clear Browser Cache:** Try clearing your browser cache and cookies
+3. **Check Environment:** Verify you're using the correct environment (staging vs production)
+4. **Retry Authentication:** Use the "Try Again" button on error pages
+
+### Security Features
+
+- **JWT Token Validation:** All tokens are validated and include user information
+- **Automatic Token Expiration:** Tokens expire after 30 days
+- **Secure Storage:** Authentication tokens are stored securely in `~/.prod/auth.json`
+- **CORS Protection:** Proper CORS headers for secure cross-origin requests
 
 ### Troubleshooting Build Issues
 
@@ -213,16 +358,26 @@ If you encounter `SUPABASE_ANON_KEY environment variable not set`:
    cp env.example .env
    ```
 
-2. **Verify environment variables are loaded:**
+2. **For local development, create `.env.local`:**
    ```bash
-   echo $SUPABASE_ANON_KEY
+   cp env.example .env.local
+   # Edit .env.local with your local development settings
    ```
 
-3. **Build with explicit variables:**
+3. **Verify the correct environment file is being used:**
+   - `make dev` looks for `../.env.local`
+   - `make dev-staging` and `make dev-production` look for `../.env`
+   - `make build` looks for `../.env`
+
+4. **Check that environment variables are loaded:**
    ```bash
    cd cli
-   SUPABASE_URL=http://localhost:54321 SUPABASE_ANON_KEY=your-anon-key make build
+   make dev  # Should show "Loading ../.env.local..." if file exists
    ```
+
+5. **Environment file location:**
+   - The Makefile looks for `.env` files in the parent directory (`../`)
+   - Make sure your `.env` or `.env.local` file is in the project root, not in the `cli/` directory
 
 ## Updating Prompts
    1. We are currently using BAML for handling our LLM interations. BAML requires a generation step to update the prompts and clients.
