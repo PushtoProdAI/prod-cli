@@ -945,7 +945,7 @@ func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) 
 }
 
 func (a *Agent) authenticateCLI(ctx context.Context) bool {
-	err := a.internalAuth.LoginWithBrowser(ctx)
+	err := a.internalAuth.LoginWithSupabaseFunction(ctx)
 	if err != nil {
 		slog.Error("Failed to authenticate CLI", "error", err)
 		return false

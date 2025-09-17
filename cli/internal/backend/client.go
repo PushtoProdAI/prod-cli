@@ -15,7 +15,9 @@ import (
 	"github.com/meroxa/prod/cli/internal/config"
 )
 
-var baseURL = fmt.Sprintf("%s/%s", config.SupabaseURL, "functions/v1")
+func getBaseURL() string {
+	return fmt.Sprintf("%s/%s", config.GetSupabaseURL(), "functions/v1")
+}
 
 type RegistryCredentials struct {
 	Username   string `json:"dockerAuthUsername"`
@@ -50,7 +52,7 @@ func (c *Client) RecordRequestedStack(ctx context.Context, authToken string, pla
 		return errors.Errorf("failed to marshal usage data: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/record-stack", baseURL)
+	url := fmt.Sprintf("%s/record-stack", getBaseURL())
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return errors.Errorf("failed to create request: %w", err)
@@ -87,7 +89,7 @@ func (c *Client) GetPushRegistryCredentials(ctx context.Context, authToken strin
 	}
 
 	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/push-token", baseURL), bytes.NewBuffer(payloadBytes))
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/push-token", getBaseURL()), bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		return nil, errors.Errorf("failed to create request: %w", err)
 	}
@@ -142,7 +144,7 @@ func (c *Client) GetPullRegistryCredentials(ctx context.Context, authToken strin
 	}
 
 	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/pull-token", baseURL), bytes.NewBuffer(payloadBytes))
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/pull-token", getBaseURL()), bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		return nil, errors.Errorf("failed to create request: %w", err)
 	}
@@ -194,7 +196,7 @@ func (c *Client) CreateDockerRepository(ctx context.Context, authToken string, p
 		return errors.Errorf("failed to repository name: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/create-repo", baseURL)
+	url := fmt.Sprintf("%s/create-repo", getBaseURL())
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return errors.Errorf("failed to create request: %w", err)
@@ -219,7 +221,7 @@ func (c *Client) CreateDockerRepository(ctx context.Context, authToken string, p
 }
 
 func (c *Client) GetBaseDockerImages(ctx context.Context) (map[string]string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/base-images", baseURL), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/base-images", getBaseURL()), nil)
 	if err != nil {
 		return nil, errors.Errorf("failed to create request: %w", err)
 	}

@@ -12,6 +12,7 @@ var (
 // AuthCommand handles authentication operations
 type AuthCommand struct {
 	Login  LoginCommand  `cmd:"" help:"Authenticate with Prod"`
+	Token  TokenCommand  `cmd:"" help:"Authenticate with a token from the web interface"`
 	Logout LogoutCommand `cmd:"" help:"Sign out of Prod"`
 	Status StatusCommand `cmd:"" help:"Show authentication status"`
 }
@@ -19,6 +20,7 @@ type AuthCommand struct {
 func (c *AuthCommand) SubCommands() []ecdysis.Command {
 	return []ecdysis.Command{
 		&c.Login,
+		&c.Token,
 		&c.Logout,
 		&c.Status,
 	}
