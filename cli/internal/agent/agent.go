@@ -412,12 +412,12 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
 			return a.confirmWithPrompt(ctx, "", out)
 		}
-		// Display Svelte config diff if available
-		if len(result.SvelteConfigDiff) > 0 {
-			fmt.Fprint(out, "\n⚙️ Svelte configuration changes:\n")
+		// Display config diff if available
+		if len(result.ConfigDiff) > 0 {
+			fmt.Fprintf(out, "\n⚙️ %s configuration changes:\n", result.ConfigPath)
 			fmt.Fprint(out, "────────────────────────────────────────\n")
 
-			for _, line := range result.SvelteConfigDiff {
+			for _, line := range result.ConfigDiff {
 				content := unescapeJSONUnicode(line.Content)
 				switch line.Type {
 				case "header":
