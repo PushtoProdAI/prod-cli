@@ -61,13 +61,14 @@ type DiffLine struct {
 
 // SetupJavaScriptProjectResult contains the results of setting up a JavaScript project
 type SetupJavaScriptProjectResult struct {
-	PackageLockCreated  bool        `json:"packageLockCreated"`
-	SvelteConfigUpdated bool        `json:"svelteConfigUpdated"`
-	SvelteConfigDiff    []DiffLine  `json:"svelteConfigDiff,omitempty"`
-	PackageJsonUpdated  bool        `json:"packageJsonUpdated"`
-	PackageJsonDiff     []DiffLine  `json:"packageJsonDiff,omitempty"`
-	Error               deployError `json:"error,omitempty"`
-	UpdatedPlan         DeployPlan  `json:"updatedPlan,omitempty"`
+	PackageLockCreated bool        `json:"packageLockCreated"`
+	ConfigUpdated      bool        `json:"configUpdated"`
+	ConfigDiff         []DiffLine  `json:"configDiff,omitempty"`
+	ConfigPath         string      `json:"configPath,omitempty"`
+	PackageJsonUpdated bool        `json:"packageJsonUpdated"`
+	PackageJsonDiff    []DiffLine  `json:"packageJsonDiff,omitempty"`
+	Error              deployError `json:"error,omitempty"`
+	UpdatedPlan        DeployPlan  `json:"updatedPlan,omitempty"`
 }
 
 var _ workflowext.Registerer = (*Workflows)(nil)
@@ -917,12 +918,13 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 	}
 
 	// Update result with configuration changes
-	if len(jsConfig.SvelteConfigDiff) > 0 {
-		result.SvelteConfigUpdated = true
-		result.SvelteConfigDiff = jsConfig.SvelteConfigDiff
-		slog.Info("Svelte configuration updated")
+	if len(jsConfig.ConfigDiff) > 0 {
+		result.ConfigUpdated = true
+		result.ConfigDiff = jsConfig.ConfigDiff
+		result.ConfigPath = jsConfig.ConfigPath
+		slog.Info("JavaScript configuration updated")
 	} else {
-		slog.Info("No Svelte configuration found or no changes needed")
+		slog.Info("No JavaScript configuration found or no changes needed")
 	}
 
 	if jsConfig.PackageJsonUpdated {
@@ -935,7 +937,7 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 
 	// Step 2: Create/update package-lock.json (after config changes)
 	slog.Info("Creating/updating package-lock.json")
-	configUpdated := result.SvelteConfigUpdated || result.PackageJsonUpdated
+	configUpdated := result.ConfigUpdated || result.PackageJsonUpdated
 	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentCreatePackageLock, input, configUpdated).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to create package-lock.json", "error", err)
@@ -949,7 +951,7 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 	result.PackageLockCreated = true
 	slog.Info("Package-lock.json handling completed")
 
-	plan, _ := workflow.ExecuteActivity[DeployPlan](ctx, ActivityOpts, AgentPrepareNuxtBuild, input).Get(ctx)
+	plan, _ := workflow.ExecuteActivity[DeployPlan](ctx, ActivityOpts, AgentPrepareDeployment, input).Get(ctx)
 	result.UpdatedPlan = plan
 	slog.Info("JavaScript project setup completed successfully")
 	return result, nil

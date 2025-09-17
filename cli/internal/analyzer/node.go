@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/go-errors/errors"
 )
@@ -405,9 +406,25 @@ func findRuntimeFramework(root string) string {
 		return "Nuxt"
 	}
 
-	// Check for Remix (has remix.config.js)
-	if exists(filepath.Join(root, "remix.config.js")) {
+	// Check for Remix (has remix.config.js|ts or vite.config with remix)
+	if exists(filepath.Join(root, "remix.config.js")) || exists(filepath.Join(root, "remix.config.ts")) {
 		return "Remix"
+	}
+
+	// Check for modern Remix with vite.config containing remix plugin
+	viteConfigPath := ""
+	if exists(filepath.Join(root, "vite.config.ts")) {
+		viteConfigPath = filepath.Join(root, "vite.config.ts")
+	} else if exists(filepath.Join(root, "vite.config.js")) {
+		viteConfigPath = filepath.Join(root, "vite.config.js")
+	}
+	if viteConfigPath != "" {
+		if content, err := os.ReadFile(viteConfigPath); err == nil {
+			contentStr := string(content)
+			if strings.Contains(contentStr, "@remix-run/dev") || strings.Contains(contentStr, "remix()") {
+				return "Remix"
+			}
+		}
 	}
 
 	// Check for Astro (has astro.config.*)

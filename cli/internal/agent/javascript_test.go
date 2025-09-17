@@ -432,3 +432,210 @@ func TestPatchPackageJSONForPlatformWithFrameworkDetection(t *testing.T) {
 		})
 	}
 }
+
+func TestPatchRemixViteConfigForNetlify(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name: "Add netlify plugin to basic vite config",
+			input: `import { vitePlugin as remix } from "@remix-run/dev";
+import { defineConfig } from "vite";
+import tsconfigPaths from "vite-tsconfig-paths";
+
+export default defineConfig({
+  plugins: [
+    remix(),
+    tsconfigPaths()
+  ]
+});`,
+			expected: []string{
+				`import { netlifyPlugin } from "@netlify/remix-adapter/plugin"`,
+				"netlifyPlugin()",
+			},
+		},
+		{
+			name: "Config already has netlify plugin",
+			input: `import { vitePlugin as remix } from "@remix-run/dev";
+import { defineConfig } from "vite";
+import tsconfigPaths from "vite-tsconfig-paths";
+import { netlifyPlugin } from "@netlify/remix-adapter/plugin";
+
+export default defineConfig({
+  plugins: [
+    remix(),
+    tsconfigPaths(),
+    netlifyPlugin()
+  ]
+});`,
+			expected: []string{
+				`import { netlifyPlugin } from "@netlify/remix-adapter/plugin"`,
+				"netlifyPlugin()",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := patchRemixViteConfigForNetlify([]byte(tt.input))
+			resultStr := string(result)
+
+			for _, expected := range tt.expected {
+				if !strings.Contains(resultStr, expected) {
+					t.Errorf("expected %q to be in result:\n%s", expected, resultStr)
+				}
+			}
+		})
+	}
+}
+
+func TestRemoveNetlifyPluginFromRemixConfig(t *testing.T) {
+	input := `import { vitePlugin as remix } from "@remix-run/dev";
+import { defineConfig } from "vite";
+import tsconfigPaths from "vite-tsconfig-paths";
+import { netlifyPlugin } from "@netlify/remix-adapter/plugin";
+
+export default defineConfig({
+  plugins: [
+    remix(),
+    tsconfigPaths(),
+    netlifyPlugin()
+  ]
+});`
+
+	result := removeNetlifyPluginFromRemixConfig([]byte(input))
+	resultStr := string(result)
+
+	// Should not contain netlify import or plugin call
+	if strings.Contains(resultStr, `import { netlifyPlugin } from "@netlify/remix-adapter/plugin"`) {
+		t.Error("netlify import should be removed")
+	}
+	if strings.Contains(resultStr, "netlifyPlugin()") {
+		t.Error("netlifyPlugin() call should be removed")
+	}
+
+	// Should still contain other imports and plugins
+	if !strings.Contains(resultStr, "remix()") {
+		t.Error("remix() plugin should remain")
+	}
+	if !strings.Contains(resultStr, "tsconfigPaths()") {
+		t.Error("tsconfigPaths() plugin should remain")
+	}
+}
+
+func TestPatchPackageJSONForRemixPlatforms(t *testing.T) {
+	basePackageJSON := `{
+  "name": "remix-app",
+  "scripts": {
+    "build": "remix build",
+    "start": "remix-serve build/index.js"
+  },
+  "dependencies": {
+    "@remix-run/node": "^2.0.0",
+    "@remix-run/react": "^2.0.0"
+  },
+  "devDependencies": {
+    "@remix-run/dev": "^2.0.0",
+    "vite": "^4.4.2"
+  }
+}`
+
+	tests := []struct {
+		name            string
+		platform        Platform
+		framework       string
+		wantChanged     bool
+		expectedDeps    []string
+		notExpectedDeps []string
+	}{
+		{
+			name:            "Remix project for Netlify platform",
+			platform:        Netlify,
+			framework:       "Remix",
+			wantChanged:     true,
+			expectedDeps:    []string{"@netlify/remix-adapter"},
+			notExpectedDeps: []string{"@remix-run/serve"},
+		},
+		{
+			name:            "Remix project for Render platform",
+			platform:        Render,
+			framework:       "Remix",
+			wantChanged:     true,
+			expectedDeps:    []string{"@remix-run/serve"},
+			notExpectedDeps: []string{"@netlify/remix-adapter"},
+		},
+		{
+			name:            "Remix project for FlyIO platform",
+			platform:        FlyIO,
+			framework:       "Remix",
+			wantChanged:     true,
+			expectedDeps:    []string{"@remix-run/serve"},
+			notExpectedDeps: []string{"@netlify/remix-adapter", "@vercel/remix"},
+		},
+		{
+			name:            "Remix project for Vercel platform",
+			platform:        Vercel,
+			framework:       "Remix",
+			wantChanged:     true,
+			expectedDeps:    []string{"@vercel/remix"},
+			notExpectedDeps: []string{"@netlify/remix-adapter", "@remix-run/serve"},
+		},
+		{
+			name:            "Non-Remix project should not be changed",
+			platform:        Netlify,
+			framework:       "Next.js",
+			wantChanged:     false,
+			expectedDeps:    []string{},
+			notExpectedDeps: []string{"@netlify/remix-adapter", "@remix-run/serve"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			updatedPackageJSON, changed, err := patchPackageJSONForPlatform([]byte(basePackageJSON), tt.platform, tt.framework)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if changed != tt.wantChanged {
+				t.Errorf("expected changed=%v, got %v", tt.wantChanged, changed)
+			}
+
+			if tt.wantChanged {
+				var result map[string]any
+				if err := json.Unmarshal(updatedPackageJSON, &result); err != nil {
+					t.Fatalf("failed to parse result JSON: %v", err)
+				}
+
+				// Check expected dependencies are present
+				for _, expectedDep := range tt.expectedDeps {
+					found := false
+					for _, section := range []string{"dependencies", "devDependencies"} {
+						if deps, ok := result[section].(map[string]any); ok {
+							if _, exists := deps[expectedDep]; exists {
+								found = true
+								break
+							}
+						}
+					}
+					if !found {
+						t.Errorf("expected dependency %q to be added", expectedDep)
+					}
+				}
+
+				// Check unwanted dependencies are not present
+				for _, notExpectedDep := range tt.notExpectedDeps {
+					for _, section := range []string{"dependencies", "devDependencies"} {
+						if deps, ok := result[section].(map[string]any); ok {
+							if _, exists := deps[notExpectedDep]; exists {
+								t.Errorf("unexpected dependency %q was added", notExpectedDep)
+							}
+						}
+					}
+				}
+			}
+		})
+	}
+}

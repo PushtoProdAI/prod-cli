@@ -288,9 +288,9 @@ func TestRenderDeploymentOnly(out io.Writer) {
 		ID:          "step-1",
 		Description: "Create Docker registry credential in Render",
 		Name:        "my-node-app-registry-cred",
-		TenantID:    tenantID,
-		OwnerID:     ownerID,
-		DependsOn:   []string{}, // No dependencies
+
+		OwnerID:   ownerID,
+		DependsOn: []string{}, // No dependencies
 	})
 
 	registryCred, err := registryCredStep.Execute(ctx, httpClient, map[string]any{})
@@ -316,10 +316,10 @@ func TestRenderDeploymentOnly(out io.Writer) {
 		Dockerfile:         "",                 // No dockerfile path
 		DockerImageStepID:  "mock-docker-step", // Set a non-empty docker image step ID to trigger Docker path
 		RegistryCredStepID: "step-1",           // Registry credential step ID
-		TenantID:           tenantID,
-		EnvVars:            []deployment.EnvVar{}, // No env vars
-		ConnectionStepIDs:  []string{},            // No connection steps
-		DependsOn:          []string{"step-1"},    // Depends on registry credential
+
+		EnvVars:           []deployment.EnvVar{}, // No env vars
+		ConnectionStepIDs: []string{},            // No connection steps
+		DependsOn:         []string{"step-1"},    // Depends on registry credential
 	})
 
 	// Execute with step results containing the registry credential
