@@ -116,9 +116,10 @@ You are a strict classifier. Your only job is to analyze deployment requests and
     - Fly.io
     - Netlify
     - Vercel
+    - Heroku
 
   If the user mentions one of these explicitly, extract it as `platform`.
-  If they mention a platform NOT on this list (e.g., Heroku, Vercel, Kubernetes), set:
+  If they mention a platform NOT on this list (e.g. Kubernetes), set:
     "platform": "UNKNOWN"
 
   Never infer or guess the platform based on project name, context, or tone. Only match exact mentions.

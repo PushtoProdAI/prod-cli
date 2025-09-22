@@ -58,6 +58,8 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		platform = Netlify
 	case "vercel":
 		platform = Vercel
+	case "heroku":
+		platform = Heroku
 	default:
 		platform = UnknownPlatform
 	}

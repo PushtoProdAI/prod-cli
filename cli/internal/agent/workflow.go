@@ -15,6 +15,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
+	"github.com/meroxa/prod/cli/internal/deployment/heroku"
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/deployment/vercel"
@@ -34,6 +35,7 @@ const (
 	DryRunNetlifyWorkflowName          = "agent.dryrun.netlify"
 	SetupJavaScriptProjectWorkflowName = "agent.setupJavaScriptProject"
 	DeployVercelWorkflowName           = "agent.deploy.vercel"
+	DeployHerokuWorkflowName           = "agent.deploy.heroku"
 )
 
 var ActivityOpts = workflow.ActivityOptions{
@@ -117,6 +119,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: DryRunNetlifyWorkflowName, WorkflowFunc: w.dryRunNetlify},
 		{Name: SetupJavaScriptProjectWorkflowName, WorkflowFunc: w.setupJavaScriptProject},
 		{Name: DeployVercelWorkflowName, WorkflowFunc: w.deployVercel},
+		{Name: DeployHerokuWorkflowName, WorkflowFunc: w.deployHeroku},
 	}
 }
 
@@ -135,6 +138,8 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input DeployPlan)
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployNetlifyWorkflowName, time.Now().Unix())}, DeployNetlifyWorkflowName, input)
 	case Vercel:
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployVercelWorkflowName, time.Now().Unix())}, DeployVercelWorkflowName, input)
+	case Heroku:
+		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployHerokuWorkflowName, time.Now().Unix())}, DeployHerokuWorkflowName, input)
 	default:
 		return nil, errors.New("unsupported platform for deployment")
 	}
@@ -883,6 +888,97 @@ func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deploy
 		return deployResult{}, errors.Errorf("service URL %s is not live: %w", fullUrl, err)
 	}
 	slog.Info("Netlify deployment workflow completed successfully")
+
+	return deployResult{Url: fullUrl}, nil
+}
+
+func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deployResult, error) {
+	slog.Info("deployHeroku workflow started", "platform", input.Platform)
+	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
+
+	// Build deployment spec from the plan
+	slog.Info("Building deployment spec")
+	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars)
+	spec, err := db.Build()
+	if err != nil {
+		slog.Info("Failed to build deployment spec", "error", err)
+		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to build deployment spec: %v", err)}}, nil
+	}
+	slog.Info("Deployment spec built successfully")
+
+	// Add metadata
+	spec.Metadata["buildContext"] = input.Source
+	spec.Metadata["platform"] = "heroku"
+
+	// Use default Heroku adapter
+	herokuAdapter := heroku.NewDefaultHerokuDeploymentAdapter(w.uiWriter)
+	d, err := herokuAdapter.GenerateArtifactsWithSource(spec, deployment.StrategyHeroku, input.Source)
+	if err != nil {
+		slog.Error("Failed to generate Heroku deployment", "error", err)
+		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to generate deployment: %v", err)}}, nil
+	}
+
+	// Generate steps for summary
+	if qd, ok := d.(*heroku.QueuedDeployment); ok {
+		steps := qd.GenerateAPISteps()
+		descriptions := make([]string, len(steps))
+		for i, step := range steps {
+			descriptions[i] = step.GetDescription()
+		}
+		_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
+		if err != nil {
+			slog.Error("Failed to summarize deployment steps", "error", err)
+		}
+	}
+
+	// Use limited retries for Heroku deployment (it has long-running git operations)
+	deployOpts := ActivityOpts
+	if input.Platform == Heroku {
+		deployOpts.RetryOptions.MaxAttempts = 2 // Only retry once for Heroku
+	}
+
+	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, deployOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
+	if err != nil {
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		slog.Error("Deployment failed", "error", err)
+		return deployResult{Error: summary}, nil
+	}
+
+	// Extract deployment URL from created resources
+	var deploymentURL string
+	for _, resource := range createdResources {
+		if url, ok := resource.Metadata["url"].(string); ok {
+			deploymentURL = url
+			break
+		}
+	}
+
+	if deploymentURL == "" {
+		slog.Info("No deployment URL found in created resources")
+		deploymentURL = "Deployment completed but URL not available"
+	}
+
+	path, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineRootPath, input.Spec.Routes).Get(ctx)
+	if err != nil {
+		// if there is an error, we will just default to /
+		slog.Info("Failed to determine root path for application", "error", err)
+		path = "/"
+	}
+
+	fullUrl, err := url.JoinPath(deploymentURL, path)
+	if err != nil {
+		slog.Info("Failed to combine paths", "error", err)
+		fullUrl = deploymentURL
+	}
+
+	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
+	if err != nil {
+		return deployResult{}, errors.Errorf("service URL %s is not live: %w", fullUrl, err)
+	}
+	slog.Info("Heroku deployment workflow completed successfully")
 
 	return deployResult{Url: fullUrl}, nil
 }
