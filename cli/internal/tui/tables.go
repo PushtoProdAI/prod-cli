@@ -92,7 +92,16 @@ func (m Model) createPricingTable(pricing PricingInfo) string {
 		} else {
 			description = service.Name
 		}
-		rows[i] = []string{description, fmt.Sprintf("$%.2f", service.Cost)}
+
+		// Format cost
+		var costStr string
+		if service.Cost > 0 {
+			costStr = fmt.Sprintf("$%.2f/month", service.Cost)
+		} else {
+			costStr = "$0.00/month"
+		}
+
+		rows[i] = []string{description, costStr}
 	}
 
 	// Total row

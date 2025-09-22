@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/cache"
 )
 
 type DeploymentStrategy string
@@ -164,4 +165,14 @@ func (db *DeploymentBuilder) Build() (*DeploymentSpec, error) {
 		OutputDir:    db.projectSpec.BuildOutput.Path,
 		IsStatic:     isStatic,
 	}, nil
+}
+
+// FetchURLAsMarkdown fetches a URL and converts it to markdown with caching
+func FetchURLAsMarkdown(url string) (string, error) {
+	return cache.FetchURLAsMarkdown(url)
+}
+
+// FetchURLAsMarkdownWithCleaning fetches a URL and converts it to markdown with HTML cleaning
+func FetchURLAsMarkdownWithCleaning(url string) (string, error) {
+	return cache.FetchURLAsMarkdownWithOptions(url, true)
 }

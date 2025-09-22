@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 
-	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/pricing"
 	"github.com/meroxa/prod/cli/internal/output"
 )
 
@@ -96,24 +95,24 @@ func (n *NetlifyDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec,
 func estimateNetlifyCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	slog.Info("Estimating Netlify costs", "serviceCount", len(cr.Services))
 
-	// Get current pricing from Netlify via LLM
-	pricing, err := fetchNetlifyPricingViaLLM(cr.Services)
-	if err != nil {
-		slog.Info("Failed to fetch pricing via LLM, using fallback", "error", err)
-		return estimateNetlifyCostFallback(cr)
-	}
-
-	slog.Info("Successfully fetched pricing via LLM", "pricing", pricing)
-
+	ctx := context.Background()
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 
-	for i, service := range cr.Services {
-		if i < len(pricing) {
-			service.Cost = pricing[i]
-		} else {
-			service.Cost = 0.0
+	// Create pricing service with Netlify pricing provider
+	pricingProvider := NewPricingProvider()
+	pricingService := pricing.NewPricingService(pricingProvider, 3)
+
+	for _, service := range cr.Services {
+		result, err := pricingService.EstimateCost(ctx, service)
+		if err != nil {
+			slog.Info("Failed to fetch pricing via LLM, using fallback", "service", service.Name, "error", err)
+			return estimateNetlifyCostFallback(cr)
 		}
+
+		// Apply usage-based costs for storage (Netlify specific logic)
+		service.Cost = pricing.ApplyUsageCosts(result.Cost, result.UsageCosts, float64(service.Storage), "GB")
+
 		ce.Total += service.Cost
 		ce.Services = append(ce.Services, service)
 	}
@@ -121,46 +120,6 @@ func estimateNetlifyCost(cr deployment.CostRequest) (deployment.CostEstimate, er
 	slog.Info("Final cost estimate", "total", ce.Total, "services", ce.Services)
 
 	return ce, nil
-}
-
-func fetchNetlifyPricingViaLLM(services []deployment.CostService) ([]float64, error) {
-	// Build service descriptions for LLM
-	var serviceDescriptions []string
-	for _, service := range services {
-		desc := fmt.Sprintf("Service: %s, Type: %s, Plan: %s", service.Service.Name, service.Service.Provider, service.Plan)
-		if service.Storage > 0 {
-			desc += fmt.Sprintf(", Storage: %dGB", service.Storage)
-		}
-		serviceDescriptions = append(serviceDescriptions, desc)
-	}
-
-	servicesText := strings.Join(serviceDescriptions, "\n")
-	slog.Info("Fetching Netlify pricing via LLM for services", "services", servicesText)
-
-	ctx := context.Background()
-	response, err := baml_client.FetchNetlifyPricing(ctx, servicesText)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch pricing via LLM: %v", err)
-	}
-
-	// Extract costs in order of input services
-	costs := make([]float64, len(services))
-	for i, service := range services {
-		// Find matching service in response
-		found := false
-		for _, pricedService := range response.Services {
-			if pricedService.Service_name == service.Service.Name || pricedService.Service_type == service.Service.Provider {
-				costs[i] = pricedService.Monthly_cost
-				found = true
-				break
-			}
-		}
-		if !found {
-			costs[i] = 0.0
-		}
-	}
-
-	return costs, nil
 }
 
 func estimateNetlifyCostFallback(cr deployment.CostRequest) (deployment.CostEstimate, error) {
@@ -175,9 +134,9 @@ func estimateNetlifyCostFallback(cr deployment.CostRequest) (deployment.CostEsti
 		service.Cost = 0.0
 
 		// Add some basic pricing for premium features
-		if service.Service.Provider == "functions" && service.Plan != "free" {
+		if service.Provider == "functions" && service.Plan != "free" {
 			service.Cost = 19.0 // Pro plan pricing
-		} else if service.Service.Provider == "forms" && service.Plan != "free" {
+		} else if service.Provider == "forms" && service.Plan != "free" {
 			service.Cost = 19.0 // Pro plan pricing
 		}
 
@@ -195,7 +154,7 @@ func (n *NetlifyDeploymentAdapter) validateSpec(spec *deployment.DeploymentSpec)
 	for _, service := range spec.Services {
 		switch service.Provider {
 		case "postgresql", "redis", "mysql", "mongodb":
-			return fmt.Errorf("Netlify does not support %s hosting. Netlify is for static sites and serverless functions only", service.Provider)
+			return fmt.Errorf("netlify does not support %s hosting. Netlify is for static sites and serverless functions only", service.Provider)
 		}
 	}
 

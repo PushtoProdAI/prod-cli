@@ -186,6 +186,7 @@ func (m Model) formatPlanAsTable(plan PlanDisplayMessage) string {
 
 		pricingTable := m.createPricingTable(plan.Pricing)
 		result.WriteString(pricingTable)
+
 		result.WriteString("\n")
 	}
 

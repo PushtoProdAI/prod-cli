@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 	"time"
 
-	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/pricing"
 	"github.com/meroxa/prod/cli/internal/output"
 )
 
@@ -160,68 +159,29 @@ func (rda *RenderDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec
 func estimateCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	slog.Info("Estimating costs for request", "request", cr)
 
-	// Get current pricing from Render via LLM
-	pricing, err := fetchPricingViaLLM(cr.Services)
-	if err != nil {
-		slog.Info("Failed to fetch pricing via LLM, using fallback", "error", err)
-		return estimateCostFallback(cr)
-	}
-
+	ctx := context.Background()
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 
-	for i, service := range cr.Services {
-		if i < len(pricing) {
-			service.Cost = pricing[i]
-		} else {
-			service.Cost = 0.0
+	// Create pricing service with Render pricing provider
+	pricingProvider := NewPricingProvider()
+	pricingService := pricing.NewPricingService(pricingProvider, pricing.DefaultRetries)
+
+	for _, service := range cr.Services {
+		result, err := pricingService.EstimateCost(ctx, service)
+		if err != nil {
+			slog.Info("Failed to fetch pricing via LLM, using fallback", "service", service.Name, "error", err)
+			return estimateCostFallback(cr)
 		}
+
+		// Apply usage-based costs for storage (Render specific logic)
+		service.Cost = pricing.ApplyUsageCosts(result.Cost, result.UsageCosts, float64(service.Storage), "GB")
+
 		ce.Total += service.Cost
 		ce.Services = append(ce.Services, service)
 	}
 
 	return ce, nil
-}
-
-func fetchPricingViaLLM(services []deployment.CostService) ([]float64, error) {
-	// Build service descriptions for LLM
-	var serviceDescriptions []string
-	for _, service := range services {
-		desc := fmt.Sprintf("Service: %s, Type: %s, Plan: %s", service.Service.Name, service.Service.Provider, service.Plan)
-		if service.Storage > 0 {
-			desc += fmt.Sprintf(", Storage: %dGB", service.Storage)
-		}
-		serviceDescriptions = append(serviceDescriptions, desc)
-	}
-
-	servicesText := strings.Join(serviceDescriptions, "\n")
-	slog.Info("Fetching pricing via LLM for services", "services", servicesText)
-
-	ctx := context.Background()
-	response, err := baml_client.FetchRenderPricing(ctx, servicesText)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch pricing via LLM: %v", err)
-	}
-
-	// Extract costs in order of input services
-	costs := make([]float64, len(services))
-	for i, service := range services {
-		// Find matching service in response
-		found := false
-		for _, pricedService := range response.Services {
-			if pricedService.Service_name == service.Service.Name || pricedService.Service_type == service.Service.Provider {
-				costs[i] = pricedService.Monthly_cost
-				found = true
-				break
-			}
-		}
-		if !found {
-			costs[i] = 0.0
-		}
-	}
-
-	slog.Info("LLM returned pricing", "costs", costs, "totalCost", response.Total_cost)
-	return costs, nil
 }
 
 func estimateCostFallback(cr deployment.CostRequest) (deployment.CostEstimate, error) {
