@@ -13,8 +13,9 @@ import (
 
 // VercelDeploymentAdapter implements the DeploymentAdapter interface for Vercel
 type VercelDeploymentAdapter struct {
-	client VercelClient
-	writer io.Writer
+	client         VercelClient
+	writer         io.Writer
+	pricingService pricing.Service
 }
 
 // NewVercelDeploymentAdapter creates a new Vercel deployment adapter
@@ -25,6 +26,18 @@ func NewVercelDeploymentAdapter(client VercelClient, writer io.Writer) *VercelDe
 	return &VercelDeploymentAdapter{
 		client: client,
 		writer: writer,
+	}
+}
+
+// NewVercelDeploymentAdapterWithPricing creates a new Vercel deployment adapter with custom pricing service
+func NewVercelDeploymentAdapterWithPricing(client VercelClient, writer io.Writer, pricingService pricing.Service) *VercelDeploymentAdapter {
+	if writer == nil {
+		writer = output.NewNoOpWriter()
+	}
+	return &VercelDeploymentAdapter{
+		client:         client,
+		writer:         writer,
+		pricingService: pricingService,
 	}
 }
 
@@ -88,20 +101,26 @@ func (v *VercelDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, 
 	}
 	cr.Services = append(cr.Services, cs)
 
-	ce, err := estimateVercelCost(cr)
+	ce, err := v.estimateVercelCost(cr)
 	return ce, err
 }
 
-func estimateVercelCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
+func (v *VercelDeploymentAdapter) estimateVercelCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	slog.Info("Estimating Vercel costs for request", "request", cr)
 
 	ctx := context.Background()
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 
-	// Create pricing service with Vercel pricing provider
-	pricingProvider := NewPricingProvider()
-	pricingService := pricing.NewPricingService(pricingProvider, pricing.DefaultRetries)
+	var pricingService pricing.Service
+	if v.pricingService != nil {
+		// Use injected pricing service (for testing)
+		pricingService = v.pricingService
+	} else {
+		// Create pricing service with Vercel pricing provider (production)
+		pricingProvider := NewPricingProvider()
+		pricingService = pricing.NewPricingService(pricingProvider, pricing.DefaultRetries)
+	}
 
 	for _, service := range cr.Services {
 		result, err := pricingService.EstimateCost(ctx, service)

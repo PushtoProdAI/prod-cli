@@ -13,7 +13,9 @@ func TestFlyioDeploymentAdapter_EstimateCost(t *testing.T) {
 	mockClient := &MockFlyioClient{}
 
 	// Create a mock pricing service to avoid LLM calls
-	mockPricingService := &MockPricingService{}
+	mockPricingService := pricing.NewMockServiceWithCostFunc(func(service deployment.CostService) float64 {
+		return getFlyioFallbackServiceCost(service.Provider, service.Plan, service.Storage)
+	})
 
 	// Create the adapter with mock pricing service
 	adapter := NewFlyioDeploymentAdapterWithPricing(mockClient, nil, mockPricingService)
@@ -141,16 +143,4 @@ func (m *MockFlyioClient) GetAppLogs(ctx context.Context, appID string) ([]LogEn
 
 func (m *MockFlyioClient) GetAppMetrics(ctx context.Context, appID string) (*AppMetrics, error) {
 	return &AppMetrics{}, nil
-}
-
-// MockPricingService implements PricingService for testing
-type MockPricingService struct{}
-
-func (m *MockPricingService) EstimateCost(ctx context.Context, service deployment.CostService) (*pricing.PricingResult, error) {
-	// Return fallback costs without making LLM calls
-	cost := getFlyioFallbackServiceCost(service.Provider, service.Plan, service.Storage)
-	return &pricing.PricingResult{
-		Cost:       cost,
-		UsageCosts: nil,
-	}, nil
 }

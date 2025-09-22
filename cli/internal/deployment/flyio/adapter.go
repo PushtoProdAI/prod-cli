@@ -10,16 +10,11 @@ import (
 	"github.com/meroxa/prod/cli/internal/deployment/pricing"
 )
 
-// PricingService interface for dependency injection
-type PricingService interface {
-	EstimateCost(ctx context.Context, service deployment.CostService) (*pricing.PricingResult, error)
-}
-
 // FlyioDeploymentAdapter implements the DeploymentAdapter interface for Fly.io
 type FlyioDeploymentAdapter struct {
 	client         FlyioClient
 	writer         io.Writer
-	pricingService PricingService
+	pricingService pricing.Service
 }
 
 // NewFlyioDeploymentAdapter creates a new Fly.io deployment adapter
@@ -31,7 +26,7 @@ func NewFlyioDeploymentAdapter(client FlyioClient, writer io.Writer) *FlyioDeplo
 }
 
 // NewFlyioDeploymentAdapterWithPricing creates a new Fly.io deployment adapter with custom pricing service
-func NewFlyioDeploymentAdapterWithPricing(client FlyioClient, writer io.Writer, pricingService PricingService) *FlyioDeploymentAdapter {
+func NewFlyioDeploymentAdapterWithPricing(client FlyioClient, writer io.Writer, pricingService pricing.Service) *FlyioDeploymentAdapter {
 	return &FlyioDeploymentAdapter{
 		client:         client,
 		writer:         writer,
@@ -123,7 +118,7 @@ func (fda *FlyioDeploymentAdapter) estimateFlyioCost(cr deployment.CostRequest) 
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 
-	var pricingService PricingService
+	var pricingService pricing.Service
 	if fda.pricingService != nil {
 		// Use injected pricing service (for testing)
 		pricingService = fda.pricingService

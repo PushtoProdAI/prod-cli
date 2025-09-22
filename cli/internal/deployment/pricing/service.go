@@ -22,6 +22,12 @@ type PricingProvider interface {
 	GetFallbackContent() string
 }
 
+// Service defines the interface for pricing estimation services
+type Service interface {
+	EstimateCost(ctx context.Context, service deployment.CostService) (*PricingResult, error)
+	EstimateCosts(ctx context.Context, services []deployment.CostService) ([]float64, error)
+}
+
 // PricingService handles common pricing extraction logic
 type PricingService struct {
 	provider PricingProvider
