@@ -1,3 +1,8 @@
+# Cross-platform CLI build system
+# Supports building for Linux (AMD64/ARM64) and macOS (AMD64/ARM64)
+# Linux builds use Docker for cross-compilation with CGO support
+# macOS builds require running on macOS or proper cross-compilation setup
+
 BINARY_NAME=prod
 CMD_PATH=cmd/main.go
 BUILD_DIR=../bin
@@ -27,17 +32,56 @@ LDFLAGS := -X 'github.com/meroxa/prod/cli/internal/config.SupabaseURL=$(SUPABASE
 .PHONY: build
 build: build-cli-darwin-arm64
 
+.PHONY: build-cli-linux-arm64
+build-cli-linux-arm64:
+	@echo "Building for Linux ARM64..."
+	@mkdir -p $(BUILD_DIR)
+	@if command -v docker >/dev/null 2>&1; then \
+		echo "Using Docker for cross-compilation..."; \
+		docker build --target linux-arm64 --build-arg LDFLAGS="$(LDFLAGS)" -f Dockerfile.build -t prod-linux-arm64-build .; \
+		docker run --rm -v "$(shell cd .. && pwd)/bin:/output" prod-linux-arm64-build sh -c "cp /build/prod-linux-arm64 /output/$(BINARY_NAME)-$(VERSION)-linux-arm64"; \
+	else \
+		echo "Docker not available, trying native cross-compilation..."; \
+		CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-linux-arm64 $(CMD_PATH); \
+	fi
+
+.PHONY: build-all
+build-all: build-cli-linux build-cli-linux-arm64 build-cli-darwin-arm64
+	@echo "Building macOS AMD64 (may fail on non-macOS platforms)..."
+	@$(MAKE) build-cli-darwin || echo "Warning: macOS AMD64 build failed (normal on non-macOS platforms)"
+
+.PHONY: build-linux-all
+build-linux-all: build-cli-linux build-cli-linux-arm64
+
+.PHONY: build-darwin-all
+build-darwin-all: build-cli-darwin build-cli-darwin-arm64
+
 .PHONY: build-cli-linux
 build-cli-linux:
 	@echo "Building for Linux..."
 	@mkdir -p $(BUILD_DIR)
-	GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-linux-amd64 $(CMD_PATH)
+	@if command -v docker >/dev/null 2>&1; then \
+		echo "Using Docker for cross-compilation..."; \
+		docker build --target linux-amd64 --build-arg LDFLAGS="$(LDFLAGS)" -f Dockerfile.build -t prod-linux-build .; \
+		docker run --rm -v "$(shell cd .. && pwd)/bin:/output" prod-linux-build sh -c "cp /build/prod-linux-amd64 /output/$(BINARY_NAME)-$(VERSION)-linux-amd64"; \
+	else \
+		echo "Docker not available, trying native cross-compilation..."; \
+		CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-linux-amd64 $(CMD_PATH); \
+	fi
 
 .PHONY: build-cli-darwin
 build-cli-darwin:
 	@echo "Building for macOS..."
 	@mkdir -p $(BUILD_DIR)
-	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-darwin-amd64 $(CMD_PATH)
+	@echo "Note: Cross-compiling macOS binaries from non-macOS requires macOS SDK"
+	@echo "Building natively on the current platform..."
+	@if [ "$(shell uname)" = "Darwin" ]; then \
+		CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-darwin-amd64 $(CMD_PATH); \
+	else \
+		echo "Warning: Cannot cross-compile macOS binary from non-macOS platform"; \
+		echo "Please run this target on macOS or use a macOS CI runner"; \
+		exit 1; \
+	fi
 
 .PHONY: build-cli-darwin-arm64
 build-cli-darwin-arm64:
@@ -49,6 +93,11 @@ build-cli-darwin-arm64:
 clean:
 	@echo "Cleaning build artifacts..."
 	@rm -rf $(BUILD_DIR)
+
+.PHONY: clean-docker
+clean-docker:
+	@echo "Cleaning Docker build images..."
+	@docker rmi prod-linux-build prod-linux-arm64-build 2>/dev/null || true
 
 .PHONY: generate
 generate:

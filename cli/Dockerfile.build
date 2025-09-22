@@ -1,0 +1,51 @@
+# Multi-stage Dockerfile for cross-compilation with CGO
+FROM golang:1.24.4 AS base
+
+# Install cross-compilation tools
+RUN apt-get update && apt-get install -y \
+    gcc-x86-64-linux-gnu \
+    gcc-aarch64-linux-gnu \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# Copy go.mod and go.sum first for better caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build for Linux AMD64
+FROM base AS linux-amd64
+ARG LDFLAGS
+ENV CGO_ENABLED=1
+ENV GOOS=linux
+ENV GOARCH=amd64
+ENV CC=x86_64-linux-gnu-gcc
+RUN mkdir -p /build && go build -ldflags="${LDFLAGS}" -o /build/prod-linux-amd64 cmd/main.go
+
+# Build for Linux ARM64
+FROM base AS linux-arm64
+ARG LDFLAGS
+ENV CGO_ENABLED=1
+ENV GOOS=linux
+ENV GOARCH=arm64
+ENV CC=aarch64-linux-gnu-gcc
+RUN mkdir -p /build && go build -ldflags="${LDFLAGS}" -o /build/prod-linux-arm64 cmd/main.go
+
+# Build for Darwin AMD64 (this might not work without proper macOS SDK)
+FROM base AS darwin-amd64
+ARG LDFLAGS
+ENV CGO_ENABLED=1
+ENV GOOS=darwin
+ENV GOARCH=amd64
+# Note: Building for macOS from Linux requires macOS SDK which is complex
+# This target is provided for reference but may not work without additional setup
+RUN mkdir -p /build && go build -ldflags="${LDFLAGS}" -o /build/prod-darwin-amd64 cmd/main.go
+
+# Final stage to collect binaries
+FROM scratch AS binaries
+COPY --from=linux-amd64 /build/prod-linux-amd64 /
+COPY --from=linux-arm64 /build/prod-linux-arm64 /
+COPY --from=darwin-amd64 /build/prod-darwin-amd64 /
