@@ -8,31 +8,31 @@ import (
 const (
 	// Region configuration
 	defaultRegion = "iad" // Northern Virginia (US East)
-	
+
 	// Organization configuration
 	defaultOrg = "personal"
-	
+
 	// PostgreSQL configuration
 	postgresInitialClusterSize = 1
-	postgresVolumeSizeGB      = 10
-	postgresImageRef          = "flyio/postgres:16" // Latest stable PostgreSQL
-	
+	postgresVolumeSizeGB       = 10
+	postgresImageRef           = "flyio/postgres:16" // Latest stable PostgreSQL
+
 	// Redis configuration
 	redisImageRef = "flyio/redis:7" // Latest stable Redis
-	
+
 	// Machine sizing
 	defaultMachineSize = "shared-cpu-1x" // 1 shared CPU, 256MB RAM
-	
+
 	// Deployment timeouts
 	deployTimeout        = 10 * time.Minute
 	serviceReadyTimeout  = 5 * time.Minute
 	serviceReadyInterval = 10 * time.Second
-	
+
 	// Retry configuration
-	maxRetries       = 3
-	retryDelay       = 2 * time.Second
-	retryBackoff     = 1.5
-	
+	maxRetries   = 3
+	retryDelay   = 2 * time.Second
+	retryBackoff = 1.5
+
 	// Port configuration
 	defaultHTTPPort     = 8080
 	defaultHTTPSPort    = 443
@@ -127,25 +127,26 @@ type FlyioPricing struct {
 func GetEstimatedPricing() FlyioPricing {
 	return FlyioPricing{
 		Machines: map[string]float64{
-			"shared-cpu-1x":     5.70,   // 1 shared CPU, 256MB RAM
-			"shared-cpu-2x":     11.40,  // 2 shared CPUs, 512MB RAM
-			"shared-cpu-4x":     22.80,  // 4 shared CPUs, 1GB RAM
-			"shared-cpu-8x":     45.60,  // 8 shared CPUs, 2GB RAM
-			"performance-1x":    62.00,  // 1 dedicated CPU, 2GB RAM
-			"performance-2x":    124.00, // 2 dedicated CPUs, 4GB RAM
-			"performance-4x":    248.00, // 4 dedicated CPUs, 8GB RAM
-			"performance-8x":    496.00, // 8 dedicated CPUs, 16GB RAM
+			"shared-cpu-1x":  5.70,   // 1 shared CPU, 256MB RAM
+			"shared-cpu-2x":  11.40,  // 2 shared CPUs, 512MB RAM
+			"shared-cpu-4x":  22.80,  // 4 shared CPUs, 1GB RAM
+			"shared-cpu-8x":  45.60,  // 8 shared CPUs, 2GB RAM
+			"performance-1x": 62.00,  // 1 dedicated CPU, 2GB RAM
+			"performance-2x": 124.00, // 2 dedicated CPUs, 4GB RAM
+			"performance-4x": 248.00, // 4 dedicated CPUs, 8GB RAM
+			"performance-8x": 496.00, // 8 dedicated CPUs, 16GB RAM
 		},
 		Databases: map[string]float64{
-			"db-shared-1":   7.00,  // Shared instance, 1GB storage
-			"db-dedicated-1": 27.00, // 1 dedicated CPU, 256MB RAM, 10GB storage
-			"db-dedicated-2": 54.00, // 2 dedicated CPUs, 1GB RAM, 40GB storage
-			"db-dedicated-4": 108.00, // 4 dedicated CPUs, 4GB RAM, 100GB storage
+			"basic":   38.00,
+			"starter": 72.00,
+			"launch":  282.00,
+			"scale":   962.00,
 		},
 		Redis: map[string]float64{
-			"redis-shared":   5.00,  // Shared Redis instance (Upstash)
+			"redis-shared":    5.00,  // Shared Redis instance (Upstash)
 			"redis-dedicated": 15.00, // Dedicated Redis instance
 		},
 		Storage: 0.15, // Per GB per month
 	}
 }
+

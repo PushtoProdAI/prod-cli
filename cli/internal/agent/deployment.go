@@ -116,6 +116,15 @@ func (a *Activities) estimateNetlifyCosts(_ context.Context, spec deployment.Dep
 	return costs, nil
 }
 
+func (a *Activities) estimateVercelCosts(_ context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+	va := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter)
+	costs, err := va.EstimateCost(&spec, strategy)
+	if err != nil {
+		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
+	}
+	return costs, nil
+}
+
 func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, dbList []string, envVar analyzer.EnvVarCandidate) (deployment.EnvVar, error) {
 	slog.Info("CategorizeEnvVarsForDeployment input", "envVar", envVar)
 	slog.Info("CategorizeEnvVarsForDeployment dbList", "dbList", dbList)

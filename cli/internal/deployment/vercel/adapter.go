@@ -1,11 +1,13 @@
 package vercel
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/pricing"
 	"github.com/meroxa/prod/cli/internal/output"
 )
 
@@ -91,39 +93,31 @@ func (v *VercelDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, 
 }
 
 func estimateVercelCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
-	slog.Info("Estimating Vercel costs", "serviceCount", len(cr.Services))
+	slog.Info("Estimating Vercel costs for request", "request", cr)
 
-	// Get current pricing from Vercel via LLM
-	pricing, err := fetchVercelPricingViaLLM(cr.Services)
-	if err != nil {
-		slog.Info("Failed to fetch pricing via LLM, using fallback", "error", err)
-		return estimateVercelCostFallback(cr)
-	}
-
-	slog.Info("Successfully fetched pricing via LLM", "pricing", pricing)
-
+	ctx := context.Background()
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 
-	for i, service := range cr.Services {
-		if i < len(pricing) {
-			service.Cost = pricing[i]
-		} else {
-			service.Cost = 0.0
+	// Create pricing service with Vercel pricing provider
+	pricingProvider := NewPricingProvider()
+	pricingService := pricing.NewPricingService(pricingProvider, pricing.DefaultRetries)
+
+	for _, service := range cr.Services {
+		result, err := pricingService.EstimateCost(ctx, service)
+		if err != nil {
+			slog.Info("Failed to fetch pricing via LLM, using fallback", "service", service.Name, "error", err)
+			return estimateVercelCostFallback(cr)
 		}
+
+		// Apply usage-based costs for storage (Vercel specific logic)
+		service.Cost = pricing.ApplyUsageCosts(result.Cost, result.UsageCosts, float64(service.Storage), "GB")
+
 		ce.Total += service.Cost
 		ce.Services = append(ce.Services, service)
 	}
 
-	slog.Info("Final cost estimate", "total", ce.Total, "services", ce.Services)
-
 	return ce, nil
-}
-
-func fetchVercelPricingViaLLM(_ []deployment.CostService) ([]float64, error) {
-	// For now, FetchVercelPricing is not implemented in BAML client
-	// Return an error to fall back to static pricing
-	return nil, fmt.Errorf("FetchVercelPricing not yet implemented in BAML client")
 }
 
 func estimateVercelCostFallback(cr deployment.CostRequest) (deployment.CostEstimate, error) {

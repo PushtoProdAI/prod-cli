@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 
-	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/pricing"
 )
 
 // FlyioDeploymentAdapter implements the DeploymentAdapter interface for Fly.io
@@ -76,8 +75,8 @@ func (fda *FlyioDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec,
 		switch service.Provider {
 		case "postgresql":
 			cs.Service = service
-			cs.Plan = "db-shared-1" // Default plan
-			cs.Storage = 10         // Default 10GB storage
+			cs.Plan = "basic" // Default plan
+			cs.Storage = 10   // Default 10GB storage
 		case "redis":
 			cs.Service = service
 			cs.Plan = "redis-shared" // Default plan
@@ -104,68 +103,29 @@ func (fda *FlyioDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec,
 func estimateFlyioCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	slog.Info("Estimating Fly.io costs for request", "request", cr)
 
-	// Get current pricing from Fly.io via LLM
-	pricing, err := fetchFlyioPricingViaLLM(cr.Services)
-	if err != nil {
-		slog.Info("Failed to fetch pricing via LLM, using fallback", "error", err)
-		return estimateFlyioCostFallback(cr)
-	}
-
+	ctx := context.Background()
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 
-	for i, service := range cr.Services {
-		if i < len(pricing) {
-			service.Cost = pricing[i]
-		} else {
-			service.Cost = 0.0
+	// Create pricing service with Flyio pricing provider
+	pricingProvider := NewPricingProvider()
+	pricingService := pricing.NewPricingService(pricingProvider, pricing.DefaultRetries)
+
+	for _, service := range cr.Services {
+		result, err := pricingService.EstimateCost(ctx, service)
+		if err != nil {
+			slog.Info("Failed to fetch pricing via LLM, using fallback", "service", service.Name, "error", err)
+			return estimateFlyioCostFallback(cr)
 		}
+
+		// Apply usage-based costs for storage (Flyio specific logic)
+		service.Cost = pricing.ApplyUsageCosts(result.Cost, result.UsageCosts, float64(service.Storage), "GB")
+
 		ce.Total += service.Cost
 		ce.Services = append(ce.Services, service)
 	}
 
 	return ce, nil
-}
-
-func fetchFlyioPricingViaLLM(services []deployment.CostService) ([]float64, error) {
-	// Build service descriptions for LLM
-	var serviceDescriptions []string
-	for _, service := range services {
-		desc := fmt.Sprintf("Service: %s, Type: %s, Plan: %s", service.Service.Name, service.Service.Provider, service.Plan)
-		if service.Storage > 0 {
-			desc += fmt.Sprintf(", Storage: %dGB", service.Storage)
-		}
-		serviceDescriptions = append(serviceDescriptions, desc)
-	}
-
-	servicesText := strings.Join(serviceDescriptions, "\n")
-	slog.Info("Fetching Fly.io pricing via LLM for services", "services", servicesText)
-
-	ctx := context.Background()
-	response, err := baml_client.FetchFlyioPricing(ctx, servicesText)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch pricing via LLM: %v", err)
-	}
-
-	// Extract costs in order of input services
-	costs := make([]float64, len(services))
-	for i, service := range services {
-		// Find matching service in response
-		found := false
-		for _, pricedService := range response.Services {
-			if pricedService.Service_name == service.Service.Name || pricedService.Service_type == service.Service.Provider {
-				costs[i] = pricedService.Monthly_cost
-				found = true
-				break
-			}
-		}
-		if !found {
-			costs[i] = 0.0
-		}
-	}
-
-	slog.Info("LLM returned Fly.io pricing", "costs", costs, "totalCost", response.Total_cost)
-	return costs, nil
 }
 
 func estimateFlyioCostFallback(cr deployment.CostRequest) (deployment.CostEstimate, error) {
@@ -198,7 +158,7 @@ func getFlyioFallbackServiceCost(provider, plan string, storage int) float64 {
 			storageCost := float64(storage) * pricing.Storage
 			return cost + storageCost
 		}
-		return pricing.Databases["db-shared-1"] + (float64(storage) * pricing.Storage) // Default
+		return pricing.Databases["basic"] + (float64(storage) * pricing.Storage) // Default
 	case "redis":
 		if cost, ok := pricing.Redis[plan]; ok {
 			return cost
