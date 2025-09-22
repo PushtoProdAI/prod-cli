@@ -5,14 +5,20 @@ import (
 	"testing"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/pricing"
 )
 
 func TestFlyioDeploymentAdapter_EstimateCost(t *testing.T) {
 	// Create a mock client
 	mockClient := &MockFlyioClient{}
 
-	// Create the adapter
-	adapter := NewFlyioDeploymentAdapter(mockClient, nil)
+	// Create a mock pricing service to avoid LLM calls
+	mockPricingService := pricing.NewMockServiceWithCostFunc(func(service deployment.CostService) float64 {
+		return getFlyioFallbackServiceCost(service.Provider, service.Plan, service.Storage)
+	})
+
+	// Create the adapter with mock pricing service
+	adapter := NewFlyioDeploymentAdapterWithPricing(mockClient, nil, mockPricingService)
 
 	// Create a test deployment spec
 	spec := &deployment.DeploymentSpec{
@@ -70,7 +76,7 @@ func TestGetFlyioFallbackServiceCost(t *testing.T) {
 	}{
 		{"web", "shared-cpu-1x", 0, 5.70},
 		{"web", "shared-cpu-2x", 0, 11.40},
-		{"postgresql", "db-shared-1", 10, 8.50}, // 7.00 + (10 * 0.15)
+		{"postgresql", "basic", 10, 39.50}, // 38.00 + (10 * 0.15)
 		{"redis", "redis-shared", 0, 5.00},
 		{"unknown", "unknown", 0, 0.0},
 	}

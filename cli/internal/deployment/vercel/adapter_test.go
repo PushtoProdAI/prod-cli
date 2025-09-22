@@ -4,10 +4,25 @@ import (
 	"testing"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/pricing"
 )
 
 func TestVercelDeploymentAdapter_EstimateCost(t *testing.T) {
-	adapter := NewDefaultVercelDeploymentAdapter(nil)
+	// Create a mock pricing service to avoid BAML calls
+	mockPricingService := pricing.NewMockServiceWithCostFunc(func(service deployment.CostService) float64 {
+		// Return fallback costs for Vercel services
+		switch service.Plan {
+		case "hobby":
+			return 0.0 // Hobby plan is free
+		case "pro":
+			return 20.0 // Pro plan is $20/month
+		default:
+			return 0.0
+		}
+	})
+
+	// Create the adapter with mock pricing service
+	adapter := NewVercelDeploymentAdapterWithPricing(NewCLIVercelClient(), nil, mockPricingService)
 
 	spec := &deployment.DeploymentSpec{
 		Name:     "test-app",

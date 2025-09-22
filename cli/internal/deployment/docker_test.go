@@ -23,7 +23,7 @@ func TestGenerateDockerfile_Python(t *testing.T) {
 			name:          "Pipenv project",
 			buildCommand:  "pipenv install --deploy",
 			expectedCopy:  "COPY Pipfile Pipfile.lock* ./",
-			expectedBuild: "RUN pipenv install --deploy",
+			expectedBuild: "RUN pip install --no-cache-dir pipenv && pipenv install --deploy",
 		},
 		{
 			name:          "Requirements.txt project",
@@ -34,14 +34,15 @@ func TestGenerateDockerfile_Python(t *testing.T) {
 		{
 			name:          "Setup.py project",
 			buildCommand:  "pip install .",
-			expectedCopy:  "COPY pyproject.toml setup.py setup.cfg* ./",
+			expectedCopy:  "COPY pyproject.toml setup.py* setup.cfg* ./",
 			expectedBuild: "RUN pip install .",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dg := NewDockerGenerator(io.Discard, []EnvVar{})
+			// Pass nil backend client to skip network calls
+			dg := NewDockerGeneratorWithBackend(io.Discard, []EnvVar{}, nil)
 			spec := &DeploymentSpec{
 				Name:         "test-app",
 				Language:     "python",
@@ -70,7 +71,8 @@ func TestGenerateDockerfile_Python(t *testing.T) {
 }
 
 func TestGenerateDockerfile_PythonFallback(t *testing.T) {
-	dg := NewDockerGenerator(io.Discard, []EnvVar{})
+	// Pass nil backend client to skip network calls
+	dg := NewDockerGeneratorWithBackend(io.Discard, []EnvVar{}, nil)
 	spec := &DeploymentSpec{
 		Name:         "test-app",
 		Language:     "python",
