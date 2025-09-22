@@ -12,14 +12,25 @@ import (
 
 // FlyioDeploymentAdapter implements the DeploymentAdapter interface for Fly.io
 type FlyioDeploymentAdapter struct {
-	client FlyioClient
-	writer io.Writer
+	client         FlyioClient
+	writer         io.Writer
+	pricingService pricing.Service
 }
 
 // NewFlyioDeploymentAdapter creates a new Fly.io deployment adapter
 func NewFlyioDeploymentAdapter(client FlyioClient, writer io.Writer) *FlyioDeploymentAdapter {
 	return &FlyioDeploymentAdapter{
 		client: client,
+		writer: writer,
+	}
+}
+
+// NewFlyioDeploymentAdapterWithPricing creates a new Fly.io deployment adapter with custom pricing service
+func NewFlyioDeploymentAdapterWithPricing(client FlyioClient, writer io.Writer, pricingService pricing.Service) *FlyioDeploymentAdapter {
+	return &FlyioDeploymentAdapter{
+		client:         client,
+		writer:         writer,
+		pricingService: pricingService,
 	}
 }
 
@@ -96,20 +107,26 @@ func (fda *FlyioDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec,
 	}
 	cr.Services = append(cr.Services, cs)
 
-	ce, err := estimateFlyioCost(cr)
+	ce, err := fda.estimateFlyioCost(cr)
 	return ce, err
 }
 
-func estimateFlyioCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
+func (fda *FlyioDeploymentAdapter) estimateFlyioCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	slog.Info("Estimating Fly.io costs for request", "request", cr)
 
 	ctx := context.Background()
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 
-	// Create pricing service with Flyio pricing provider
-	pricingProvider := NewPricingProvider()
-	pricingService := pricing.NewPricingService(pricingProvider, pricing.DefaultRetries)
+	var pricingService pricing.Service
+	if fda.pricingService != nil {
+		// Use injected pricing service (for testing)
+		pricingService = fda.pricingService
+	} else {
+		// Create pricing service with Flyio pricing provider (production)
+		pricingProvider := NewPricingProvider()
+		pricingService = pricing.NewPricingService(pricingProvider, pricing.DefaultRetries)
+	}
 
 	for _, service := range cr.Services {
 		result, err := pricingService.EstimateCost(ctx, service)

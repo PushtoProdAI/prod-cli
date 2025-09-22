@@ -68,15 +68,22 @@ type DockerGenerator struct {
 }
 
 func NewDockerGenerator(writer io.Writer, envVars []EnvVar) *DockerGenerator {
+	return NewDockerGeneratorWithBackend(writer, envVars, backend.NewClient())
+}
+
+// NewDockerGeneratorWithBackend creates a DockerGenerator with a specific backend client
+// Pass nil for beClient to skip base image fetching (useful for testing)
+func NewDockerGeneratorWithBackend(writer io.Writer, envVars []EnvVar, beClient *backend.Client) *DockerGenerator {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}
 	dg := &DockerGenerator{
 		templates:             make(map[string]*template.Template),
 		dockerignoreTemplates: make(map[string]string),
-		beClient:              backend.NewClient(),
+		beClient:              beClient,
 		writer:                writer,
 		envVars:               envVars,
+		baseImages:            make(map[string]string), // Initialize empty, will be populated in initTemplates
 	}
 	dg.initTemplates()
 
@@ -108,13 +115,17 @@ func (dg *DockerGenerator) initTemplates() {
 		panic(fmt.Sprintf("failed to read go template: %v", err))
 	}
 
-	// get the base images we will use in the templates
-	images, err := backend.NewClient().GetBaseDockerImages(context.Background())
-	if err != nil {
-		slog.Info("could not fetch base images from backend, using defaults", "error", err)
-		images = make(map[string]string)
+	// Get base images from backend if client is available
+	if dg.beClient != nil {
+		images, err := dg.beClient.GetBaseDockerImages(context.Background())
+		if err != nil {
+			slog.Info("could not fetch base images from backend, using defaults", "error", err)
+			// Keep the empty map initialized in constructor
+		} else {
+			dg.baseImages = images
+		}
 	}
-	dg.baseImages = images
+	// If beClient is nil (testing), baseImages remains empty map from constructor
 	// Parse and store templates
 	dg.templates["node"] = template.Must(template.New("node").Parse(string(nodeTemplate)))
 	dg.templates["nodejs"] = dg.templates["node"]
