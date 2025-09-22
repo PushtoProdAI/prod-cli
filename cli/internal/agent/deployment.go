@@ -12,6 +12,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
+	"github.com/meroxa/prod/cli/internal/deployment/heroku"
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/deployment/vercel"
@@ -41,18 +42,35 @@ func (a *Activities) deploySteps(ctx context.Context, spec deployment.Deployment
 		if err != nil {
 			return nil, errors.Errorf("failed to create Vercel deployment: %w", err)
 		}
+	case Heroku:
+		herokuAdapter := heroku.NewDefaultHerokuDeploymentAdapter(a.uiWriter)
+		var err error
+		deployable, err = herokuAdapter.GenerateArtifacts(&spec, deployment.StrategyHeroku)
+		if err != nil {
+			return nil, errors.Errorf("failed to create Heroku deployment: %w", err)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", platform)
 	}
 
 	createdResources, err := deployable.Deploy(ctx)
 	if err != nil {
-		var httpErr *render.HTTPError
-		if errors.As(err, &httpErr) {
-			if httpErr.IsClientError() {
-				return []deployment.CreatedResource{}, workflow.NewPermanentError(errors.Errorf("failed to execute %s deployment. client error (%d): %s", platform, httpErr.StatusCode, httpErr.Message))
+		// Check for Render HTTP errors
+		var renderHTTPErr *render.HTTPError
+		if errors.As(err, &renderHTTPErr) {
+			if renderHTTPErr.IsClientError() {
+				return []deployment.CreatedResource{}, workflow.NewPermanentError(errors.Errorf("failed to execute %s deployment. client error (%d): %s", platform, renderHTTPErr.StatusCode, renderHTTPErr.Message))
 			}
 		}
+
+		// Check for Heroku HTTP errors
+		var herokuHTTPErr *heroku.HTTPError
+		if errors.As(err, &herokuHTTPErr) {
+			if herokuHTTPErr.IsClientError() {
+				return []deployment.CreatedResource{}, workflow.NewPermanentError(errors.Errorf("failed to execute %s deployment. client error (%d): %s", platform, herokuHTTPErr.StatusCode, herokuHTTPErr.Message))
+			}
+		}
+
 		return []deployment.CreatedResource{}, errors.Errorf("failed to execute %s deployment: %w", platform, err)
 	}
 

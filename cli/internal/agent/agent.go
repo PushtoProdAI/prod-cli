@@ -15,6 +15,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/auth"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/heroku"
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/output"
@@ -98,6 +99,7 @@ const (
 	FlyIO
 	Netlify
 	Vercel
+	Heroku
 	UnknownPlatform
 )
 
@@ -724,6 +726,10 @@ func (a *Agent) getAuthProvider(out io.Writer) (auth.AuthProvider, error) {
 	case Vercel:
 		vercelAuth := auth.NewVercelAuth(out)
 		return vercelAuth, nil
+	case Heroku:
+		herokuClient := heroku.NewHerokuClient("", output.NewNoOpWriter())
+		herokuAuth := auth.NewHerokuAuth(herokuClient, out)
+		return herokuAuth, nil
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", a.DeployPlan.Platform)
 	}
