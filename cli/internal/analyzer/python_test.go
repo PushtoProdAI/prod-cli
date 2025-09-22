@@ -191,17 +191,23 @@ redis = "*"`,
 			}
 			defer os.RemoveAll(tmpDir)
 
+			// Create project subdirectory with fixed name for consistent project name detection
+			projectDir := filepath.Join(tmpDir, "python-project")
+			if err := os.Mkdir(projectDir, 0755); err != nil {
+				t.Fatal(err)
+			}
+
 			// Create test files
 			for filename, content := range tt.files {
-				filePath := filepath.Join(tmpDir, filename)
+				filePath := filepath.Join(projectDir, filename)
 				if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
 					t.Fatal(err)
 				}
 			}
 
 			// Create analyzer
-			fs := os.DirFS(tmpDir)
-			analyzer := NewPythonAnalyzer(projectFS{FS: fs, rootPath: tmpDir})
+			fs := os.DirFS(projectDir)
+			analyzer := NewPythonAnalyzer(projectFS{FS: fs, rootPath: projectDir})
 
 			// Test Analyze
 			result, err := analyzer.Analyze()
@@ -510,10 +516,10 @@ func TestPythonAnalyzer_extractServiceRequirements(t *testing.T) {
 // correctly identifies environment variables and doesn't capture Django dictionary keys (the original bug).
 func TestPythonAnalyzer_environmentVariableRegexPatterns(t *testing.T) {
 	tests := []struct {
-		name            string
-		content         string
-		expectedVars    []string
-		unexpectedVars  []string
+		name           string
+		content        string
+		expectedVars   []string
+		unexpectedVars []string
 	}{
 		{
 			name: "Basic os.environ patterns",
@@ -550,7 +556,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'fallback-key')`,
 			// Test the regex pattern directly
 			re := regexp.MustCompile(pyEnvVarRegex)
 			matches := re.FindAllStringSubmatch(tt.content, -1)
-			
+
 			// Collect found variable names
 			foundVars := make(map[string]bool)
 			for _, match := range matches {
