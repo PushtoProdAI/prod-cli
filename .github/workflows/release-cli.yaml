@@ -1,26 +1,163 @@
-name: Release
+# Combined build and release workflow for CLI
+# Replaces the old release-cli.yaml workflow
+# Supports cross-platform builds with proper CGO handling for BAML dependency
+
+name: Build and Release CLI
 
 on:
   push:
-    tags:
-      - "*"
+    branches: [ main, develop ]
+    tags: [ "*" ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://example.supabase.co' }}
+  SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'placeholder-key' }}
+  PROD_DEBUG: true
 
 jobs:
-  release:
+  build-linux:
+    name: Build Linux
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Needed for git describe to work
 
-      - name: Build CLI
-        run: make build-cli
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24.4'
 
-      - name: Create Release
-        run: |
-          gh release create ${{ github.ref_name }} \
-            --title "Release ${{ github.ref_name }}" \
-            --generate-notes \
-            bin/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v3
+
+    - name: Create bin directory
+      run: mkdir -p bin
+
+    - name: Set environment variables
+      run: |
+        if [ -f .env ]; then
+          echo "Loading environment variables from .env"
+          export $(cat .env | grep -v '^#' | xargs)
+        fi
+
+    - name: Build Linux binaries
+      run: |
+        cd cli
+        make build-linux-all
+
+    - name: Get version
+      id: version
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        else
+          echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Upload Linux AMD64 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: prod-linux-amd64-${{ steps.version.outputs.version }}
+        path: bin/prod-*-linux-amd64
+        retention-days: 30
+
+    - name: Upload Linux ARM64 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: prod-linux-arm64-${{ steps.version.outputs.version }}
+        path: bin/prod-*-linux-arm64
+        retention-days: 30
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Needed for git describe to work
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24.4'
+
+    - name: Create bin directory
+      run: mkdir -p bin
+
+    - name: Set environment variables
+      run: |
+        if [ -f .env ]; then
+          echo "Loading environment variables from .env"
+          export $(cat .env | grep -v '^#' | xargs)
+        fi
+
+    - name: Build macOS binaries
+      run: |
+        cd cli
+        # Build ARM64 (should always work)
+        make build-cli-darwin-arm64
+        # Try to build AMD64 (may fail on some macOS versions)
+        make build-cli-darwin || echo "Warning: macOS AMD64 build failed, continuing with ARM64 only"
+
+    - name: Get version
+      id: version
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        else
+          echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Upload macOS AMD64 artifact
+      uses: actions/upload-artifact@v4
+      if: hashFiles('bin/prod-*-darwin-amd64') != ''
+      with:
+        name: prod-darwin-amd64-${{ steps.version.outputs.version }}
+        path: bin/prod-*-darwin-amd64
+        retention-days: 30
+
+    - name: Upload macOS ARM64 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: prod-darwin-arm64-${{ steps.version.outputs.version }}
+        path: bin/prod-*-darwin-arm64
+        retention-days: 30
+
+  # Create a release with all binaries when a tag is pushed
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Display structure of downloaded files
+      run: ls -la artifacts/
+
+    - name: Prepare release files
+      run: |
+        mkdir -p release-files
+        find artifacts -name "prod-*" -type f -exec cp {} release-files/ \;
+        ls -la release-files/
+
+    - name: Create Release
+      run: |
+        gh release create ${{ github.ref_name }} \
+          --title "Release ${{ github.ref_name }}" \
+          --generate-notes \
+          release-files/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
