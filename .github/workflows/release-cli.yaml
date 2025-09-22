@@ -1,26 +1,293 @@
-name: Release
+# Combined build and release workflow for CLI
+# Replaces the old release-cli.yaml workflow
+# Supports cross-platform builds with proper CGO handling for BAML dependency
+# 
+# Triggers:
+# - Push to main: Dev builds (PROD_DEBUG=true, shorter retention)
+# - Push tags: Production releases (PROD_DEBUG=false, longer retention)
+# - PRs: Test builds only
+
+name: Build and Release CLI
 
 on:
   push:
-    tags:
-      - "*"
+    branches: [ main ]
+    paths: [ 'cli/**' ]
+    tags: [ "*" ]
+  pull_request:
+    branches: [ main ]
+    paths: [ 'cli/**' ]
 
 jobs:
-  release:
+  test:
+    name: Test CLI
     runs-on: ubuntu-latest
-
+    if: github.event_name == 'pull_request'
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Build CLI
-        run: make build-cli
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24.4'
 
-      - name: Create Release
-        run: |
-          gh release create ${{ github.ref_name }} \
-            --title "Release ${{ github.ref_name }}" \
-            --generate-notes \
-            bin/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Run CLI tests
+      working-directory: cli
+      run: |
+        echo "Running CLI unit tests..."
+        go test ./... -v
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Needed for git describe to work
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24.4'
+
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v3
+
+    - name: Create bin directory
+      run: mkdir -p bin
+
+    - name: Determine build type and environment
+      id: build-config
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          echo "build_type=production" >> $GITHUB_OUTPUT
+          echo "prod_debug=false" >> $GITHUB_OUTPUT
+          echo "retention_days=90" >> $GITHUB_OUTPUT
+
+        else
+          echo "build_type=dev" >> $GITHUB_OUTPUT
+          echo "prod_debug=true" >> $GITHUB_OUTPUT
+          echo "retention_days=7" >> $GITHUB_OUTPUT
+
+        fi
+
+    - name: Validate required secrets
+      env:
+        SUPABASE_URL_PROD: ${{ secrets.SUPABASE_URL_PROD }}
+        SUPABASE_ANON_KEY_PROD: ${{ secrets.SUPABASE_ANON_KEY_PROD }}
+        SUPABASE_URL_DEV: ${{ secrets.SUPABASE_URL_DEV }}
+        SUPABASE_ANON_KEY_DEV: ${{ secrets.SUPABASE_ANON_KEY_DEV }}
+        BUILD_TYPE: ${{ steps.build-config.outputs.build_type }}
+      run: |
+        if [ "$BUILD_TYPE" = "production" ]; then
+          SUPABASE_URL="$SUPABASE_URL_PROD"
+          SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_PROD"
+          SECRET_PREFIX="production"
+        else
+          SUPABASE_URL="$SUPABASE_URL_DEV"
+          SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_DEV"
+          SECRET_PREFIX="dev"
+        fi
+        
+        if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+          echo "Error: $SECRET_PREFIX Supabase secrets are required but not set"
+          exit 1
+        fi
+        echo "Required secrets are configured for $SECRET_PREFIX environment"
+        echo "Using Supabase URL: $SUPABASE_URL"
+
+    - name: Run CLI tests
+      working-directory: cli
+      run: |
+        echo "Running CLI unit tests..."
+        go test ./... -v
+
+    - name: Build Linux binaries
+      env:
+        SUPABASE_URL_PROD: ${{ secrets.SUPABASE_URL_PROD }}
+        SUPABASE_ANON_KEY_PROD: ${{ secrets.SUPABASE_ANON_KEY_PROD }}
+        SUPABASE_URL_DEV: ${{ secrets.SUPABASE_URL_DEV }}
+        SUPABASE_ANON_KEY_DEV: ${{ secrets.SUPABASE_ANON_KEY_DEV }}
+        BUILD_TYPE: ${{ steps.build-config.outputs.build_type }}
+        PROD_DEBUG: ${{ steps.build-config.outputs.prod_debug }}
+      run: |
+        if [ "$BUILD_TYPE" = "production" ]; then
+          export SUPABASE_URL="$SUPABASE_URL_PROD"
+          export SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_PROD"
+        else
+          export SUPABASE_URL="$SUPABASE_URL_DEV"
+          export SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_DEV"
+        fi
+        cd cli
+        make build-linux-all
+
+    - name: Get version
+      id: version
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        else
+          echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Upload Linux AMD64 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: prod-${{ steps.build-config.outputs.build_type }}-linux-amd64-${{ steps.version.outputs.version }}
+        path: bin/prod-*-linux-amd64
+        retention-days: ${{ steps.build-config.outputs.retention_days }}
+
+    - name: Upload Linux ARM64 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: prod-${{ steps.build-config.outputs.build_type }}-linux-arm64-${{ steps.version.outputs.version }}
+        path: bin/prod-*-linux-arm64
+        retention-days: ${{ steps.build-config.outputs.retention_days }}
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    if: github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Needed for git describe to work
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24.4'
+
+    - name: Create bin directory
+      run: mkdir -p bin
+
+    - name: Determine build type and environment
+      id: build-config
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          echo "build_type=production" >> $GITHUB_OUTPUT
+          echo "prod_debug=false" >> $GITHUB_OUTPUT
+          echo "retention_days=90" >> $GITHUB_OUTPUT
+
+        else
+          echo "build_type=dev" >> $GITHUB_OUTPUT
+          echo "prod_debug=true" >> $GITHUB_OUTPUT
+          echo "retention_days=7" >> $GITHUB_OUTPUT
+
+        fi
+
+    - name: Validate required secrets
+      env:
+        SUPABASE_URL_PROD: ${{ secrets.SUPABASE_URL_PROD }}
+        SUPABASE_ANON_KEY_PROD: ${{ secrets.SUPABASE_ANON_KEY_PROD }}
+        SUPABASE_URL_DEV: ${{ secrets.SUPABASE_URL_DEV }}
+        SUPABASE_ANON_KEY_DEV: ${{ secrets.SUPABASE_ANON_KEY_DEV }}
+        BUILD_TYPE: ${{ steps.build-config.outputs.build_type }}
+      run: |
+        if [ "$BUILD_TYPE" = "production" ]; then
+          SUPABASE_URL="$SUPABASE_URL_PROD"
+          SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_PROD"
+          SECRET_PREFIX="production"
+        else
+          SUPABASE_URL="$SUPABASE_URL_DEV"
+          SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_DEV"
+          SECRET_PREFIX="dev"
+        fi
+        
+        if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+          echo "Error: $SECRET_PREFIX Supabase secrets are required but not set"
+          exit 1
+        fi
+        echo "Required secrets are configured for $SECRET_PREFIX environment"
+        echo "Using Supabase URL: $SUPABASE_URL"
+
+    - name: Run CLI tests
+      working-directory: cli
+      run: |
+        echo "Running CLI unit tests..."
+        go test ./... -v
+
+    - name: Build macOS binaries
+      env:
+        SUPABASE_URL_PROD: ${{ secrets.SUPABASE_URL_PROD }}
+        SUPABASE_ANON_KEY_PROD: ${{ secrets.SUPABASE_ANON_KEY_PROD }}
+        SUPABASE_URL_DEV: ${{ secrets.SUPABASE_URL_DEV }}
+        SUPABASE_ANON_KEY_DEV: ${{ secrets.SUPABASE_ANON_KEY_DEV }}
+        BUILD_TYPE: ${{ steps.build-config.outputs.build_type }}
+        PROD_DEBUG: ${{ steps.build-config.outputs.prod_debug }}
+      run: |
+        if [ "$BUILD_TYPE" = "production" ]; then
+          export SUPABASE_URL="$SUPABASE_URL_PROD"
+          export SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_PROD"
+        else
+          export SUPABASE_URL="$SUPABASE_URL_DEV"
+          export SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_DEV"
+        fi
+        cd cli
+        # Build ARM64 (should always work)
+        make build-cli-darwin-arm64
+        # Try to build AMD64 (may fail on some macOS versions)
+        make build-cli-darwin || echo "Warning: macOS AMD64 build failed, continuing with ARM64 only"
+
+    - name: Get version
+      id: version
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        else
+          echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Upload macOS AMD64 artifact
+      uses: actions/upload-artifact@v4
+      if: hashFiles('bin/prod-*-darwin-amd64') != ''
+      with:
+        name: prod-${{ steps.build-config.outputs.build_type }}-darwin-amd64-${{ steps.version.outputs.version }}
+        path: bin/prod-*-darwin-amd64
+        retention-days: ${{ steps.build-config.outputs.retention_days }}
+
+    - name: Upload macOS ARM64 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: prod-${{ steps.build-config.outputs.build_type }}-darwin-arm64-${{ steps.version.outputs.version }}
+        path: bin/prod-*-darwin-arm64
+        retention-days: ${{ steps.build-config.outputs.retention_days }}
+
+  # Create a release with all binaries when a tag is pushed
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Display structure of downloaded files
+      run: ls -la artifacts/
+
+    - name: Prepare release files
+      run: |
+        mkdir -p release-files
+        find artifacts -name "prod-*" -type f -exec cp {} release-files/ \;
+        ls -la release-files/
+
+    - name: Create Release
+      run: |
+        gh release create ${{ github.ref_name }} \
+          --title "Release ${{ github.ref_name }}" \
+          --generate-notes \
+          release-files/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
