@@ -261,19 +261,26 @@ jobs:
         path: bin/prod-*-darwin-arm64
         retention-days: 90
 
-  # Create a release with all binaries when a tag is pushed
-  release:
-    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
-    needs: [test, build-linux-production, build-macos-production]
+  # Create a staging release with all binaries for staging builds
+  release-staging:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
+    needs: [test, build-linux-staging, build-macos-staging]
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-    - name: Download all artifacts
+    - name: Get version
+      id: version
+      run: echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Download all staging artifacts
       uses: actions/download-artifact@v4
       with:
         path: artifacts
+        pattern: prod-staging-*
 
     - name: Display structure of downloaded files
       run: ls -la artifacts/
@@ -284,11 +291,61 @@ jobs:
         find artifacts -name "prod-*" -type f -exec cp {} release-files/ \;
         ls -la release-files/
 
-    - name: Create Release
+    - name: Create Staging Release
       run: |
-        gh release create ${{ github.ref_name }} \
-          --title "Release ${{ github.ref_name }}" \
-          --generate-notes \
+        gh release create staging-${{ steps.version.outputs.version }} \
+          --title "Staging Release (build ${{ steps.version.outputs.version }})" \
+          --notes "Staging build from commit ${{ steps.version.outputs.version }}" \
+          --prerelease \
           release-files/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Create a production release with all binaries when a tag is pushed
+  release-production:
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
+    needs: [test, build-linux-production, build-macos-production]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download all production artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        pattern: prod-production-*
+
+    - name: Display structure of downloaded files
+      run: ls -la artifacts/
+
+    - name: Prepare release files
+      run: |
+        mkdir -p release-files
+        find artifacts -name "prod-*" -type f -exec cp {} release-files/ \;
+        ls -la release-files/
+
+    - name: Get version for production release
+      id: prod-version
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "version=manual-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        else
+          echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create Production Release
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          gh release create ${{ steps.prod-version.outputs.version }} \
+            --title "Production Release (manual build ${{ steps.prod-version.outputs.version }})" \
+            --notes "Manual production build from commit $(git rev-parse --short HEAD)" \
+            release-files/*
+        else
+          gh release create ${{ github.ref_name }} \
+            --title "Release ${{ github.ref_name }}" \
+            --generate-notes \
+            release-files/*
+        fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
