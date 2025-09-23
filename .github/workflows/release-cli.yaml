@@ -1,11 +1,11 @@
 # Combined build and release workflow for CLI
-# Replaces the old release-cli.yaml workflow
+# Uses GitHub environments for secret management
 # Supports cross-platform builds with proper CGO handling for BAML dependency
 # 
 # Triggers:
-# - Push to main: Dev builds (PROD_DEBUG=true, shorter retention)
-# - Push tags: Production releases (PROD_DEBUG=false, longer retention)
-# - PRs: Test builds only
+# - PRs: Tests only
+# - Push to main: Tests + staging builds (uses 'staging' environment)
+# - Push tags: Tests + production builds + release (uses 'prod' environment)
 
 name: Build and Release CLI
 
@@ -22,7 +22,7 @@ jobs:
   test:
     name: Test CLI
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    # Run tests on both PRs and pushes to main
     
     steps:
     - name: Checkout code
@@ -39,16 +39,18 @@ jobs:
         echo "Running CLI unit tests..."
         go test ./... -v
 
-  build-linux:
-    name: Build Linux
+  build-linux-staging:
+    name: Build Linux (Staging)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    environment: staging
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Needed for git describe to work
+        fetch-depth: 0
 
     - name: Set up Go
       uses: actions/setup-go@v5
@@ -61,104 +63,98 @@ jobs:
     - name: Create bin directory
       run: mkdir -p bin
 
-    - name: Determine build type and environment
-      id: build-config
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          echo "build_type=production" >> $GITHUB_OUTPUT
-          echo "prod_debug=false" >> $GITHUB_OUTPUT
-          echo "retention_days=90" >> $GITHUB_OUTPUT
-
-        else
-          echo "build_type=dev" >> $GITHUB_OUTPUT
-          echo "prod_debug=true" >> $GITHUB_OUTPUT
-          echo "retention_days=7" >> $GITHUB_OUTPUT
-
-        fi
-
-    - name: Validate required secrets
+    - name: Build Linux binaries (Staging)
       env:
-        SUPABASE_URL_PROD: ${{ secrets.SUPABASE_URL_PROD }}
-        SUPABASE_ANON_KEY_PROD: ${{ secrets.SUPABASE_ANON_KEY_PROD }}
-        SUPABASE_URL_DEV: ${{ secrets.SUPABASE_URL_DEV }}
-        SUPABASE_ANON_KEY_DEV: ${{ secrets.SUPABASE_ANON_KEY_DEV }}
-        BUILD_TYPE: ${{ steps.build-config.outputs.build_type }}
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        PROD_DEBUG: true
       run: |
-        if [ "$BUILD_TYPE" = "production" ]; then
-          SUPABASE_URL="$SUPABASE_URL_PROD"
-          SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_PROD"
-          SECRET_PREFIX="production"
-        else
-          SUPABASE_URL="$SUPABASE_URL_DEV"
-          SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_DEV"
-          SECRET_PREFIX="dev"
-        fi
-        
-        if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
-          echo "Error: $SECRET_PREFIX Supabase secrets are required but not set"
-          exit 1
-        fi
-        echo "Required secrets are configured for $SECRET_PREFIX environment"
-        echo "Using Supabase URL: $SUPABASE_URL"
-
-    - name: Run CLI tests
-      working-directory: cli
-      run: |
-        echo "Running CLI unit tests..."
-        go test ./... -v
-
-    - name: Build Linux binaries
-      env:
-        SUPABASE_URL_PROD: ${{ secrets.SUPABASE_URL_PROD }}
-        SUPABASE_ANON_KEY_PROD: ${{ secrets.SUPABASE_ANON_KEY_PROD }}
-        SUPABASE_URL_DEV: ${{ secrets.SUPABASE_URL_DEV }}
-        SUPABASE_ANON_KEY_DEV: ${{ secrets.SUPABASE_ANON_KEY_DEV }}
-        BUILD_TYPE: ${{ steps.build-config.outputs.build_type }}
-        PROD_DEBUG: ${{ steps.build-config.outputs.prod_debug }}
-      run: |
-        if [ "$BUILD_TYPE" = "production" ]; then
-          export SUPABASE_URL="$SUPABASE_URL_PROD"
-          export SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_PROD"
-        else
-          export SUPABASE_URL="$SUPABASE_URL_DEV"
-          export SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_DEV"
-        fi
+        echo "Building staging binaries with PROD_DEBUG=true"
         cd cli
         make build-linux-all
 
     - name: Get version
       id: version
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-        else
-          echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        fi
+      run: echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
     - name: Upload Linux AMD64 artifact
       uses: actions/upload-artifact@v4
       with:
-        name: prod-${{ steps.build-config.outputs.build_type }}-linux-amd64-${{ steps.version.outputs.version }}
+        name: prod-staging-linux-amd64-${{ steps.version.outputs.version }}
         path: bin/prod-*-linux-amd64
-        retention-days: ${{ steps.build-config.outputs.retention_days }}
+        retention-days: 7
 
     - name: Upload Linux ARM64 artifact
       uses: actions/upload-artifact@v4
       with:
-        name: prod-${{ steps.build-config.outputs.build_type }}-linux-arm64-${{ steps.version.outputs.version }}
+        name: prod-staging-linux-arm64-${{ steps.version.outputs.version }}
         path: bin/prod-*-linux-arm64
-        retention-days: ${{ steps.build-config.outputs.retention_days }}
+        retention-days: 7
 
-  build-macos:
-    name: Build macOS
-    runs-on: macos-latest
-    if: github.event_name == 'push'
+  build-linux-production:
+    name: Build Linux (Production)
+    runs-on: ubuntu-latest
+    environment: prod
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/')
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Needed for git describe to work
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24.4'
+
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v3
+
+    - name: Create bin directory
+      run: mkdir -p bin
+
+    - name: Build Linux binaries (Production)
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        PROD_DEBUG: false
+      run: |
+        echo "Building production binaries with PROD_DEBUG=false"
+        cd cli
+        make build-linux-all
+
+    - name: Get version
+      id: version
+      run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+    - name: Upload Linux AMD64 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: prod-production-linux-amd64-${{ steps.version.outputs.version }}
+        path: bin/prod-*-linux-amd64
+        retention-days: 90
+
+    - name: Upload Linux ARM64 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: prod-production-linux-arm64-${{ steps.version.outputs.version }}
+        path: bin/prod-*-linux-arm64
+        retention-days: 90
+
+  build-macos-staging:
+    name: Build macOS (Staging)
+    runs-on: macos-latest
+    environment: staging
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Set up Go
       uses: actions/setup-go@v5
@@ -168,68 +164,13 @@ jobs:
     - name: Create bin directory
       run: mkdir -p bin
 
-    - name: Determine build type and environment
-      id: build-config
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          echo "build_type=production" >> $GITHUB_OUTPUT
-          echo "prod_debug=false" >> $GITHUB_OUTPUT
-          echo "retention_days=90" >> $GITHUB_OUTPUT
-
-        else
-          echo "build_type=dev" >> $GITHUB_OUTPUT
-          echo "prod_debug=true" >> $GITHUB_OUTPUT
-          echo "retention_days=7" >> $GITHUB_OUTPUT
-
-        fi
-
-    - name: Validate required secrets
+    - name: Build macOS binaries (Staging)
       env:
-        SUPABASE_URL_PROD: ${{ secrets.SUPABASE_URL_PROD }}
-        SUPABASE_ANON_KEY_PROD: ${{ secrets.SUPABASE_ANON_KEY_PROD }}
-        SUPABASE_URL_DEV: ${{ secrets.SUPABASE_URL_DEV }}
-        SUPABASE_ANON_KEY_DEV: ${{ secrets.SUPABASE_ANON_KEY_DEV }}
-        BUILD_TYPE: ${{ steps.build-config.outputs.build_type }}
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        PROD_DEBUG: true
       run: |
-        if [ "$BUILD_TYPE" = "production" ]; then
-          SUPABASE_URL="$SUPABASE_URL_PROD"
-          SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_PROD"
-          SECRET_PREFIX="production"
-        else
-          SUPABASE_URL="$SUPABASE_URL_DEV"
-          SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_DEV"
-          SECRET_PREFIX="dev"
-        fi
-        
-        if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
-          echo "Error: $SECRET_PREFIX Supabase secrets are required but not set"
-          exit 1
-        fi
-        echo "Required secrets are configured for $SECRET_PREFIX environment"
-        echo "Using Supabase URL: $SUPABASE_URL"
-
-    - name: Run CLI tests
-      working-directory: cli
-      run: |
-        echo "Running CLI unit tests..."
-        go test ./... -v
-
-    - name: Build macOS binaries
-      env:
-        SUPABASE_URL_PROD: ${{ secrets.SUPABASE_URL_PROD }}
-        SUPABASE_ANON_KEY_PROD: ${{ secrets.SUPABASE_ANON_KEY_PROD }}
-        SUPABASE_URL_DEV: ${{ secrets.SUPABASE_URL_DEV }}
-        SUPABASE_ANON_KEY_DEV: ${{ secrets.SUPABASE_ANON_KEY_DEV }}
-        BUILD_TYPE: ${{ steps.build-config.outputs.build_type }}
-        PROD_DEBUG: ${{ steps.build-config.outputs.prod_debug }}
-      run: |
-        if [ "$BUILD_TYPE" = "production" ]; then
-          export SUPABASE_URL="$SUPABASE_URL_PROD"
-          export SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_PROD"
-        else
-          export SUPABASE_URL="$SUPABASE_URL_DEV"
-          export SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY_DEV"
-        fi
+        echo "Building staging binaries with PROD_DEBUG=true"
         cd cli
         # Build ARM64 (should always work)
         make build-cli-darwin-arm64
@@ -238,32 +179,80 @@ jobs:
 
     - name: Get version
       id: version
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-        else
-          echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        fi
+      run: echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
     - name: Upload macOS AMD64 artifact
       uses: actions/upload-artifact@v4
       if: hashFiles('bin/prod-*-darwin-amd64') != ''
       with:
-        name: prod-${{ steps.build-config.outputs.build_type }}-darwin-amd64-${{ steps.version.outputs.version }}
+        name: prod-staging-darwin-amd64-${{ steps.version.outputs.version }}
         path: bin/prod-*-darwin-amd64
-        retention-days: ${{ steps.build-config.outputs.retention_days }}
+        retention-days: 7
 
     - name: Upload macOS ARM64 artifact
       uses: actions/upload-artifact@v4
       with:
-        name: prod-${{ steps.build-config.outputs.build_type }}-darwin-arm64-${{ steps.version.outputs.version }}
+        name: prod-staging-darwin-arm64-${{ steps.version.outputs.version }}
         path: bin/prod-*-darwin-arm64
-        retention-days: ${{ steps.build-config.outputs.retention_days }}
+        retention-days: 7
+
+  build-macos-production:
+    name: Build macOS (Production)
+    runs-on: macos-latest
+    environment: prod
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24.4'
+
+    - name: Create bin directory
+      run: mkdir -p bin
+
+    - name: Build macOS binaries (Production)
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        PROD_DEBUG: false
+      run: |
+        echo "Building production binaries with PROD_DEBUG=false"
+        cd cli
+        # Build ARM64 (should always work)
+        make build-cli-darwin-arm64
+        # Try to build AMD64 (may fail on some macOS versions)
+        make build-cli-darwin || echo "Warning: macOS AMD64 build failed, continuing with ARM64 only"
+
+    - name: Get version
+      id: version
+      run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+    - name: Upload macOS AMD64 artifact
+      uses: actions/upload-artifact@v4
+      if: hashFiles('bin/prod-*-darwin-amd64') != ''
+      with:
+        name: prod-production-darwin-amd64-${{ steps.version.outputs.version }}
+        path: bin/prod-*-darwin-amd64
+        retention-days: 90
+
+    - name: Upload macOS ARM64 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: prod-production-darwin-arm64-${{ steps.version.outputs.version }}
+        path: bin/prod-*-darwin-arm64
+        retention-days: 90
 
   # Create a release with all binaries when a tag is pushed
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [build-linux, build-macos]
+    needs: [test, build-linux-production, build-macos-production]
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
