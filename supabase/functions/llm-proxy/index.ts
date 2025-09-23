@@ -43,20 +43,6 @@ class OpenAIProvider implements LLMProvider {
   }
 
   async call(prompt: string, model: string): Promise<any> {
-    const logMessage = `[${new Date().toISOString()}] OpenAI provider: Making request to OpenAI API with model: ${model}\n`
-    const keyMessage = `[${new Date().toISOString()}] OpenAI provider: API key starts with: ${this.apiKey.substring(0, 10)}...\n`
-    const promptMessage = `[${new Date().toISOString()}] OpenAI provider: Prompt: ${prompt.substring(0, 500)}${prompt.length > 500 ? '...' : ''}\n`
-    
-    console.log(logMessage.trim())
-    console.log(keyMessage.trim())
-    console.log(promptMessage.trim())
-    
-    // Write to log file
-    try {
-      await Deno.writeTextFile('/tmp/llm-proxy.log', logMessage + keyMessage + promptMessage, { append: true })
-    } catch (error) {
-      console.error('Failed to write to log file:', error)
-    }
     
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -75,45 +61,16 @@ class OpenAIProvider implements LLMProvider {
       }),
     })
 
-    const statusMessage = `[${new Date().toISOString()}] OpenAI provider: Response status: ${response.status}\n`
-    console.log(statusMessage.trim())
-    
-    // Write status to log file
-    try {
-      await Deno.writeTextFile('/tmp/llm-proxy.log', statusMessage, { append: true })
-    } catch (error) {
-      console.error('Failed to write status to log file:', error)
-    }
     
     if (!response.ok) {
       const errorText = await response.text()
-      const errorMessage = `[${new Date().toISOString()}] OpenAI provider: Error response: ${errorText}\n`
-      console.error(errorMessage.trim())
-      
-      // Write error to log file
-      try {
-        await Deno.writeTextFile('/tmp/llm-proxy.log', errorMessage, { append: true })
-      } catch (error) {
-        console.error('Failed to write error to log file:', error)
-      }
+      console.error(`OpenAI API error: ${errorText}`)
       
       throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${errorText}`)
     }
 
     const data = await response.json()
     const result = data.choices[0].message.content
-    const successMessage = `[${new Date().toISOString()}] OpenAI provider: Success, got response\n`
-    const resultMessage = `[${new Date().toISOString()}] OpenAI provider: Result: ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}\n`
-    
-    console.log(successMessage.trim())
-    console.log(resultMessage.trim())
-    
-    // Write success and result to log file
-    try {
-      await Deno.writeTextFile('/tmp/llm-proxy.log', successMessage + resultMessage, { append: true })
-    } catch (error) {
-      console.error('Failed to write success to log file:', error)
-    }
     
     return result
   }
@@ -138,18 +95,6 @@ class AnthropicProvider implements LLMProvider {
   }
 
   async call(prompt: string, model: string): Promise<any> {
-    const logMessage = `[${new Date().toISOString()}] Anthropic provider: Making request to Anthropic API with model: ${model}\n`
-    const promptMessage = `[${new Date().toISOString()}] Anthropic provider: Prompt: ${prompt.substring(0, 500)}${prompt.length > 500 ? '...' : ''}\n`
-    
-    console.log(logMessage.trim())
-    console.log(promptMessage.trim())
-    
-    // Write to log file
-    try {
-      await Deno.writeTextFile('/tmp/llm-proxy.log', logMessage + promptMessage, { append: true })
-    } catch (error) {
-      console.error('Failed to write to log file:', error)
-    }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -169,33 +114,13 @@ class AnthropicProvider implements LLMProvider {
     })
 
     if (!response.ok) {
-      const errorMessage = `[${new Date().toISOString()}] Anthropic provider: Error response: ${response.status} ${response.statusText}\n`
-      console.error(errorMessage.trim())
-      
-      // Write error to log file
-      try {
-        await Deno.writeTextFile('/tmp/llm-proxy.log', errorMessage, { append: true })
-      } catch (error) {
-        console.error('Failed to write error to log file:', error)
-      }
+      console.error(`Anthropic API error: ${response.status} ${response.statusText}`)
       
       throw new Error(`Anthropic API error: ${response.status} ${response.statusText}`)
     }
 
     const data = await response.json()
     const result = data.content[0].text
-    const successMessage = `[${new Date().toISOString()}] Anthropic provider: Success, got response\n`
-    const resultMessage = `[${new Date().toISOString()}] Anthropic provider: Result: ${result.substring(0, 500)}${result.length > 500 ? '...' : ''}\n`
-    
-    console.log(successMessage.trim())
-    console.log(resultMessage.trim())
-    
-    // Write success and result to log file
-    try {
-      await Deno.writeTextFile('/tmp/llm-proxy.log', successMessage + resultMessage, { append: true })
-    } catch (error) {
-      console.error('Failed to write success to log file:', error)
-    }
     
     return result
   }
@@ -548,17 +473,8 @@ function checkRateLimit(userId: string, limit: number = 60, windowMs: number = 6
 serve(async (req) => {
   const startTime = Date.now()
 
-  // DEBUG: Log function entry
-  console.log(`[${new Date().toISOString()}] ===== LLM-PROXY FUNCTION CALLED =====`)
-  console.log(`[${new Date().toISOString()}] Method: ${req.method}`)
-  console.log(`[${new Date().toISOString()}] URL: ${req.url}`)
-  console.log(`[${new Date().toISOString()}] Headers:`, Object.fromEntries(req.headers.entries()))
-  
-  // DEBUG: Check environment variables
-  console.log(`[${new Date().toISOString()}] DEBUG: Environment check:`)
-  console.log(`[${new Date().toISOString()}] SUPABASE_URL: ${Deno.env.get('SUPABASE_URL')}`)
-  console.log(`[${new Date().toISOString()}] OPENAI_API_KEY present: ${!!Deno.env.get('OPENAI_API_KEY')}`)
-  console.log(`[${new Date().toISOString()}] OPENAI_API_KEY value: ${Deno.env.get('OPENAI_API_KEY')?.substring(0, 10)}...`)
+  // Log function entry
+  console.log(`[${new Date().toISOString()}] LLM-Proxy function called: ${req.method} ${req.url}`)
 
   // CORS headers
   const corsHeaders = {
@@ -572,15 +488,6 @@ serve(async (req) => {
   const requestSource = req.headers.get('X-Request-Source') || 'Unknown'
   const userAgent = req.headers.get('User-Agent') || 'Unknown'
   
-  const clientLogMessage = `[${new Date().toISOString()}] Client Info: Type=${clientType}, Source=${requestSource}, UserAgent=${userAgent}\n`
-  console.log(clientLogMessage.trim())
-  
-  // Write client info to log file
-  try {
-    await Deno.writeTextFile('/tmp/llm-proxy.log', clientLogMessage, { append: true })
-  } catch (error) {
-    console.error('Failed to write client info to log file:', error)
-  }
 
   // Handle preflight requests
   if (req.method === 'OPTIONS') {
@@ -616,25 +523,31 @@ serve(async (req) => {
 
   try {
     // Parse request body
-    console.log(`[${new Date().toISOString()}] DEBUG: Parsing request body...`)
-    const requestBody: LLMProxyRequest = await req.json()
-    console.log(`[${new Date().toISOString()}] DEBUG: Request body parsed successfully:`, JSON.stringify(requestBody, null, 2))
+    const rawBody = await req.json()
+    console.log(`[${new Date().toISOString()}] Processing request for function: ${rawBody.function || 'BAML request'}`)
 
-    // Log the function call details
-    const functionLogMessage = `[${new Date().toISOString()}] Function Call: ${requestBody.function}\n`
-    const argsLogMessage = `[${new Date().toISOString()}] Args: ${JSON.stringify(requestBody.args).substring(0, 500)}${JSON.stringify(requestBody.args).length > 500 ? '...' : ''}\n`
-    const modelLogMessage = `[${new Date().toISOString()}] Model Preference: ${requestBody.model_preference || 'default'}\n`
+    // Check if this is a BAML request (OpenAI format) or a direct function call
+    let requestBody: LLMProxyRequest
     
-    console.log(functionLogMessage.trim())
-    console.log(argsLogMessage.trim())
-    console.log(modelLogMessage.trim())
-    
-    // Write function call details to log file
-    try {
-      await Deno.writeTextFile('/tmp/llm-proxy.log', functionLogMessage + argsLogMessage + modelLogMessage, { append: true })
-    } catch (error) {
-      console.error('Failed to write function call details to log file:', error)
+    if (rawBody.messages && Array.isArray(rawBody.messages)) {
+      // This is a BAML request (OpenAI format)
+      
+      // Extract the user message content
+      const userMessage = rawBody.messages.find((msg: any) => msg.role === 'user')
+      const userContent = userMessage ? userMessage.content : ''
+      
+      // Convert to our expected format
+      requestBody = {
+        function: 'ExtractIntent',
+        args: { request: userContent },
+        model_preference: rawBody.model || 'gpt-4o-mini',
+        fallback_enabled: true
+      }
+    } else {
+      // This is a direct function call
+      requestBody = rawBody as LLMProxyRequest
     }
+    
 
     // Validate request
     if (!requestBody.function || !requestBody.args) {
@@ -654,24 +567,19 @@ serve(async (req) => {
 
     // Get user ID from JWT token
     const authHeader = req.headers.get('Authorization')
-    console.log(`[${new Date().toISOString()}] DEBUG: Auth header present: ${!!authHeader}`)
-    console.log(`[${new Date().toISOString()}] DEBUG: Auth header value: ${authHeader ? authHeader.substring(0, 20) + '...' : 'None'}`)
     
     let userId = 'anonymous'
     
     if (authHeader) {
       try {
         const token = authHeader.replace('Bearer ', '')
-        console.log(`[${new Date().toISOString()}] DEBUG: Attempting to validate token...`)
         const { data: { user } } = await supabase.auth.getUser(token)
         userId = user?.id || 'anonymous'
-        console.log(`[${new Date().toISOString()}] DEBUG: Token validation successful, userId: ${userId}`)
       } catch (error) {
         console.error(`[${new Date().toISOString()}] DEBUG: Token validation failed:`, error)
         console.warn('Failed to get user from token:', error)
       }
     } else {
-      console.log(`[${new Date().toISOString()}] DEBUG: No auth header provided`)
     }
 
     // Rate limiting
@@ -718,44 +626,22 @@ serve(async (req) => {
     // Add commercial providers if API keys are available
     const openaiKey = Deno.env.get('OPENAI_API_KEY')
     const openaiLogMessage = `[${new Date().toISOString()}] OpenAI API key available: ${openaiKey ? 'YES' : 'NO'}\n`
-    console.log(openaiLogMessage.trim())
     
-    // Write to log file
-    try {
-      await Deno.writeTextFile('/tmp/llm-proxy.log', openaiLogMessage, { append: true })
-    } catch (error) {
-      console.error('Failed to write OpenAI status to log file:', error)
-    }
     
     if (openaiKey) {
-      const addProviderMessage = `[${new Date().toISOString()}] Adding OpenAI provider\n`
-      console.log(addProviderMessage.trim())
-      
-      // Write to log file
-      try {
-        await Deno.writeTextFile('/tmp/llm-proxy.log', addProviderMessage, { append: true })
-      } catch (error) {
-        console.error('Failed to write provider addition to log file:', error)
-      }
       
       providers.push(new OpenAIProvider(openaiKey))
     }
     
     const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY')
-    console.log(`Anthropic API key available: ${anthropicKey ? 'YES' : 'NO'}`)
     if (anthropicKey) {
-      console.log('Adding Anthropic provider')
       providers.push(new AnthropicProvider(anthropicKey))
     }
 
     // Add Ollama as fallback
     if (fallbackEnabled) {
-      console.log('Adding Ollama provider as fallback')
       providers.push(new OllamaProvider())
     }
-
-    console.log(`Total providers available: ${providers.length}`)
-    console.log(`Provider names: ${providers.map(p => p.name).join(', ')}`)
 
     if (providers.length === 0) {
       return new Response(
@@ -776,7 +662,7 @@ serve(async (req) => {
 
     for (const provider of providers) {
       try {
-        console.log(`Trying provider: ${provider.name}`)
+        console.log(`[${new Date().toISOString()}] Trying provider: ${provider.name}`)
         
         // Determine model for this provider
         let model = preferredModel
@@ -788,15 +674,14 @@ serve(async (req) => {
           model = 'llama3.1'
         }
 
-        console.log(`Using model: ${model} for provider: ${provider.name}`)
         result = await provider.call(prompt, model)
         modelUsed = `${provider.name}:${model}`
+        console.log(`[${new Date().toISOString()}] Success with provider: ${provider.name}, model: ${model}`)
         
         // Estimate tokens (rough approximation)
         tokensUsed = Math.ceil(prompt.length / 4) + Math.ceil(result.length / 4)
         cost = provider.getCost(tokensUsed, model)
         
-        console.log(`Success with provider: ${provider.name}, model: ${model}`)
         break
         
       } catch (error) {
@@ -853,21 +738,55 @@ serve(async (req) => {
       console.warn('Failed to log usage:', error)
     }
 
-    const response: LLMProxyResponse = {
-      success: true,
-      result: parsedResult,
-      metadata: {
-        model_used: modelUsed,
-        tokens_used: tokensUsed,
-        cost: cost,
-        response_time_ms: responseTime
+    // Check if this was a BAML request (OpenAI format) and return OpenAI-compatible response
+    if (rawBody.messages && Array.isArray(rawBody.messages)) {
+      console.log(`[${new Date().toISOString()}] Returning OpenAI-compatible response for BAML`)
+      // Return OpenAI-compatible response for BAML
+      const openaiResponse = {
+        id: `chatcmpl-${Date.now()}`,
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: modelUsed,
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: JSON.stringify(parsedResult)
+            },
+            finish_reason: "stop"
+          }
+        ],
+        usage: {
+          prompt_tokens: 0,
+          completion_tokens: tokensUsed,
+          total_tokens: tokensUsed
+        }
       }
-    }
+      
+      
+      return new Response(
+        JSON.stringify(openaiResponse),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    } else {
+      // Return our custom format for direct function calls
+      const response: LLMProxyResponse = {
+        success: true,
+        result: parsedResult,
+        metadata: {
+          model_used: modelUsed,
+          tokens_used: tokensUsed,
+          cost: cost,
+          response_time_ms: responseTime
+        }
+      }
 
-    return new Response(
-      JSON.stringify(response),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+      return new Response(
+        JSON.stringify(response),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
   } catch (error) {
     console.error('LLM Proxy error:', error)
