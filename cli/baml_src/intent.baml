@@ -92,6 +92,19 @@ class LaunchCommand {
     command string
   }
 
+function DebugExtractIntent(request: string) -> string {
+  client "ProxyClient"
+  prompt #"
+    Debug information for ExtractIntent:
+    - Request: {{ request }}
+    - SUPABASE_URL: {{ env.SUPABASE_URL }}
+    - PROXY_API_KEY present: {% if env.PROXY_API_KEY %}yes{% else %}no{% endif %}
+    - PROXY_API_KEY length: {% if env.PROXY_API_KEY %}{{ env.PROXY_API_KEY | length }}{% else %}0{% endif %}
+    
+    Please return this debug information as a simple string.
+  "#
+}
+
 function ExtractIntent(request: string) -> Intent {
   client "ProxyClient"
   prompt #"
