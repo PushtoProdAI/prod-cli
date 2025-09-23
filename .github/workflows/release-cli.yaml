@@ -6,6 +6,7 @@
 # - PRs: Tests only
 # - Push to main: Tests + staging builds (uses 'staging' environment)
 # - Push tags: Tests + production builds + release (uses 'prod' environment)
+# - Manual: Tests + selected builds (staging/production/both via dropdown in GitHub UI)
 
 name: Build and Release CLI
 
@@ -17,6 +18,17 @@ on:
   pull_request:
     branches: [ main ]
     paths: [ 'cli/**' ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type to create'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+          - both
 
 jobs:
   test:
@@ -44,7 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
     
     steps:
     - name: Checkout code
@@ -96,7 +108,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: prod
     needs: test
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
     
     steps:
     - name: Checkout code
@@ -148,7 +160,7 @@ jobs:
     runs-on: macos-latest
     environment: staging
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
     
     steps:
     - name: Checkout code
@@ -201,7 +213,7 @@ jobs:
     runs-on: macos-latest
     environment: prod
     needs: test
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
     
     steps:
     - name: Checkout code
@@ -251,7 +263,7 @@ jobs:
 
   # Create a release with all binaries when a tag is pushed
   release:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
     needs: [test, build-linux-production, build-macos-production]
     runs-on: ubuntu-latest
     steps:
