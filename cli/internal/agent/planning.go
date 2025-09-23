@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/deployment"
@@ -238,34 +236,4 @@ func min(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// debugExtractIntent is a debug wrapper that calls the BAML function with detailed logging
-func debugExtractIntent(ctx context.Context, prompt, accessToken, supabaseURL string) string {
-	// Debug logging to file
-	logFile := "/Users/william-meroxa/.prod/log.txt"
-	debugLog := func(msg string, args ...interface{}) {
-		if f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-			defer f.Close()
-			fmt.Fprintf(f, "[%s] %s\n", time.Now().Format(time.RFC3339), fmt.Sprintf(msg, args...))
-		}
-	}
-
-	debugLog("[DEBUG WRAPPER] Starting debug ExtractIntent call")
-	debugLog("[DEBUG WRAPPER] Prompt: %s", prompt)
-	debugLog("[DEBUG WRAPPER] AccessToken: %s", maskToken(accessToken))
-	debugLog("[DEBUG WRAPPER] SupabaseURL: %s", supabaseURL)
-
-	// Call the debug BAML function
-	debugResult, err := baml_client.DebugExtractIntent(ctx, prompt, baml_client.WithEnv(map[string]string{
-		"PROXY_API_KEY": accessToken,
-		"SUPABASE_URL":  supabaseURL,
-	}))
-	if err != nil {
-		debugLog("[DEBUG WRAPPER] DebugExtractIntent failed: %v", err)
-		return fmt.Sprintf("Debug failed: %v", err)
-	}
-
-	debugLog("[DEBUG WRAPPER] DebugExtractIntent succeeded: %s", debugResult)
-	return debugResult
 }

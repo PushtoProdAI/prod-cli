@@ -59,45 +59,6 @@ func CategorizeRoutes(ctx context.Context, candidates []types.RouteCandidate, op
 	return casted, nil
 }
 
-func DebugExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) (string, error) {
-
-	var callOpts callOption
-	for _, opt := range opts {
-		opt(&callOpts)
-	}
-
-	args := baml.BamlFunctionArguments{
-		Kwargs: map[string]any{"request": request},
-		Env:    getEnvVars(callOpts.env),
-	}
-
-	if callOpts.clientRegistry != nil {
-		args.ClientRegistry = callOpts.clientRegistry
-	}
-
-	if callOpts.collectors != nil {
-		args.Collectors = callOpts.collectors
-	}
-
-	encoded, err := baml.EncodeArgs(args)
-	if err != nil {
-		panic(err)
-	}
-
-	result, err := bamlRuntime.CallFunction(ctx, "DebugExtractIntent", encoded)
-	if err != nil {
-		return "", err
-	}
-
-	if result.Error != nil {
-		return "", result.Error
-	}
-
-	casted := *(result.Data).(*string)
-
-	return casted, nil
-}
-
 func DetermineBuildOutput(ctx context.Context, candidate types.BuildOutputCandidate, opts ...CallOptionFunc) (types.BuildOutput, error) {
 
 	var callOpts callOption
