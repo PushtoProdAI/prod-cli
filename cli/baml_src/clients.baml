@@ -64,7 +64,7 @@ client<llm> OllamaClient {
 client<llm> ProxyClient {
   provider "openai-generic"
   options {
-    base_url env.SUPABASE_URL + "/functions/v1/llm-proxy"
+    base_url env.SUPABASE_URL
     model gpt-4o-mini
     api_key env.PROXY_API_KEY
   }
