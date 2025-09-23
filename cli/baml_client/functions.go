@@ -15,10 +15,24 @@ package baml_client
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"time"
 
 	baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
 	"github.com/meroxa/prod/cli/baml_client/types"
 )
+
+// bamlDebugLog logs debug information to a file instead of stdout
+func bamlDebugLog(msg string, args ...interface{}) {
+	logFile := "/Users/william-meroxa/.prod/baml-debug.log"
+	if f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+		defer f.Close()
+		timestamp := time.Now().Format(time.RFC3339)
+		formattedMsg := fmt.Sprintf(msg, args...)
+		fmt.Fprintf(f, "[%s] [BAML DEBUG] %s\n", timestamp, formattedMsg)
+	}
+}
 
 func CategorizeRoutes(ctx context.Context, candidates []types.RouteCandidate, opts ...CallOptionFunc) (types.CategorizedRoutes, error) {
 
@@ -55,6 +69,45 @@ func CategorizeRoutes(ctx context.Context, candidates []types.RouteCandidate, op
 	}
 
 	casted := *(result.Data).(*types.CategorizedRoutes)
+
+	return casted, nil
+}
+
+func DebugExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) (string, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"request": request},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	encoded, err := baml.EncodeArgs(args)
+	if err != nil {
+		panic(err)
+	}
+
+	result, err := bamlRuntime.CallFunction(ctx, "DebugExtractIntent", encoded)
+	if err != nil {
+		return "", err
+	}
+
+	if result.Error != nil {
+		return "", result.Error
+	}
+
+	casted := *(result.Data).(*string)
 
 	return casted, nil
 }
@@ -177,16 +230,22 @@ func DetermineLaunchCommand(ctx context.Context, language string, frameworks []s
 }
 
 func ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) (types.Intent, error) {
+	bamlDebugLog("ExtractIntent called with request: %s", request)
+	bamlDebugLog("Context: %+v", ctx)
 
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
 	}
 
+	bamlDebugLog("Call options: %+v", callOpts)
+
 	args := baml.BamlFunctionArguments{
 		Kwargs: map[string]any{"request": request},
 		Env:    getEnvVars(callOpts.env),
 	}
+
+	bamlDebugLog("Function arguments: %+v", args)
 
 	if callOpts.clientRegistry != nil {
 		args.ClientRegistry = callOpts.clientRegistry
@@ -201,16 +260,24 @@ func ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) 
 		panic(err)
 	}
 
+	bamlDebugLog("About to call bamlRuntime.CallFunction")
 	result, err := bamlRuntime.CallFunction(ctx, "ExtractIntent", encoded)
+	bamlDebugLog("CallFunction result: %+v", result)
+	bamlDebugLog("CallFunction error: %v", err)
+
 	if err != nil {
+		bamlDebugLog("CallFunction failed with error: %v", err)
 		return types.Intent{}, err
 	}
 
 	if result.Error != nil {
+		bamlDebugLog("Result has error: %v", result.Error)
 		return types.Intent{}, result.Error
 	}
 
+	bamlDebugLog("Result data: %+v", result.Data)
 	casted := *(result.Data).(*types.Intent)
+	bamlDebugLog("Casted result: %+v", casted)
 
 	return casted, nil
 }

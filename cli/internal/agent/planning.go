@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/config"
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
@@ -130,11 +132,61 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 func (a *Activities) determineIntent(ctx context.Context, prompt string) (types.Intent, error) {
 	a.uiWriter.SendStatus("planning", "Understanding your request...")
 	session := CtxSession(ctx)
-	intent, err := baml_client.ExtractIntent(ctx, prompt, baml_client.WithEnv(map[string]string{"PROXY_API_KEY": session.AccessToken}))
+
+	// Debug logging to file
+	logFile := "/Users/william-meroxa/.prod/log.txt"
+	debugLog := func(msg string, args ...interface{}) {
+		if f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+			defer f.Close()
+			fmt.Fprintf(f, "[%s] %s\n", time.Now().Format(time.RFC3339), fmt.Sprintf(msg, args...))
+		}
+	}
+
+	debugLog("[PLANNING DEBUG] ExtractIntent called with:")
+	debugLog("  Prompt: %s", prompt)
+	debugLog("  Session AccessToken: %s", maskToken(session.AccessToken))
+	debugLog("  Session AccessToken length: %d", len(session.AccessToken))
+	debugLog("  Session AccessToken starts with: %s", session.AccessToken[:min(20, len(session.AccessToken))])
+	// debugLog("  Session AccessToken FULL (for testing): %s", session.AccessToken)
+	debugLog("  Environment variables being set:")
+	debugLog("    PROXY_API_KEY: %s", maskToken(session.AccessToken))
+	debugLog("    SUPABASE_URL: %s", config.GetSupabaseURL())
+
+	// Set BAML log level for this call
+	os.Setenv("BAML_LOG", "info")
+	debugLog("[PLANNING DEBUG] Calling BAML ExtractIntent with BAML_LOG=info")
+	debugLog("[PLANNING DEBUG] About to call baml_client.ExtractIntent")
+	debugLog("[PLANNING DEBUG] Context: %+v", ctx)
+	debugLog("[PLANNING DEBUG] Prompt: %s", prompt)
+	debugLog("[PLANNING DEBUG] Environment variables:")
+	debugLog("  PROXY_API_KEY: %s", maskToken(session.AccessToken))
+	debugLog("  SUPABASE_URL: %s", config.GetSupabaseURL())
+
+	startTime := time.Now()
+	debugLog("[PLANNING DEBUG] Starting BAML call at %s", startTime.Format(time.RFC3339))
+
+	intent, err := baml_client.ExtractIntent(ctx, prompt, baml_client.WithEnv(map[string]string{
+		"PROXY_API_KEY": session.AccessToken,
+		"SUPABASE_URL":  config.GetSupabaseURL(),
+	}))
+
+	duration := time.Since(startTime)
+	debugLog("[PLANNING DEBUG] BAML call completed in %v", duration)
+
 	if err != nil {
+		debugLog("[PLANNING DEBUG] ExtractIntent failed with error: %v", err)
+		debugLog("[PLANNING DEBUG] Error type: %T", err)
+		debugLog("[PLANNING DEBUG] Error details: %+v", err)
+		debugLog("[PLANNING DEBUG] Error occurred after %v", duration)
 		a.uiWriter.SendStatusComplete("planning", "❌ Failed to understand request")
 		return types.Intent{}, errors.Errorf("failed to extract intent: %w", err)
 	}
+
+	debugLog("[PLANNING DEBUG] ExtractIntent succeeded with result: %+v", intent)
+
+	// Call the debug wrapper
+	debugResult := debugExtractIntent(ctx, prompt, session.AccessToken, config.GetSupabaseURL())
+	debugLog("[PLANNING DEBUG] Debug wrapper result: %s", debugResult)
 	if intent.Source == "pwd" {
 		path, err := os.Getwd()
 		if err != nil {
@@ -217,4 +269,54 @@ func (a *Activities) determineRunCommand(ctx context.Context, spec analyzer.Proj
 	}
 	a.uiWriter.SendStatusComplete("planning", "✅ Run command determined")
 	return cmd.Command, nil
+}
+
+// maskToken masks sensitive tokens for logging
+func maskToken(token string) string {
+	if token == "" {
+		return "(empty)"
+	}
+	if len(token) < 8 {
+		return "***"
+	}
+	return token[:4] + "***" + token[len(token)-4:]
+}
+
+// min returns the smaller of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// debugExtractIntent is a debug wrapper that calls the BAML function with detailed logging
+func debugExtractIntent(ctx context.Context, prompt, accessToken, supabaseURL string) string {
+	// Debug logging to file
+	logFile := "/Users/william-meroxa/.prod/log.txt"
+	debugLog := func(msg string, args ...interface{}) {
+		if f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+			defer f.Close()
+			fmt.Fprintf(f, "[%s] %s\n", time.Now().Format(time.RFC3339), fmt.Sprintf(msg, args...))
+		}
+	}
+
+	debugLog("[DEBUG WRAPPER] Starting debug ExtractIntent call")
+	debugLog("[DEBUG WRAPPER] Prompt: %s", prompt)
+	debugLog("[DEBUG WRAPPER] AccessToken: %s", maskToken(accessToken))
+	debugLog("[DEBUG WRAPPER] SupabaseURL: %s", supabaseURL)
+
+	// Call the debug BAML function
+	debugResult, err := baml_client.DebugExtractIntent(ctx, prompt, baml_client.WithEnv(map[string]string{
+		"PROXY_API_KEY": accessToken,
+		"SUPABASE_URL":  supabaseURL,
+	}))
+
+	if err != nil {
+		debugLog("[DEBUG WRAPPER] DebugExtractIntent failed: %v", err)
+		return fmt.Sprintf("Debug failed: %v", err)
+	}
+
+	debugLog("[DEBUG WRAPPER] DebugExtractIntent succeeded: %s", debugResult)
+	return debugResult
 }
