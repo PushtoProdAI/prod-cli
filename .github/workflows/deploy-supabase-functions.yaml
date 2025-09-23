@@ -15,16 +15,15 @@ on:
         type: choice
         options:
           - staging
-          - production
+          - prod
 
 jobs:
   deploy-staging:
+    name: Deploy to Staging
     if: github.event_name == 'push' || github.event.inputs.environment == 'staging'
     runs-on: ubuntu-latest
     environment: staging
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN_STAGING }}
-      PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID_STAGING }}
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -35,15 +34,20 @@ jobs:
           version: latest
 
       - name: Deploy to staging
-        run: supabase functions deploy --project-ref $PROJECT_ID
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: |
+          echo "Deploying Supabase functions to staging environment"
+          echo "Project ID: $PROJECT_ID"
+          supabase functions deploy --project-ref $PROJECT_ID
 
   deploy-production:
-    if: github.event.inputs.environment == 'production'
+    name: Deploy to Production
+    if: github.event.inputs.environment == 'prod'
     runs-on: ubuntu-latest
-    environment: production
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN_PRODUCTION }}
-      PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID_PRODUCTION }}
+    environment: prod
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -54,4 +58,10 @@ jobs:
           version: latest
 
       - name: Deploy to production
-        run: supabase functions deploy --project-ref $PROJECT_ID
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: |
+          echo "Deploying Supabase functions to production environment"
+          echo "Project ID: $PROJECT_ID"
+          supabase functions deploy --project-ref $PROJECT_ID
