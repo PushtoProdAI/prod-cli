@@ -10,6 +10,7 @@ import (
 	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/config"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 )
 
@@ -88,7 +89,11 @@ func (a *Activities) determineRootPath(ctx context.Context, routes []analyzer.Ro
 			Line:    int64(r.Line),
 		}
 	}
-	r, err := baml_client.CategorizeRoutes(ctx, routeInputs)
+	session := CtxSession(ctx)
+	r, err := baml_client.CategorizeRoutes(ctx, routeInputs, baml_client.WithEnv(map[string]string{
+		"PROXY_API_KEY": session.AccessToken,
+		"SUPABASE_URL":  config.GetSupabaseURL() + "/functions/v1/llm-proxy",
+	}))
 	if err != nil {
 		return "", errors.Errorf("failed to categorize routes: %w", err)
 	}

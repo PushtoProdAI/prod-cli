@@ -27,7 +27,7 @@ class UsageCost {
 
 
 function FetchPricing(service: Service, content: string) -> ServicePricing {
-    client "OllamaClient"
+    client "ProxyClient"
     prompt #"
 {{ _.role("system") }}
 You are a pricing expert. You will be given markdown content extracted from a provider’s pricing page. 

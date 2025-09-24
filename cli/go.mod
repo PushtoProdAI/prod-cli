@@ -23,6 +23,7 @@ require (
 	github.com/render-oss/cli v1.1.2
 	github.com/stretchr/testify v1.10.0
 	github.com/xo/dburl v0.23.8
+	golang.org/x/net v0.43.0
 )
 
 require (
@@ -113,7 +114,6 @@ require (
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/mod v0.26.0 // indirect
-	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.35.0 // indirect
 	golang.org/x/text v0.28.0 // indirect

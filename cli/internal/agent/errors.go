@@ -10,6 +10,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
+	"github.com/meroxa/prod/cli/internal/config"
 )
 
 func (a *Activities) summarizeError(ctx context.Context, error string, input DeployPlan) (deployError, error) {
@@ -32,7 +33,11 @@ func (a *Activities) summarizeError(ctx context.Context, error string, input Dep
 	var violations []string
 	// handling this internally for now, but we could also bubble this up to the workflow
 	for {
-		s, err := baml_client.SummarizeDeployError(ctx, error, intent, spec, runtime.GOOS, violations)
+		session := CtxSession(ctx)
+		s, err := baml_client.SummarizeDeployError(ctx, error, intent, spec, runtime.GOOS, violations, baml_client.WithEnv(map[string]string{
+			"PROXY_API_KEY": session.AccessToken,
+			"SUPABASE_URL":  config.GetSupabaseURL() + "/functions/v1/llm-proxy",
+		}))
 		if err != nil {
 			return deployError{}, errors.Errorf("failed to summarize error: %w", err)
 		}
