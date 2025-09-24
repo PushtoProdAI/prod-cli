@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	md "github.com/JohannesKaufmann/html-to-markdown/v2"
+	"github.com/go-errors/errors"
 	"golang.org/x/net/html"
 )
 
@@ -25,11 +25,11 @@ const (
 func getCacheDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to get user home directory: %w", err)
+		return "", errors.Errorf("failed to get user home directory: %w", err)
 	}
 	cacheDir := filepath.Join(homeDir, ".prod", "cache")
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create cache directory: %w", err)
+		return "", errors.Errorf("failed to create cache directory: %w", err)
 	}
 	return cacheDir, nil
 }
@@ -121,18 +121,18 @@ func fetchURLDirect(url string, processor func(string) (string, error)) (string,
 	// Fetch the page
 	resp, err := http.Get(url)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch url: %w", err)
+		return "", errors.Errorf("failed to fetch url: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return "", errors.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	// Read body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read body: %w", err)
+		return "", errors.Errorf("failed to read body: %w", err)
 	}
 
 	// Apply processor function to transform content

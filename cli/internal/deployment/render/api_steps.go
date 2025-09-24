@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-errors/errors"
+
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/xo/dburl"
@@ -60,11 +62,11 @@ func (s *CreatePostgresStep) Execute(ctx context.Context, client RenderClient, s
 		EnableHighAvailability: false,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create postgres: %w", err)
+		return nil, errors.Errorf("failed to create postgres: %w", err)
 	}
 
 	if err := s.waitForPostgresReady(ctx, client, postgres.ID); err != nil {
-		return nil, fmt.Errorf("postgres service created but failed to become ready: %w", err)
+		return nil, errors.Errorf("postgres service created but failed to become ready: %w", err)
 	}
 
 	return postgres, nil
@@ -86,14 +88,14 @@ func (s *CreatePostgresStep) waitForPostgresReady(ctx context.Context, client Re
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		select {
 		case <-timeoutCtx.Done():
-			return fmt.Errorf("timeout waiting for postgres service %s to be ready after %v", serviceID, totalTimeout)
+			return errors.Errorf("timeout waiting for postgres service %s to be ready after %v", serviceID, totalTimeout)
 		default:
 		}
 
 		postgresService, err := client.GetPostgres(timeoutCtx, serviceID)
 		if err != nil {
 			if attempt == maxRetries {
-				return fmt.Errorf("failed to get postgres service status after %d attempts: %w", maxRetries, err)
+				return errors.Errorf("failed to get postgres service status after %d attempts: %w", maxRetries, err)
 			}
 		} else {
 			if s.isPostgresReady(postgresService) {
@@ -104,13 +106,13 @@ func (s *CreatePostgresStep) waitForPostgresReady(ctx context.Context, client Re
 		// Wait before retrying with exponential backoff
 		select {
 		case <-timeoutCtx.Done():
-			return fmt.Errorf("timeout waiting for postgres service %s to be ready after %v", serviceID, totalTimeout)
+			return errors.Errorf("timeout waiting for postgres service %s to be ready after %v", serviceID, totalTimeout)
 		case <-time.After(delay):
 			delay = min(time.Duration(float64(delay)*backoffFactor), maxDelay)
 		}
 	}
 
-	return fmt.Errorf("postgres service %s did not become ready after %d attempts over %v", serviceID, maxRetries, totalTimeout)
+	return errors.Errorf("postgres service %s did not become ready after %d attempts over %v", serviceID, maxRetries, totalTimeout)
 }
 
 func (s *CreatePostgresStep) isPostgresReady(postgres *RenderPostgres) bool {
@@ -171,7 +173,7 @@ func (s *CreateRedisStep) Execute(ctx context.Context, client RenderClient, step
 		Plan:    redisPlan,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create redis: %w", err)
+		return nil, errors.Errorf("failed to create redis: %w", err)
 	}
 	return redis, nil
 }
@@ -218,12 +220,12 @@ func (s *GetConnectionInfoStep) Execute(ctx context.Context, client RenderClient
 	// Get the service from the previous step
 	serviceResult, exists := stepResults[s.ServiceStepID]
 	if !exists {
-		return nil, fmt.Errorf("service step %s not found", s.ServiceStepID)
+		return nil, errors.Errorf("service step %s not found", s.ServiceStepID)
 	}
 
 	service, ok := serviceResult.(*RenderService)
 	if !ok {
-		return nil, fmt.Errorf("invalid service result type")
+		return nil, errors.Errorf("invalid service result type")
 	}
 
 	const maxRetries = 10
@@ -240,7 +242,7 @@ func (s *GetConnectionInfoStep) Execute(ctx context.Context, client RenderClient
 		case "redis":
 			connInfo, err = client.GetRedisConnectionInfo(ctx, service.ID)
 		default:
-			return nil, fmt.Errorf("unsupported service type: %s", s.ServiceType)
+			return nil, errors.Errorf("unsupported service type: %s", s.ServiceType)
 		}
 
 		// If successful, return the connection info
@@ -250,7 +252,7 @@ func (s *GetConnectionInfoStep) Execute(ctx context.Context, client RenderClient
 
 		// If this is the last attempt, return the error
 		if attempt == maxRetries {
-			return nil, fmt.Errorf("failed to get %s connection info after %d attempts: %w", s.ServiceType, maxRetries, err)
+			return nil, errors.Errorf("failed to get %s connection info after %d attempts: %w", s.ServiceType, maxRetries, err)
 		}
 
 		// Wait before retrying, but respect context cancellation
@@ -262,7 +264,7 @@ func (s *GetConnectionInfoStep) Execute(ctx context.Context, client RenderClient
 		}
 	}
 
-	return nil, fmt.Errorf("failed to get connection info for %s service %s after %d attempts", s.ServiceType, service.ID, maxRetries)
+	return nil, errors.Errorf("failed to get connection info for %s service %s after %d attempts", s.ServiceType, service.ID, maxRetries)
 }
 
 func (s *GetConnectionInfoStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error {
@@ -314,7 +316,7 @@ func (s *BuildAndPushStep) Execute(ctx context.Context, client RenderClient, ste
 	// Build and push the Docker image
 	_, _, err := s.DockerGenerator.BuildAndPush(ctx, s.DeploymentSpec, s.BuildContext, s.AuthToken)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build and push Docker image: %w", err)
+		return nil, errors.Errorf("failed to build and push Docker image: %w", err)
 	}
 	// We only care that it succeeded, return nil
 	return nil, nil
@@ -369,7 +371,7 @@ func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client Rende
 	// First, check if a registry credential with this name already exists
 	existingCreds, err := client.ListRegistryCredentials(ctx, s.OwnerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list existing registry credentials: %w", err)
+		return nil, errors.Errorf("failed to list existing registry credentials: %w", err)
 	}
 
 	// Look for an existing credential with the same name
@@ -387,7 +389,7 @@ func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client Rende
 
 	pullCreds, err := dockerGenerator.GetPullCredentials(ctx, s.AuthToken, s.ProjectName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get pull credentials: %w", err)
+		return nil, errors.Errorf("failed to get pull credentials: %w", err)
 	}
 
 	// Create registry credential in Render
@@ -399,7 +401,7 @@ func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client Rende
 		OwnerID:   s.OwnerID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create registry credential: %w", err)
+		return nil, errors.Errorf("failed to create registry credential: %w", err)
 	}
 
 	return registryCred, nil
@@ -559,12 +561,12 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		// Get the registry credential from the previous step
 		registryCredResult, exists := stepResults[s.RegistryCredStepID]
 		if !exists {
-			return nil, fmt.Errorf("registry credential step %s not found", s.RegistryCredStepID)
+			return nil, errors.Errorf("registry credential step %s not found", s.RegistryCredStepID)
 		}
 
 		registryCred, ok := registryCredResult.(*RegistryCredential)
 		if !ok {
-			return nil, fmt.Errorf("invalid registry credential result type")
+			return nil, errors.Errorf("invalid registry credential result type")
 		}
 
 		// Get pull credentials to construct the image path
@@ -573,7 +575,7 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 
 		pullCreds, err := dockerGenerator.GetPullCredentials(ctx, s.AuthToken, s.ProjectName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get pull credentials: %w", err)
+			return nil, errors.Errorf("failed to get pull credentials: %w", err)
 		}
 
 		// Construct the Docker image path
@@ -606,7 +608,7 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 	}
 	webService, err := client.CreateWebService(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create web service: %w", err)
+		return nil, errors.Errorf("failed to create web service: %w", err)
 	}
 	return webService, nil
 }

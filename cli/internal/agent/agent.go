@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cschleiden/go-workflows/client"
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/auth"
 	"github.com/meroxa/prod/cli/internal/deployment"
@@ -825,7 +826,7 @@ func (a *Agent) getAuthProvider(out io.Writer) (auth.AuthProvider, error) {
 		herokuAuth := auth.NewHerokuAuth(herokuClient, out)
 		return herokuAuth, nil
 	default:
-		return nil, fmt.Errorf("unsupported platform: %s", a.DeployPlan.Platform)
+		return nil, errors.Errorf("unsupported platform: %s", a.DeployPlan.Platform)
 	}
 }
 
@@ -1068,7 +1069,7 @@ func openInBrowser(url string) error {
 		cmd = "xdg-open"
 		args = []string{url}
 	default:
-		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+		return errors.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
 
 	return exec.Command(cmd, args...).Start()
@@ -1084,7 +1085,7 @@ const (
 func getConsentFilePath() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
+		return "", errors.WrapPrefix(err, "failed to get home directory", 0)
 	}
 
 	dirPath := filepath.Join(homeDir, ".prod")
@@ -1103,7 +1104,7 @@ func hasConsent() (bool, error) {
 
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return false, fmt.Errorf("failed to read consent file: %w", err)
+		return false, errors.WrapPrefix(err, "failed to read consent file", 0)
 	}
 
 	response := strings.TrimSpace(string(content))
@@ -1123,7 +1124,7 @@ func saveConsent(consent bool) error {
 
 	err = os.WriteFile(filePath, []byte(value), 0644)
 	if err != nil {
-		return fmt.Errorf("failed to save consent: %w", err)
+		return errors.WrapPrefix(err, "failed to save consent", 0)
 	}
 
 	return nil

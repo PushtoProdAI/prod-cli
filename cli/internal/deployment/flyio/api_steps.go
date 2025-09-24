@@ -2,8 +2,9 @@ package flyio
 
 import (
 	"context"
-	"fmt"
 	"time"
+
+	"github.com/go-errors/errors"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
@@ -40,7 +41,7 @@ func (c *CreateFlyioAppStep) Rollback(ctx context.Context, client FlyioClient, s
 			return client.DestroyApp(ctx, resource.ID)
 		}
 	}
-	return fmt.Errorf("could not find app ID for rollback")
+	return errors.Errorf("could not find app ID for rollback")
 }
 
 // DeployFlyioConfigStep deploys configuration to a Fly.io app
@@ -63,7 +64,7 @@ func (d *DeployFlyioConfigStep) Execute(ctx context.Context, client FlyioClient,
 func (d *DeployFlyioConfigStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) error {
 	// For config deployment, rollback might involve redeploying a previous config
 	// For now, we'll just log that rollback is not implemented
-	return fmt.Errorf("config rollback not implemented")
+	return errors.Errorf("config rollback not implemented")
 }
 
 // CreateFlyioServiceStep creates a backing service (database, volume, etc.)
@@ -110,7 +111,7 @@ func (c *CreateFlyioServiceStep) Execute(ctx context.Context, client FlyioClient
 
 		// Wait for Redis to be ready
 		if err := c.waitForServiceReady(ctx, client, c.name, "redis"); err != nil {
-			return nil, fmt.Errorf("redis created but failed to become ready: %w", err)
+			return nil, errors.Errorf("redis created but failed to become ready: %w", err)
 		}
 
 		return deployment.CreatedResource{
@@ -123,7 +124,7 @@ func (c *CreateFlyioServiceStep) Execute(ctx context.Context, client FlyioClient
 	// Volumes must be created after the app exists
 
 	default:
-		return nil, fmt.Errorf("unsupported service type: %s", c.serviceType)
+		return nil, errors.Errorf("unsupported service type: %s", c.serviceType)
 	}
 }
 
@@ -139,7 +140,7 @@ func (c *CreateFlyioServiceStep) waitForServiceReady(ctx context.Context, client
 	for {
 		select {
 		case <-timeoutCtx.Done():
-			return fmt.Errorf("%s service %s failed to become ready within %v", serviceType, serviceName, serviceReadyTimeout)
+			return errors.Errorf("%s service %s failed to become ready within %v", serviceType, serviceName, serviceReadyTimeout)
 		case <-ticker.C:
 			// Check service status based on type
 			ready := false
@@ -169,10 +170,10 @@ func (c *CreateFlyioServiceStep) Rollback(ctx context.Context, client FlyioClien
 		if resource, ok := serviceResult.(deployment.CreatedResource); ok {
 			// For now, we'll just log that service deletion is not implemented
 			// In a real implementation, you would call the appropriate delete method
-			return fmt.Errorf("service deletion not implemented for %s", resource.Type)
+			return errors.Errorf("service deletion not implemented for %s", resource.Type)
 		}
 	}
-	return fmt.Errorf("could not find service ID for rollback")
+	return errors.Errorf("could not find service ID for rollback")
 }
 
 // AttachPostgresStep attaches a PostgreSQL database to a Fly.io app
@@ -193,11 +194,11 @@ func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, st
 			}
 		}
 	}
-	
+
 	if clusterID == "" {
-		return nil, fmt.Errorf("could not find cluster ID from step %s", s.serviceStepID)
+		return nil, errors.Errorf("could not find cluster ID from step %s", s.serviceStepID)
 	}
-	
+
 	// Attach using cluster ID
 	err := client.AttachPostgres(ctx, AttachPostgresRequest{
 		AppName:      s.appName,
@@ -205,7 +206,7 @@ func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, st
 		VariableName: s.variableName,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to attach postgres: %w", err)
+		return nil, errors.Errorf("failed to attach postgres: %w", err)
 	}
 
 	// Return success indicator
@@ -220,7 +221,7 @@ func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, st
 func (s *AttachPostgresStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) error {
 	// Detaching would require removing the database user and connection
 	// For now, we'll log that detachment is not implemented
-	return fmt.Errorf("postgres detachment not implemented")
+	return errors.Errorf("postgres detachment not implemented")
 }
 
 // AttachRedisStep attaches a Redis database to a Fly.io app
@@ -239,7 +240,7 @@ func (s *AttachRedisStep) Execute(ctx context.Context, client FlyioClient, stepR
 		VariableName: s.variableName,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to attach redis: %w", err)
+		return nil, errors.Errorf("failed to attach redis: %w", err)
 	}
 
 	// Return success indicator
@@ -254,5 +255,5 @@ func (s *AttachRedisStep) Execute(ctx context.Context, client FlyioClient, stepR
 func (s *AttachRedisStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) error {
 	// Detaching would require removing the Redis connection
 	// For now, we'll log that detachment is not implemented
-	return fmt.Errorf("redis detachment not implemented")
+	return errors.Errorf("redis detachment not implemented")
 }

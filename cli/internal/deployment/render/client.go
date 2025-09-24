@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-errors/errors"
+
 	"github.com/meroxa/prod/cli/internal/output"
 )
 
@@ -81,7 +83,7 @@ func (c *HTTPRenderClient) makeRequest(ctx context.Context, method, endpoint str
 	if body != nil {
 		jsonData, err := json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+			return nil, errors.Errorf("failed to marshal request body: %w", err)
 		}
 		reqBody = bytes.NewBuffer(jsonData)
 	}
@@ -89,7 +91,7 @@ func (c *HTTPRenderClient) makeRequest(ctx context.Context, method, endpoint str
 	url := c.baseURL + endpoint
 	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, errors.Errorf("failed to create request: %w", err)
 	}
 
 	// Set headers per Render API docs
@@ -102,7 +104,7 @@ func (c *HTTPRenderClient) makeRequest(ctx context.Context, method, endpoint str
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
+		return nil, errors.Errorf("failed to make request: %w", err)
 	}
 
 	return resp, nil
@@ -114,7 +116,7 @@ func (c *HTTPRenderClient) handleResponse(resp *http.Response, result any) error
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
+		return errors.Errorf("failed to read response body: %w", err)
 	}
 
 	// Check for rate limit errors (429)
@@ -136,7 +138,7 @@ func (c *HTTPRenderClient) handleResponse(resp *http.Response, result any) error
 	// Parse successful response
 	if result != nil {
 		if err := json.Unmarshal(body, result); err != nil {
-			return fmt.Errorf("failed to parse response JSON: %w", err)
+			return errors.Errorf("failed to parse response JSON: %w", err)
 		}
 	}
 	return nil
@@ -192,7 +194,7 @@ func (c *HTTPRenderClient) formatRateLimitMessage(retryAfter time.Duration) stri
 func (c *HTTPRenderClient) ListWorkspaces(ctx context.Context) ([]RenderWorkspace, error) {
 	resp, err := c.makeRequest(ctx, "GET", "/v1/owners", nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list workspaces: %w", err)
+		return nil, errors.Errorf("failed to list workspaces: %w", err)
 	}
 
 	var workspaces []RenderWorkspace
@@ -207,7 +209,7 @@ func (c *HTTPRenderClient) ListWorkspaces(ctx context.Context) ([]RenderWorkspac
 func (c *HTTPRenderClient) CreateWebService(ctx context.Context, req CreateWebServiceRequest) (*RenderService, error) {
 	resp, err := c.makeRequest(ctx, "POST", "/v1/services", req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create web service: %w", err)
+		return nil, errors.Errorf("failed to create web service: %w", err)
 	}
 
 	var createdResp CreateWebServiceResponse
@@ -222,7 +224,7 @@ func (c *HTTPRenderClient) CreateWebService(ctx context.Context, req CreateWebSe
 func (c *HTTPRenderClient) CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*RenderService, error) {
 	resp, err := c.makeRequest(ctx, "POST", "/v1/postgres", req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create postgres service: %w", err)
+		return nil, errors.Errorf("failed to create postgres service: %w", err)
 	}
 
 	var service RenderService
@@ -238,7 +240,7 @@ func (c *HTTPRenderClient) CreatePostgres(ctx context.Context, req CreatePostgre
 func (c *HTTPRenderClient) CreateRedis(ctx context.Context, req CreateRedisRequest) (*RenderService, error) {
 	resp, err := c.makeRequest(ctx, "POST", "/v1/redis", req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create redis service: %w", err)
+		return nil, errors.Errorf("failed to create redis service: %w", err)
 	}
 
 	var service RenderService
@@ -254,7 +256,7 @@ func (c *HTTPRenderClient) CreateRedis(ctx context.Context, req CreateRedisReque
 func (c *HTTPRenderClient) GetPostgresConnectionInfo(ctx context.Context, serviceID string) (*PostgresConnectionInfo, error) {
 	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/postgres/%s/connection-info", serviceID), nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get postgres connection info: %w", err)
+		return nil, errors.Errorf("failed to get postgres connection info: %w", err)
 	}
 
 	var connectionInfo PostgresConnectionInfo
@@ -270,7 +272,7 @@ func (c *HTTPRenderClient) GetPostgresConnectionInfo(ctx context.Context, servic
 func (c *HTTPRenderClient) GetRedisConnectionInfo(ctx context.Context, serviceID string) (*RedisConnectionInfo, error) {
 	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/redis/%s/connection-info", serviceID), nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get redis connection info: %w", err)
+		return nil, errors.Errorf("failed to get redis connection info: %w", err)
 	}
 
 	var connectionInfo RedisConnectionInfo
@@ -284,7 +286,7 @@ func (c *HTTPRenderClient) GetRedisConnectionInfo(ctx context.Context, serviceID
 func (c *HTTPRenderClient) GetWebService(ctx context.Context, serviceID string) (*RenderWebService, error) {
 	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/services/%s", serviceID), nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get service info: %w", err)
+		return nil, errors.Errorf("failed to get service info: %w", err)
 	}
 
 	var webService RenderWebService
@@ -298,7 +300,7 @@ func (c *HTTPRenderClient) GetWebService(ctx context.Context, serviceID string) 
 func (c *HTTPRenderClient) GetPostgres(ctx context.Context, serviceID string) (*RenderPostgres, error) {
 	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/postgres/%s", serviceID), nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get postgres service info: %w", err)
+		return nil, errors.Errorf("failed to get postgres service info: %w", err)
 	}
 
 	var postgres RenderPostgres
@@ -309,7 +311,7 @@ func (c *HTTPRenderClient) GetPostgres(ctx context.Context, serviceID string) (*
 }
 
 func (c *HTTPRenderClient) DeployBlueprint(ctx context.Context, blueprint *RenderBlueprint) error {
-	return fmt.Errorf("DeployBlueprint not yet implemented")
+	return errors.Errorf("DeployBlueprint not yet implemented")
 }
 
 // ListRegistryCredentials lists all registry credentials for a given owner
@@ -317,7 +319,7 @@ func (c *HTTPRenderClient) DeployBlueprint(ctx context.Context, blueprint *Rende
 func (c *HTTPRenderClient) ListRegistryCredentials(ctx context.Context, ownerID string) ([]*RegistryCredential, error) {
 	resp, err := c.makeRequest(ctx, "GET", "/v1/registrycredentials", nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list registry credentials: %w", err)
+		return nil, errors.Errorf("failed to list registry credentials: %w", err)
 	}
 
 	var credentials []*RegistryCredential

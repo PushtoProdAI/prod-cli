@@ -97,8 +97,8 @@ type FlyioPostgres struct {
 
 // FlyioPostgresCluster represents a Fly.io Managed Postgres cluster
 type FlyioPostgresCluster struct {
-	ID               string `json:"id"`               // Cluster ID like "q49ypo4wg5qr17ln"
-	Name             string `json:"name"`             // User-friendly name
+	ID               string `json:"id"`   // Cluster ID like "q49ypo4wg5qr17ln"
+	Name             string `json:"name"` // User-friendly name
 	Organization     string `json:"organization"`
 	Region           string `json:"region"`
 	Plan             string `json:"plan"`      // "basic", "production", etc.

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-errors/errors"
+
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/output"
 )
@@ -52,7 +54,7 @@ func (se *StepExecutor) ExecuteSteps(ctx context.Context, steps []RenderAPIStep,
 					if rollbackErr := se.rollback(ctx, out); rollbackErr != nil {
 						fmt.Fprintf(out, "⚠️  Rollback failed: %v\n", rollbackErr)
 					}
-					return se.createdResources, fmt.Errorf("failed to execute step %s: %w", step.GetID(), err)
+					return se.createdResources, errors.Errorf("failed to execute step %s: %w", step.GetID(), err)
 				}
 
 				executed[step.GetID()] = true
@@ -62,7 +64,7 @@ func (se *StepExecutor) ExecuteSteps(ctx context.Context, steps []RenderAPIStep,
 		}
 
 		if !progress {
-			return se.createdResources, fmt.Errorf("circular dependency detected or unresolvable dependencies")
+			return se.createdResources, errors.Errorf("circular dependency detected or unresolvable dependencies")
 		}
 	}
 

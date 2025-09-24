@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/render-oss/cli/pkg/client/oauth"
 	"github.com/render-oss/cli/pkg/config"
@@ -103,11 +103,11 @@ func (ra *RenderAuth) CheckAuthentication(ctx context.Context) (bool, error) {
 func (ra *RenderAuth) ValidateAPIKey(ctx context.Context, apiKey string) (bool, error) {
 	// Validate API key format
 	if len(apiKey) == 0 {
-		return false, fmt.Errorf("API key cannot be empty")
+		return false, errors.Errorf("API key cannot be empty")
 	}
 
 	if len(apiKey) < 20 {
-		return false, fmt.Errorf("API key seems too short (should be at least 20 characters)")
+		return false, errors.Errorf("API key seems too short (should be at least 20 characters)")
 	}
 
 	if !strings.HasPrefix(apiKey, "rnd_") {
@@ -124,7 +124,7 @@ func (ra *RenderAuth) ValidateAPIKey(ctx context.Context, apiKey string) (bool, 
 			return false, nil
 		}
 		// Other error, return it
-		return false, fmt.Errorf("failed to validate API key: %w", err)
+		return false, errors.Errorf("failed to validate API key: %w", err)
 	}
 
 	return true, nil
@@ -198,7 +198,7 @@ func (ra *RenderAuth) PerformOAuthLogin(ctx context.Context) error {
 		ra.println("   • Render's OAuth service being temporarily unavailable")
 		ra.println("   • Firewall or proxy blocking the connection")
 		ra.println("\n🔧 You can try option 2 (Manual API key setup) instead")
-		return fmt.Errorf("failed to create device grant: %w", err)
+		return errors.Errorf("failed to create device grant: %w", err)
 	}
 
 	// Step 2: Generate dashboard authentication URL and open browser
@@ -228,7 +228,7 @@ func (ra *RenderAuth) PerformOAuthLogin(ctx context.Context) error {
 	// Step 3: Poll for token using render CLI components
 	deviceToken, err := ra.pollForToken(ctx, oauthClient, deviceGrant)
 	if err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
+		return errors.Errorf("authentication failed: %w", err)
 	}
 
 	// Step 4: Create and save configuration using render CLI format
@@ -244,7 +244,7 @@ func (ra *RenderAuth) PerformOAuthLogin(ctx context.Context) error {
 	}
 
 	if err := cfg.Persist(); err != nil {
-		return fmt.Errorf("failed to save authentication: %w", err)
+		return errors.Errorf("failed to save authentication: %w", err)
 	}
 
 	// Update our local config reference
@@ -272,7 +272,7 @@ func (ra *RenderAuth) pollForToken(ctx context.Context, oauthClient *oauth.Clien
 	for {
 		select {
 		case <-timeout.C:
-			return nil, fmt.Errorf("authentication timed out")
+			return nil, errors.Errorf("authentication timed out")
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-ticker.C:
@@ -296,13 +296,13 @@ func (ra *RenderAuth) pollForToken(ctx context.Context, oauthClient *oauth.Clien
 					continue
 				}
 				if strings.Contains(errMsg, "access_denied") {
-					return nil, fmt.Errorf("user denied authorization")
+					return nil, errors.Errorf("user denied authorization")
 				}
 				if strings.Contains(errMsg, "expired_token") {
-					return nil, fmt.Errorf("device code expired - please try again")
+					return nil, errors.Errorf("device code expired - please try again")
 				}
 				// Other error
-				return nil, fmt.Errorf("authentication error: %w", err)
+				return nil, errors.Errorf("authentication error: %w", err)
 			}
 
 			if token != nil {
@@ -330,7 +330,7 @@ func isAuthError(err error) bool {
 func (ra *RenderAuth) persistAPIKeyToShellProfile(apiKey string) error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("could not get home directory: %w", err)
+		return errors.Errorf("could not get home directory: %w", err)
 	}
 
 	// Determine which shell profile to use based on the current shell or common defaults
@@ -405,20 +405,20 @@ func (ra *RenderAuth) appendAPIKeyToProfile(profilePath, apiKey string) error {
 	// Create the directory if it doesn't exist (for fish config)
 	dir := filepath.Dir(profilePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("could not create directory %s: %w", dir, err)
+		return errors.Errorf("could not create directory %s: %w", dir, err)
 	}
 
 	// Open file in append mode, create if it doesn't exist
 	file, err := os.OpenFile(profilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("could not open profile file %s: %w", profilePath, err)
+		return errors.Errorf("could not open profile file %s: %w", profilePath, err)
 	}
 	defer file.Close()
 
 	// Check if file is empty or doesn't end with a newline
 	fileInfo, err := file.Stat()
 	if err != nil {
-		return fmt.Errorf("could not stat profile file: %w", err)
+		return errors.Errorf("could not stat profile file: %w", err)
 	}
 
 	// If file has content, ensure we start on a new line
@@ -429,7 +429,7 @@ func (ra *RenderAuth) appendAPIKeyToProfile(profilePath, apiKey string) error {
 		file.Read(lastByte)
 		if lastByte[0] != '\n' {
 			if _, err := file.WriteString("\n"); err != nil {
-				return fmt.Errorf("could not write newline: %w", err)
+				return errors.Errorf("could not write newline: %w", err)
 			}
 		}
 		file.Seek(0, io.SeekEnd) // Go back to end for appending
@@ -439,7 +439,7 @@ func (ra *RenderAuth) appendAPIKeyToProfile(profilePath, apiKey string) error {
 	exportStatement := fmt.Sprintf("export RENDER_API_KEY=%s\n", apiKey)
 
 	if _, err := file.WriteString(comment + exportStatement); err != nil {
-		return fmt.Errorf("could not write to profile file: %w", err)
+		return errors.Errorf("could not write to profile file: %w", err)
 	}
 
 	return nil

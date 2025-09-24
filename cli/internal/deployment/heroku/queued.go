@@ -111,7 +111,7 @@ func (qd *QueuedDeployment) GenerateAPISteps() []HerokuAPIStep {
 		scaleStepID,
 		"Scale web dynos",
 		createAppStepID,
-		1,    // quantity
+		1,       // quantity
 		"basic", // size - using basic dynos
 		[]string{deployStepID},
 	))
@@ -157,7 +157,7 @@ func (qd *QueuedDeployment) createAddonSteps(steps *[]HerokuAPIStep, appStepID s
 			appStepID,
 			service.Provider,
 			plan,
-			nil, // no config
+			nil,                 // no config
 			[]string{appStepID}, // depends on app creation
 		))
 
@@ -180,4 +180,3 @@ func (qd *QueuedDeployment) filterNonDBEnvVars() map[string]string {
 
 	return envVars
 }
-

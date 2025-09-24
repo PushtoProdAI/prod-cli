@@ -2,10 +2,11 @@ package heroku
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
+
+	"github.com/go-errors/errors"
 
 	heroku "github.com/heroku/heroku-go/v6"
 	"github.com/meroxa/prod/cli/internal/output"
@@ -91,7 +92,7 @@ func (c *HerokuClient) CreateApp(ctx context.Context, name string, region string
 
 	app, err := c.client.AppCreate(ctx, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create app: %w", err)
+		return nil, errors.Errorf("failed to create app: %w", err)
 	}
 	return app, nil
 }
@@ -100,7 +101,7 @@ func (c *HerokuClient) CreateApp(ctx context.Context, name string, region string
 func (c *HerokuClient) GetApp(ctx context.Context, appID string) (*heroku.App, error) {
 	app, err := c.client.AppInfo(ctx, appID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get app info: %w", err)
+		return nil, errors.Errorf("failed to get app info: %w", err)
 	}
 	return app, nil
 }
@@ -109,7 +110,7 @@ func (c *HerokuClient) GetApp(ctx context.Context, appID string) (*heroku.App, e
 func (c *HerokuClient) DeleteApp(ctx context.Context, appID string) (*heroku.App, error) {
 	app, err := c.client.AppDelete(ctx, appID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete app: %w", err)
+		return nil, errors.Errorf("failed to delete app: %w", err)
 	}
 	return app, nil
 }
@@ -118,7 +119,7 @@ func (c *HerokuClient) DeleteApp(ctx context.Context, appID string) (*heroku.App
 func (c *HerokuClient) ListApps(ctx context.Context) (heroku.AppListResult, error) {
 	apps, err := c.client.AppList(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list apps: %w", err)
+		return nil, errors.Errorf("failed to list apps: %w", err)
 	}
 	return apps, nil
 }
@@ -127,7 +128,7 @@ func (c *HerokuClient) ListApps(ctx context.Context) (heroku.AppListResult, erro
 func (c *HerokuClient) GetConfigVars(ctx context.Context, appID string) (map[string]*string, error) {
 	vars, err := c.client.ConfigVarInfoForApp(ctx, appID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get config vars: %w", err)
+		return nil, errors.Errorf("failed to get config vars: %w", err)
 	}
 	return vars, nil
 }
@@ -136,7 +137,7 @@ func (c *HerokuClient) GetConfigVars(ctx context.Context, appID string) (map[str
 func (c *HerokuClient) UpdateConfigVars(ctx context.Context, appID string, vars map[string]*string) (map[string]*string, error) {
 	updatedVars, err := c.client.ConfigVarUpdate(ctx, appID, vars)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update config vars: %w", err)
+		return nil, errors.Errorf("failed to update config vars: %w", err)
 	}
 	return updatedVars, nil
 }
@@ -153,7 +154,7 @@ func (c *HerokuClient) CreateAddon(ctx context.Context, appID string, plan strin
 
 	addon, err := c.client.AddOnCreate(ctx, appID, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create addon: %w", err)
+		return nil, errors.Errorf("failed to create addon: %w", err)
 	}
 	return addon, nil
 }
@@ -162,7 +163,7 @@ func (c *HerokuClient) CreateAddon(ctx context.Context, appID string, plan strin
 func (c *HerokuClient) GetAddon(ctx context.Context, addonID string) (*heroku.AddOn, error) {
 	addon, err := c.client.AddOnInfo(ctx, addonID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get addon info: %w", err)
+		return nil, errors.Errorf("failed to get addon info: %w", err)
 	}
 	return addon, nil
 }
@@ -171,7 +172,7 @@ func (c *HerokuClient) GetAddon(ctx context.Context, addonID string) (*heroku.Ad
 func (c *HerokuClient) ListAddons(ctx context.Context, appID string) (heroku.AddOnListByAppResult, error) {
 	addons, err := c.client.AddOnListByApp(ctx, appID, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list addons: %w", err)
+		return nil, errors.Errorf("failed to list addons: %w", err)
 	}
 	return addons, nil
 }
@@ -180,7 +181,7 @@ func (c *HerokuClient) ListAddons(ctx context.Context, appID string) (heroku.Add
 func (c *HerokuClient) DeleteAddon(ctx context.Context, appID string, addonID string) (*heroku.AddOn, error) {
 	addon, err := c.client.AddOnDelete(ctx, appID, addonID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete addon: %w", err)
+		return nil, errors.Errorf("failed to delete addon: %w", err)
 	}
 	return addon, nil
 }
@@ -189,7 +190,7 @@ func (c *HerokuClient) DeleteAddon(ctx context.Context, appID string, addonID st
 func (c *HerokuClient) GetFormation(ctx context.Context, appID string, processType string) (*heroku.Formation, error) {
 	formation, err := c.client.FormationInfo(ctx, appID, processType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get formation: %w", err)
+		return nil, errors.Errorf("failed to get formation: %w", err)
 	}
 	return formation, nil
 }
@@ -212,7 +213,7 @@ func (c *HerokuClient) UpdateFormation(ctx context.Context, appID string, proces
 
 	formation, err := c.client.FormationUpdate(ctx, appID, processType, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update formation: %w", err)
+		return nil, errors.Errorf("failed to update formation: %w", err)
 	}
 	return formation, nil
 }
@@ -221,7 +222,7 @@ func (c *HerokuClient) UpdateFormation(ctx context.Context, appID string, proces
 func (c *HerokuClient) ListFormations(ctx context.Context, appID string) (heroku.FormationListResult, error) {
 	formations, err := c.client.FormationList(ctx, appID, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list formations: %w", err)
+		return nil, errors.Errorf("failed to list formations: %w", err)
 	}
 	return formations, nil
 }
@@ -252,7 +253,7 @@ func (c *HerokuClient) CreateBuild(ctx context.Context, appID string, sourceURL 
 
 	build, err := c.client.BuildCreate(ctx, appID, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create build: %w", err)
+		return nil, errors.Errorf("failed to create build: %w", err)
 	}
 	return build, nil
 }
@@ -261,7 +262,7 @@ func (c *HerokuClient) CreateBuild(ctx context.Context, appID string, sourceURL 
 func (c *HerokuClient) GetBuild(ctx context.Context, appID string, buildID string) (*heroku.Build, error) {
 	build, err := c.client.BuildInfo(ctx, appID, buildID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get build info: %w", err)
+		return nil, errors.Errorf("failed to get build info: %w", err)
 	}
 	return build, nil
 }
@@ -270,7 +271,7 @@ func (c *HerokuClient) GetBuild(ctx context.Context, appID string, buildID strin
 func (c *HerokuClient) GetRelease(ctx context.Context, appID string, releaseID string) (*heroku.Release, error) {
 	release, err := c.client.ReleaseInfo(ctx, appID, releaseID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get release info: %w", err)
+		return nil, errors.Errorf("failed to get release info: %w", err)
 	}
 	return release, nil
 }
@@ -279,7 +280,7 @@ func (c *HerokuClient) GetRelease(ctx context.Context, appID string, releaseID s
 func (c *HerokuClient) ListReleases(ctx context.Context, appID string) (heroku.ReleaseListResult, error) {
 	releases, err := c.client.ReleaseList(ctx, appID, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list releases: %w", err)
+		return nil, errors.Errorf("failed to list releases: %w", err)
 	}
 	return releases, nil
 }
@@ -292,7 +293,7 @@ func (c *HerokuClient) CreateDomain(ctx context.Context, appID string, hostname 
 
 	domain, err := c.client.DomainCreate(ctx, appID, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create domain: %w", err)
+		return nil, errors.Errorf("failed to create domain: %w", err)
 	}
 	return domain, nil
 }
@@ -301,7 +302,7 @@ func (c *HerokuClient) CreateDomain(ctx context.Context, appID string, hostname 
 func (c *HerokuClient) ListDomains(ctx context.Context, appID string) (heroku.DomainListResult, error) {
 	domains, err := c.client.DomainList(ctx, appID, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list domains: %w", err)
+		return nil, errors.Errorf("failed to list domains: %w", err)
 	}
 	return domains, nil
 }
@@ -310,7 +311,7 @@ func (c *HerokuClient) ListDomains(ctx context.Context, appID string) (heroku.Do
 func (c *HerokuClient) DeleteDomain(ctx context.Context, appID string, domainID string) (*heroku.Domain, error) {
 	domain, err := c.client.DomainDelete(ctx, appID, domainID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete domain: %w", err)
+		return nil, errors.Errorf("failed to delete domain: %w", err)
 	}
 	return domain, nil
 }
@@ -323,7 +324,7 @@ func (c *HerokuClient) CreateLogDrain(ctx context.Context, appID string, url str
 
 	drain, err := c.client.LogDrainCreate(ctx, appID, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create log drain: %w", err)
+		return nil, errors.Errorf("failed to create log drain: %w", err)
 	}
 	return drain, nil
 }
@@ -332,7 +333,7 @@ func (c *HerokuClient) CreateLogDrain(ctx context.Context, appID string, url str
 func (c *HerokuClient) ListLogDrains(ctx context.Context, appID string) (heroku.LogDrainListResult, error) {
 	drains, err := c.client.LogDrainList(ctx, appID, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list log drains: %w", err)
+		return nil, errors.Errorf("failed to list log drains: %w", err)
 	}
 	return drains, nil
 }
@@ -341,7 +342,7 @@ func (c *HerokuClient) ListLogDrains(ctx context.Context, appID string) (heroku.
 func (c *HerokuClient) DeleteLogDrain(ctx context.Context, appID string, drainID string) (*heroku.LogDrain, error) {
 	drain, err := c.client.LogDrainDelete(ctx, appID, drainID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete log drain: %w", err)
+		return nil, errors.Errorf("failed to delete log drain: %w", err)
 	}
 	return drain, nil
 }
@@ -365,7 +366,7 @@ func (c *HerokuClient) SetBuildpacks(ctx context.Context, appID string, buildpac
 
 	result, err := c.client.BuildpackInstallationUpdate(ctx, appID, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to set buildpacks: %w", err)
+		return nil, errors.Errorf("failed to set buildpacks: %w", err)
 	}
 
 	return result, nil

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/conduitio/ecdysis"
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/auth"
 )
 
@@ -20,7 +21,7 @@ type StatusCommand struct{}
 func (c *StatusCommand) Execute(ctx context.Context) error {
 	authClient, err := auth.NewSupabaseAuth(os.Stdout)
 	if err != nil {
-		return fmt.Errorf("failed to initialize auth: %w", err)
+		return errors.Errorf("failed to initialize auth: %w", err)
 	}
 
 	if !authClient.IsAuthenticated() {
@@ -31,7 +32,7 @@ func (c *StatusCommand) Execute(ctx context.Context) error {
 
 	session, err := authClient.GetSession()
 	if err != nil {
-		return fmt.Errorf("failed to get session: %w", err)
+		return errors.Errorf("failed to get session: %w", err)
 	}
 
 	fmt.Println("✅ Authenticated")
@@ -51,4 +52,3 @@ func (c *StatusCommand) Docs() ecdysis.Docs {
 		Long:  `Displays your current authentication status and session information.`,
 	}
 }
-

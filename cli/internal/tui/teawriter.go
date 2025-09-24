@@ -1,11 +1,11 @@
 package tui
 
 import (
-	"fmt"
 	"io"
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/agent"
 	"github.com/meroxa/prod/cli/internal/output"
 )
@@ -202,7 +202,7 @@ func (w *TeaWriter) PromptSelection(message string, options []string) (int, erro
 	w.SendSelect(message, options)
 	// Note: This is async - the TUI will handle the response
 	// For now, return an error indicating this needs to be handled differently
-	return 0, fmt.Errorf("TUI selection is async - use callback pattern instead")
+	return 0, errors.Errorf("TUI selection is async - use callback pattern instead")
 }
 
 // PromptInput implements AuthInteractor interface
@@ -214,7 +214,7 @@ func (w *TeaWriter) PromptInput(message string, masked bool) (string, error) {
 		w.send(UIMessage{Content: message + ": "})
 	}
 	// Note: This is async - the TUI will handle the response
-	return "", fmt.Errorf("TUI input is async - use callback pattern instead")
+	return "", errors.Errorf("TUI input is async - use callback pattern instead")
 }
 
 // ShowProgress implements AuthInteractor interface

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-errors/errors"
+
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/output"
 )
@@ -48,11 +50,11 @@ func (qd *QueuedDeployment) Deploy(ctx context.Context) ([]deployment.CreatedRes
 	// Step 1: Get the first workspace to use as owner
 	workspaces, err := qd.client.ListWorkspaces(ctx)
 	if err != nil {
-		return []deployment.CreatedResource{}, fmt.Errorf("failed to list workspaces: %w", err)
+		return []deployment.CreatedResource{}, errors.Errorf("failed to list workspaces: %w", err)
 	}
 
 	if len(workspaces) == 0 {
-		return []deployment.CreatedResource{}, fmt.Errorf("no workspaces found")
+		return []deployment.CreatedResource{}, errors.Errorf("no workspaces found")
 	}
 
 	ownerID := workspaces[0].Owner.ID

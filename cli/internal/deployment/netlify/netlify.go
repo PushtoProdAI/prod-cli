@@ -108,4 +108,3 @@ func GetCommonBuildDirs() []string {
 func GetCommonFunctionDirs() []string {
 	return commonFunctionDirs
 }
-

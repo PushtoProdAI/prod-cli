@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/conduitio/ecdysis"
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/auth"
 )
 
@@ -20,7 +21,7 @@ type LogoutCommand struct{}
 func (c *LogoutCommand) Execute(ctx context.Context) error {
 	authClient, err := auth.NewSupabaseAuth(os.Stdout)
 	if err != nil {
-		return fmt.Errorf("failed to initialize auth: %w", err)
+		return errors.Errorf("failed to initialize auth: %w", err)
 	}
 
 	if !authClient.IsAuthenticated() {
@@ -39,4 +40,3 @@ func (c *LogoutCommand) Docs() ecdysis.Docs {
 		Long:  `Removes your stored authentication credentials.`,
 	}
 }
-

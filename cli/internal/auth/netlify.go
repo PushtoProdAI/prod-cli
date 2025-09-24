@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
 )
 
@@ -32,7 +33,6 @@ func NewNetlifyAuth(client netlify.NetlifyClient, writer io.Writer) *NetlifyAuth
 		output: writer,
 	}
 }
-
 
 // println writes a line to the configured writer
 func (na *NetlifyAuth) println(args ...any) {
@@ -97,19 +97,19 @@ func (na *NetlifyAuth) getTokenFromNetlifyCLI() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		// Config file doesn't exist - not authenticated
 		return "", nil
 	}
-	
+
 	// Netlify CLI config structure
 	var config struct {
-		TelemetryDisabled bool `json:"telemetryDisabled"`
-		CliID            string `json:"cliId"`
-		UserID           string `json:"userId"`
-		Users            map[string]struct {
+		TelemetryDisabled bool   `json:"telemetryDisabled"`
+		CliID             string `json:"cliId"`
+		UserID            string `json:"userId"`
+		Users             map[string]struct {
 			ID    string `json:"id"`
 			Name  string `json:"name"`
 			Email string `json:"email"`
@@ -118,18 +118,18 @@ func (na *NetlifyAuth) getTokenFromNetlifyCLI() (string, error) {
 			} `json:"auth"`
 		} `json:"users"`
 	}
-	
+
 	if err := json.Unmarshal(data, &config); err != nil {
 		return "", err
 	}
-	
+
 	// Get token from the first user (usually there's only one)
 	for _, user := range config.Users {
 		if user.Auth.Token != "" {
 			return user.Auth.Token, nil
 		}
 	}
-	
+
 	return "", nil
 }
 
@@ -137,33 +137,33 @@ func (na *NetlifyAuth) getTokenFromNetlifyCLI() (string, error) {
 func (na *NetlifyAuth) ValidateAPIKey(ctx context.Context, token string) (bool, error) {
 	// Validate token format
 	if len(token) == 0 {
-		return false, fmt.Errorf("API token cannot be empty")
+		return false, errors.Errorf("API token cannot be empty")
 	}
 
 	// Try to list sites with the token - this requires authentication
 	cmd := exec.CommandContext(ctx, "netlify", "api", "listSites", "--data", "{}")
 	cmd.Env = append(os.Environ(), fmt.Sprintf("NETLIFY_AUTH_TOKEN=%s", token))
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		// Check if it's an auth error
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			stderr := string(exitErr.Stderr)
-			if strings.Contains(stderr, "401") || strings.Contains(stderr, "unauthorized") || 
-			   strings.Contains(stderr, "authentication") || strings.Contains(stderr, "logged in") {
+			if strings.Contains(stderr, "401") || strings.Contains(stderr, "unauthorized") ||
+				strings.Contains(stderr, "authentication") || strings.Contains(stderr, "logged in") {
 				os.Unsetenv("NETLIFY_AUTH_TOKEN")
 				return false, nil
 			}
 		}
 		return false, nil
 	}
-	
+
 	// Check if response is valid JSON (successful API call)
 	var result any
 	if err := json.Unmarshal(output, &result); err != nil {
 		return false, nil
 	}
-	
+
 	// Token is valid
 	os.Setenv("NETLIFY_AUTH_TOKEN", token)
 	return true, nil
@@ -195,17 +195,17 @@ func (na *NetlifyAuth) PerformOAuthLogin(ctx context.Context) error {
 	cmd.Stderr = na.output
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
+		return errors.Errorf("authentication failed: %w", err)
 	}
 
 	// Verify that authentication succeeded by getting the token
 	token, err := na.getTokenFromNetlifyCLI()
 	if err != nil {
-		return fmt.Errorf("failed to verify authentication: %w", err)
+		return errors.Errorf("failed to verify authentication: %w", err)
 	}
 
 	if token == "" {
-		return fmt.Errorf("authentication succeeded but no token found")
+		return errors.Errorf("authentication succeeded but no token found")
 	}
 
 	// Set the token for immediate use in this session
@@ -215,7 +215,7 @@ func (na *NetlifyAuth) PerformOAuthLogin(ctx context.Context) error {
 	na.println("✅ Authentication successful!")
 	na.println("💡 Netlify CLI has saved your credentials")
 	na.println("📍 Token location: " + na.getConfigLocation())
-	
+
 	return nil
 }
 
@@ -250,9 +250,9 @@ func (na *NetlifyAuth) ensureNetlifyCLI() error {
 			na.println("    yarn global add netlify-cli")
 			na.println()
 			na.println("After installation, run your command again.")
-			return fmt.Errorf("netlify CLI is required but not installed")
+			return errors.Errorf("netlify CLI is required but not installed")
 		}
-		return fmt.Errorf("failed to check netlify version: %w", err)
+		return errors.Errorf("failed to check netlify version: %w", err)
 	}
 	return nil
 }
