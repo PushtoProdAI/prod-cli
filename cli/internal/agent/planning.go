@@ -170,7 +170,11 @@ func (a *Activities) analyze(_ context.Context, intent types.Intent) (analyzer.P
 
 func (a *Activities) summarize(ctx context.Context, intent types.Intent, name string, language string) (string, error) {
 	a.uiWriter.SendStatus("summarizing", "Summarizing your request...")
-	summary, err := baml_client.SummarizeIntent(ctx, intent, name, language)
+	session := CtxSession(ctx)
+	summary, err := baml_client.SummarizeIntent(ctx, intent, name, language, baml_client.WithEnv(map[string]string{
+		"PROXY_API_KEY": session.AccessToken,
+		"SUPABASE_URL":  config.GetSupabaseURL() + "/functions/v1/llm-proxy",
+	}))
 	if err != nil {
 		a.uiWriter.SendStatusComplete("summarizing", "❌ Failed to summarize request")
 		return "", errors.Errorf("failed to summarize intent: %w", err)
@@ -217,7 +221,11 @@ func (a *Activities) determineRunCommand(ctx context.Context, spec analyzer.Proj
 			Content: l.Content,
 		})
 	}
-	cmd, err := baml_client.DetermineLaunchCommand(ctx, spec.Language, frameworks, envVars, lc)
+	session := CtxSession(ctx)
+	cmd, err := baml_client.DetermineLaunchCommand(ctx, spec.Language, frameworks, envVars, lc, baml_client.WithEnv(map[string]string{
+		"PROXY_API_KEY": session.AccessToken,
+		"SUPABASE_URL":  config.GetSupabaseURL() + "/functions/v1/llm-proxy",
+	}))
 	if err != nil {
 		a.uiWriter.SendStatusComplete("planning", "❌ Failed to calculate run command")
 		return "", errors.Errorf("failed to determine launch command: %w", err)

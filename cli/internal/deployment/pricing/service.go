@@ -123,8 +123,18 @@ func (ps *PricingService) extractPricingForService(ctx context.Context, service 
 
 	slog.Info("Fetching pricing for service", "service", s)
 
-	// Call BAML pricing function
-	resp, err := baml_client.FetchPricing(ctx, s, content)
+	// Call BAML pricing function with proxy configuration if session is available
+	var opts []baml_client.CallOptionFunc
+	if sessValue := ctx.Value("session"); sessValue != nil {
+		if sess, ok := sessValue.(interface{ GetAccessToken() string }); ok {
+			opts = append(opts, baml_client.WithEnv(map[string]string{
+				"PROXY_API_KEY": sess.GetAccessToken(),
+				"SUPABASE_URL":  "http://localhost:54321/functions/v1/llm-proxy", // Hardcoded for now
+			}))
+		}
+	}
+
+	resp, err := baml_client.FetchPricing(ctx, s, content, opts...)
 	if err != nil {
 		return nil, errors.Errorf("BAML pricing extraction failed: %w", err)
 	}

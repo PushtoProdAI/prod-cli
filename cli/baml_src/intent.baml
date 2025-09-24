@@ -177,7 +177,7 @@ You are a strict classifier. Your only job is to analyze deployment requests and
 }
 
 function SummarizeIntent(intent: Intent, name: string, language: string) -> Summary {
-  client "OllamaClient"
+  client "ProxyClient"
   prompt #"
     {{ _.role("system") }}
   You are a deployment assistant for Platform-as-a-Service (PaaS) applications.
@@ -232,7 +232,7 @@ function SummarizeIntent(intent: Intent, name: string, language: string) -> Summ
 }
 
 function SummarizeSteps(steps: string[]) -> Summary {
-  client "OllamaClient"
+  client "ProxyClient"
   prompt #"
     {{ _.role("user") }}
 
@@ -255,7 +255,7 @@ function SummarizeSteps(steps: string[]) -> Summary {
 }
 
 function SummarizeDeployError(errorMsg: string, intent: Intent, spec: ProjectSpec, os: string, violations: string[]) -> Error {
-  client "OllamaClient"
+  client "ProxyClient"
   prompt #"
   {{ _.role("system") }}
 
@@ -397,7 +397,7 @@ Your task:
 }
 
 function DetermineEnvVarRoles(envVar: EnvVarCandidate, dbList: string[]) -> EnvVarCategory {
-  client "OllamaClient"
+  client "ProxyClient"
   prompt #"
 {{_.role("system")}}
 You are an expert at classifying environment variables and configuration values
@@ -474,7 +474,7 @@ DJANGO_SUPERUSER_EMAIL = "admin@example.com" → not_db_related
   }
 
   function CategorizeRoutes(candidates: RouteCandidate[]) ->  CategorizedRoutes {
-  client "OllamaClient"
+  client "ProxyClient"
   prompt #"
 {{_.role("system")}}
 You are an assistant that analyzes source code snippets to identify web routes in an application.
@@ -520,7 +520,7 @@ Here are the route candidates from the deployed code:
   }
 
 function DetermineBuildOutput(candidate: BuildOutputCandidate) -> BuildOutput {
-  client "OllamaClient"
+  client "ProxyClient"
   prompt #"
 {{_.role("system")}}
 You are an expert software deployment assistant. 
@@ -544,7 +544,7 @@ ConfigContents: {{candidate.context}}
 "#
 }
 function DetermineLaunchCommand(language: string, frameworks: string[], envVars: string[], lc: LaunchContext) -> LaunchCommand {
-  client "OllamaClient"
+  client "ProxyClient"
   prompt #"
 {{_.role("system")}}
 You are an expert in analyzing project launcher files to determine both:

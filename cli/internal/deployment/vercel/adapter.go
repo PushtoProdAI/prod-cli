@@ -71,7 +71,7 @@ func (v *VercelDeploymentAdapter) GenerateArtifacts(spec *deployment.DeploymentS
 }
 
 // EstimateCost estimates the cost of deployment on Vercel
-func (v *VercelDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+func (v *VercelDeploymentAdapter) EstimateCost(ctx context.Context, spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
 	slog.Info("Estimating costs for Vercel deployment", "name", spec.Name)
 
 	// Build cost request from deployment spec
@@ -102,14 +102,13 @@ func (v *VercelDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, 
 	}
 	cr.Services = append(cr.Services, cs)
 
-	ce, err := v.estimateVercelCost(cr)
+	ce, err := v.estimateVercelCost(ctx, cr)
 	return ce, err
 }
 
-func (v *VercelDeploymentAdapter) estimateVercelCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
+func (v *VercelDeploymentAdapter) estimateVercelCost(ctx context.Context, cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	slog.Info("Estimating Vercel costs for request", "request", cr)
 
-	ctx := context.Background()
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 
