@@ -13,7 +13,6 @@ import (
 	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
-	"github.com/meroxa/prod/cli/internal/config"
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
@@ -131,12 +130,8 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 
 func (a *Activities) determineIntent(ctx context.Context, prompt string) (types.Intent, error) {
 	a.uiWriter.SendStatus("planning", "Understanding your request...")
-	session := CtxSession(ctx)
 
-	intent, err := baml_client.ExtractIntent(ctx, prompt, baml_client.WithEnv(map[string]string{
-		"PROXY_API_KEY": session.AccessToken,
-		"SUPABASE_URL":  config.GetSupabaseURL() + "/functions/v1/llm-proxy",
-	}))
+	intent, err := a.llmClient.ExtractIntent(ctx, prompt)
 	if err != nil {
 		a.uiWriter.SendStatusComplete("planning", "❌ Failed to understand request")
 		return types.Intent{}, errors.Errorf("failed to extract intent: %w", err)
@@ -170,11 +165,7 @@ func (a *Activities) analyze(_ context.Context, intent types.Intent) (analyzer.P
 
 func (a *Activities) summarize(ctx context.Context, intent types.Intent, name string, language string) (string, error) {
 	a.uiWriter.SendStatus("summarizing", "Summarizing your request...")
-	session := CtxSession(ctx)
-	summary, err := baml_client.SummarizeIntent(ctx, intent, name, language, baml_client.WithEnv(map[string]string{
-		"PROXY_API_KEY": session.AccessToken,
-		"SUPABASE_URL":  config.GetSupabaseURL() + "/functions/v1/llm-proxy",
-	}))
+	summary, err := a.llmClient.SummarizeIntent(ctx, intent, name, language)
 	if err != nil {
 		a.uiWriter.SendStatusComplete("summarizing", "❌ Failed to summarize request")
 		return "", errors.Errorf("failed to summarize intent: %w", err)
@@ -221,11 +212,7 @@ func (a *Activities) determineRunCommand(ctx context.Context, spec analyzer.Proj
 			Content: l.Content,
 		})
 	}
-	session := CtxSession(ctx)
-	cmd, err := baml_client.DetermineLaunchCommand(ctx, spec.Language, frameworks, envVars, lc, baml_client.WithEnv(map[string]string{
-		"PROXY_API_KEY": session.AccessToken,
-		"SUPABASE_URL":  config.GetSupabaseURL() + "/functions/v1/llm-proxy",
-	}))
+	cmd, err := a.llmClient.DetermineLaunchCommand(ctx, spec.Language, frameworks, envVars, lc)
 	if err != nil {
 		a.uiWriter.SendStatusComplete("planning", "❌ Failed to calculate run command")
 		return "", errors.Errorf("failed to determine launch command: %w", err)

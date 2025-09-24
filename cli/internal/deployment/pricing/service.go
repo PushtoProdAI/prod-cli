@@ -6,11 +6,9 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/go-errors/errors"
-
-	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/llm"
 )
 
 const (
@@ -32,8 +30,9 @@ type Service interface {
 
 // PricingService handles common pricing extraction logic
 type PricingService struct {
-	provider PricingProvider
-	retries  int
+	provider  PricingProvider
+	retries   int
+	llmClient llm.Client
 }
 
 // NewPricingService creates a new pricing service with the given pricing provider
@@ -41,9 +40,12 @@ func NewPricingService(provider PricingProvider, retries int) *PricingService {
 	if retries <= 0 {
 		retries = 3 // default retries
 	}
+	// Note: The pricing service may be called outside of agent workflows,
+	// so we use the default session extraction which handles both cases
 	return &PricingService{
-		provider: provider,
-		retries:  retries,
+		provider:  provider,
+		retries:   retries,
+		llmClient: llm.NewDefault(),
 	}
 }
 
@@ -66,13 +68,13 @@ func (ps *PricingService) EstimateCosts(ctx context.Context, services []deployme
 	// Fetch content with retries
 	content, err := ps.fetchContentWithRetries()
 	if err != nil {
-		return nil, errors.Errorf("failed to fetch pricing content: %w", err)
+		return nil, fmt.Errorf("failed to fetch pricing content: %w", err)
 	}
 
 	for i, service := range services {
 		result, err := ps.extractPricingForService(ctx, service, content)
 		if err != nil {
-			return nil, errors.Errorf("failed to extract pricing for service %s: %w", service.Name, err)
+			return nil, fmt.Errorf("failed to extract pricing for service %s: %w", service.Name, err)
 		}
 		costs[i] = result.Cost
 	}
@@ -85,7 +87,7 @@ func (ps *PricingService) EstimateCost(ctx context.Context, service deployment.C
 	// Fetch content with retries
 	content, err := ps.fetchContentWithRetries()
 	if err != nil {
-		return nil, errors.Errorf("failed to fetch pricing content: %w", err)
+		return nil, fmt.Errorf("failed to fetch pricing content: %w", err)
 	}
 
 	return ps.extractPricingForService(ctx, service, content)
@@ -123,20 +125,10 @@ func (ps *PricingService) extractPricingForService(ctx context.Context, service 
 
 	slog.Info("Fetching pricing for service", "service", s)
 
-	// Call BAML pricing function with proxy configuration if session is available
-	var opts []baml_client.CallOptionFunc
-	if sessValue := ctx.Value("session"); sessValue != nil {
-		if sess, ok := sessValue.(interface{ GetAccessToken() string }); ok {
-			opts = append(opts, baml_client.WithEnv(map[string]string{
-				"PROXY_API_KEY": sess.GetAccessToken(),
-				"SUPABASE_URL":  "http://localhost:54321/functions/v1/llm-proxy", // Hardcoded for now
-			}))
-		}
-	}
-
-	resp, err := baml_client.FetchPricing(ctx, s, content, opts...)
+	// Call BAML pricing function through our LLM client
+	resp, err := ps.llmClient.FetchPricing(ctx, s, content)
 	if err != nil {
-		return nil, errors.Errorf("BAML pricing extraction failed: %w", err)
+		return nil, fmt.Errorf("BAML pricing extraction failed: %w", err)
 	}
 
 	// Handle "NOT_FOUND" gracefully
