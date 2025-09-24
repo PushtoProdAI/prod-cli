@@ -7,10 +7,8 @@ import (
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
-	"github.com/meroxa/prod/cli/internal/config"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/heroku"
@@ -81,11 +79,7 @@ func (a *Activities) deploySteps(ctx context.Context, spec deployment.Deployment
 func (a *Activities) summarizeDeploySteps(ctx context.Context, steps []string) error {
 	a.uiWriter.SendStatus("summarizing", "Summarizing deployment steps")
 
-	session := CtxSession(ctx)
-	summary, err := baml_client.SummarizeSteps(ctx, steps, baml_client.WithEnv(map[string]string{
-		"PROXY_API_KEY": session.AccessToken,
-		"SUPABASE_URL":  config.GetSupabaseURL() + "/functions/v1/llm-proxy",
-	}))
+	summary, err := a.llmClient.SummarizeSteps(ctx, steps)
 	if err != nil {
 		return errors.Errorf("failed to summarize deploy steps: %w", err)
 	}
@@ -140,11 +134,7 @@ func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, dbList 
 		Context: envVar.Context,
 		File:    envVar.File,
 	}
-	session := CtxSession(ctx)
-	cat, err := baml_client.DetermineEnvVarRoles(ctx, ev, dbList, baml_client.WithEnv(map[string]string{
-		"PROXY_API_KEY": session.AccessToken,
-		"SUPABASE_URL":  config.GetSupabaseURL() + "/functions/v1/llm-proxy",
-	}))
+	cat, err := a.llmClient.DetermineEnvVarRoles(ctx, ev, dbList)
 	if err != nil {
 		return deployment.EnvVar{}, errors.Errorf("failed to determine env var roles: %w", err)
 	}
@@ -185,11 +175,7 @@ func (a *Activities) determineBuildOutput(ctx context.Context, candidate analyze
 		Default:   candidate.Path,
 		Source:    candidate.Source,
 	}
-	session := CtxSession(ctx)
-	output, err := baml_client.DetermineBuildOutput(ctx, bo, baml_client.WithEnv(map[string]string{
-		"PROXY_API_KEY": session.AccessToken,
-		"SUPABASE_URL":  config.GetSupabaseURL() + "/functions/v1/llm-proxy",
-	}))
+	output, err := a.llmClient.DetermineBuildOutput(ctx, bo)
 	if err != nil {
 		return "", errors.Errorf("failed to determine build output: %w", err)
 	}

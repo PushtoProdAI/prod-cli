@@ -19,6 +19,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/deployment/vercel"
+	"github.com/meroxa/prod/cli/internal/llm"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
 )
@@ -75,9 +76,28 @@ type SetupJavaScriptProjectResult struct {
 
 var _ workflowext.Registerer = (*Workflows)(nil)
 
+// newAgentLLMClient creates an LLM client configured for agent workflows
+func newAgentLLMClient() llm.Client {
+	return llm.New(llm.Config{
+		SessionExtractor: func(ctx context.Context) llm.SessionProvider {
+			session := CtxSession(ctx)
+			if session == nil {
+				return nil
+			}
+			return session
+		},
+	})
+}
+
 func NewWorkflows(renderClient render.RenderClient, flyClient flyio.FlyioClient, beClient *backend.Client, uiWriter output.StatusWriter) *Workflows {
 	return &Workflows{
-		Acts:         &Activities{renderClient: renderClient, flyClient: flyClient, beClient: beClient, uiWriter: uiWriter},
+		Acts: &Activities{
+			renderClient: renderClient,
+			flyClient:    flyClient,
+			beClient:     beClient,
+			uiWriter:     uiWriter,
+			llmClient:    newAgentLLMClient(),
+		},
 		renderClient: renderClient,
 		flyClient:    flyClient,
 		uiWriter:     uiWriter,
