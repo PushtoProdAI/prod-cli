@@ -1,7 +1,7 @@
 package vercel
 
 import (
-	"fmt"
+	"github.com/go-errors/errors"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
@@ -18,7 +18,7 @@ func NewPricingProvider() *PricingProvider {
 func (v *PricingProvider) FetchContent() (string, error) {
 	content, err := deployment.FetchURLAsMarkdown("https://vercel.com/pricing")
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch Vercel pricing page: %w", err)
+		return "", errors.Errorf("failed to fetch Vercel pricing page: %w", err)
 	}
 	return content, nil
 }

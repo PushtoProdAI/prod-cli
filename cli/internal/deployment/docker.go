@@ -15,6 +15,8 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/go-errors/errors"
+
 	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
@@ -164,7 +166,7 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 	// Get the appropriate template for the language
 	tmpl, exists := dg.templates[strings.ToLower(spec.Language)]
 	if !exists {
-		return nil, fmt.Errorf("unsupported language: %s", spec.Language)
+		return nil, errors.Errorf("unsupported language: %s", spec.Language)
 	}
 	baseImage, hasBaseImage := dg.baseImages[strings.ToLower(spec.Language)]
 	if !hasBaseImage {
@@ -200,7 +202,7 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 	// Execute template
 	var dockerfileBuf bytes.Buffer
 	if err := tmpl.Execute(&dockerfileBuf, templateData); err != nil {
-		return nil, fmt.Errorf("failed to execute Dockerfile template: %w", err)
+		return nil, errors.Errorf("failed to execute Dockerfile template: %w", err)
 	}
 
 	// Generate Docker services for the deployment
@@ -212,7 +214,7 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 		var err error
 		dockerCompose, err = dg.generateDockerCompose(spec, services)
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate Docker Compose: %w", err)
+			return nil, errors.Errorf("failed to generate Docker Compose: %w", err)
 		}
 	}
 
@@ -370,7 +372,7 @@ volumes:
 	// Parse template
 	tmpl, err := template.New("docker-compose").Parse(composeTemplate)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse docker-compose template: %w", err)
+		return "", errors.Errorf("failed to parse docker-compose template: %w", err)
 	}
 
 	// Extract volume names from all services
@@ -405,7 +407,7 @@ volumes:
 	// Execute template
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, templateData); err != nil {
-		return "", fmt.Errorf("failed to execute docker-compose template: %w", err)
+		return "", errors.Errorf("failed to execute docker-compose template: %w", err)
 	}
 
 	return buf.String(), nil
@@ -426,25 +428,25 @@ func IsDockerAvailable() bool {
 // BuildImage builds a Docker image from pre-generated artifacts
 func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArtifacts, buildContext string) (*DockerBuildResult, error) {
 	if dg.client == nil {
-		return nil, fmt.Errorf("docker client not available. Please ensure Docker is installed and running")
+		return nil, errors.Errorf("docker client not available. Please ensure Docker is installed and running")
 	}
 
 	// Validate build context exists
 	if _, err := os.Stat(buildContext); os.IsNotExist(err) {
-		return nil, fmt.Errorf("build context directory does not exist: %s", buildContext)
+		return nil, errors.Errorf("build context directory does not exist: %s", buildContext)
 	}
 
 	// Write Dockerfile to build context
 	dockerfilePath := filepath.Join(buildContext, "Dockerfile")
 	if err := os.WriteFile(dockerfilePath, []byte(artifacts.Dockerfile), 0644); err != nil {
-		return nil, fmt.Errorf("failed to write Dockerfile: %w", err)
+		return nil, errors.Errorf("failed to write Dockerfile: %w", err)
 	}
 
 	// Write .dockerignore if provided
 	if artifacts.DockerIgnore != "" {
 		dockerignorePath := filepath.Join(buildContext, ".dockerignore")
 		if err := os.WriteFile(dockerignorePath, []byte(artifacts.DockerIgnore), 0644); err != nil {
-			return nil, fmt.Errorf("failed to write .dockerignore: %w", err)
+			return nil, errors.Errorf("failed to write .dockerignore: %w", err)
 		}
 	}
 
@@ -452,14 +454,14 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 	for filename, content := range artifacts.AdditionalFiles {
 		filePath := filepath.Join(buildContext, filename)
 		if err := os.WriteFile(filePath, []byte(content), 0755); err != nil { // 0755 for executable files like start.sh
-			return nil, fmt.Errorf("failed to write additional file %s: %w", filename, err)
+			return nil, errors.Errorf("failed to write additional file %s: %w", filename, err)
 		}
 	}
 
 	// Create tar archive of build context
 	buildContextTar, err := createTarFromDir(buildContext)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create build context tar: %w", err)
+		return nil, errors.Errorf("failed to create build context tar: %w", err)
 	}
 	defer buildContextTar.Close()
 
@@ -479,7 +481,7 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 	// Build the image
 	buildResponse, err := dg.client.ImageBuild(ctx, buildContextTar, buildOptions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build Docker image: %w", err)
+		return nil, errors.Errorf("failed to build Docker image: %w", err)
 	}
 	defer buildResponse.Body.Close()
 
@@ -505,7 +507,7 @@ func (dg *DockerGenerator) BuildImage(ctx context.Context, artifacts *DockerArti
 	// Use the Docker SDK's jsonmessage package for proper parsing
 	err = jsonmessage.DisplayJSONMessagesStream(buildResponse.Body, output, 0, false, auxCallback)
 	if err != nil {
-		return nil, fmt.Errorf("docker build failed: %w", err)
+		return nil, errors.Errorf("docker build failed: %w", err)
 	}
 
 	// If we didn't get an image ID from aux messages, try to inspect the image
@@ -536,14 +538,14 @@ func (dg *DockerGenerator) GenerateAndBuild(ctx context.Context, spec *Deploymen
 	// Generate artifacts first
 	artifacts, err := dg.GenerateDockerfile(spec)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate Dockerfile: %w", err)
+		return nil, errors.Errorf("failed to generate Dockerfile: %w", err)
 	}
 
 	// Write docker-compose.yml if services are present (DISABLED)
 	// if len(artifacts.Services) > 1 { // More than just the app service
 	// 	composeFile := filepath.Join(buildContext, "docker-compose.yml")
 	// 	if err := os.WriteFile(composeFile, []byte(artifacts.DockerCompose), 0644); err != nil {
-	// 		return nil, fmt.Errorf("failed to write docker-compose.yml: %w", err)
+	// 		return nil, errors.Errorf("failed to write docker-compose.yml: %w", err)
 	// 	}
 	// 	fmt.Printf("Generated docker-compose.yml with %d services\n", len(artifacts.Services))
 	// }
@@ -581,7 +583,7 @@ func parseDockerIgnore(dockerignorePath string) ([]string, error) {
 
 	content, err := os.ReadFile(dockerignorePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read .dockerignore: %w", err)
+		return nil, errors.Errorf("failed to read .dockerignore: %w", err)
 	}
 
 	lines := strings.Split(string(content), "\n")
@@ -667,7 +669,7 @@ func createTarFromDir(dir string) (io.ReadCloser, error) {
 	dockerignorePath := filepath.Join(dir, ".dockerignore")
 	ignorePatterns, err := parseDockerIgnore(dockerignorePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse .dockerignore: %w", err)
+		return nil, errors.Errorf("failed to parse .dockerignore: %w", err)
 	}
 
 	fileCount := 0
@@ -735,7 +737,7 @@ func (dg *DockerGenerator) GetPushCredentials(ctx context.Context, authToken, pr
 // PushToRegistry tags and pushes a Docker image to a private registry
 func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *DockerBuildResult, creds *backend.RegistryCredentials) (*DockerPushResult, error) {
 	if dg.client == nil {
-		return nil, fmt.Errorf("docker client not available. Please ensure Docker is installed and running")
+		return nil, errors.Errorf("docker client not available. Please ensure Docker is installed and running")
 	}
 
 	// Build the registry image tag in ECR format: registry/repository:tag
@@ -752,7 +754,7 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 	// Tag the image for the registry
 	err := dg.client.ImageTag(ctx, sourceImage, registryImageTag)
 	if err != nil {
-		return nil, fmt.Errorf("failed to tag image for registry: %w", err)
+		return nil, errors.Errorf("failed to tag image for registry: %w", err)
 	}
 
 	// Create authentication config
@@ -765,7 +767,7 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 	// Encode authentication
 	authConfigBytes, err := json.Marshal(authConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal auth config: %w", err)
+		return nil, errors.Errorf("failed to marshal auth config: %w", err)
 	}
 	authStr := base64.URLEncoding.EncodeToString(authConfigBytes)
 
@@ -779,7 +781,7 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 	// Push the image
 	pushResponse, err := dg.client.ImagePush(ctx, registryImageTag, pushOptions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to push image to registry: %w", err)
+		return nil, errors.Errorf("failed to push image to registry: %w", err)
 	}
 	defer pushResponse.Close()
 
@@ -790,7 +792,7 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 	// Use the Docker SDK's jsonmessage package for proper parsing
 	err = jsonmessage.DisplayJSONMessagesStream(pushResponse, output, 0, false, nil)
 	if err != nil {
-		return nil, fmt.Errorf("docker push failed: %w", err)
+		return nil, errors.Errorf("docker push failed: %w", err)
 	}
 
 	fmt.Fprintf(dg.writer, "✓ Successfully pushed image: %s\n", registryImageTag)
@@ -813,24 +815,24 @@ func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpe
 	// Build the image first
 	buildResult, err := dg.GenerateAndBuild(ctx, spec, buildContext)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to build image: %w", err)
+		return nil, nil, errors.Errorf("failed to build image: %w", err)
 	}
 
 	// If Docker is not available, we can't push
 	if dg.client == nil {
-		return buildResult, nil, fmt.Errorf("docker client not available - cannot push to registry")
+		return buildResult, nil, errors.Errorf("docker client not available - cannot push to registry")
 	}
 
 	// Get push credentials
 	creds, err := dg.GetPushCredentials(ctx, authToken, spec.Name)
 	if err != nil {
-		return buildResult, nil, fmt.Errorf("failed to get push credentials: %w", err)
+		return buildResult, nil, errors.Errorf("failed to get push credentials: %w", err)
 	}
 
 	// Push to registry
 	pushResult, err := dg.PushToRegistry(ctx, buildResult, creds)
 	if err != nil {
-		return buildResult, nil, fmt.Errorf("failed to push to registry: %w", err)
+		return buildResult, nil, errors.Errorf("failed to push to registry: %w", err)
 	}
 
 	return buildResult, pushResult, nil

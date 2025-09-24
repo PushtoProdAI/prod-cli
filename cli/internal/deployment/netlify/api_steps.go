@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/go-errors/errors"
+
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
@@ -68,7 +70,7 @@ func (s *CreateNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 		// They cannot start or end with a hyphen
 		for i, ch := range s.siteName {
 			if !((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || (ch == '-' && i > 0 && i < len(s.siteName)-1)) {
-				return nil, fmt.Errorf("invalid site name '%s': must be lowercase alphanumeric with hyphens (not at start/end)", s.siteName)
+				return nil, errors.Errorf("invalid site name '%s': must be lowercase alphanumeric with hyphens (not at start/end)", s.siteName)
 			}
 		}
 	}
@@ -78,7 +80,7 @@ func (s *CreateNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 		EnvVars: s.envVars,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create site: %w", err)
+		return nil, errors.Errorf("failed to create site: %w", err)
 	}
 
 	// Return as CreatedResource for consistency
@@ -101,7 +103,7 @@ func (s *CreateNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClie
 			return client.DeleteSite(resource.ID)
 		}
 	}
-	return fmt.Errorf("could not find site ID for rollback")
+	return errors.Errorf("could not find site ID for rollback")
 }
 
 // BuildProjectStep runs the build command for the project
@@ -130,18 +132,18 @@ func NewBuildProjectStep(buildCommand, sourcePath string, envVars []deployment.E
 func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error) {
 	// Check if source path exists
 	if _, err := os.Stat(s.sourcePath); err != nil {
-		return nil, fmt.Errorf("source path does not exist: %s", s.sourcePath)
+		return nil, errors.Errorf("source path does not exist: %s", s.sourcePath)
 	}
 
 	// Change to source directory to run build
 	originalDir, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current directory: %w", err)
+		return nil, errors.Errorf("failed to get current directory: %w", err)
 	}
 
 	if s.sourcePath != "." && s.sourcePath != "" {
 		if err := os.Chdir(s.sourcePath); err != nil {
-			return nil, fmt.Errorf("failed to change to source directory: %w", err)
+			return nil, errors.Errorf("failed to change to source directory: %w", err)
 		}
 		defer os.Chdir(originalDir)
 	}
@@ -177,7 +179,7 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, st
 				// Both failed, show both outputs
 				fmt.Fprintf(s.writer, "  ❌ npm install failed:\n%s\n", string(installOutput))
 				fmt.Fprintf(s.writer, "  ❌ yarn install failed:\n%s\n", string(yarnOutput))
-				return nil, fmt.Errorf("failed to install dependencies: npm error: %w, yarn error: %w", installErr, yarnErr)
+				return nil, errors.Errorf("failed to install dependencies: npm error: %w, yarn error: %w", installErr, yarnErr)
 			} else {
 				fmt.Fprintf(s.writer, "  ✅ Dependencies installed with yarn\n")
 			}
@@ -199,7 +201,7 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, st
 	if err != nil {
 		// Check if it was a timeout
 		if buildCtx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("build timed out after %v", defaultBuildTimeout)
+			return nil, errors.Errorf("build timed out after %v", defaultBuildTimeout)
 		}
 
 		// If netlify build fails, try running the build command directly
@@ -219,14 +221,14 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, st
 
 			if buildErr != nil {
 				if buildCtx.Err() == context.DeadlineExceeded {
-					return nil, fmt.Errorf("build timed out after %v", defaultBuildTimeout)
+					return nil, errors.Errorf("build timed out after %v", defaultBuildTimeout)
 				}
-				return nil, fmt.Errorf("build failed: %w\nOutput: %s", buildErr, string(buildOutput))
+				return nil, errors.Errorf("build failed: %w\nOutput: %s", buildErr, string(buildOutput))
 			}
 		} else {
 			// No custom build command, netlify build failed
 			fmt.Fprintf(s.writer, "  Build output:\n%s\n", string(output))
-			return nil, fmt.Errorf("netlify build failed: %w", err)
+			return nil, errors.Errorf("netlify build failed: %w", err)
 		}
 	} else {
 		// Netlify build succeeded, show output
@@ -288,7 +290,7 @@ func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 	}
 
 	if siteID == "" {
-		return nil, fmt.Errorf("could not find site ID from step %s", s.siteStepID)
+		return nil, errors.Errorf("could not find site ID from step %s", s.siteStepID)
 	}
 
 	// Get build configuration
@@ -304,12 +306,12 @@ func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 	// Change to source directory to run deployment
 	originalDir, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current directory: %w", err)
+		return nil, errors.Errorf("failed to get current directory: %w", err)
 	}
 
 	if sourcePath != "." && sourcePath != "" {
 		if err := os.Chdir(sourcePath); err != nil {
-			return nil, fmt.Errorf("failed to change to source directory: %w", err)
+			return nil, errors.Errorf("failed to change to source directory: %w", err)
 		}
 		defer os.Chdir(originalDir)
 	}
@@ -321,7 +323,7 @@ func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 	// Deploy using CLI client
 	deploy, err := client.DeploySite(siteID, deployPath, functionsPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to deploy site: %w", err)
+		return nil, errors.Errorf("failed to deploy site: %w", err)
 	}
 
 	// Return deployment resource
@@ -341,7 +343,7 @@ func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 func (s *DeployNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) error {
 	// Netlify deployments can be rolled back through the UI or API
 	// For now, we'll just log that rollback would require a previous deploy ID
-	return fmt.Errorf("deployment rollback not implemented - use Netlify UI to rollback")
+	return errors.Errorf("deployment rollback not implemented - use Netlify UI to rollback")
 }
 
 // discoverFunctionsDir dynamically discovers the functions directory at execution time
@@ -402,17 +404,17 @@ func (s *LinkNetlifySiteStep) Execute(ctx context.Context, client NetlifyClient,
 	}
 
 	if siteID == "" {
-		return nil, fmt.Errorf("could not find site ID from step %s", s.siteStepID)
+		return nil, errors.Errorf("could not find site ID from step %s", s.siteStepID)
 	}
 
 	originalDir, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current directory: %w", err)
+		return nil, errors.Errorf("failed to get current directory: %w", err)
 	}
 
 	if s.sourcePath != "." && s.sourcePath != "" {
 		if err := os.Chdir(s.sourcePath); err != nil {
-			return nil, fmt.Errorf("failed to change to source directory: %w", err)
+			return nil, errors.Errorf("failed to change to source directory: %w", err)
 		}
 		defer os.Chdir(originalDir)
 	}
@@ -425,7 +427,7 @@ func (s *LinkNetlifySiteStep) Execute(ctx context.Context, client NetlifyClient,
 
 	err = client.LinkSite(siteID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to link CLI to site: %w", err)
+		return nil, errors.Errorf("failed to link CLI to site: %w", err)
 	}
 
 	// Return success indicator
@@ -492,13 +494,13 @@ func (s *SetEnvironmentVariablesStep) Execute(ctx context.Context, client Netlif
 	}
 
 	if siteID == "" {
-		return nil, fmt.Errorf("could not find site ID from step %s", s.siteStepID)
+		return nil, errors.Errorf("could not find site ID from step %s", s.siteStepID)
 	}
 
 	// Set environment variables
 	err := client.SetEnvironmentVariables(siteID, s.envVars)
 	if err != nil {
-		return nil, fmt.Errorf("failed to set environment variables: %w", err)
+		return nil, errors.Errorf("failed to set environment variables: %w", err)
 	}
 
 	// Return success indicator
@@ -518,7 +520,7 @@ func (s *SetEnvironmentVariablesStep) Rollback(ctx context.Context, client Netli
 	}
 
 	if siteID == "" {
-		return fmt.Errorf("could not find site ID for rollback")
+		return errors.Errorf("could not find site ID for rollback")
 	}
 
 	// Unset each environment variable
@@ -566,7 +568,7 @@ func (s *UpdateBuildSettingsStep) Execute(ctx context.Context, client NetlifyCli
 	}
 
 	if siteID == "" {
-		return nil, fmt.Errorf("could not find site ID from step %s", s.siteStepID)
+		return nil, errors.Errorf("could not find site ID from step %s", s.siteStepID)
 	}
 
 	// Update build settings

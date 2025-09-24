@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cschleiden/go-workflows/client"
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/auth"
 	"github.com/meroxa/prod/cli/internal/deployment"
@@ -38,27 +39,31 @@ type EnvVarWithStatus struct {
 }
 
 type Agent struct {
-	sm           deploySM
-	wfClient     *client.Client
-	interactive  bool
-	DeployPlan   *DeployPlan
-	dryRun       bool
-	UIOutput     io.Writer
-	auth         auth.AuthProvider
-	envVars      []EnvVarWithStatus
-	internalAuth *auth.SupabaseAuth
+	sm                   deploySM
+	wfClient             *client.Client
+	interactive          bool
+	DeployPlan           *DeployPlan
+	dryRun               bool
+	UIOutput             io.Writer
+	auth                 auth.AuthProvider
+	envVars              []EnvVarWithStatus
+	internalAuth         *auth.SupabaseAuth
+	errorTrackingEnabled bool
+	inConsentFlow        bool
+	originalInput        string
 }
 
 type agentContextKey string
 
 const agentAuthSession agentContextKey = "AuthSession"
 
-func NewAgent(wfClient *client.Client, internalAuth *auth.SupabaseAuth, interactive bool) *Agent {
+func NewAgent(wfClient *client.Client, internalAuth *auth.SupabaseAuth, errorTrackingEnabled bool) *Agent {
 	a := &Agent{
-		wfClient:     wfClient,
-		interactive:  interactive,
-		envVars:      make([]EnvVarWithStatus, 0),
-		internalAuth: internalAuth,
+		wfClient:             wfClient,
+		interactive:          true, // Default to interactive
+		envVars:              make([]EnvVarWithStatus, 0),
+		internalAuth:         internalAuth,
+		errorTrackingEnabled: errorTrackingEnabled,
 	}
 	sm := deploySM{currentState: a.plan}
 	a.sm = sm
@@ -140,6 +145,10 @@ func (a *Agent) SetInteractive(interactive bool) {
 	a.interactive = interactive
 }
 
+func (a *Agent) IsErrorTrackingEnabled() bool {
+	return a.errorTrackingEnabled
+}
+
 // Helper methods for TUI operations - direct TUI calls
 func (a *Agent) sendPlan(out io.Writer, plan DeployPlan, dryRun bool) {
 	tuiWriter := out.(TUIWriter)
@@ -182,6 +191,36 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 	if a.UIOutput != nil {
 		output = a.UIOutput
 	}
+
+	// If we're in consent flow, continue with that
+	if a.inConsentFlow {
+		a.sm.next(ctx, input, output)
+		return
+	}
+
+	// Check for error tracking consent first
+	if !a.errorTrackingEnabled {
+		hasConsentValue, err := hasConsent()
+		if err != nil {
+			slog.Error("Failed to check consent", "error", err)
+		} else if !hasConsentValue {
+			// Check if settings file exists - if not, this is first run
+			filePath, err := getSettingsFilePath()
+			if err == nil {
+				if _, err := os.Stat(filePath); os.IsNotExist(err) {
+					// First run - need to prompt for consent using state machine
+					a.inConsentFlow = true
+					a.originalInput = input // Store original input to use after consent
+					a.sm.currentState = a.promptForConsent
+					a.sm.next(ctx, input, output)
+					return
+				}
+			}
+		} else {
+			a.errorTrackingEnabled = true
+		}
+	}
+
 	// handle auth before processing the input
 	if !a.internalAuth.IsAuthenticated() {
 		fmt.Fprint(output, "🔐 Before we proceed, let's get you logged in!\n")
@@ -198,6 +237,61 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 	}
 
 	a.sm.next(WithCtxSession(ctx, session), input, output)
+}
+
+func (a *Agent) promptForConsent(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	a.inConsentFlow = true
+	fmt.Fprint(out, `
+📊 We'd like to collect anonymous diagnostic data to help improve Prod CLI.
+   This helps us identify and fix issues faster. No personal information 
+   or code content is collected.
+
+`)
+	a.sendConfirmation(out, "Would you like to enable error tracking?")
+	return a.waitForConsentResponse, nil
+}
+
+func (a *Agent) waitForConsentResponse(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	return a.processConsentResponse(ctx, input, out)
+}
+
+func (a *Agent) processConsentResponse(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	input = strings.TrimSpace(strings.ToLower(input))
+
+	var consentGiven bool
+	switch input {
+	case "y", "yes":
+		consentGiven = true
+		fmt.Fprint(out, "✅ Diagnostics tracking enabled. Thank you!\n")
+	case "n", "no":
+		consentGiven = false
+		fmt.Fprint(out, "✅ Diagnostics tracking disabled.\n")
+	default:
+		// Invalid response - ask again
+		a.sendConfirmation(out, "Would you like to enable error tracking?")
+		return a.waitForConsentResponse, nil
+	}
+
+	// Save the consent choice
+	err := saveConsent(consentGiven)
+	if err != nil {
+		slog.Error("Failed to save consent", "error", err)
+	} else {
+		a.errorTrackingEnabled = consentGiven
+	}
+
+	// Clear consent flow flag
+	a.inConsentFlow = false
+
+	// Continue with the original input that triggered the consent flow
+	if a.originalInput != "" {
+		originalInput := a.originalInput
+		a.originalInput = "" // Clear it
+		return a.plan(ctx, originalInput, out)
+	}
+
+	// Return to plan state - this will handle authentication and continue normally
+	return a.plan, nil
 }
 
 func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -731,7 +825,7 @@ func (a *Agent) getAuthProvider(out io.Writer) (auth.AuthProvider, error) {
 		herokuAuth := auth.NewHerokuAuth(herokuClient, out)
 		return herokuAuth, nil
 	default:
-		return nil, fmt.Errorf("unsupported platform: %s", a.DeployPlan.Platform)
+		return nil, errors.Errorf("unsupported platform: %s", a.DeployPlan.Platform)
 	}
 }
 
@@ -974,7 +1068,7 @@ func openInBrowser(url string) error {
 		cmd = "xdg-open"
 		args = []string{url}
 	default:
-		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+		return errors.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
 
 	return exec.Command(cmd, args...).Start()

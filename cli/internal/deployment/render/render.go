@@ -2,10 +2,11 @@ package render
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"time"
+
+	"github.com/go-errors/errors"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/pricing"
@@ -93,7 +94,7 @@ func (rda *RenderDeploymentAdapter) GenerateArtifacts(spec *deployment.Deploymen
 		deployment := NewQueuedDeployment(rda.client, spec, rda.dockerGenerator, useDockerfile, rda.writer)
 		return deployment, nil
 	default:
-		return nil, fmt.Errorf("unsupported strategy: %s", strategy)
+		return nil, errors.Errorf("unsupported strategy: %s", strategy)
 	}
 }
 

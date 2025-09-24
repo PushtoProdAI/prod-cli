@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"github.com/go-errors/errors"
 	"context"
 	"fmt"
 	"io"
@@ -84,13 +85,13 @@ func (fa *FlyAuth) PerformOAuthLogin(ctx context.Context) error {
 	cmd.Stderr = fa.out
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
+		return errors.Errorf("authentication failed: %w", err)
 	}
 
 	// Get the token and set it in environment
 	token, err := fa.getTokenFromFlyctl(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to retrieve auth token: %w", err)
+		return errors.Errorf("failed to retrieve auth token: %w", err)
 	}
 
 	// Set the token for immediate use
@@ -151,9 +152,9 @@ func (fa *FlyAuth) ensureFlyctl() error {
 			fmt.Fprintln(fa.out, "    brew install flyctl")
 			fmt.Fprintln(fa.out)
 			fmt.Fprintln(fa.out, "After installation, run your command again.")
-			return fmt.Errorf("flyctl is required but not installed")
+			return errors.Errorf("flyctl is required but not installed")
 		}
-		return fmt.Errorf("failed to check flyctl version: %w", err)
+		return errors.Errorf("failed to check flyctl version: %w", err)
 	}
 	return nil
 }

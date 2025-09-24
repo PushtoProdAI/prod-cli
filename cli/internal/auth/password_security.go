@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-errors/errors"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -175,19 +176,19 @@ func CheckPasswordBreach(password string) (bool, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(fmt.Sprintf("https://api.pwnedpasswords.com/range/%s", prefix))
 	if err != nil {
-		return false, fmt.Errorf("failed to check password breach: %w", err)
+		return false, errors.Errorf("failed to check password breach: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("breach check API returned status %d", resp.StatusCode)
+		return false, errors.Errorf("breach check API returned status %d", resp.StatusCode)
 	}
 
 	// Read response body
 	body := make([]byte, 1024*1024) // 1MB buffer
 	n, err := resp.Body.Read(body)
 	if err != nil && n == 0 {
-		return false, fmt.Errorf("failed to read breach check response: %w", err)
+		return false, errors.Errorf("failed to read breach check response: %w", err)
 	}
 
 	// Check if our hash suffix is in the response
@@ -249,12 +250,12 @@ func LoadPasswordSecurityConfig(configPath string) (*PasswordSecurityConfig, err
 	if _, err := os.Stat(configPath); err == nil {
 		data, err := os.ReadFile(configPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read password config: %w", err)
+			return nil, errors.Errorf("failed to read password config: %w", err)
 		}
 
 		var config PasswordSecurityConfig
 		if err := toml.Unmarshal(data, &config); err != nil {
-			return nil, fmt.Errorf("failed to decode password config: %w", err)
+			return nil, errors.Errorf("failed to decode password config: %w", err)
 		}
 
 		// Convert days to duration

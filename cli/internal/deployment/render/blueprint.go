@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-errors/errors"
+
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/output"
 )
@@ -42,7 +44,7 @@ func (bd *BlueprintDeployment) deployWithDockerfile(ctx context.Context) error {
 	// Generate Dockerfile and Docker Compose
 	dockerArtifacts, err := bd.dockerGenerator.GenerateDockerfile(bd.spec)
 	if err != nil {
-		return fmt.Errorf("failed to generate Docker artifacts: %w", err)
+		return errors.Errorf("failed to generate Docker artifacts: %w", err)
 	}
 
 	// Create Render blueprint with Dockerfile

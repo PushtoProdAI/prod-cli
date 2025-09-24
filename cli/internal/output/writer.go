@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"sync"
+
+	"github.com/go-errors/errors"
 )
 
 // TODO: this spinner stuff could use some work, triggering off keywords is a bit brittle
@@ -244,11 +246,11 @@ func (w *ConsoleWriter) PromptSelection(message string, options []string) (int, 
 	fmt.Print("Enter your choice (number): ")
 	_, err := fmt.Scanf("%d", &choice)
 	if err != nil {
-		return 0, fmt.Errorf("invalid input: %w", err)
+		return 0, errors.Errorf("invalid input: %w", err)
 	}
 
 	if choice < 1 || choice > len(options) {
-		return 0, fmt.Errorf("choice out of range")
+		return 0, errors.Errorf("choice out of range")
 	}
 
 	return choice - 1, nil // Convert to 0-based index
@@ -267,7 +269,7 @@ func (w *ConsoleWriter) PromptInput(message string, masked bool) (string, error)
 
 	_, err := fmt.Scanln(&input)
 	if err != nil {
-		return "", fmt.Errorf("failed to read input: %w", err)
+		return "", errors.Errorf("failed to read input: %w", err)
 	}
 
 	return input, nil

@@ -1,7 +1,7 @@
 package netlify
 
 import (
-	"fmt"
+	"github.com/go-errors/errors"
 
 	"github.com/meroxa/prod/cli/internal/cache"
 )
@@ -18,7 +18,7 @@ func NewPricingProvider() *PricingProvider {
 func (n *PricingProvider) FetchContent() (string, error) {
 	content, err := cache.FetchURLAsMarkdownWithOptions("https://www.netlify.com/pricing/", true)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch Netlify pricing page: %w", err)
+		return "", errors.Errorf("failed to fetch Netlify pricing page: %w", err)
 	}
 	return content, nil
 }

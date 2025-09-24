@@ -149,4 +149,3 @@ func GetEstimatedPricing() FlyioPricing {
 		Storage: 0.15, // Per GB per month
 	}
 }
-

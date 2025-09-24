@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/go-errors/errors"
 )
 
 // CLIVercelClient implements the VercelClient interface using Vercel CLI
@@ -26,9 +28,9 @@ func (c *CLIVercelClient) ensureVercelCLI() error {
 	cmd := exec.CommandContext(ctx, "vercel", "--version")
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("vercel CLI version check timed out")
+			return errors.Errorf("vercel CLI version check timed out")
 		}
-		return fmt.Errorf("vercel CLI is not installed. Install with: npm install -g vercel")
+		return errors.Errorf("vercel CLI is not installed. Install with: npm install -g vercel")
 	}
 	return nil
 }
@@ -79,9 +81,9 @@ func (c *CLIVercelClient) DeleteProject(projectID string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("project deletion timed out after %v", linkTimeout)
+			return errors.Errorf("project deletion timed out after %v", linkTimeout)
 		}
-		return fmt.Errorf("failed to delete project: %w\nOutput: %s", err, string(output))
+		return errors.Errorf("failed to delete project: %w\nOutput: %s", err, string(output))
 	}
 
 	return nil
@@ -100,9 +102,9 @@ func (c *CLIVercelClient) LinkProject(projectID string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("project linking timed out after %v", linkTimeout)
+			return errors.Errorf("project linking timed out after %v", linkTimeout)
 		}
-		return fmt.Errorf("failed to link project: %w\nOutput: %s", err, string(output))
+		return errors.Errorf("failed to link project: %w\nOutput: %s", err, string(output))
 	}
 
 	slog.Info("Successfully linked project to current directory", "projectID", projectID)
@@ -122,9 +124,9 @@ func (c *CLIVercelClient) PullProject() error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("vercel pull timed out after %v", pullTimeout)
+			return errors.Errorf("vercel pull timed out after %v", pullTimeout)
 		}
-		return fmt.Errorf("failed to pull project configuration: %w\nOutput: %s", err, string(output))
+		return errors.Errorf("failed to pull project configuration: %w\nOutput: %s", err, string(output))
 	}
 
 	slog.Info("Successfully pulled project configuration")
@@ -152,9 +154,9 @@ func (c *CLIVercelClient) BuildProject(envVars []EnvVar) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("build timed out after %v", buildTimeout)
+			return errors.Errorf("build timed out after %v", buildTimeout)
 		}
-		return fmt.Errorf("build failed: %w\nOutput: %s", err, string(output))
+		return errors.Errorf("build failed: %w\nOutput: %s", err, string(output))
 	}
 
 	slog.Info("Build completed successfully")
@@ -178,15 +180,15 @@ func (c *CLIVercelClient) DeployProject(projectID string) (*VercelDeployment, er
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("deployment timed out after %v", deployTimeout)
+			return nil, errors.Errorf("deployment timed out after %v", deployTimeout)
 		}
-		return nil, fmt.Errorf("deployment failed: %w\nOutput: %s", err, string(output))
+		return nil, errors.Errorf("deployment failed: %w\nOutput: %s", err, string(output))
 	}
 
 	// Get the latest production URL using vercel projects command
 	deployURL, err := c.getLatestProductionURL(projectID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get deployment URL: %w", err)
+		return nil, errors.Errorf("failed to get deployment URL: %w", err)
 	}
 
 	// Extract deployment ID from URL (format: https://<id>-<team>.vercel.app)
@@ -221,15 +223,15 @@ func (c *CLIVercelClient) getLatestProductionURL(projectName string) (string, er
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return "", fmt.Errorf("vercel projects command timed out")
+			return "", errors.Errorf("vercel projects command timed out")
 		}
-		return "", fmt.Errorf("failed to get projects: %w\nOutput: %s", err, string(output))
+		return "", errors.Errorf("failed to get projects: %w\nOutput: %s", err, string(output))
 	}
 
 	// Parse the output to find the project URL
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(lines) < 2 {
-		return "", fmt.Errorf("unexpected vercel projects output format: %s", string(output))
+		return "", errors.Errorf("unexpected vercel projects output format: %s", string(output))
 	}
 
 	// Skip the header line and find the project
@@ -264,7 +266,7 @@ func (c *CLIVercelClient) getLatestProductionURL(projectName string) (string, er
 		}
 	}
 
-	return "", fmt.Errorf("could not find production URL for project %s in output: %s", projectName, string(output))
+	return "", errors.Errorf("could not find production URL for project %s in output: %s", projectName, string(output))
 }
 
 // GetDeployment retrieves deployment information
@@ -285,7 +287,7 @@ func (c *CLIVercelClient) SetEnvironmentVariables(projectID string, vars map[str
 
 	for key, value := range vars {
 		if err := c.setEnvVar(key, value); err != nil {
-			return fmt.Errorf("failed to set env var %s: %w", key, err)
+			return errors.Errorf("failed to set env var %s: %w", key, err)
 		}
 	}
 
@@ -302,10 +304,10 @@ func (c *CLIVercelClient) setEnvVar(key, value string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("setting env var %s timed out after %v", key, envVarTimeout)
+			return errors.Errorf("setting env var %s timed out after %v", key, envVarTimeout)
 		}
 		slog.Error("Failed to set env var", "key", key, "error", err, "output", string(output))
-		return fmt.Errorf("failed to set env var: %w\nOutput: %s", err, string(output))
+		return errors.Errorf("failed to set env var: %w\nOutput: %s", err, string(output))
 	}
 	return nil
 }

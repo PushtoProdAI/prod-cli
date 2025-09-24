@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"github.com/go-errors/errors"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -33,17 +34,17 @@ func NewSupabaseAuth(out io.Writer) (*SupabaseAuth, error) {
 	// Get Supabase configuration from environment
 	supabaseURL := config.GetSupabaseURL()
 	if supabaseURL == "" {
-		return nil, fmt.Errorf("SUPABASE_URL environment variable not set")
+		return nil, errors.Errorf("SUPABASE_URL environment variable not set")
 	}
 
 	supabaseAnonKey := config.GetSupabaseAnonKey()
 	if supabaseAnonKey == "" {
-		return nil, fmt.Errorf("SUPABASE_ANON_KEY environment variable not set")
+		return nil, errors.Errorf("SUPABASE_ANON_KEY environment variable not set")
 	}
 
 	store, err := NewTokenStore()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create token store: %w", err)
+		return nil, errors.Errorf("failed to create token store: %w", err)
 	}
 
 	return &SupabaseAuth{
@@ -74,7 +75,7 @@ func (sa *SupabaseAuth) IsAuthenticated() bool {
 func (sa *SupabaseAuth) GetSession() (*Session, error) {
 	session, err := sa.store.LoadSession()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load session: %w", err)
+		return nil, errors.Errorf("failed to load session: %w", err)
 	}
 
 	if session == nil {
@@ -83,7 +84,7 @@ func (sa *SupabaseAuth) GetSession() (*Session, error) {
 
 	if session.ExpiresAt.Before(time.Now()) {
 		// TODO: Implement refresh token logic
-		return nil, fmt.Errorf("session expired")
+		return nil, errors.Errorf("session expired")
 	}
 
 	return session, nil
@@ -92,7 +93,7 @@ func (sa *SupabaseAuth) GetSession() (*Session, error) {
 // Logout removes the stored session
 func (sa *SupabaseAuth) Logout(ctx context.Context) error {
 	if err := sa.store.DeleteSession(); err != nil {
-		return fmt.Errorf("failed to delete session: %w", err)
+		return errors.Errorf("failed to delete session: %w", err)
 	}
 
 	fmt.Fprintln(sa.out, "✅ Successfully logged out")
@@ -107,7 +108,7 @@ func (sa *SupabaseAuth) GetAuthHeader() (string, error) {
 	}
 
 	if session == nil {
-		return "", fmt.Errorf("not authenticated")
+		return "", errors.Errorf("not authenticated")
 	}
 
 	return fmt.Sprintf("Bearer %s", session.AccessToken), nil
@@ -138,13 +139,13 @@ func (sa *SupabaseAuth) LoginWithSupabaseFunction(ctx context.Context) error {
 
 		if errorParam != "" {
 			fmt.Fprintf(sa.out, "❌ Authentication error: %s - %s\n", errorParam, errorDesc)
-			errorChan <- fmt.Errorf("authentication error: %s - %s", errorParam, errorDesc)
+			errorChan <- errors.Errorf("authentication error: %s - %s", errorParam, errorDesc)
 			return
 		}
 
 		if token == "" {
 			fmt.Fprintf(sa.out, "❌ No token received from authentication\n")
-			errorChan <- fmt.Errorf("no token received from authentication")
+			errorChan <- errors.Errorf("no token received from authentication")
 			return
 		}
 
@@ -178,7 +179,7 @@ func (sa *SupabaseAuth) LoginWithSupabaseFunction(ctx context.Context) error {
 	// Start the server in a goroutine
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errorChan <- fmt.Errorf("failed to start callback server: %w", err)
+			errorChan <- errors.Errorf("failed to start callback server: %w", err)
 		}
 	}()
 
@@ -207,7 +208,7 @@ func (sa *SupabaseAuth) LoginWithSupabaseFunction(ctx context.Context) error {
 
 		// Automatically authenticate with the received token
 		if err := sa.LoginWithToken(ctx, token); err != nil {
-			return fmt.Errorf("failed to authenticate with token: %w", err)
+			return errors.Errorf("failed to authenticate with token: %w", err)
 		}
 
 	case err := <-errorChan:
@@ -229,25 +230,25 @@ func extractEmailFromJWT(accessToken string) (string, error) {
 	// JWT tokens have 3 parts separated by dots: header.payload.signature
 	parts := strings.Split(accessToken, ".")
 	if len(parts) != 3 {
-		return "", fmt.Errorf("invalid JWT token format")
+		return "", errors.Errorf("invalid JWT token format")
 	}
 
 	// Decode the payload (second part)
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return "", fmt.Errorf("failed to decode JWT payload: %w", err)
+		return "", errors.Errorf("failed to decode JWT payload: %w", err)
 	}
 
 	// Parse the JSON payload
 	var claims map[string]interface{}
 	if err := json.Unmarshal(payload, &claims); err != nil {
-		return "", fmt.Errorf("failed to parse JWT payload: %w", err)
+		return "", errors.Errorf("failed to parse JWT payload: %w", err)
 	}
 
 	// Extract the email field
 	email, ok := claims["email"].(string)
 	if !ok {
-		return "", fmt.Errorf("email field not found in JWT token")
+		return "", errors.Errorf("email field not found in JWT token")
 	}
 
 	return email, nil
@@ -258,12 +259,12 @@ func (sa *SupabaseAuth) LoginWithToken(ctx context.Context, token string) error 
 	// Parse the token (it's base64 encoded JSON from our function)
 	tokenData, err := sa.parseCLIToken(token)
 	if err != nil {
-		return fmt.Errorf("invalid token: %w", err)
+		return errors.Errorf("invalid token: %w", err)
 	}
 
 	// Check if token is expired
 	if time.Now().Unix()*1000 > tokenData.ExpiresAt {
-		return fmt.Errorf("token expired, please re-authenticate")
+		return errors.Errorf("token expired, please re-authenticate")
 	}
 
 	// Extract email from the JWT access token
@@ -287,7 +288,7 @@ func (sa *SupabaseAuth) LoginWithToken(ctx context.Context, token string) error 
 
 	// Save session
 	if err := sa.store.SaveSession(session); err != nil {
-		return fmt.Errorf("failed to save session: %w", err)
+		return errors.Errorf("failed to save session: %w", err)
 	}
 
 	fmt.Fprintln(sa.out, "✅ Authentication successful!")

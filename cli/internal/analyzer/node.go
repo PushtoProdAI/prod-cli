@@ -2,7 +2,6 @@ package analyzer
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -104,7 +103,7 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 	}
 
 	if pkgJson == nil {
-		return nil, fmt.Errorf("package.json could not be parsed")
+		return nil, errors.Errorf("package.json could not be parsed")
 	}
 
 	serviceRequirements, err := getDepsPkgJson(pkgJson)

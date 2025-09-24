@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-errors/errors"
+
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
@@ -37,7 +39,7 @@ func (fqd *FlyioQueuedDeployment) Deploy(ctx context.Context) ([]deployment.Crea
 		result, err := step.Execute(ctx, fqd.client, stepResults)
 		if err != nil {
 			fmt.Fprintf(fqd.writer, "✗ Failed: %s - %v\n", step.GetDescription(), err)
-			return nil, fmt.Errorf("step %s failed: %w", step.GetID(), err)
+			return nil, errors.Errorf("step %s failed: %w", step.GetID(), err)
 		}
 		stepResults[step.GetID()] = result
 
