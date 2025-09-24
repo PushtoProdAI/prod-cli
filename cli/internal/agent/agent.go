@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -205,8 +204,8 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 		if err != nil {
 			slog.Error("Failed to check consent", "error", err)
 		} else if !hasConsentValue {
-			// Check if consent file exists - if not, this is first run
-			filePath, err := getConsentFilePath()
+			// Check if settings file exists - if not, this is first run
+			filePath, err := getSettingsFilePath()
 			if err == nil {
 				if _, err := os.Stat(filePath); os.IsNotExist(err) {
 					// First run - need to prompt for consent using state machine
@@ -1073,59 +1072,4 @@ func openInBrowser(url string) error {
 	}
 
 	return exec.Command(cmd, args...).Start()
-}
-
-// Consent management functions
-const (
-	consentFileName = "error_tracking_consent"
-	consentYes      = "yes"
-	consentNo       = "no"
-)
-
-func getConsentFilePath() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", errors.WrapPrefix(err, "failed to get home directory", 0)
-	}
-
-	dirPath := filepath.Join(homeDir, ".prod")
-	return filepath.Join(dirPath, consentFileName), nil
-}
-
-func hasConsent() (bool, error) {
-	filePath, err := getConsentFilePath()
-	if err != nil {
-		return false, err
-	}
-
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return false, nil
-	}
-
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		return false, errors.WrapPrefix(err, "failed to read consent file", 0)
-	}
-
-	response := strings.TrimSpace(string(content))
-	return response == consentYes, nil
-}
-
-func saveConsent(consent bool) error {
-	filePath, err := getConsentFilePath()
-	if err != nil {
-		return err
-	}
-
-	value := consentNo
-	if consent {
-		value = consentYes
-	}
-
-	err = os.WriteFile(filePath, []byte(value), 0644)
-	if err != nil {
-		return errors.WrapPrefix(err, "failed to save consent", 0)
-	}
-
-	return nil
 }
