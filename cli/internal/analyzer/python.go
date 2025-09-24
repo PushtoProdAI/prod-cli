@@ -1,13 +1,14 @@
 package analyzer
 
 import (
-	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/go-errors/errors"
 )
 
 const (
@@ -124,12 +125,12 @@ func (p *PythonAnalyzer) CanHandle() (bool, error) {
 func (p *PythonAnalyzer) Analyze() (*ProjectSpec, error) {
 	runtime, err := p.detectRuntime()
 	if err != nil {
-		return nil, fmt.Errorf("failed to detect runtime: %w", err)
+		return nil, errors.Errorf("failed to detect runtime: %w", err)
 	}
 
 	dependencies, err := p.extractDependencies()
 	if err != nil {
-		return nil, fmt.Errorf("failed to extract dependencies: %w", err)
+		return nil, errors.Errorf("failed to extract dependencies: %w", err)
 	}
 
 	buildCmd, err := p.extractBuildCommand()
@@ -139,12 +140,12 @@ func (p *PythonAnalyzer) Analyze() (*ProjectSpec, error) {
 
 	_, err = p.detectFramework(dependencies)
 	if err != nil {
-		return nil, fmt.Errorf("failed to detect framework: %w", err)
+		return nil, errors.Errorf("failed to detect framework: %w", err)
 	}
 
 	serviceRequirements, err := p.extractServiceRequirements(dependencies)
 	if err != nil {
-		return nil, fmt.Errorf("failed to extract service requirements: %w", err)
+		return nil, errors.Errorf("failed to extract service requirements: %w", err)
 	}
 
 	runCmd, err := p.extractRunCommand()
@@ -240,7 +241,7 @@ func (p *PythonAnalyzer) extractBuildCommand() (string, error) {
 	case DepMgmtPEP621, DepMgmtSetupPy:
 		return "pip install .", nil
 	default:
-		return "", fmt.Errorf("no recognized dependency management approach found")
+		return "", errors.Errorf("no recognized dependency management approach found")
 	}
 }
 

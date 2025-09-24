@@ -2,9 +2,10 @@ package flyio
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
+
+	"github.com/go-errors/errors"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/pricing"
@@ -52,7 +53,7 @@ func (fda *FlyioDeploymentAdapter) SupportedStrategies() []deployment.Deployment
 func (fda *FlyioDeploymentAdapter) GenerateArtifacts(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.Deployable, error) {
 	// Fly.io only has one deployment approach - no blueprints
 	if strategy != deployment.StrategyFlyio {
-		return nil, fmt.Errorf("unsupported deployment strategy for Fly.io: %s (only %s is supported)", strategy, deployment.StrategyFlyio)
+		return nil, errors.Errorf("unsupported deployment strategy for Fly.io: %s (only %s is supported)", strategy, deployment.StrategyFlyio)
 	}
 	return NewFlyioQueuedDeployment(fda.client, spec, fda.writer), nil
 }
@@ -61,7 +62,7 @@ func (fda *FlyioDeploymentAdapter) GenerateArtifacts(spec *deployment.Deployment
 func (fda *FlyioDeploymentAdapter) GenerateArtifactsWithSource(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy, sourcePath string) (deployment.Deployable, error) {
 	// Only one strategy supported now
 	if strategy != deployment.StrategyFlyio {
-		return nil, fmt.Errorf("unsupported deployment strategy for Fly.io: %s (only %s is supported)", strategy, deployment.StrategyFlyio)
+		return nil, errors.Errorf("unsupported deployment strategy for Fly.io: %s (only %s is supported)", strategy, deployment.StrategyFlyio)
 	}
 
 	// Pass the source path through metadata so it can be used during deployment

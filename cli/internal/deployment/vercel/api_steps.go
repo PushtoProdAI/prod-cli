@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/go-errors/errors"
+
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
@@ -73,7 +75,7 @@ func (s *CreateVercelProjectStep) Execute(ctx context.Context, client VercelClie
 		EnvVars:   s.envVars,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create project: %w", err)
+		return nil, errors.Errorf("failed to create project: %w", err)
 	}
 
 	// Return as CreatedResource for consistency
@@ -95,7 +97,7 @@ func (s *CreateVercelProjectStep) Rollback(ctx context.Context, client VercelCli
 			return client.DeleteProject(resource.ID)
 		}
 	}
-	return fmt.Errorf("could not find project ID for rollback")
+	return errors.Errorf("could not find project ID for rollback")
 }
 
 // LinkVercelProjectStep links the current directory to a Vercel project
@@ -123,29 +125,29 @@ func (s *LinkVercelProjectStep) Execute(ctx context.Context, client VercelClient
 	// Get project ID from dependency
 	projectResult, ok := stepResults[s.projectDependency]
 	if !ok {
-		return nil, fmt.Errorf("project dependency %s not found in results", s.projectDependency)
+		return nil, errors.Errorf("project dependency %s not found in results", s.projectDependency)
 	}
 
 	resource, ok := projectResult.(deployment.CreatedResource)
 	if !ok {
-		return nil, fmt.Errorf("project dependency result is not a CreatedResource")
+		return nil, errors.Errorf("project dependency result is not a CreatedResource")
 	}
 
 	// Change to source directory for linking
 	originalDir, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current directory: %w", err)
+		return nil, errors.Errorf("failed to get current directory: %w", err)
 	}
 
 	if s.sourcePath != "." && s.sourcePath != "" {
 		if err := os.Chdir(s.sourcePath); err != nil {
-			return nil, fmt.Errorf("failed to change to source directory: %w", err)
+			return nil, errors.Errorf("failed to change to source directory: %w", err)
 		}
 		defer os.Chdir(originalDir)
 	}
 
 	if err := client.LinkProject(resource.Name); err != nil {
-		return nil, fmt.Errorf("failed to link project: %w", err)
+		return nil, errors.Errorf("failed to link project: %w", err)
 	}
 
 	fmt.Fprintf(s.writer, "  🔗 Project linked successfully\n")
@@ -182,18 +184,18 @@ func (s *PullProjectStep) Execute(ctx context.Context, client VercelClient, step
 	// Change to source directory for pulling
 	originalDir, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current directory: %w", err)
+		return nil, errors.Errorf("failed to get current directory: %w", err)
 	}
 
 	if s.sourcePath != "." && s.sourcePath != "" {
 		if err := os.Chdir(s.sourcePath); err != nil {
-			return nil, fmt.Errorf("failed to change to source directory: %w", err)
+			return nil, errors.Errorf("failed to change to source directory: %w", err)
 		}
 		defer os.Chdir(originalDir)
 	}
 
 	if err := client.PullProject(); err != nil {
-		return nil, fmt.Errorf("failed to pull project configuration: %w", err)
+		return nil, errors.Errorf("failed to pull project configuration: %w", err)
 	}
 
 	fmt.Fprintf(s.writer, "  📥 Project configuration pulled successfully\n")
@@ -234,29 +236,29 @@ func (s *SetEnvironmentVariablesStep) Execute(ctx context.Context, client Vercel
 	// Get project ID from dependency
 	projectResult, ok := stepResults[s.projectDependency]
 	if !ok {
-		return nil, fmt.Errorf("project dependency %s not found in results", s.projectDependency)
+		return nil, errors.Errorf("project dependency %s not found in results", s.projectDependency)
 	}
 
 	resource, ok := projectResult.(deployment.CreatedResource)
 	if !ok {
-		return nil, fmt.Errorf("project dependency result is not a CreatedResource")
+		return nil, errors.Errorf("project dependency result is not a CreatedResource")
 	}
 
 	// Change to source directory
 	originalDir, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current directory: %w", err)
+		return nil, errors.Errorf("failed to get current directory: %w", err)
 	}
 
 	if s.sourcePath != "." && s.sourcePath != "" {
 		if err := os.Chdir(s.sourcePath); err != nil {
-			return nil, fmt.Errorf("failed to change to source directory: %w", err)
+			return nil, errors.Errorf("failed to change to source directory: %w", err)
 		}
 		defer os.Chdir(originalDir)
 	}
 
 	if err := client.SetEnvironmentVariables(resource.ID, s.envVars); err != nil {
-		return nil, fmt.Errorf("failed to set environment variables: %w", err)
+		return nil, errors.Errorf("failed to set environment variables: %w", err)
 	}
 
 	fmt.Fprintf(s.writer, "  ✅ Environment variables set\n")
@@ -294,18 +296,18 @@ func NewBuildProjectStep(buildCommand, sourcePath string, envVars []deployment.E
 func (s *BuildProjectStep) Execute(ctx context.Context, client VercelClient, stepResults map[string]any) (any, error) {
 	// Check if source path exists
 	if _, err := os.Stat(s.sourcePath); err != nil {
-		return nil, fmt.Errorf("source path does not exist: %s", s.sourcePath)
+		return nil, errors.Errorf("source path does not exist: %s", s.sourcePath)
 	}
 
 	// Change to source directory to run build
 	originalDir, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current directory: %w", err)
+		return nil, errors.Errorf("failed to get current directory: %w", err)
 	}
 
 	if s.sourcePath != "." && s.sourcePath != "" {
 		if err := os.Chdir(s.sourcePath); err != nil {
-			return nil, fmt.Errorf("failed to change to source directory: %w", err)
+			return nil, errors.Errorf("failed to change to source directory: %w", err)
 		}
 		defer os.Chdir(originalDir)
 	}
@@ -333,7 +335,7 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client VercelClient, ste
 		if installErr != nil {
 			// Check if it was a timeout
 			if buildCtx.Err() == context.DeadlineExceeded {
-				return nil, fmt.Errorf("npm install timed out after %v", defaultBuildTimeout)
+				return nil, errors.Errorf("npm install timed out after %v", defaultBuildTimeout)
 			}
 
 			// If npm install fails, try yarn install
@@ -345,12 +347,12 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client VercelClient, ste
 			if yarnErr != nil {
 				// Check if yarn also timed out
 				if buildCtx.Err() == context.DeadlineExceeded {
-					return nil, fmt.Errorf("yarn install timed out after %v", defaultBuildTimeout)
+					return nil, errors.Errorf("yarn install timed out after %v", defaultBuildTimeout)
 				}
 				// Both failed, show both outputs
 				fmt.Fprintf(s.writer, "  ❌ npm install failed:\n%s\n", string(installOutput))
 				fmt.Fprintf(s.writer, "  ❌ yarn install failed:\n%s\n", string(yarnOutput))
-				return nil, fmt.Errorf("failed to install dependencies: npm error: %w, yarn error: %w", installErr, yarnErr)
+				return nil, errors.Errorf("failed to install dependencies: npm error: %w, yarn error: %w", installErr, yarnErr)
 			} else {
 				fmt.Fprintf(s.writer, "  ✅ Dependencies installed with yarn\n")
 			}
@@ -370,7 +372,7 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client VercelClient, ste
 	// Use Vercel build
 	fmt.Fprintf(s.writer, "  🏗️  Running Vercel build...\n")
 	if err := client.BuildProject(vercelEnvVars); err != nil {
-		return nil, fmt.Errorf("build failed: %w", err)
+		return nil, errors.Errorf("build failed: %w", err)
 	}
 
 	fmt.Fprintf(s.writer, "  ✅ Build completed successfully\n")
@@ -412,30 +414,30 @@ func (s *DeployVercelProjectStep) Execute(ctx context.Context, client VercelClie
 	// Get project ID from dependency
 	projectResult, ok := stepResults[s.projectDependency]
 	if !ok {
-		return nil, fmt.Errorf("project dependency %s not found in results", s.projectDependency)
+		return nil, errors.Errorf("project dependency %s not found in results", s.projectDependency)
 	}
 
 	resource, ok := projectResult.(deployment.CreatedResource)
 	if !ok {
-		return nil, fmt.Errorf("project dependency result is not a CreatedResource")
+		return nil, errors.Errorf("project dependency result is not a CreatedResource")
 	}
 
 	// Change to source directory for deployment
 	originalDir, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current directory: %w", err)
+		return nil, errors.Errorf("failed to get current directory: %w", err)
 	}
 
 	if s.sourcePath != "." && s.sourcePath != "" {
 		if err := os.Chdir(s.sourcePath); err != nil {
-			return nil, fmt.Errorf("failed to change to source directory: %w", err)
+			return nil, errors.Errorf("failed to change to source directory: %w", err)
 		}
 		defer os.Chdir(originalDir)
 	}
 
 	deploy, err := client.DeployProject(resource.Name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to deploy project: %w", err)
+		return nil, errors.Errorf("failed to deploy project: %w", err)
 	}
 
 	return deployment.CreatedResource{

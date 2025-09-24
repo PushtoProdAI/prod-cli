@@ -11,6 +11,7 @@ import (
 
 	"github.com/conduitio/ecdysis"
 	"github.com/cschleiden/go-workflows/backend"
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/cmd/root"
 	"github.com/meroxa/prod/cli/internal/agent"
 	"github.com/meroxa/prod/cli/internal/auth"
@@ -87,7 +88,7 @@ func main() {
 		fmt.Println("failed to initialize auth:", err)
 		log.Fatalf("failed to initialize auth: %v", err)
 	}
-	a := agent.NewAgent(provider.Client, supabaseAuth, true)
+	a := agent.NewAgent(provider.Client, supabaseAuth, false)
 	cmd := e.MustBuildCobraCommand(&root.RootCommand{
 		Agent:        a,
 		StatusWriter: statusWriter,
@@ -103,21 +104,21 @@ func main() {
 func initLogFile() (*os.File, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
+		return nil, errors.WrapPrefix(err, "failed to get home directory", 0)
 	}
 
 	dirPath := filepath.Join(homeDir, ".prod")
 
 	err = os.MkdirAll(dirPath, 0755)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create directory: %w", err)
+		return nil, errors.WrapPrefix(err, "failed to create directory", 0)
 	}
 
 	filePath := filepath.Join(dirPath, "log.txt")
 
 	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open/create file: %w", err)
+		return nil, errors.WrapPrefix(err, "failed to open/create file", 0)
 	}
 
 	return file, nil

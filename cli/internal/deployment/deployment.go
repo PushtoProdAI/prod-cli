@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/cache"
 )
@@ -131,7 +132,7 @@ func NewDeploymentBuilder(projectSpec *analyzer.ProjectSpec, serviceEnvVars []En
 
 func (db *DeploymentBuilder) Build() (*DeploymentSpec, error) {
 	if db.projectSpec == nil {
-		return nil, fmt.Errorf("project spec is required")
+		return nil, errors.Errorf("project spec is required")
 	}
 
 	services := make([]Service, 0, len(db.projectSpec.ServiceRequirements))

@@ -50,7 +50,7 @@ func (a *Activities) deploySteps(ctx context.Context, spec deployment.Deployment
 			return nil, errors.Errorf("failed to create Heroku deployment: %w", err)
 		}
 	default:
-		return nil, fmt.Errorf("unsupported platform: %s", platform)
+		return nil, errors.Errorf("unsupported platform: %s", platform)
 	}
 
 	createdResources, err := deployable.Deploy(ctx)

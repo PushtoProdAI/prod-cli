@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/conduitio/ecdysis"
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/cmd/auth"
 	"github.com/meroxa/prod/cli/internal/agent"
 	"github.com/meroxa/prod/cli/internal/output"
@@ -40,7 +41,7 @@ type RootCommand struct {
 	Agent        *agent.Agent
 	StatusWriter output.StatusWriter
 	WriterType   output.WriterType
-	
+
 	// Subcommands
 	Auth auth.AuthCommand `cmd:"" help:"Manage authentication"`
 }
@@ -53,7 +54,7 @@ func (c *RootCommand) SubCommands() []ecdysis.Command {
 
 func (c *RootCommand) Args(args []string) error {
 	if len(args) > 1 {
-		return fmt.Errorf("too many arguments")
+		return errors.New("too many arguments")
 	}
 
 	if len(args) == 1 {
@@ -115,7 +116,7 @@ ______              _
 		// Run the TUI program
 		_, err := program.Run()
 		if err != nil {
-			return fmt.Errorf("failed to run TUI: %w", err)
+			return errors.WrapPrefix(err, "failed to run TUI", 0)
 		}
 	} else {
 		// In console mode, just use the existing console writer
@@ -125,7 +126,7 @@ ______              _
 			return nil
 		}
 		// For console mode without prompt, we might want to show help or handle differently
-		return fmt.Errorf("console mode requires a prompt argument")
+		return errors.New("console mode requires a prompt argument")
 	}
 
 	return nil
@@ -158,7 +159,7 @@ func (c *RootCommand) Write(p []byte) (n int, err error) {
 		c.output.Stdout(string(p))
 		return len(p), nil
 	}
-	return 0, fmt.Errorf("output not set")
+	return 0, errors.New("output not set")
 }
 
 func greetUser() string {

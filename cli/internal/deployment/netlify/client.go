@@ -3,11 +3,12 @@ package netlify
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/go-errors/errors"
 )
 
 // CLINetlifyClient implements the NetlifyClient interface using Netlify CLI
@@ -22,7 +23,7 @@ func NewCLINetlifyClient() *CLINetlifyClient {
 func (c *CLINetlifyClient) ensureNetlifyCLI() error {
 	cmd := exec.Command("netlify", "--version")
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("netlify CLI is not installed. Install with: npm install -g netlify-cli")
+		return errors.Errorf("netlify CLI is not installed. Install with: npm install -g netlify-cli")
 	}
 	return nil
 }
@@ -42,7 +43,7 @@ func (c *CLINetlifyClient) CreateSite(req CreateSiteRequest) (*NetlifySite, erro
 	// Convert to JSON
 	jsonData, err := json.Marshal(apiData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal API data: %w", err)
+		return nil, errors.Errorf("failed to marshal API data: %w", err)
 	}
 
 	// Create site using the API
@@ -55,9 +56,9 @@ func (c *CLINetlifyClient) CreateSite(req CreateSiteRequest) (*NetlifySite, erro
 		// Check if name is taken and provide helpful error
 		outputStr := string(output)
 		if strings.Contains(outputStr, "already taken") || strings.Contains(outputStr, "already exists") || strings.Contains(outputStr, "already in use") {
-			return nil, fmt.Errorf("site name '%s' is already taken", req.Name)
+			return nil, errors.Errorf("site name '%s' is already taken", req.Name)
 		}
-		return nil, fmt.Errorf("failed to create site: %w\nOutput: %s", err, outputStr)
+		return nil, errors.Errorf("failed to create site: %w\nOutput: %s", err, outputStr)
 	}
 
 	// Parse the JSON response from the API
@@ -66,12 +67,12 @@ func (c *CLINetlifyClient) CreateSite(req CreateSiteRequest) (*NetlifySite, erro
 
 	var site NetlifySite
 	if err := json.Unmarshal(output, &site); err != nil {
-		return nil, fmt.Errorf("failed to parse site response: %w\nOutput: %s", err, outputStr)
+		return nil, errors.Errorf("failed to parse site response: %w\nOutput: %s", err, outputStr)
 	}
 
 	// Ensure we have a site ID
 	if site.ID == "" {
-		return nil, fmt.Errorf("site created but no ID returned")
+		return nil, errors.Errorf("site created but no ID returned")
 	}
 
 	// Note: Environment variables should be set separately after site creation
@@ -85,12 +86,12 @@ func (c *CLINetlifyClient) listSites() ([]NetlifySite, error) {
 	cmd := exec.Command("netlify", "sites:list", "--json")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list sites: %w", err)
+		return nil, errors.Errorf("failed to list sites: %w", err)
 	}
 
 	var sites []NetlifySite
 	if err := json.Unmarshal(output, &sites); err != nil {
-		return nil, fmt.Errorf("failed to parse sites: %w", err)
+		return nil, errors.Errorf("failed to parse sites: %w", err)
 	}
 
 	return sites, nil
@@ -106,12 +107,12 @@ func (c *CLINetlifyClient) GetSite(siteID string) (*NetlifySite, error) {
 	cmd := exec.Command("netlify", "sites:list", "--json")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list sites: %w", err)
+		return nil, errors.Errorf("failed to list sites: %w", err)
 	}
 
 	var sites []NetlifySite
 	if err := json.Unmarshal(output, &sites); err != nil {
-		return nil, fmt.Errorf("failed to parse sites: %w", err)
+		return nil, errors.Errorf("failed to parse sites: %w", err)
 	}
 
 	for _, site := range sites {
@@ -120,7 +121,7 @@ func (c *CLINetlifyClient) GetSite(siteID string) (*NetlifySite, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("site %s not found", siteID)
+	return nil, errors.Errorf("site %s not found", siteID)
 }
 
 // UpdateSite updates a Netlify site (limited support via CLI)
@@ -139,7 +140,7 @@ func (c *CLINetlifyClient) DeleteSite(siteID string) error {
 	cmd := exec.Command("netlify", "sites:delete", siteID, "--force")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to delete site: %w\nOutput: %s", err, string(output))
+		return errors.Errorf("failed to delete site: %w\nOutput: %s", err, string(output))
 	}
 
 	return nil
@@ -154,7 +155,7 @@ func (c *CLINetlifyClient) LinkSite(siteID string) error {
 	cmd := exec.Command("netlify", "link", "--id", siteID)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to link site: %w\nOutput: %s", err, string(output))
+		return errors.Errorf("failed to link site: %w\nOutput: %s", err, string(output))
 	}
 
 	slog.Info("Successfully linked site to current directory", "siteID", siteID)
@@ -189,9 +190,9 @@ func (c *CLINetlifyClient) DeploySite(siteID string, path string, functionsPath 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return nil, fmt.Errorf("deployment timed out after %v", deployTimeout)
+			return nil, errors.Errorf("deployment timed out after %v", deployTimeout)
 		}
-		return nil, fmt.Errorf("deployment failed: %w\nOutput: %s", err, string(output))
+		return nil, errors.Errorf("deployment failed: %w\nOutput: %s", err, string(output))
 	}
 
 	// Parse deployment response
@@ -219,7 +220,7 @@ func (c *CLINetlifyClient) DeploySite(siteID string, path string, functionsPath 
 		}
 
 		if deployResult.DeployID == "" {
-			return nil, fmt.Errorf("failed to parse deployment response: %w\nOutput: %s", err, string(output))
+			return nil, errors.Errorf("failed to parse deployment response: %w\nOutput: %s", err, string(output))
 		}
 	}
 
@@ -257,7 +258,7 @@ func (c *CLINetlifyClient) SetEnvironmentVariables(siteID string, vars map[strin
 
 	for key, value := range vars {
 		if err := c.setEnvVar(siteID, key, value); err != nil {
-			return fmt.Errorf("failed to set env var %s: %w", key, err)
+			return errors.Errorf("failed to set env var %s: %w", key, err)
 		}
 	}
 
@@ -269,7 +270,7 @@ func (c *CLINetlifyClient) setEnvVar(siteID, key, value string) error {
 	cmd := exec.Command("netlify", "env:set", key, value)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to set env var: %w\nOutput: %s", err, string(output))
+		return errors.Errorf("failed to set env var: %w\nOutput: %s", err, string(output))
 	}
 	return nil
 }

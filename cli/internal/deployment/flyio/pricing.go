@@ -3,6 +3,8 @@ package flyio
 import (
 	"fmt"
 
+	"github.com/go-errors/errors"
+
 	"github.com/meroxa/prod/cli/internal/cache"
 )
 
@@ -19,13 +21,13 @@ func (f *PricingProvider) FetchContent() (string, error) {
 	// Fetch main pricing page
 	pricingContent, err := cache.FetchURLAsMarkdownWithOptions("https://fly.io/docs/pricing/", true)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch main pricing page: %w", err)
+		return "", errors.Errorf("failed to fetch main pricing page: %w", err)
 	}
 
 	// Fetch MPG (Machines Per GB) pricing page
 	mpgContent, err := cache.FetchURLAsMarkdownWithOptions("https://fly.io/docs/mpg/", true)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch MPG pricing page: %w", err)
+		return "", errors.Errorf("failed to fetch MPG pricing page: %w", err)
 	}
 
 	// Combine both contents with clear separation

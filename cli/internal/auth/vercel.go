@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/go-errors/errors"
 )
 
 // VercelAuth handles authentication checking and login flow for Vercel
@@ -82,7 +84,7 @@ func (va *VercelAuth) isAuthenticatedViaWhoami(ctx context.Context) (bool, error
 func (va *VercelAuth) ValidateAPIKey(ctx context.Context, token string) (bool, error) {
 	// Validate token format
 	if len(token) == 0 {
-		return false, fmt.Errorf("API token cannot be empty")
+		return false, errors.Errorf("API token cannot be empty")
 	}
 
 	// Try to get user info - this requires authentication
@@ -138,7 +140,7 @@ func (va *VercelAuth) PerformOAuthLogin(ctx context.Context) error {
 	cmd.Stderr = va.output
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
+		return errors.Errorf("authentication failed: %w", err)
 	}
 
 	// Verify that authentication succeeded by checking whoami
@@ -146,11 +148,11 @@ func (va *VercelAuth) PerformOAuthLogin(ctx context.Context) error {
 
 	isAuth, err := va.isAuthenticatedViaWhoami(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to verify authentication: %w", err)
+		return errors.Errorf("failed to verify authentication: %w", err)
 	}
 
 	if !isAuth {
-		return fmt.Errorf("authentication completed but verification failed")
+		return errors.Errorf("authentication completed but verification failed")
 	}
 
 	va.println()
@@ -182,9 +184,9 @@ func (va *VercelAuth) ensureVercelCLI() error {
 			va.println("    brew install vercel-cli")
 			va.println()
 			va.println("After installation, run your command again.")
-			return fmt.Errorf("vercel CLI is required but not installed")
+			return errors.Errorf("vercel CLI is required but not installed")
 		}
-		return fmt.Errorf("failed to check vercel version: %w", err)
+		return errors.Errorf("failed to check vercel version: %w", err)
 	}
 	return nil
 }

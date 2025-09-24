@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-errors/errors"
+
 	heroku "github.com/heroku/heroku-go/v6"
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
@@ -66,7 +68,7 @@ func (s *CreateHerokuAppStep) Execute(ctx context.Context, client *HerokuClient,
 	// Create the app (empty name will auto-generate)
 	app, err := client.CreateApp(ctx, s.AppName, s.Region)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create app: %w", err)
+		return nil, errors.Errorf("failed to create app: %w", err)
 	}
 
 	// Return as CreatedResource for consistency
@@ -90,7 +92,7 @@ func (s *CreateHerokuAppStep) Rollback(ctx context.Context, client *HerokuClient
 			return err
 		}
 	}
-	return fmt.Errorf("could not find app for rollback")
+	return errors.Errorf("could not find app for rollback")
 }
 
 // CreateHerokuAddonStep creates an addon (database, redis, etc.)
@@ -120,7 +122,7 @@ func (s *CreateHerokuAddonStep) Execute(ctx context.Context, client *HerokuClien
 	// Resolve app name from dependencies
 	appName := s.resolveAppName(stepResults)
 	if appName == "" {
-		return nil, fmt.Errorf("could not resolve app name from step %s", s.AppID)
+		return nil, errors.Errorf("could not resolve app name from step %s", s.AppID)
 	}
 
 	addon, err := client.CreateAddon(ctx, appName, s.Plan, s.Config)
@@ -131,7 +133,7 @@ func (s *CreateHerokuAddonStep) Execute(ctx context.Context, client *HerokuClien
 				// Try next tier PostgreSQL plan
 				addon, err = client.CreateAddon(ctx, appName, "heroku-postgresql:essential-1", s.Config)
 				if err != nil {
-					return nil, fmt.Errorf("failed to create PostgreSQL addon (tried essential-0 and essential-1 plans): %w", err)
+					return nil, errors.Errorf("failed to create PostgreSQL addon (tried essential-0 and essential-1 plans): %w", err)
 				}
 			} else if s.Provider == "mongodb" {
 				return deployment.CreatedResource{
@@ -143,17 +145,17 @@ func (s *CreateHerokuAddonStep) Execute(ctx context.Context, client *HerokuClien
 					},
 				}, nil
 			} else {
-				return nil, fmt.Errorf("addon plan %s not found for %s: %w", s.Plan, s.Provider, err)
+				return nil, errors.Errorf("addon plan %s not found for %s: %w", s.Plan, s.Provider, err)
 			}
 		}
 		if addon == nil {
-			return nil, fmt.Errorf("failed to create %s addon: %w", s.Provider, err)
+			return nil, errors.Errorf("failed to create %s addon: %w", s.Provider, err)
 		}
 	}
 
 	// Wait for addon to provision
 	if err := s.waitForAddonReady(ctx, client, addon.ID); err != nil {
-		return nil, fmt.Errorf("%s addon created but failed to provision: %w", s.Provider, err)
+		return nil, errors.Errorf("%s addon created but failed to provision: %w", s.Provider, err)
 	}
 
 	return deployment.CreatedResource{
@@ -183,14 +185,14 @@ func (s *CreateHerokuAddonStep) waitForAddonReady(ctx context.Context, client *H
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		select {
 		case <-timeoutCtx.Done():
-			return fmt.Errorf("timeout waiting for addon to provision after %v", totalTimeout)
+			return errors.Errorf("timeout waiting for addon to provision after %v", totalTimeout)
 		default:
 		}
 
 		addon, err := client.GetAddon(timeoutCtx, addonID)
 		if err != nil {
 			if attempt == maxRetries {
-				return fmt.Errorf("failed to get addon status after %d attempts: %w", maxRetries, err)
+				return errors.Errorf("failed to get addon status after %d attempts: %w", maxRetries, err)
 			}
 		} else if addon.State == "provisioned" {
 			return nil
@@ -204,7 +206,7 @@ func (s *CreateHerokuAddonStep) waitForAddonReady(ctx context.Context, client *H
 		}
 	}
 
-	return fmt.Errorf("addon did not provision within %d attempts", maxRetries)
+	return errors.Errorf("addon did not provision within %d attempts", maxRetries)
 }
 
 func (s *CreateHerokuAddonStep) resolveAppName(stepResults map[string]interface{}) string {
@@ -230,7 +232,7 @@ func (s *CreateHerokuAddonStep) Rollback(ctx context.Context, client *HerokuClie
 			}
 		}
 	}
-	return fmt.Errorf("could not find addon for rollback")
+	return errors.Errorf("could not find addon for rollback")
 }
 
 // ConfigureHerokuEnvStep sets environment variables
@@ -255,7 +257,7 @@ func NewConfigureHerokuEnvStep(id, description, appID string, envVars map[string
 func (s *ConfigureHerokuEnvStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) (interface{}, error) {
 	appName := s.resolveAppName(stepResults, s.AppID)
 	if appName == "" {
-		return nil, fmt.Errorf("could not resolve app name")
+		return nil, errors.Errorf("could not resolve app name")
 	}
 
 	// Convert to pointer map for Heroku API
@@ -267,7 +269,7 @@ func (s *ConfigureHerokuEnvStep) Execute(ctx context.Context, client *HerokuClie
 
 	_, err := client.UpdateConfigVars(ctx, appName, configVars)
 	if err != nil {
-		return nil, fmt.Errorf("failed to set environment variables: %w", err)
+		return nil, errors.Errorf("failed to set environment variables: %w", err)
 	}
 
 	return nil, nil
@@ -310,7 +312,7 @@ func NewSetHerokuBuildpacksStep(id, description, appID string, buildpacks []stri
 func (s *SetHerokuBuildpacksStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) (interface{}, error) {
 	appName := s.resolveAppName(stepResults, s.AppID)
 	if appName == "" {
-		return nil, fmt.Errorf("could not resolve app name")
+		return nil, errors.Errorf("could not resolve app name")
 	}
 
 	if len(s.Buildpacks) > 0 {
@@ -372,24 +374,24 @@ func (s *GitDeployStep) Execute(ctx context.Context, client *HerokuClient, stepR
 	}
 
 	if app == nil {
-		return nil, fmt.Errorf("could not find app details for deployment")
+		return nil, errors.Errorf("could not find app details for deployment")
 	}
 
 	// Create Procfile FIRST if needed (before git operations)
 	if s.StartCommand != "" {
 		if err := s.createProcfile(); err != nil {
-			return nil, fmt.Errorf("failed to create Procfile: %w", err)
+			return nil, errors.Errorf("failed to create Procfile: %w", err)
 		}
 	}
 
 	// Ensure git repo and commit changes (this will now include the Procfile)
 	if err := s.prepareGitRepo(); err != nil {
-		return nil, fmt.Errorf("failed to prepare git repository: %w", err)
+		return nil, errors.Errorf("failed to prepare git repository: %w", err)
 	}
 
 	// Add Heroku remote and push with the provided context
 	if err := s.deployViaGit(ctx, app.GitURL, client); err != nil {
-		return nil, fmt.Errorf("failed to deploy via git: %w", err)
+		return nil, errors.Errorf("failed to deploy via git: %w", err)
 	}
 
 	return nil, nil
@@ -414,7 +416,7 @@ func (s *GitDeployStep) prepareGitRepo() error {
 		cmd := exec.Command("git", "init")
 		cmd.Dir = s.BuildContext
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to initialize git: %w", err)
+			return errors.Errorf("failed to initialize git: %w", err)
 		}
 	}
 
@@ -428,7 +430,7 @@ func (s *GitDeployStep) prepareGitRepo() error {
 		cmd = exec.Command("git", "config", "user.email", "deploy@prod-cli.local")
 		cmd.Dir = s.BuildContext
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to set git user.email: %w", err)
+			return errors.Errorf("failed to set git user.email: %w", err)
 		}
 	}
 
@@ -441,7 +443,7 @@ func (s *GitDeployStep) prepareGitRepo() error {
 		cmd = exec.Command("git", "config", "user.name", "Prod CLI Deploy")
 		cmd.Dir = s.BuildContext
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to set git user.name: %w", err)
+			return errors.Errorf("failed to set git user.name: %w", err)
 		}
 	}
 
@@ -449,7 +451,7 @@ func (s *GitDeployStep) prepareGitRepo() error {
 	cmd = exec.Command("git", "add", ".")
 	cmd.Dir = s.BuildContext
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to add files: %w", err)
+		return errors.Errorf("failed to add files: %w", err)
 	}
 
 	cmd = exec.Command("git", "commit", "-m", "Deploy to Heroku")
@@ -458,7 +460,7 @@ func (s *GitDeployStep) prepareGitRepo() error {
 	if err != nil {
 		// Check if there's nothing to commit
 		if !strings.Contains(string(output), "nothing to commit") {
-			return fmt.Errorf("failed to commit: %w", err)
+			return errors.Errorf("failed to commit: %w", err)
 		}
 	}
 
@@ -517,7 +519,7 @@ func (s *GitDeployStep) deployViaGit(ctx context.Context, gitURL string, client 
 
 	// For other errors, return them as temporary (will be retried by workflow)
 	s.reportError(writer, outputStr)
-	return fmt.Errorf("git push failed: %w", pushErr)
+	return errors.Errorf("git push failed: %w", pushErr)
 }
 
 func (s *GitDeployStep) setupGitRemote(gitURL string) error {
@@ -530,7 +532,7 @@ func (s *GitDeployStep) setupGitRemote(gitURL string) error {
 	cmd = exec.Command("git", "remote", "add", "heroku", gitURL)
 	cmd.Dir = s.BuildContext
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to add git remote: %w", err)
+		return errors.Errorf("failed to add git remote: %w", err)
 	}
 
 	return nil
@@ -564,7 +566,7 @@ func (s *GitDeployStep) extractErrorMessage(output string) string {
 	// Look for the actual error message in the output
 	for _, line := range lines {
 		if strings.Contains(line, "error:") || strings.Contains(line, "Error:") ||
-		   strings.Contains(line, "remote:") && strings.Contains(line, "!") {
+			strings.Contains(line, "remote:") && strings.Contains(line, "!") {
 			return strings.TrimSpace(line)
 		}
 	}
@@ -633,14 +635,14 @@ func NewScaleHerokuDynosStep(id, description, appID string, quantity int, size s
 func (s *ScaleHerokuDynosStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) (interface{}, error) {
 	appName := s.resolveAppName(stepResults, s.AppID)
 	if appName == "" {
-		return nil, fmt.Errorf("could not resolve app name")
+		return nil, errors.Errorf("could not resolve app name")
 	}
 
 	quantity := s.Quantity
 	size := s.Size
 	_, err := client.UpdateFormation(ctx, appName, "web", &quantity, &size)
 	if err != nil {
-		return nil, fmt.Errorf("failed to scale dynos: %w", err)
+		return nil, errors.Errorf("failed to scale dynos: %w", err)
 	}
 
 	return nil, nil
