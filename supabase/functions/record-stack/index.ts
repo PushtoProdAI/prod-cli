@@ -52,6 +52,7 @@ Deno.serve(async (req) => {
 
     try {
       let query = supabase
+        .schema('internal')
         .from('stack_usage')
         .select('*')
 
