@@ -51,25 +51,12 @@ Deno.serve(async (req) => {
     const serviceProvider = url.searchParams.get('service_provider')
 
     try {
-      let query = supabase
-        .schema('internal')
-        .from('stack_usage')
-        .select('*')
-
-      if (platform) {
-        query = query.eq('platform', platform.toLowerCase())
-      }
-      if (language) {
-        query = query.eq('language', language.toLowerCase())
-      }
-      if (serviceType) {
-        query = query.eq('service_type', serviceType.toLowerCase())
-      }
-      if (serviceProvider) {
-        query = query.eq('service_provider', serviceProvider.toLowerCase())
-      }
-
-      const { data, error } = await query
+      const { data, error } = await supabase.rpc('get_stack_usage_stats', {
+        p_platform: platform?.toLowerCase() || null,
+        p_language: language?.toLowerCase() || null,
+        p_service_type: serviceType?.toLowerCase() || null,
+        p_service_provider: serviceProvider?.toLowerCase() || null
+      })
 
       if (error) {
         console.error('Error retrieving usage stats:', error)
