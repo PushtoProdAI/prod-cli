@@ -12,13 +12,23 @@ interface ServiceRequirement {
   provider: string
 }
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Max-Age': '86400',
+}
+
 Deno.serve(async (req) => {
-  const { method } = req
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
   
   if (req.method !== 'POST' && req.method !== 'GET') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
  
@@ -64,19 +74,19 @@ Deno.serve(async (req) => {
         console.error('Error retrieving usage stats:', error)
         return new Response(
           JSON.stringify({ error: 'Failed to retrieve usage stats' }),
-          { status: 500, headers: { 'Content-Type': 'application/json' } }
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
       return new Response(
         JSON.stringify({ data }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     } catch (error) {
       console.error('Error in GET request:', error)
       return new Response(
         JSON.stringify({ error: 'Internal server error' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
   }
@@ -88,14 +98,14 @@ Deno.serve(async (req) => {
   } catch {
     return new Response(
       JSON.stringify({ error: 'Invalid JSON' }),
-      { status: 400, headers: { 'Content-Type': 'application/json' } }
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
 
   if (!usageData.language || !usageData.platform) {
     return new Response(
       JSON.stringify({ error: 'Language and platform are required' }),
-      { status: 400, headers: { 'Content-Type': 'application/json' } }
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
 
@@ -116,7 +126,7 @@ Deno.serve(async (req) => {
       console.error('Error updating usage stats:', error)
       return new Response(
         JSON.stringify({ error: 'Failed to update usage stats' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
   }
@@ -126,7 +136,7 @@ Deno.serve(async (req) => {
       success: true,
       message: 'Usage stats updated successfully'
     }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } }
+    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   )
 })
 
