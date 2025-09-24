@@ -61,6 +61,16 @@ client<llm> OllamaClient {
   }
 }
 
+client<llm> ProxyClient {
+  provider "openai-generic"
+  options {
+    base_url "http://127.0.0.1:54321/functions/v1/llm-test"
+    model llama3
+    api_key env.PROXY_API_KEY
+  }
+}
+
+
 // https://docs.boundaryml.com/docs/snippets/clients/retry
 retry_policy Constant {
   max_retries 3
