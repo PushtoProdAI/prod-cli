@@ -16,6 +16,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/auth"
 	be "github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/config"
+
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	prod_log "github.com/meroxa/prod/cli/internal/log"
@@ -87,7 +88,7 @@ func main() {
 		fmt.Println("failed to initialize auth:", err)
 		log.Fatalf("failed to initialize auth: %v", err)
 	}
-	a := agent.NewAgent(provider.Client, supabaseAuth, true)
+	a := agent.NewAgent(provider.Client, supabaseAuth, false)
 	cmd := e.MustBuildCobraCommand(&root.RootCommand{
 		Agent:        a,
 		StatusWriter: statusWriter,
