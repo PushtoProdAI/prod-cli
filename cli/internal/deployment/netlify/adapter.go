@@ -2,9 +2,10 @@ package netlify
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
+
+	"github.com/go-errors/errors"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/pricing"
@@ -49,7 +50,7 @@ func (n *NetlifyDeploymentAdapter) GenerateArtifacts(spec *deployment.Deployment
 
 	// Netlify only supports static deployments
 	if strategy != deployment.StrategyNetlify {
-		return nil, fmt.Errorf("unsupported strategy for Netlify: %s", strategy)
+		return nil, errors.Errorf("unsupported strategy for Netlify: %s", strategy)
 	}
 
 	// Use the queued deployment pattern for better visibility and control
@@ -154,7 +155,7 @@ func (n *NetlifyDeploymentAdapter) validateSpec(spec *deployment.DeploymentSpec)
 	for _, service := range spec.Services {
 		switch service.Provider {
 		case "postgresql", "redis", "mysql", "mongodb":
-			return fmt.Errorf("netlify does not support %s hosting. Netlify is for static sites and serverless functions only", service.Provider)
+			return errors.Errorf("netlify does not support %s hosting. Netlify is for static sites and serverless functions only", service.Provider)
 		}
 	}
 

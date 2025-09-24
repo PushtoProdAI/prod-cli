@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/conduitio/ecdysis"
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/auth"
 )
 
@@ -23,7 +24,7 @@ func (c *TokenCommand) Execute(ctx context.Context) error {
 	// Initialize auth client
 	authClient, err := auth.NewSupabaseAuth(os.Stdout)
 	if err != nil {
-		return fmt.Errorf("failed to initialize auth: %w", err)
+		return errors.Errorf("failed to initialize auth: %w", err)
 	}
 
 	// Check if already authenticated
@@ -39,7 +40,7 @@ func (c *TokenCommand) Execute(ctx context.Context) error {
 	// Authenticate with token
 	fmt.Println("🔐 Authenticating with token...")
 	if err := authClient.LoginWithToken(ctx, c.Token); err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
+		return errors.Errorf("authentication failed: %w", err)
 	}
 
 	return nil

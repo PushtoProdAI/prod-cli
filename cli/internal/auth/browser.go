@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"github.com/go-errors/errors"
 	"bytes"
 	"context"
 	"embed"
@@ -13,6 +14,7 @@ import (
 	"os/exec"
 	"runtime"
 	"time"
+
 )
 
 // Embed all assets as a filesystem
@@ -31,7 +33,7 @@ func (sa *SupabaseAuth) LoginWithBrowser(ctx context.Context) error {
 	// Start local callback server
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return fmt.Errorf("failed to start callback server: %w", err)
+		return errors.Errorf("failed to start callback server: %w", err)
 	}
 	defer listener.Close()
 
@@ -50,7 +52,7 @@ func (sa *SupabaseAuth) LoginWithBrowser(ctx context.Context) error {
 	// Start server in background
 	go func() {
 		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			errorChan <- fmt.Errorf("server error: %w", err)
+			errorChan <- errors.Errorf("server error: %w", err)
 		}
 	}()
 	defer server.Shutdown(ctx)
@@ -73,7 +75,7 @@ func (sa *SupabaseAuth) LoginWithBrowser(ctx context.Context) error {
 	case session := <-sessionChan:
 		// Save session
 		if err := sa.store.SaveSession(session); err != nil {
-			return fmt.Errorf("failed to save session: %w", err)
+			return errors.Errorf("failed to save session: %w", err)
 		}
 
 		fmt.Fprintln(sa.out, "\n✅ Authentication successful!")
@@ -83,13 +85,13 @@ func (sa *SupabaseAuth) LoginWithBrowser(ctx context.Context) error {
 		return nil
 
 	case err := <-errorChan:
-		return fmt.Errorf("authentication failed: %w", err)
+		return errors.Errorf("authentication failed: %w", err)
 
 	case <-ctx.Done():
-		return fmt.Errorf("authentication cancelled")
+		return errors.Errorf("authentication cancelled")
 
 	case <-time.After(5 * time.Minute):
-		return fmt.Errorf("authentication timeout")
+		return errors.Errorf("authentication timeout")
 	}
 }
 
@@ -155,7 +157,7 @@ func (sa *SupabaseAuth) handleAuthCallback(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&tokens); err != nil {
-		errorChan <- fmt.Errorf("failed to parse tokens: %w", err)
+		errorChan <- errors.Errorf("failed to parse tokens: %w", err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
@@ -198,7 +200,7 @@ func (sa *SupabaseAuth) getUserInfo(accessToken string) (*User, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get user info: %s", resp.Status)
+		return nil, errors.Errorf("failed to get user info: %s", resp.Status)
 	}
 
 	var userResp struct {
@@ -234,7 +236,7 @@ func openBrowser(url string) error {
 		cmd = "rundll32"
 		args = []string{"url.dll,FileProtocolHandler", url}
 	default:
-		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+		return errors.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
 
 	return exec.Command(cmd, args...).Start()

@@ -2,9 +2,10 @@ package vercel
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
+
+	"github.com/go-errors/errors"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/pricing"
@@ -62,7 +63,7 @@ func (v *VercelDeploymentAdapter) GenerateArtifacts(spec *deployment.DeploymentS
 
 	// Vercel supports static and serverless deployments
 	if strategy != deployment.StrategyVercel {
-		return nil, fmt.Errorf("unsupported strategy for Vercel: %s", strategy)
+		return nil, errors.Errorf("unsupported strategy for Vercel: %s", strategy)
 	}
 
 	// Use the queued deployment pattern for better visibility and control

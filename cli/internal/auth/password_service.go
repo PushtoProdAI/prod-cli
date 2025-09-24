@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/go-errors/errors"
 )
 
 // PasswordService handles password security operations
@@ -23,7 +25,7 @@ func (ps *PasswordService) CheckAccountLockout(ctx context.Context, userID strin
 	var isLocked bool
 	err := ps.db.QueryRowContext(ctx, query, userID).Scan(&isLocked)
 	if err != nil {
-		return false, fmt.Errorf("failed to check account lockout: %w", err)
+		return false, errors.Errorf("failed to check account lockout: %w", err)
 	}
 	return isLocked, nil
 }
@@ -33,7 +35,7 @@ func (ps *PasswordService) RecordFailedLogin(ctx context.Context, userID string)
 	query := `SELECT record_failed_login($1)`
 	_, err := ps.db.ExecContext(ctx, query, userID)
 	if err != nil {
-		return fmt.Errorf("failed to record failed login: %w", err)
+		return errors.Errorf("failed to record failed login: %w", err)
 	}
 	return nil
 }
@@ -43,7 +45,7 @@ func (ps *PasswordService) ResetFailedLogins(ctx context.Context, userID string)
 	query := `SELECT reset_failed_logins($1)`
 	_, err := ps.db.ExecContext(ctx, query, userID)
 	if err != nil {
-		return fmt.Errorf("failed to reset failed logins: %w", err)
+		return errors.Errorf("failed to reset failed logins: %w", err)
 	}
 	return nil
 }
@@ -54,7 +56,7 @@ func (ps *PasswordService) CheckPasswordHistory(ctx context.Context, userID, pas
 	var inHistory bool
 	err := ps.db.QueryRowContext(ctx, query, userID, passwordHash).Scan(&inHistory)
 	if err != nil {
-		return false, fmt.Errorf("failed to check password history: %w", err)
+		return false, errors.Errorf("failed to check password history: %w", err)
 	}
 	return inHistory, nil
 }
@@ -64,7 +66,7 @@ func (ps *PasswordService) AddPasswordToHistory(ctx context.Context, userID, pas
 	query := `SELECT add_password_to_history($1, $2)`
 	_, err := ps.db.ExecContext(ctx, query, userID, passwordHash)
 	if err != nil {
-		return fmt.Errorf("failed to add password to history: %w", err)
+		return errors.Errorf("failed to add password to history: %w", err)
 	}
 	return nil
 }
@@ -75,7 +77,7 @@ func (ps *PasswordService) CheckPasswordExpiration(ctx context.Context, userID s
 	var isExpired bool
 	err := ps.db.QueryRowContext(ctx, query, userID).Scan(&isExpired)
 	if err != nil {
-		return false, fmt.Errorf("failed to check password expiration: %w", err)
+		return false, errors.Errorf("failed to check password expiration: %w", err)
 	}
 	return isExpired, nil
 }
@@ -110,7 +112,7 @@ func (ps *PasswordService) GetPasswordPolicy(ctx context.Context) (*PasswordSecu
 		&policy.LockoutDuration,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get password policy: %w", err)
+		return nil, errors.Errorf("failed to get password policy: %w", err)
 	}
 
 	// Convert days to duration
@@ -149,7 +151,7 @@ func (ps *PasswordService) UpdatePasswordPolicy(ctx context.Context, policy *Pas
 		int(policy.LockoutDuration.Minutes()),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to update password policy: %w", err)
+		return errors.Errorf("failed to update password policy: %w", err)
 	}
 
 	return nil
@@ -183,7 +185,7 @@ func (ps *PasswordService) GetAccountLockoutInfo(ctx context.Context, userID str
 				IsLocked:       false,
 			}, nil
 		}
-		return nil, fmt.Errorf("failed to get account lockout info: %w", err)
+		return nil, errors.Errorf("failed to get account lockout info: %w", err)
 	}
 
 	info.IsLocked = lockedUntil.Valid && lockedUntil.Time.After(time.Now())
@@ -210,7 +212,7 @@ func (ps *PasswordService) ValidatePasswordWithPolicy(ctx context.Context, passw
 	// Get current policy
 	policy, err := ps.GetPasswordPolicy(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get password policy: %w", err)
+		return nil, errors.Errorf("failed to get password policy: %w", err)
 	}
 
 	// Convert to requirements

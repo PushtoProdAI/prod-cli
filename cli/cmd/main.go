@@ -11,12 +11,12 @@ import (
 
 	"github.com/conduitio/ecdysis"
 	"github.com/cschleiden/go-workflows/backend"
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/cmd/root"
 	"github.com/meroxa/prod/cli/internal/agent"
 	"github.com/meroxa/prod/cli/internal/auth"
 	be "github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/config"
-
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	prod_log "github.com/meroxa/prod/cli/internal/log"
@@ -104,21 +104,21 @@ func main() {
 func initLogFile() (*os.File, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
+		return nil, errors.WrapPrefix(err, "failed to get home directory", 0)
 	}
 
 	dirPath := filepath.Join(homeDir, ".prod")
 
 	err = os.MkdirAll(dirPath, 0755)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create directory: %w", err)
+		return nil, errors.WrapPrefix(err, "failed to create directory", 0)
 	}
 
 	filePath := filepath.Join(dirPath, "log.txt")
 
 	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open/create file: %w", err)
+		return nil, errors.WrapPrefix(err, "failed to open/create file", 0)
 	}
 
 	return file, nil

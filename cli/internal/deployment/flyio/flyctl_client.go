@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/go-errors/errors"
 )
 
 // FlyctlClient implements the FlyioClient interface using the flyctl CLI
@@ -92,7 +94,7 @@ func NewFlyctlClientWithExecutor(executor CommandExecutor) *FlyctlClient {
 func (c *FlyctlClient) ensureFlyctl(ctx context.Context) error {
 	_, err := c.executor.Execute(ctx, "flyctl", "version", "--json")
 	if err != nil {
-		return fmt.Errorf("flyctl is not installed or not in PATH. Please install it from https://fly.io/docs/flyctl/install/")
+		return errors.Errorf("flyctl is not installed or not in PATH. Please install it from https://fly.io/docs/flyctl/install/")
 	}
 	return nil
 }
@@ -118,15 +120,15 @@ func (c *FlyctlClient) CreateApp(ctx context.Context, req CreateAppRequest) (*Fl
 			Error string `json:"error"`
 		}
 		if json.Unmarshal(output, &errorResp) == nil && errorResp.Error != "" {
-			return nil, fmt.Errorf("failed to create app: %s", errorResp.Error)
+			return nil, errors.Errorf("failed to create app: %s", errorResp.Error)
 		}
-		return nil, fmt.Errorf("failed to create Fly.io app %q in region %q: %s", req.Name, req.Region, string(output))
+		return nil, errors.Errorf("failed to create Fly.io app %q in region %q: %s", req.Name, req.Region, string(output))
 	}
 
 	// Parse the JSON response
 	var app FlyioApp
 	if err := json.Unmarshal(output, &app); err != nil {
-		return nil, fmt.Errorf("failed to parse app response: %w", err)
+		return nil, errors.Errorf("failed to parse app response: %w", err)
 	}
 
 	return &app, nil
@@ -141,12 +143,12 @@ func (c *FlyctlClient) GetApp(ctx context.Context, appID string) (*FlyioApp, err
 
 	output, err := c.executor.Execute(ctx, "flyctl", "apps", "list", "--json")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get Fly.io app %q: %w", appID, err)
+		return nil, errors.Errorf("failed to get Fly.io app %q: %w", appID, err)
 	}
 
 	var apps []FlyioApp
 	if err := json.Unmarshal(output, &apps); err != nil {
-		return nil, fmt.Errorf("failed to parse app info: %w", err)
+		return nil, errors.Errorf("failed to parse app info: %w", err)
 	}
 
 	var app FlyioApp
@@ -158,7 +160,7 @@ func (c *FlyctlClient) GetApp(ctx context.Context, appID string) (*FlyioApp, err
 	}
 
 	if app.ID == "" {
-		return nil, fmt.Errorf("app %q not found", appID)
+		return nil, errors.Errorf("app %q not found", appID)
 	}
 
 	if app.Hostname != "" {
@@ -184,13 +186,13 @@ func (c *FlyctlClient) DeployApp(ctx context.Context, appID string, config *Flyi
 
 	// Check if source directory exists
 	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
-		return fmt.Errorf("source directory %s does not exist", sourceDir)
+		return errors.Errorf("source directory %s does not exist", sourceDir)
 	}
 
 	// Generate fly.toml from config
 	flyToml, err := c.generateFlyToml(config)
 	if err != nil {
-		return fmt.Errorf("failed to generate fly.toml: %w", err)
+		return errors.Errorf("failed to generate fly.toml: %w", err)
 	}
 
 	// Write fly.toml to the source directory
@@ -201,7 +203,7 @@ func (c *FlyctlClient) DeployApp(ctx context.Context, appID string, config *Flyi
 	if _, err := os.Stat(flyTomlPath); err == nil {
 		backupPath = flyTomlPath + ".backup"
 		if err := os.Rename(flyTomlPath, backupPath); err != nil {
-			return fmt.Errorf("failed to backup existing fly.toml: %w", err)
+			return errors.Errorf("failed to backup existing fly.toml: %w", err)
 		}
 		defer func() {
 			// Restore backup after deployment
@@ -212,7 +214,7 @@ func (c *FlyctlClient) DeployApp(ctx context.Context, appID string, config *Flyi
 	}
 
 	if err := os.WriteFile(flyTomlPath, []byte(flyToml), 0644); err != nil {
-		return fmt.Errorf("failed to write fly.toml: %w", err)
+		return errors.Errorf("failed to write fly.toml: %w", err)
 	}
 	defer func() {
 		// Clean up generated fly.toml if we didn't have one before
@@ -241,9 +243,9 @@ func (c *FlyctlClient) DeployApp(ctx context.Context, appID string, config *Flyi
 			Status string `json:"status"`
 		}
 		if json.Unmarshal(output, &deployResp) == nil && deployResp.Error != "" {
-			return fmt.Errorf("deployment failed: %s", deployResp.Error)
+			return errors.Errorf("deployment failed: %s", deployResp.Error)
 		}
-		return fmt.Errorf("deployment failed: %w", err)
+		return errors.Errorf("deployment failed: %w", err)
 	}
 
 	// Parse deployment response to verify success
@@ -253,7 +255,7 @@ func (c *FlyctlClient) DeployApp(ctx context.Context, appID string, config *Flyi
 	}
 	if err := json.Unmarshal(output, &deployResp); err == nil {
 		if deployResp.Status != "success" && deployResp.Status != "deployed" {
-			return fmt.Errorf("deployment status: %s", deployResp.Status)
+			return errors.Errorf("deployment status: %s", deployResp.Status)
 		}
 	}
 	slog.Info("App deployed successfully", "url", deployResp.URL)
@@ -269,7 +271,7 @@ func (c *FlyctlClient) DestroyApp(ctx context.Context, appID string) error {
 	// Use --yes to skip confirmation
 	_, err := c.executor.Execute(ctx, "flyctl", "apps", "destroy", appID, "--yes")
 	if err != nil {
-		return fmt.Errorf("failed to destroy Fly.io app %q: %w", appID, err)
+		return errors.Errorf("failed to destroy Fly.io app %q: %w", appID, err)
 	}
 	return nil
 }
@@ -298,13 +300,13 @@ func (c *FlyctlClient) CreatePostgres(ctx context.Context, req CreatePostgresReq
 	// Execute and wait for completion (this will block until provisioned)
 	output, err := c.executor.Execute(ctx, "flyctl", args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create PostgreSQL cluster %q in region %q: %w", req.Name, req.Region, err)
+		return nil, errors.Errorf("failed to create PostgreSQL cluster %q in region %q: %w", req.Name, req.Region, err)
 	}
 
 	// Parse the output to extract cluster information
 	cluster, err := c.parseMPGCreateOutput(string(output))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse cluster creation output: %w", err)
+		return nil, errors.Errorf("failed to parse cluster creation output: %w", err)
 	}
 
 	return cluster, nil
@@ -365,10 +367,10 @@ func (c *FlyctlClient) parseMPGCreateOutput(output string) (*FlyioPostgresCluste
 
 	// Validate we got the essential fields
 	if cluster.ID == "" {
-		return nil, fmt.Errorf("could not parse cluster ID from output")
+		return nil, errors.Errorf("could not parse cluster ID from output")
 	}
 	if cluster.Name == "" {
-		return nil, fmt.Errorf("could not parse cluster name from output")
+		return nil, errors.Errorf("could not parse cluster name from output")
 	}
 
 	return cluster, nil
@@ -391,12 +393,12 @@ func (c *FlyctlClient) CreateRedis(ctx context.Context, req CreateRedisRequest) 
 
 	output, err := c.executor.Execute(ctx, "flyctl", args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Redis database %q in region %q: %w", req.Name, req.Region, err)
+		return nil, errors.Errorf("failed to create Redis database %q in region %q: %w", req.Name, req.Region, err)
 	}
 
 	var redis FlyioRedis
 	if err := json.Unmarshal(output, &redis); err != nil {
-		return nil, fmt.Errorf("failed to parse redis response: %w", err)
+		return nil, errors.Errorf("failed to parse redis response: %w", err)
 	}
 
 	return &redis, nil
@@ -411,7 +413,7 @@ func (c *FlyctlClient) GetPostgresConnectionInfo(ctx context.Context, appID stri
 	// Use flyctl mpg db list to get connection info
 	output, err := c.executor.Execute(ctx, "flyctl", "mpg", "db", "list", "--app", appID, "--json")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get postgres connection info: %w", err)
+		return nil, errors.Errorf("failed to get postgres connection info: %w", err)
 	}
 
 	// Parse the response to extract connection strings
@@ -424,11 +426,11 @@ func (c *FlyctlClient) GetPostgresConnectionInfo(ctx context.Context, appID stri
 	}
 
 	if err := json.Unmarshal(output, &dbList); err != nil {
-		return nil, fmt.Errorf("failed to parse database list: %w", err)
+		return nil, errors.Errorf("failed to parse database list: %w", err)
 	}
 
 	if len(dbList) == 0 {
-		return nil, fmt.Errorf("no databases found")
+		return nil, errors.Errorf("no databases found")
 	}
 
 	// Construct connection strings
@@ -457,7 +459,7 @@ func (c *FlyctlClient) GetRedisConnectionInfo(ctx context.Context, appID string)
 	// Get Redis connection info
 	output, err := c.executor.Execute(ctx, "flyctl", "redis", "status", appID, "--json")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get redis connection info: %w", err)
+		return nil, errors.Errorf("failed to get redis connection info: %w", err)
 	}
 
 	var status struct {
@@ -465,7 +467,7 @@ func (c *FlyctlClient) GetRedisConnectionInfo(ctx context.Context, appID string)
 	}
 
 	if err := json.Unmarshal(output, &status); err != nil {
-		return nil, fmt.Errorf("failed to parse redis status: %w", err)
+		return nil, errors.Errorf("failed to parse redis status: %w", err)
 	}
 
 	// For Redis, internal and external are typically the same
@@ -497,7 +499,7 @@ func (c *FlyctlClient) AttachPostgres(ctx context.Context, req AttachPostgresReq
 
 	_, err := c.executor.Execute(ctx, "flyctl", args...)
 	if err != nil {
-		return fmt.Errorf("failed to attach PostgreSQL cluster %q to app %q: %w",
+		return errors.Errorf("failed to attach PostgreSQL cluster %q to app %q: %w",
 			req.ClusterID, req.AppName, err)
 	}
 
@@ -530,7 +532,7 @@ func (c *FlyctlClient) AttachRedis(ctx context.Context, req AttachRedisRequest) 
 
 	_, err := c.executor.Execute(ctx, "flyctl", args...)
 	if err != nil {
-		return fmt.Errorf("failed to attach Redis %q to app %q: %w", req.RedisName, req.AppName, err)
+		return errors.Errorf("failed to attach Redis %q to app %q: %w", req.RedisName, req.AppName, err)
 	}
 
 	return nil
@@ -553,12 +555,12 @@ func (c *FlyctlClient) CreateVolume(ctx context.Context, req CreateVolumeRequest
 
 	output, err := c.executor.Execute(ctx, "flyctl", args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create volume: %w", err)
+		return nil, errors.Errorf("failed to create volume: %w", err)
 	}
 
 	var volume FlyioVolume
 	if err := json.Unmarshal(output, &volume); err != nil {
-		return nil, fmt.Errorf("failed to parse volume response: %w", err)
+		return nil, errors.Errorf("failed to parse volume response: %w", err)
 	}
 
 	return &volume, nil
@@ -573,7 +575,7 @@ func (c *FlyctlClient) GetAppLogs(ctx context.Context, appID string) ([]LogEntry
 	// Get recent logs in JSON format
 	output, err := c.executor.Execute(ctx, "flyctl", "logs", "--app", appID, "--json", "--limit", "100")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get app logs: %w", err)
+		return nil, errors.Errorf("failed to get app logs: %w", err)
 	}
 
 	// Parse JSON lines (flyctl outputs newline-delimited JSON)
@@ -602,7 +604,7 @@ func (c *FlyctlClient) GetAppMetrics(ctx context.Context, appID string) (*AppMet
 	// We can use status to get basic metrics
 	output, err := c.executor.Execute(ctx, "flyctl", "status", "--app", appID, "--json")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get app metrics: %w", err)
+		return nil, errors.Errorf("failed to get app metrics: %w", err)
 	}
 
 	var status struct {
@@ -615,7 +617,7 @@ func (c *FlyctlClient) GetAppMetrics(ctx context.Context, appID string) (*AppMet
 	}
 
 	if err := json.Unmarshal(output, &status); err != nil {
-		return nil, fmt.Errorf("failed to parse status: %w", err)
+		return nil, errors.Errorf("failed to parse status: %w", err)
 	}
 
 	// Aggregate metrics from all allocations

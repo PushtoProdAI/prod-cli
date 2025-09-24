@@ -1,10 +1,11 @@
 package heroku
 
 import (
-	"fmt"
 	"io"
 	"log/slog"
 	"strings"
+
+	"github.com/go-errors/errors"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/output"
@@ -43,12 +44,12 @@ func (hda *HerokuDeploymentAdapter) SupportedStrategies() []deployment.Deploymen
 func (hda *HerokuDeploymentAdapter) GenerateArtifacts(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.Deployable, error) {
 	// Validate the deployment spec
 	if err := hda.validateSpec(spec); err != nil {
-		return nil, fmt.Errorf("invalid deployment spec for Heroku: %w", err)
+		return nil, errors.Errorf("invalid deployment spec for Heroku: %w", err)
 	}
 
 	// Heroku only has one deployment approach
 	if strategy != deployment.StrategyHeroku {
-		return nil, fmt.Errorf("unsupported deployment strategy for Heroku: %s", strategy)
+		return nil, errors.Errorf("unsupported deployment strategy for Heroku: %s", strategy)
 	}
 
 	// Use the queued deployment approach with API steps
@@ -59,12 +60,12 @@ func (hda *HerokuDeploymentAdapter) GenerateArtifacts(spec *deployment.Deploymen
 func (hda *HerokuDeploymentAdapter) GenerateArtifactsWithSource(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy, sourcePath string) (deployment.Deployable, error) {
 	// Validate the deployment spec
 	if err := hda.validateSpec(spec); err != nil {
-		return nil, fmt.Errorf("invalid deployment spec for Heroku: %w", err)
+		return nil, errors.Errorf("invalid deployment spec for Heroku: %w", err)
 	}
 
 	// Heroku only has one deployment approach
 	if strategy != deployment.StrategyHeroku {
-		return nil, fmt.Errorf("unsupported deployment strategy for Heroku: %s", strategy)
+		return nil, errors.Errorf("unsupported deployment strategy for Heroku: %s", strategy)
 	}
 
 	// Pass the source path through metadata so it can be used during deployment
@@ -139,12 +140,12 @@ func estimateHerokuCostFallback(cr deployment.CostRequest) deployment.CostEstima
 // validateSpec validates that the deployment spec is suitable for Heroku
 func (hda *HerokuDeploymentAdapter) validateSpec(spec *deployment.DeploymentSpec) error {
 	if spec == nil {
-		return fmt.Errorf("deployment spec cannot be nil")
+		return errors.Errorf("deployment spec cannot be nil")
 	}
 
 	// Heroku doesn't support static-only deployments (needs a dyno)
 	if spec.IsStatic && spec.StartCommand == "" {
-		return fmt.Errorf("Heroku requires a web process; static sites need a server (e.g., nginx, serve)")
+		return errors.Errorf("Heroku requires a web process; static sites need a server (e.g., nginx, serve)")
 	}
 
 	// Warn about unsupported services

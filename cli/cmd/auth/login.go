@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/conduitio/ecdysis"
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/auth"
 )
 
@@ -21,7 +22,7 @@ func (c *LoginCommand) Execute(ctx context.Context) error {
 	// Check if already authenticated
 	authClient, err := auth.NewSupabaseAuth(os.Stdout)
 	if err != nil {
-		return fmt.Errorf("failed to initialize auth: %w", err)
+		return errors.Errorf("failed to initialize auth: %w", err)
 	}
 
 	if authClient.IsAuthenticated() {
@@ -36,7 +37,7 @@ func (c *LoginCommand) Execute(ctx context.Context) error {
 	// Perform browser-based login using Supabase function
 	fmt.Println("🚀 Starting authentication...")
 	if err := authClient.LoginWithSupabaseFunction(ctx); err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
+		return errors.Errorf("authentication failed: %w", err)
 	}
 
 	return nil

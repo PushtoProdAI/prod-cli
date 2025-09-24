@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-errors/errors"
+
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
@@ -46,7 +48,7 @@ func (n *NetlifyAPIClient) Deploy(ctx context.Context) ([]deployment.CreatedReso
 
 	// Step 1: Initialize configuration
 	if err := n.initConfig(); err != nil {
-		return resources, fmt.Errorf("failed to initialize config: %w", err)
+		return resources, errors.Errorf("failed to initialize config: %w", err)
 	}
 
 	// Step 2: Get paths
@@ -57,7 +59,7 @@ func (n *NetlifyAPIClient) Deploy(ctx context.Context) ([]deployment.CreatedReso
 	if n.spec.BuildCommand != "" {
 		fmt.Fprintf(n.writer, "🔨 Running build command: %s\n", n.spec.BuildCommand)
 		if err := n.runBuildCommand(sourcePath); err != nil {
-			return resources, fmt.Errorf("build failed: %w", err)
+			return resources, errors.Errorf("build failed: %w", err)
 		}
 	}
 
@@ -65,7 +67,7 @@ func (n *NetlifyAPIClient) Deploy(ctx context.Context) ([]deployment.CreatedReso
 	fmt.Fprintf(n.writer, "📦 Preparing files for deployment...\n")
 	files, err := n.hashFiles(filepath.Join(sourcePath, publishDir))
 	if err != nil {
-		return resources, fmt.Errorf("failed to hash files: %w", err)
+		return resources, errors.Errorf("failed to hash files: %w", err)
 	}
 
 	// Step 4b: Hash functions if directory exists
@@ -77,7 +79,7 @@ func (n *NetlifyAPIClient) Deploy(ctx context.Context) ([]deployment.CreatedReso
 			fmt.Fprintf(n.writer, "📦 Preparing functions for deployment...\n")
 			functions, err = n.hashFunctions(functionsPath)
 			if err != nil {
-				return resources, fmt.Errorf("failed to hash functions: %w", err)
+				return resources, errors.Errorf("failed to hash functions: %w", err)
 			}
 		}
 	}
@@ -86,14 +88,14 @@ func (n *NetlifyAPIClient) Deploy(ctx context.Context) ([]deployment.CreatedReso
 	fmt.Fprintf(n.writer, "🚀 Creating deployment...\n")
 	deployID, requiredFiles, requiredFunctions, err := n.createDeployment(files, functions)
 	if err != nil {
-		return resources, fmt.Errorf("failed to create deployment: %w", err)
+		return resources, errors.Errorf("failed to create deployment: %w", err)
 	}
 
 	// Step 6: Upload required files
 	if len(requiredFiles) > 0 {
 		fmt.Fprintf(n.writer, "📤 Uploading %d files...\n", len(requiredFiles))
 		if err := n.uploadFiles(deployID, filepath.Join(sourcePath, publishDir), requiredFiles); err != nil {
-			return resources, fmt.Errorf("failed to upload files: %w", err)
+			return resources, errors.Errorf("failed to upload files: %w", err)
 		}
 	}
 
@@ -101,7 +103,7 @@ func (n *NetlifyAPIClient) Deploy(ctx context.Context) ([]deployment.CreatedReso
 	if len(requiredFunctions) > 0 {
 		fmt.Fprintf(n.writer, "📤 Uploading %d functions...\n", len(requiredFunctions))
 		if err := n.uploadFunctions(deployID, requiredFunctions); err != nil {
-			return resources, fmt.Errorf("failed to upload functions: %w", err)
+			return resources, errors.Errorf("failed to upload functions: %w", err)
 		}
 	}
 
@@ -109,7 +111,7 @@ func (n *NetlifyAPIClient) Deploy(ctx context.Context) ([]deployment.CreatedReso
 	fmt.Fprintf(n.writer, "⏳ Waiting for deployment to go live...\n")
 	deployURL, err := n.waitForDeployment(deployID)
 	if err != nil {
-		return resources, fmt.Errorf("deployment failed: %w", err)
+		return resources, errors.Errorf("deployment failed: %w", err)
 	}
 
 	fmt.Fprintf(n.writer, "✅ Deployment successful!\n")
@@ -138,7 +140,7 @@ func (n *NetlifyAPIClient) initConfig() error {
 		}
 	}
 	if n.token == "" {
-		return fmt.Errorf("NETLIFY_AUTH_TOKEN not set")
+		return errors.Errorf("NETLIFY_AUTH_TOKEN not set")
 	}
 
 	// Get or create site ID
@@ -148,7 +150,7 @@ func (n *NetlifyAPIClient) initConfig() error {
 		// Create new site if no ID provided
 		siteID, err := n.createSite()
 		if err != nil {
-			return fmt.Errorf("failed to create site: %w", err)
+			return errors.Errorf("failed to create site: %w", err)
 		}
 		n.siteID = siteID
 	}
@@ -179,7 +181,7 @@ func (n *NetlifyAPIClient) createSite() (string, error) {
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("failed to create site: %s", body)
+		return "", errors.Errorf("failed to create site: %s", body)
 	}
 
 	var result map[string]interface{}
@@ -218,7 +220,7 @@ func (n *NetlifyAPIClient) hashFiles(dir string) (map[string]string, error) {
 		// Hash file
 		hash, err := n.hashFile(path)
 		if err != nil {
-			return fmt.Errorf("failed to hash %s: %w", path, err)
+			return errors.Errorf("failed to hash %s: %w", path, err)
 		}
 
 		files[relPath] = hash
@@ -269,7 +271,7 @@ func (n *NetlifyAPIClient) createDeployment(files, functions map[string]string) 
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
-		return "", nil, nil, fmt.Errorf("failed to create deployment: %s", body)
+		return "", nil, nil, errors.Errorf("failed to create deployment: %s", body)
 	}
 
 	var result map[string]interface{}
@@ -324,7 +326,7 @@ func (n *NetlifyAPIClient) uploadFiles(deployID, baseDir string, files []string)
 		// Read file content
 		content, err := os.ReadFile(fullPath)
 		if err != nil {
-			return fmt.Errorf("failed to read file %s: %w", fullPath, err)
+			return errors.Errorf("failed to read file %s: %w", fullPath, err)
 		}
 
 		// Upload file
@@ -339,12 +341,12 @@ func (n *NetlifyAPIClient) uploadFiles(deployID, baseDir string, files []string)
 
 		resp, err := n.client.Do(req)
 		if err != nil {
-			return fmt.Errorf("failed to upload %s: %w", filePath, err)
+			return errors.Errorf("failed to upload %s: %w", filePath, err)
 		}
 		resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("failed to upload %s: status %d", filePath, resp.StatusCode)
+			return errors.Errorf("failed to upload %s: status %d", filePath, resp.StatusCode)
 		}
 
 		// Show progress
@@ -394,14 +396,14 @@ func (n *NetlifyAPIClient) waitForDeployment(deployID string) (string, error) {
 			}
 		case "error":
 			errorMsg, _ := result["error_message"].(string)
-			return "", fmt.Errorf("deployment failed: %s", errorMsg)
+			return "", errors.Errorf("deployment failed: %s", errorMsg)
 		}
 
 		// Wait before next poll
 		time.Sleep(5 * time.Second)
 	}
 
-	return "", fmt.Errorf("deployment timed out")
+	return "", errors.Errorf("deployment timed out")
 }
 
 // getSourcePath gets the source path for deployment
@@ -496,7 +498,7 @@ func (n *NetlifyAPIClient) hashFunctions(dir string) (map[string]string, error) 
 		// Create a zip of the function
 		zipData, err := n.zipFunction(path)
 		if err != nil {
-			return fmt.Errorf("failed to zip function %s: %w", path, err)
+			return errors.Errorf("failed to zip function %s: %w", path, err)
 		}
 
 		// Hash the zipped function with SHA256
@@ -505,14 +507,14 @@ func (n *NetlifyAPIClient) hashFunctions(dir string) (map[string]string, error) 
 		hash := hex.EncodeToString(hasher.Sum(nil))
 
 		functions[functionName] = hash
-		
+
 		// Store the zipped data in memory for later upload
 		// We'll need to pass this data along somehow
 		if n.functionZips == nil {
 			n.functionZips = make(map[string][]byte)
 		}
 		n.functionZips[functionName] = zipData
-		
+
 		return nil
 	})
 
@@ -532,7 +534,7 @@ func (n *NetlifyAPIClient) zipFunction(filePath string) ([]byte, error) {
 
 	// Get just the filename for the zip entry
 	fileName := filepath.Base(filePath)
-	
+
 	// Create a file in the zip
 	writer, err := zipWriter.Create(fileName)
 	if err != nil {
@@ -558,12 +560,12 @@ func (n *NetlifyAPIClient) uploadFunctions(deployID string, functions []string) 
 		// Get the zipped function data from our cache
 		zipData, ok := n.functionZips[functionName]
 		if !ok {
-			return fmt.Errorf("no zip data found for function %s", functionName)
+			return errors.Errorf("no zip data found for function %s", functionName)
 		}
 
 		// Upload function as a zip with runtime parameter
 		url := fmt.Sprintf("%s/deploys/%s/functions/%s?runtime=js", n.apiURL, deployID, functionName)
-		
+
 		req, err := http.NewRequest("PUT", url, bytes.NewBuffer(zipData))
 		if err != nil {
 			return err
@@ -574,12 +576,12 @@ func (n *NetlifyAPIClient) uploadFunctions(deployID string, functions []string) 
 
 		resp, err := n.client.Do(req)
 		if err != nil {
-			return fmt.Errorf("failed to upload function %s: %w", functionName, err)
+			return errors.Errorf("failed to upload function %s: %w", functionName, err)
 		}
 		resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("failed to upload function %s: status %d", functionName, resp.StatusCode)
+			return errors.Errorf("failed to upload function %s: status %d", functionName, resp.StatusCode)
 		}
 
 		// Show progress
@@ -594,7 +596,7 @@ func (n *NetlifyAPIClient) runBuildCommand(workDir string) error {
 	// Parse the build command
 	parts := strings.Fields(n.spec.BuildCommand)
 	if len(parts) == 0 {
-		return fmt.Errorf("empty build command")
+		return errors.Errorf("empty build command")
 	}
 
 	cmd := exec.Command(parts[0], parts[1:]...)
@@ -612,7 +614,7 @@ func (n *NetlifyAPIClient) runBuildCommand(workDir string) error {
 
 	// Run the build
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("build command failed: %w", err)
+		return errors.Errorf("build command failed: %w", err)
 	}
 
 	fmt.Fprintf(n.writer, "✅ Build completed successfully\n")

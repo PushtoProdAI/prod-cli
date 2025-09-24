@@ -5,6 +5,8 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/go-errors/errors"
+
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
@@ -51,13 +53,13 @@ func (ftg *FlyioTemplateGenerator) GenerateFlyToml(spec *deployment.DeploymentSp
 
 	tmpl, err := template.New("fly.toml").Parse(flyTomlTemplate)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse template: %w", err)
+		return "", errors.Errorf("failed to parse template: %w", err)
 	}
 
 	var result strings.Builder
 	err = tmpl.Execute(&result, data)
 	if err != nil {
-		return "", fmt.Errorf("failed to execute template: %w", err)
+		return "", errors.Errorf("failed to execute template: %w", err)
 	}
 
 	return result.String(), nil

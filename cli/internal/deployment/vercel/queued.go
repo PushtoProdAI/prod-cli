@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-errors/errors"
+
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
@@ -54,7 +56,7 @@ func (vqd *VercelQueuedDeployment) Deploy(ctx context.Context) ([]deployment.Cre
 				}
 			}
 
-			return nil, fmt.Errorf("step %s failed: %w", step.GetID(), err)
+			return nil, errors.Errorf("step %s failed: %w", step.GetID(), err)
 		}
 
 		stepResults[step.GetID()] = result

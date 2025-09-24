@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,6 +14,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/go-errors/errors"
 
 	"github.com/meroxa/prod/cli/internal/deployment/heroku"
 )
@@ -159,7 +160,7 @@ func (ha *HerokuAuth) CheckAuthentication(ctx context.Context) (bool, error) {
 func (ha *HerokuAuth) ValidateAPIKey(ctx context.Context, apiKey string) (bool, error) {
 	// Validate API key format
 	if len(apiKey) == 0 {
-		return false, fmt.Errorf("API key cannot be empty")
+		return false, errors.Errorf("API key cannot be empty")
 	}
 
 	// Create a test client with the API key
@@ -174,7 +175,7 @@ func (ha *HerokuAuth) ValidateAPIKey(ctx context.Context, apiKey string) (bool, 
 			return false, nil
 		}
 		// Other error, return it
-		return false, fmt.Errorf("failed to validate API key: %w", err)
+		return false, errors.Errorf("failed to validate API key: %w", err)
 	}
 
 	return true, nil
@@ -205,7 +206,7 @@ func (ha *HerokuAuth) PerformOAuthLogin(ctx context.Context) error {
 	ha.println("5. Paste it when prompted")
 	ha.println("")
 
-	return fmt.Errorf("manual API key entry required")
+	return errors.Errorf("manual API key entry required")
 }
 
 // browserLogin implements Heroku's browser-based login flow
@@ -222,12 +223,12 @@ func (ha *HerokuAuth) browserLogin(ctx context.Context) error {
 
 	jsonData, err := json.Marshal(authRequest)
 	if err != nil {
-		return fmt.Errorf("failed to create auth request: %w", err)
+		return errors.Errorf("failed to create auth request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", herokuCLIAuthURL+"/auth", bytes.NewBuffer(jsonData))
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return errors.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -237,13 +238,13 @@ func (ha *HerokuAuth) browserLogin(ctx context.Context) error {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to request auth URLs: %w", err)
+		return errors.Errorf("failed to request auth URLs: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("auth request failed (status %d): %s", resp.StatusCode, string(body))
+		return errors.Errorf("auth request failed (status %d): %s", resp.StatusCode, string(body))
 	}
 
 	// Parse the response to get browser_url, cli_url, and token
@@ -254,7 +255,7 @@ func (ha *HerokuAuth) browserLogin(ctx context.Context) error {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&authURLs); err != nil {
-		return fmt.Errorf("failed to parse auth response: %w", err)
+		return errors.Errorf("failed to parse auth response: %w", err)
 	}
 
 	// Step 2: Open browser for authentication
@@ -287,7 +288,7 @@ func (ha *HerokuAuth) pollForAuth(ctx context.Context, cliURL, token string) err
 		select {
 		case <-timeout:
 			ha.println("\n⏰ Authentication timed out.")
-			return fmt.Errorf("authentication timed out")
+			return errors.Errorf("authentication timed out")
 
 		case <-ctx.Done():
 			return ctx.Err()
@@ -338,7 +339,7 @@ func (ha *HerokuAuth) pollForAuth(ctx context.Context, cliURL, token string) err
 				}
 
 				if authResult.Error != "" {
-					return fmt.Errorf("authentication error: %s", authResult.Error)
+					return errors.Errorf("authentication error: %s", authResult.Error)
 				}
 
 				if authResult.AccessToken != "" {
@@ -382,7 +383,7 @@ func (ha *HerokuAuth) fetchAccountEmail(ctx context.Context, token string) (stri
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("failed to fetch account info: status %d", resp.StatusCode)
+		return "", errors.Errorf("failed to fetch account info: status %d", resp.StatusCode)
 	}
 
 	var account struct {
@@ -395,7 +396,6 @@ func (ha *HerokuAuth) fetchAccountEmail(ctx context.Context, token string) (stri
 
 	return account.Email, nil
 }
-
 
 // saveToken saves the authentication token to .netrc
 func (ha *HerokuAuth) saveToken(token, email string) error {
@@ -466,7 +466,7 @@ func (ha *HerokuAuth) getAPIKeyFromCLI() (string, error) {
 // LoginWithCLI uses Heroku CLI for authentication
 func (ha *HerokuAuth) LoginWithCLI(ctx context.Context) error {
 	if !ha.isHerokuCLIAvailable() {
-		return fmt.Errorf("Heroku CLI is not installed. Please install it from https://devcenter.heroku.com/articles/heroku-cli")
+		return errors.Errorf("Heroku CLI is not installed. Please install it from https://devcenter.heroku.com/articles/heroku-cli")
 	}
 
 	ha.println("🔐 Using Heroku CLI for authentication...")
@@ -478,13 +478,13 @@ func (ha *HerokuAuth) LoginWithCLI(ctx context.Context) error {
 	cmd.Stderr = ha.output
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Heroku CLI login failed: %w", err)
+		return errors.Errorf("Heroku CLI login failed: %w", err)
 	}
 
 	// Get the token from CLI
 	token, err := ha.getAPIKeyFromCLI()
 	if err != nil {
-		return fmt.Errorf("failed to retrieve token after login: %w", err)
+		return errors.Errorf("failed to retrieve token after login: %w", err)
 	}
 
 	// Set the environment variable
