@@ -93,7 +93,7 @@ class LaunchCommand {
   }
 
 function ExtractIntent(request: string) -> Intent {
-  client "OllamaClient"
+  client "ProxyClient"
   prompt #"
  {{ _.role("system") }}
 You are a strict classifier. Your only job is to analyze deployment requests and extract structured metadata. 

@@ -129,7 +129,8 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 
 func (a *Activities) determineIntent(ctx context.Context, prompt string) (types.Intent, error) {
 	a.uiWriter.SendStatus("planning", "Understanding your request...")
-	intent, err := baml_client.ExtractIntent(ctx, prompt)
+	session := CtxSession(ctx)
+	intent, err := baml_client.ExtractIntent(ctx, prompt, baml_client.WithEnv(map[string]string{"PROXY_API_KEY": session.AccessToken}))
 	if err != nil {
 		a.uiWriter.SendStatusComplete("planning", "❌ Failed to understand request")
 		return types.Intent{}, errors.Errorf("failed to extract intent: %w", err)
