@@ -1,5 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { initSentry, captureException, flushSentry } from '../_shared/sentry.ts';
+
+// Initialize Sentry
+initSentry();
 
 interface UsageData {
   platform: string
@@ -20,10 +24,11 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  try {
+    // Handle CORS preflight requests
+    if (req.method === 'OPTIONS') {
+      return new Response('ok', { headers: corsHeaders })
+    }
   
   if (req.method !== 'POST' && req.method !== 'GET') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
@@ -60,6 +65,14 @@ Deno.serve(async (req) => {
 
       if (error) {
         console.error('Error retrieving usage stats:', error)
+        captureException(new Error(String(error)), {
+          function: 'record-stack',
+          operation: 'get_usage_stats',
+          platform,
+          language,
+          service_type: serviceType,
+          service_provider: serviceProvider
+        });
         return new Response(
           JSON.stringify({ error: 'Failed to retrieve usage stats' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -72,6 +85,12 @@ Deno.serve(async (req) => {
       )
     } catch (error) {
       console.error('Error in GET request:', error)
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        function: 'record-stack',
+        operation: 'get_request_error',
+        platform,
+        language
+      });
       return new Response(
         JSON.stringify({ error: 'Internal server error' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -112,6 +131,14 @@ Deno.serve(async (req) => {
     
     if (error) {
       console.error('Error updating usage stats:', error)
+      captureException(new Error(String(error) || 'Unknown database error'), {
+        function: 'record-stack',
+        operation: 'update_usage_stats',
+        platform: usageData.platform,
+        language: usageData.language,
+        service_type: service.type,
+        service_provider: service.provider
+      });
       return new Response(
         JSON.stringify({ error: 'Failed to update usage stats' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -126,6 +153,21 @@ Deno.serve(async (req) => {
     }),
     { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   )
+  
+  } catch (error) {
+    console.error('Unexpected error in record-stack function:', error);
+    captureException(error instanceof Error ? error : new Error(String(error)), {
+      function: 'record-stack',
+      operation: 'general_error',
+      method: req.method
+    });
+    await flushSentry();
+    
+    return new Response(
+      JSON.stringify({ error: 'Internal server error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
 })
 
 async function updateUsageStats(

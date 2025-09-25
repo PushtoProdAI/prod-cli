@@ -1,5 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { initSentry, captureException, flushSentry } from '../_shared/sentry.ts';
+
+// Initialize Sentry
+initSentry();
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,10 +11,11 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  try {
+    // Handle CORS
+    if (req.method === 'OPTIONS') {
+      return new Response('ok', { headers: corsHeaders })
+    }
 
   const url = new URL(req.url)
   
@@ -53,25 +58,30 @@ serve(async (req) => {
         type: 'recovery'
       })
       
-      if (sessionError) {
-        // Try alternate method - sometimes the token is directly usable
-        const { data: user, error: updateError } = await supabase.auth.updateUser(
-          { password },
-          { 
-            // Use the token as a bearer token
-            headers: {
-              Authorization: `Bearer ${token}`
+        if (sessionError) {
+          // Try alternate method - sometimes the token is directly usable
+          const { data: user, error: updateError } = await supabase.auth.updateUser(
+            { password },
+            { 
+              // Use the token as a bearer token
+              headers: {
+                Authorization: `Bearer ${token}`
+              }
             }
-          }
-        )
-        
-        if (updateError) {
-          console.error('Password update error:', updateError)
-          return new Response(
-            JSON.stringify({ error: 'Invalid or expired token. Please request a new password reset.' }),
-            { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
-        }
+          
+          if (updateError) {
+            console.error('Password update error:', updateError)
+            captureException(new Error(updateError.message), {
+              function: 'update-password',
+              operation: 'alternate_password_update',
+              error_code: updateError.code
+            });
+            return new Response(
+              JSON.stringify({ error: 'Invalid or expired token. Please request a new password reset.' }),
+              { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
         
         return new Response(
           JSON.stringify({ success: true }),
@@ -87,6 +97,11 @@ serve(async (req) => {
         
         if (updateError) {
           console.error('Password update error:', updateError)
+          captureException(new Error(updateError.message), {
+            function: 'update-password',
+            operation: 'session_password_update',
+            error_code: updateError.code
+          });
           return new Response(
             JSON.stringify({ error: updateError.message }),
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -106,6 +121,11 @@ serve(async (req) => {
       
     } catch (error) {
       console.error('Password update error:', error)
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        function: 'update-password',
+        operation: 'password_update_error',
+        method: req.method
+      });
       return new Response(
         JSON.stringify({ error: 'Failed to update password' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -114,6 +134,21 @@ serve(async (req) => {
   }
   
   return new Response('Method not allowed', { status: 405 })
+  
+  } catch (error) {
+    console.error('Unexpected error in update-password function:', error);
+    captureException(error instanceof Error ? error : new Error(String(error)), {
+      function: 'update-password',
+      operation: 'general_error',
+      method: req.method
+    });
+    await flushSentry();
+    
+    return new Response(
+      JSON.stringify({ error: 'Internal server error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
 })
 
 function getUpdatePasswordHTML(): string {
