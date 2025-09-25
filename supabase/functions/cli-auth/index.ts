@@ -1,6 +1,10 @@
 /// <reference types="https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts" />
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { initSentry, captureException, flushSentry } from '../_shared/sentry.ts'
+
+// Initialize Sentry
+initSentry()
 
 // Get auth URL from environment variable based on environment
 const getAuthURL = () => {
@@ -27,10 +31,11 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  try {
+    // Handle CORS
+    if (req.method === 'OPTIONS') {
+      return new Response('ok', { headers: corsHeaders })
+    }
 
   const url = new URL(req.url)
   
@@ -64,15 +69,21 @@ serve(async (req) => {
                  const successURL = `${AUTH_URL}?success=true&token=${encodeURIComponent(token)}`
                  return Response.redirect(successURL, 302)
                }
-             } catch (error) {
-               if (callbackUrl) {
-                 const errorURL = `${callbackUrl}?error=token_exchange_failed&error_description=${encodeURIComponent(error.message)}`
-                 return Response.redirect(errorURL, 302)
-               } else {
-                 const errorURL = `${AUTH_URL}?error=token_exchange_failed&error_description=${encodeURIComponent(error.message)}`
-                 return Response.redirect(errorURL, 302)
-               }
-             }
+              } catch (error) {
+                captureException(error, {
+                  function: 'cli-auth',
+                  operation: 'token_exchange',
+                  method: 'GET',
+                  has_callback_url: !!callbackUrl
+                })
+                if (callbackUrl) {
+                  const errorURL = `${callbackUrl}?error=token_exchange_failed&error_description=${encodeURIComponent(error.message)}`
+                  return Response.redirect(errorURL, 302)
+                } else {
+                  const errorURL = `${AUTH_URL}?error=token_exchange_failed&error_description=${encodeURIComponent(error.message)}`
+                  return Response.redirect(errorURL, 302)
+                }
+              }
            }
            
            // Default: redirect to hosted auth page
@@ -132,8 +143,14 @@ serve(async (req) => {
                    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
                  )
                  
-               } catch (error) {
-                 console.error('Email auth error:', error)
+                } catch (error) {
+                  console.error('Email auth error:', error)
+                  captureException(error, {
+                    function: 'cli-auth',
+                    operation: 'email_auth',
+                    method: 'POST',
+                    has_callback_url: !!body.callback_url
+                  })
                  
                  // If callback_url is provided, return JSON with error redirect URL
                  if (body.callback_url) {
@@ -176,6 +193,11 @@ serve(async (req) => {
       
     } catch (error) {
       console.error('Auth URL generation error:', error)
+      captureException(error, {
+        function: 'cli-auth',
+        operation: 'auth_url_generation',
+        method: 'POST'
+      })
       return new Response(
         JSON.stringify({ error: 'Failed to generate auth URL' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -184,6 +206,21 @@ serve(async (req) => {
   }
   
   return new Response('Method not allowed', { status: 405 })
+  
+  } catch (error) {
+    console.error('Unexpected error in cli-auth function:', error)
+    captureException(error, {
+      function: 'cli-auth',
+      method: req.method,
+      url: req.url
+    })
+    await flushSentry()
+    
+    return new Response(
+      JSON.stringify({ error: 'Internal server error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+  }
 })
 
 function generateAuthURL(state: string): string {

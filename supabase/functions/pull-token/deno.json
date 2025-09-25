@@ -1,3 +1,10 @@
 {
-  "imports": {}
+  "imports": {
+    "supabase": "jsr:@supabase/supabase-js@2",
+    "sentry": "https://deno.land/x/sentry/index.mjs"
+  },
+  "compilerOptions": {
+    "lib": ["deno.ns", "dom"],
+    "types": ["https://deno.land/x/sentry/types/index.d.ts"]
+  }
 }
