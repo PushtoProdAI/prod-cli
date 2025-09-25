@@ -13,6 +13,7 @@ import (
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	prod_error "github.com/meroxa/prod/cli/internal/error"
 )
 
 // planDeploy workflow handles the planning phase of deployment
@@ -21,6 +22,11 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 	if err != nil {
 		slog.Error("Failed to determine intent", "error", err)
 		w.uiWriter.SendStatus("error", "Failed to determine intent")
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":  PlanDeployWorkflowName,
+			"activity":  AgentDetermineIntent,
+			"component": "workflow",
+		})
 	}
 	spec := analyzer.ProjectSpec{}
 	if intent.Source != "" {
@@ -32,6 +38,12 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		if err != nil {
 			w.uiWriter.SendStatusComplete("analyzing", "❌ Failed to analyze project")
 			slog.Error("Failed to analyze project", "error", err)
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":  PlanDeployWorkflowName,
+				"activity":  AgentAnalyzeProject,
+				"component": "workflow",
+				"platform":  intent.Platform,
+			})
 		} else {
 			w.uiWriter.SendStatusComplete("analyzing", "✅ Project analyzed")
 		}
@@ -42,11 +54,25 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 	_, err = workflow.ExecuteActivity[any](ctx, opts, AgentSendProjectStats, intent.Platform, spec).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to send project stats", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":  PlanDeployWorkflowName,
+			"activity":  AgentSendProjectStats,
+			"component": "workflow",
+			"platform":  intent.Platform,
+		})
 	}
 
 	summary, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarizeIntent, intent, spec.Name, spec.Language).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to summarize intent", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     PlanDeployWorkflowName,
+			"activity":     AgentSummarizeIntent,
+			"component":    "workflow",
+			"platform":     intent.Platform,
+			"project_name": spec.Name,
+			"language":     spec.Language,
+		})
 	}
 	platform := UnknownPlatform
 	switch strings.ToLower(intent.Platform) {
@@ -88,6 +114,14 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 			cmd, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineRunCommand, spec).Get(ctx)
 			if err != nil {
 				slog.Info("Failed to determine run command", "error", err)
+				prod_error.CaptureErrorWithContext(err, map[string]any{
+					"workflow":     PlanDeployWorkflowName,
+					"activity":     AgentDetermineRunCommand,
+					"component":    "workflow",
+					"platform":     platform.String(),
+					"project_name": spec.Name,
+					"language":     spec.Language,
+				})
 			}
 			if cmd != "" {
 				plan.Spec.StartCommand = cmd
@@ -117,6 +151,25 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 
 			if err != nil {
 				slog.Info("Failed to estimate costs", "error", err)
+				var activity string
+				switch platform {
+				case Render:
+					activity = AgentEstimateRenderCosts
+				case FlyIO:
+					activity = AgentEstimateFlyioCosts
+				case Netlify:
+					activity = AgentEstimateNetlifyCosts
+				case Vercel:
+					activity = AgentEstimateVercelCosts
+				}
+				prod_error.CaptureErrorWithContext(err, map[string]any{
+					"workflow":     PlanDeployWorkflowName,
+					"activity":     activity,
+					"component":    "workflow",
+					"platform":     platform.String(),
+					"project_name": spec.Name,
+					"language":     spec.Language,
+				})
 			} else {
 				plan.Pricing = estimatedCosts
 				w.uiWriter.SendStatusComplete("pricing", "✅ Costs calculated")

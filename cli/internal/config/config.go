@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"strings"
 )
 
@@ -10,13 +9,15 @@ var (
 	SupabaseURL     string
 	SupabaseAnonKey string
 	ProdDebug       string
+	Environment     string
+	SentryDSN       string
 )
 
 // GetEnvironment returns the current environment (local, staging, production)
 func GetEnvironment() string {
 	// Check build-time variable first, then fall back to environment variable
-	if env := os.Getenv("ENVIRONMENT"); env != "" {
-		return env
+	if Environment != "" {
+		return Environment
 	}
 	return "staging" // Default to staging for local development
 }
