@@ -4,6 +4,10 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { initSentry, captureException, flushSentry } from '../_shared/sentry.ts'
+
+// Initialize Sentry
+initSentry()
 
 interface BaseImage {
   language: string
@@ -38,6 +42,11 @@ Deno.serve(async (req: Request) => {
 
     if (error) {
       console.error("Database error:", error)
+      captureException(new Error(error.message), {
+        function: 'base-images',
+        operation: 'database_query',
+        error_details: error
+      })
       return new Response(
         JSON.stringify({ error: "Failed to fetch base images" }),
         {
@@ -62,6 +71,12 @@ Deno.serve(async (req: Request) => {
     })
   } catch (error) {
     console.error("Function error:", error)
+    captureException(error instanceof Error ? error : new Error(String(error)), {
+      function: 'base-images',
+      operation: 'general_error'
+    })
+    await flushSentry()
+    
     return new Response(
       JSON.stringify({
         error: "Internal server error",
