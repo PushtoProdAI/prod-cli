@@ -83,8 +83,9 @@ jobs:
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         PROD_DEBUG: true
+        ENVIRONMENT: staging
       run: |
-        echo "Building staging binaries with PROD_DEBUG=true"
+        echo "Building staging binaries with PROD_DEBUG=true, ENVIRONMENT=staging"
         cd cli
         make build-linux-all
 
@@ -135,8 +136,9 @@ jobs:
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         PROD_DEBUG: false
+        ENVIRONMENT: production
       run: |
-        echo "Building production binaries with PROD_DEBUG=false"
+        echo "Building production binaries with PROD_DEBUG=false, ENVIRONMENT=production"
         cd cli
         make build-linux-all
 
@@ -184,8 +186,9 @@ jobs:
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         PROD_DEBUG: true
+        ENVIRONMENT: staging
       run: |
-        echo "Building staging binaries with PROD_DEBUG=true"
+        echo "Building staging binaries with PROD_DEBUG=true, ENVIRONMENT=staging"
         cd cli
         # Build ARM64 (should always work)
         make build-cli-darwin-arm64
@@ -237,8 +240,9 @@ jobs:
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         PROD_DEBUG: false
+        ENVIRONMENT: production
       run: |
-        echo "Building production binaries with PROD_DEBUG=false"
+        echo "Building production binaries with PROD_DEBUG=false, ENVIRONMENT=production"
         cd cli
         # Build ARM64 (should always work)
         make build-cli-darwin-arm64
