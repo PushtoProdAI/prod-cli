@@ -1,7 +1,6 @@
 package error
 
 import (
-	"context"
 	"log/slog"
 	"time"
 
@@ -184,13 +183,4 @@ func (c *client) addBreadcrumb(message, category string, level sentry.Level) {
 		Level:     level,
 		Timestamp: time.Now(),
 	})
-}
-
-// withContext returns a context with the current hub for concurrent operations
-func (c *client) withContext(ctx context.Context) context.Context {
-	if !c.initialized {
-		return ctx
-	}
-
-	return sentry.SetHubOnContext(ctx, sentry.CurrentHub().Clone())
 }
