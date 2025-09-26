@@ -426,6 +426,8 @@ type CreateWebServiceStepConfig struct {
 	BuildCommand string
 	// StartCommand is the command to start the application (e.g., "npm start")
 	StartCommand string
+	// PreDeployCommand is the command to run before deployment (e.g., database migrations)
+	PreDeployCommand string
 	// Environment is the runtime environment (e.g., "node", "python3", "docker")
 	Environment string
 	// Dockerfile is the path to the Dockerfile for Docker deployments
@@ -452,6 +454,7 @@ type CreateWebServiceStep struct {
 	OwnerID            string              `json:"ownerId"`
 	BuildCommand       string              `json:"buildCommand"`
 	StartCommand       string              `json:"startCommand"`
+	PreDeployCommand   string              `json:"preDeployCommand"`
 	Environment        string              `json:"environment"`
 	Dockerfile         string              `json:"dockerfile,omitempty"`
 	DockerImageStepID  string              `json:"dockerImageStepId,omitempty"`  // ID of build & push step
@@ -474,6 +477,7 @@ func NewCreateWebServiceStep(config CreateWebServiceStepConfig) *CreateWebServic
 		OwnerID:            config.OwnerID,
 		BuildCommand:       config.BuildCommand,
 		StartCommand:       config.StartCommand,
+		PreDeployCommand:   config.PreDeployCommand,
 		Environment:        config.Environment,
 		Dockerfile:         config.Dockerfile,
 		DockerImageStepID:  config.DockerImageStepID,
@@ -598,11 +602,12 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 
 		req.ServiceDetails = serviceDetails
 
-		// Don't set build/start commands for Docker deployments
+		// Don't set build/start/pre-deploy commands for Docker deployments
 	} else {
-		// Native deployment - set build and start commands
+		// Native deployment - set build, start, and pre-deploy commands
 		req.BuildCommand = s.BuildCommand
 		req.StartCommand = s.StartCommand
+		req.PreDeployCommand = s.PreDeployCommand
 	}
 	webService, err := client.CreateWebService(ctx, req)
 	if err != nil {

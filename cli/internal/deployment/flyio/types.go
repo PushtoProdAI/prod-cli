@@ -51,12 +51,13 @@ type CreateAppRequest struct {
 
 // FlyioConfig represents the configuration for a Fly.io app
 type FlyioConfig struct {
-	AppName     string            `json:"app_name"`
-	SourcePath  string            `json:"source_path,omitempty"` // Path to source code directory
-	BuildConfig *BuildConfig      `json:"build_config,omitempty"`
-	EnvVars     map[string]string `json:"env_vars,omitempty"`
-	Services    []ServiceConfig   `json:"services,omitempty"`
-	Volumes     []VolumeConfig    `json:"volumes,omitempty"`
+	AppName        string            `json:"app_name"`
+	SourcePath     string            `json:"source_path,omitempty"` // Path to source code directory
+	BuildConfig    *BuildConfig      `json:"build_config,omitempty"`
+	ReleaseCommand string            `json:"release_command,omitempty"`
+	EnvVars        map[string]string `json:"env_vars,omitempty"`
+	Services       []ServiceConfig   `json:"services,omitempty"`
+	Volumes        []VolumeConfig    `json:"volumes,omitempty"`
 }
 
 // BuildConfig for Fly.io app build configuration

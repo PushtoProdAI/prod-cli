@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -91,6 +93,25 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 			}
 			if cmd != "" {
 				plan.Spec.StartCommand = cmd
+			}
+		}
+
+		// Determine migration command if databases are present
+		hasDatabases := false
+		for _, req := range spec.ServiceRequirements {
+			if req.Type == analyzer.TypeDatabase {
+				hasDatabases = true
+				break
+			}
+		}
+
+		if hasDatabases && plan.Spec.MigrationCommand == "" {
+			migrationCmd, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineMigrationCommand, spec).Get(ctx)
+			if err != nil {
+				slog.Info("Failed to determine migration command", "error", err)
+			}
+			if migrationCmd != "" {
+				plan.Spec.MigrationCommand = migrationCmd
 			}
 		}
 
@@ -215,5 +236,70 @@ func (a *Activities) determineRunCommand(ctx context.Context, spec analyzer.Proj
 		return "", errors.Errorf("failed to determine launch command: %w", err)
 	}
 	a.uiWriter.SendStatusComplete("planning", "✅ Run command determined")
+	return cmd.Command, nil
+}
+
+func (a *Activities) determineMigrationCommand(ctx context.Context, spec analyzer.ProjectSpec) (string, error) {
+	a.uiWriter.SendStatus("planning", "Detecting database migrations")
+
+	// Extract frameworks
+	var frameworks []string
+	for _, req := range spec.ServiceRequirements {
+		if req.Type == "framework" {
+			frameworks = append(frameworks, req.Provider)
+		}
+	}
+
+	// Convert MigrationContext to BAML types
+	mc := types.MigrationContext{
+		MigrationFiles: make([]types.MigrationFile, 0),
+		OrmTools:       spec.MigrationContext.ORMTools,
+		PackageScripts: "",
+		ConfigSnippets: "",
+	}
+
+	// Convert migration files
+	for _, file := range spec.MigrationContext.MigrationFiles {
+		fileType := "migration"
+		if strings.Contains(file, "config") || strings.Contains(file, ".ini") || strings.Contains(file, ".json") {
+			fileType = "config"
+		} else if strings.Contains(file, "schema") {
+			fileType = "schema"
+		}
+		mc.MigrationFiles = append(mc.MigrationFiles, types.MigrationFile{
+			Path: file,
+			Type: fileType,
+		})
+	}
+
+	// Convert package scripts to JSON string
+	if len(spec.MigrationContext.PackageScripts) > 0 {
+		scriptsJSON, err := json.Marshal(spec.MigrationContext.PackageScripts)
+		if err == nil {
+			mc.PackageScripts = string(scriptsJSON)
+		}
+	}
+
+	// Combine config snippets into a single string
+	var configSnippets []string
+	for file, content := range spec.MigrationContext.ConfigFiles {
+		configSnippets = append(configSnippets, fmt.Sprintf("=== %s ===\n%s", file, content))
+	}
+	if len(configSnippets) > 0 {
+		mc.ConfigSnippets = strings.Join(configSnippets, "\n\n")
+	}
+
+	cmd, err := baml_client.DetermineMigrationCommand(ctx, spec.Language, frameworks, spec.MigrationContext.ORMTools, mc)
+	if err != nil {
+		a.uiWriter.SendStatusComplete("planning", "❌ Failed to detect migration command")
+		return "", errors.Errorf("failed to determine migration command: %w", err)
+	}
+
+	if cmd.Command == "" {
+		a.uiWriter.SendStatusComplete("planning", "✓ No database migrations detected")
+	} else {
+		a.uiWriter.SendStatusComplete("planning", fmt.Sprintf("✅ Migration command: %s", cmd.Command))
+	}
+
 	return cmd.Command, nil
 }

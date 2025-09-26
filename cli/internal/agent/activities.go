@@ -30,6 +30,7 @@ const (
 	AgentDetermineRootPath       = "agent.determineRootPath"
 	AgentDetermineBuildOutput    = "agent.determineBuildOutput"
 	AgentDetermineRunCommand     = "agent.determineRunCommand"
+	AgentDetermineMigrationCommand = "agent.determineMigrationCommand"
 	AgentCreatePackageLock       = "agent.createPackageLock"
 	AgentUpdateJavaScriptConfig  = "agent.updateJavaScriptConfig"
 	AgentRestoreConfigFromBackup = "agent.restoreConfigFromBackup"
@@ -66,6 +67,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentDetermineRootPath, ActFunc: a.determineRootPath},
 		{Name: AgentDetermineBuildOutput, ActFunc: a.determineBuildOutput},
 		{Name: AgentDetermineRunCommand, ActFunc: a.determineRunCommand},
+		{Name: AgentDetermineMigrationCommand, ActFunc: a.determineMigrationCommand},
 		{Name: AgentCreatePackageLock, ActFunc: a.createPackageLockJSON},
 		{Name: AgentUpdateJavaScriptConfig, ActFunc: a.updateJavaScriptConfig},
 		{Name: AgentRestoreConfigFromBackup, ActFunc: a.restoreFromBackup},

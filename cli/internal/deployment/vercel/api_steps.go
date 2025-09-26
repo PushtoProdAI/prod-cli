@@ -271,23 +271,25 @@ func (s *SetEnvironmentVariablesStep) Rollback(ctx context.Context, client Verce
 // BuildProjectStep runs the build command for the project
 type BuildProjectStep struct {
 	BaseStep
-	buildCommand string
-	sourcePath   string
-	envVars      []deployment.EnvVar
-	writer       io.Writer
+	buildCommand     string
+	migrationCommand string
+	sourcePath       string
+	envVars          []deployment.EnvVar
+	writer           io.Writer
 }
 
-func NewBuildProjectStep(buildCommand, sourcePath string, envVars []deployment.EnvVar, writer io.Writer) *BuildProjectStep {
+func NewBuildProjectStep(buildCommand, migrationCommand, sourcePath string, envVars []deployment.EnvVar, writer io.Writer) *BuildProjectStep {
 	return &BuildProjectStep{
 		BaseStep: BaseStep{
 			ID:           "build-project",
 			Description:  fmt.Sprintf("Build project: %s", buildCommand),
 			Dependencies: []string{},
 		},
-		buildCommand: buildCommand,
-		sourcePath:   sourcePath,
-		envVars:      envVars,
-		writer:       writer,
+		buildCommand:     buildCommand,
+		migrationCommand: migrationCommand,
+		sourcePath:       sourcePath,
+		envVars:          envVars,
+		writer:           writer,
 	}
 }
 
@@ -361,6 +363,13 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client VercelClient, ste
 		fmt.Fprintf(s.writer, "  ⚠️  No package.json found, skipping dependency installation\n")
 	}
 
+	// Run migrations if specified (before build)
+	if s.migrationCommand != "" {
+		if err := s.runMigration(buildCtx, env); err != nil {
+			return nil, err
+		}
+	}
+
 	// Convert deployment.EnvVar to vercel.EnvVar
 	vercelEnvVars := make([]EnvVar, len(s.envVars))
 	for i, env := range s.envVars {
@@ -375,6 +384,25 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client VercelClient, ste
 
 	fmt.Fprintf(s.writer, "  ✅ Build completed successfully\n")
 	return map[string]string{"status": "built"}, nil
+}
+
+func (s *BuildProjectStep) runMigration(ctx context.Context, env []string) error {
+	fmt.Fprintf(s.writer, "  🔄 Running database migrations...\n")
+	fmt.Fprintf(s.writer, "     Command: %s\n", s.migrationCommand)
+
+	// Parse the migration command (support shell commands)
+	cmd := exec.CommandContext(ctx, "sh", "-c", s.migrationCommand)
+	cmd.Env = env
+	cmd.Stdout = s.writer
+	cmd.Stderr = s.writer
+
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(s.writer, "  ❌ Migration failed: %v\n", err)
+		return fmt.Errorf("migration failed: %w", err)
+	}
+
+	fmt.Fprintf(s.writer, "  ✅ Migrations completed successfully\n")
+	return nil
 }
 
 func (s *BuildProjectStep) Rollback(ctx context.Context, client VercelClient, stepResults map[string]any) error {

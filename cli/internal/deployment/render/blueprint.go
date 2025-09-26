@@ -64,14 +64,15 @@ func (bd *BlueprintDeployment) createDockerBlueprint(artifacts *deployment.Docke
 
 	// Add main web service using Dockerfile
 	webService := BlueprintService{
-		Name:         fmt.Sprintf("%s-web", bd.spec.Name),
-		Type:         "web_service",
-		Env:          "docker",
-		Repo:         ".", // Assumes source is in current directory
-		Dockerfile:   artifacts.Dockerfile,
-		BuildCommand: "", // Docker handles the build
-		StartCommand: "", // Docker handles the start
-		EnvVars:      make(map[string]string),
+		Name:             fmt.Sprintf("%s-web", bd.spec.Name),
+		Type:             "web_service",
+		Env:              "docker",
+		Repo:             ".", // Assumes source is in current directory
+		Dockerfile:       artifacts.Dockerfile,
+		BuildCommand:     "", // Docker handles the build
+		StartCommand:     "", // Docker handles the start
+		PreDeployCommand: bd.spec.MigrationCommand,
+		EnvVars:          make(map[string]string),
 	}
 
 	// Add environment variables for backing services
@@ -113,13 +114,14 @@ func (bd *BlueprintDeployment) createNativeBlueprint() *RenderBlueprint {
 
 	// Add main web service using native Render detection
 	webService := BlueprintService{
-		Name:         fmt.Sprintf("%s-web", bd.spec.Name),
-		Type:         "web_service",
-		Env:          bd.getEnvironmentForLanguage(bd.spec.Language),
-		Repo:         ".", // Assumes source is in current directory
-		BuildCommand: bd.spec.BuildCommand,
-		StartCommand: bd.spec.StartCommand,
-		EnvVars:      make(map[string]string),
+		Name:             fmt.Sprintf("%s-web", bd.spec.Name),
+		Type:             "web_service",
+		Env:              bd.getEnvironmentForLanguage(bd.spec.Language),
+		Repo:             ".", // Assumes source is in current directory
+		BuildCommand:     bd.spec.BuildCommand,
+		StartCommand:     bd.spec.StartCommand,
+		PreDeployCommand: bd.spec.MigrationCommand,
+		EnvVars:          make(map[string]string),
 	}
 
 	// Add environment variables for backing services

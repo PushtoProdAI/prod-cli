@@ -180,6 +180,9 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 
 	}
 
+	// Collect migration context
+	migrationContext := n.collectMigrationContext(pkgJson, serviceRequirements)
+
 	return &ProjectSpec{
 		Name:                name,
 		Language:            "node",
@@ -189,6 +192,7 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 		Routes:              routes,
 		BuildOutput:         buildOutputCandidate,
 		LaunchContext:       launchCtx,
+		MigrationContext:    migrationContext,
 	}, nil
 }
 
@@ -487,4 +491,68 @@ func hasVueDependency(root string) bool {
 	}
 
 	return false
+}
+
+// collectMigrationContext collects migration-related information for the project
+func (n *NodeAnalyzer) collectMigrationContext(pkgJson *PackageJson, serviceRequirements []ServiceRequirement) MigrationContext {
+	migrationContext := MigrationContext{
+		MigrationFiles: []string{},
+		ORMTools:       []string{},
+		ConfigFiles:    make(map[string]string),
+		PackageScripts: make(map[string]string),
+	}
+
+	// Get all dependencies for ORM detection
+	var allDeps []string
+	if pkgJson.Dependencies != nil {
+		for dep := range pkgJson.Dependencies {
+			allDeps = append(allDeps, dep)
+		}
+	}
+	if pkgJson.DevDependencies != nil {
+		for dep := range pkgJson.DevDependencies {
+			allDeps = append(allDeps, dep)
+		}
+	}
+
+	// Detect ORM tools from dependencies
+	migrationContext.ORMTools = DetectORMTools(allDeps, "node")
+
+	// Find migration files and directories
+	migrationFiles, _ := FindMigrationFiles(n.ProjectFS.rootPath)
+	migrationContext.MigrationFiles = migrationFiles
+
+	// Extract migration-related scripts from package.json
+	if pkgJson.Scripts != nil {
+		migrationContext.PackageScripts = ExtractMigrationScripts(pkgJson.Scripts)
+	}
+
+	// Read snippets from key config files if they exist
+	configFilesToCheck := []string{
+		"prisma/schema.prisma",
+		"knexfile.js",
+		"knexfile.ts",
+		"ormconfig.json",
+		"ormconfig.js",
+		"typeorm.config.ts",
+		".sequelizerc",
+	}
+
+	for _, configFile := range configFilesToCheck {
+		path := filepath.Join(n.ProjectFS.rootPath, configFile)
+		if exists(path) {
+			// Read first 50 lines of config file
+			if data, err := os.ReadFile(path); err == nil {
+				lines := strings.Split(string(data), "\n")
+				maxLines := 50
+				if len(lines) < maxLines {
+					maxLines = len(lines)
+				}
+				snippet := strings.Join(lines[:maxLines], "\n")
+				migrationContext.ConfigFiles[configFile] = snippet
+			}
+		}
+	}
+
+	return migrationContext
 }
