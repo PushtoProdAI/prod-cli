@@ -101,6 +101,7 @@ func (qd *QueuedDeployment) GenerateAPISteps() []HerokuAPIStep {
 		createAppStepID,
 		qd.buildContext,
 		qd.spec.StartCommand,
+		qd.spec.MigrationCommand,
 		deployDeps,
 	))
 	stepCounter++

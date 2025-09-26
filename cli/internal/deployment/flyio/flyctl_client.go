@@ -660,6 +660,13 @@ func (c *FlyctlClient) generateFlyToml(config *FlyioConfig) (string, error) {
 		builder.WriteString("\n")
 	}
 
+	// Deploy configuration (for release command/migrations)
+	if config.ReleaseCommand != "" {
+		builder.WriteString("[deploy]\n")
+		builder.WriteString(fmt.Sprintf("  release_command = \"%s\"\n", config.ReleaseCommand))
+		builder.WriteString("\n")
+	}
+
 	// Environment variables
 	if len(config.EnvVars) > 0 {
 		builder.WriteString("[env]\n")

@@ -52,15 +52,16 @@ type Service struct {
 }
 
 type DeploymentSpec struct {
-	Name         string
-	Language     string
-	Services     []Service
-	Metadata     map[string]any
-	BuildCommand string
-	StartCommand string
-	EnvVars      []EnvVar
-	OutputDir    string
-	IsStatic     bool
+	Name             string
+	Language         string
+	Services         []Service
+	Metadata         map[string]any
+	BuildCommand     string
+	StartCommand     string
+	MigrationCommand string
+	EnvVars          []EnvVar
+	OutputDir        string
+	IsStatic         bool
 }
 
 type CostService struct {
@@ -159,11 +160,12 @@ func (db *DeploymentBuilder) Build() (*DeploymentSpec, error) {
 		Metadata: map[string]any{
 			"source": "project-analysis",
 		},
-		BuildCommand: db.projectSpec.BuildCommand,
-		StartCommand: db.projectSpec.StartCommand,
-		EnvVars:      db.serviceEnvVars,
-		OutputDir:    db.projectSpec.BuildOutput.Path,
-		IsStatic:     isStatic,
+		BuildCommand:     db.projectSpec.BuildCommand,
+		StartCommand:     db.projectSpec.StartCommand,
+		MigrationCommand: db.projectSpec.MigrationCommand,
+		EnvVars:          db.serviceEnvVars,
+		OutputDir:        db.projectSpec.BuildOutput.Path,
+		IsStatic:         isStatic,
 	}, nil
 }
 

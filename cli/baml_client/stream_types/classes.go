@@ -784,6 +784,250 @@ func (u LauncherFile) BamlEncodeName() *cffi.CFFITypeName {
 	}
 }
 
+type MigrationCommand struct {
+	Command     *string `json:"command"`
+	Confidence  *string `json:"confidence"`
+	Explanation *string `json:"explanation"`
+}
+
+func (c *MigrationCommand) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "MigrationCommand" {
+		panic(fmt.Sprintf("expected MigrationCommand, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "command":
+			c.Command = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "confidence":
+			c.Confidence = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "explanation":
+			c.Explanation = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c MigrationCommand) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["command"] = c.Command
+
+	fields["confidence"] = c.Confidence
+
+	fields["explanation"] = c.Explanation
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c MigrationCommand) BamlTypeName() string {
+	return "MigrationCommand"
+}
+
+func (u MigrationCommand) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "MigrationCommand",
+	}
+}
+
+type MigrationContext struct {
+	MigrationFiles []MigrationFile `json:"migrationFiles"`
+	OrmTools       []string        `json:"ormTools"`
+	PackageScripts *string         `json:"packageScripts"`
+	ConfigSnippets *string         `json:"configSnippets"`
+}
+
+func (c *MigrationContext) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "MigrationContext" {
+		panic(fmt.Sprintf("expected MigrationContext, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "migrationFiles":
+			c.MigrationFiles = baml.DecodeList(valueHolder, func(inner *cffi.CFFIValueHolder) MigrationFile {
+				return *baml.Decode(inner).(*MigrationFile)
+			})
+
+		case "ormTools":
+			c.OrmTools = baml.DecodeList(valueHolder, func(inner *cffi.CFFIValueHolder) string {
+				return baml.Decode(inner).(string)
+			})
+
+		case "packageScripts":
+			c.PackageScripts = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "configSnippets":
+			c.ConfigSnippets = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c MigrationContext) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["migrationFiles"] = c.MigrationFiles
+
+	fields["ormTools"] = c.OrmTools
+
+	fields["packageScripts"] = c.PackageScripts
+
+	fields["configSnippets"] = c.ConfigSnippets
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c MigrationContext) BamlTypeName() string {
+	return "MigrationContext"
+}
+
+func (u MigrationContext) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "MigrationContext",
+	}
+}
+
+type MigrationFile struct {
+	Path *string `json:"path"`
+	Type *string `json:"type"`
+}
+
+func (c *MigrationFile) Decode(holder *cffi.CFFIValueClass) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "MigrationFile" {
+		panic(fmt.Sprintf("expected MigrationFile, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "path":
+			c.Path = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		case "type":
+			c.Type = func(param *cffi.CFFIValueHolder) *string {
+				decoded := baml.Decode(param)
+				return func(result any) *string {
+					if result == nil {
+						return nil
+					}
+					casted := (result).(string)
+					return &casted
+				}(decoded)
+			}(valueHolder)
+
+		default:
+			panic(fmt.Sprintf("unexpected field: %s", key))
+		}
+	}
+
+}
+
+func (c MigrationFile) Encode() (*cffi.CFFIValueHolder, error) {
+	fields := map[string]any{}
+
+	fields["path"] = c.Path
+
+	fields["type"] = c.Type
+
+	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
+}
+
+func (c MigrationFile) BamlTypeName() string {
+	return "MigrationFile"
+}
+
+func (u MigrationFile) BamlEncodeName() *cffi.CFFITypeName {
+	return &cffi.CFFITypeName{
+		Namespace: cffi.CFFITypeNamespace_STREAM_TYPES,
+		Name:      "MigrationFile",
+	}
+}
+
 type PricingResponse struct {
 	Services   []ServicePricing `json:"services"`
 	Total_cost *float64         `json:"total_cost"`

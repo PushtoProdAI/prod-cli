@@ -203,8 +203,9 @@ func (fqd *FlyioQueuedDeployment) generateFlyConfig() *FlyioConfig {
 	}
 
 	config := &FlyioConfig{
-		AppName: fqd.spec.Name,
-		EnvVars: envVars,
+		AppName:        fqd.spec.Name,
+		ReleaseCommand: fqd.spec.MigrationCommand,
+		EnvVars:        envVars,
 	}
 
 	// Set source path if available in metadata

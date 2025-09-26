@@ -13,16 +13,17 @@ type FlyioTemplateGenerator struct{}
 
 // FlyioTemplateData represents the data used in fly.toml templates
 type FlyioTemplateData struct {
-	AppName       string
-	PrimaryRegion string
-	Dockerfile    string
-	Builder       string
-	BuildCmd      string
-	StartCmd      string
-	InternalPort  int
-	EnvVars       map[string]string
-	Services      []ServiceTemplateData
-	Volumes       []VolumeTemplateData
+	AppName        string
+	PrimaryRegion  string
+	Dockerfile     string
+	Builder        string
+	BuildCmd       string
+	StartCmd       string
+	ReleaseCommand string
+	InternalPort   int
+	EnvVars        map[string]string
+	Services       []ServiceTemplateData
+	Volumes        []VolumeTemplateData
 }
 
 // ServiceTemplateData represents service configuration in fly.toml
@@ -80,6 +81,9 @@ func (ftg *FlyioTemplateGenerator) buildTemplateData(spec *deployment.Deployment
 	}
 	if spec.StartCommand != "" {
 		data.StartCmd = spec.StartCommand
+	}
+	if spec.MigrationCommand != "" {
+		data.ReleaseCommand = spec.MigrationCommand
 	}
 
 	// Set builder based on language
@@ -172,6 +176,11 @@ primary_region = "{{.PrimaryRegion}}"
   {{if .StartCmd}}
   start_cmd = "{{.StartCmd}}"
   {{end}}
+{{end}}
+
+{{if .ReleaseCommand}}
+[deploy]
+  release_command = "{{.ReleaseCommand}}"
 {{end}}
 
 {{if .EnvVars}}

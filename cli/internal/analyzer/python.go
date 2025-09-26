@@ -212,6 +212,14 @@ func (p *PythonAnalyzer) Analyze() (*ProjectSpec, error) {
 		return nil, err
 	}
 
+	// Collect migration context
+	// Convert dependencies to string slice for migration context
+	depNames := make([]string, len(dependencies))
+	for i, dep := range dependencies {
+		depNames[i] = dep.Name
+	}
+	migrationContext := p.collectMigrationContext(depNames, serviceRequirements)
+
 	return &ProjectSpec{
 		Name:                projectName,
 		Language:            "python",
@@ -221,6 +229,7 @@ func (p *PythonAnalyzer) Analyze() (*ProjectSpec, error) {
 		Routes:              routes,
 		StartCommand:        runCmd,
 		LaunchContext:       launchCtx,
+		MigrationContext:    migrationContext,
 	}, nil
 }
 
@@ -684,4 +693,84 @@ func (p *PythonRouteProcessor) combinePaths(prefix, path string) string {
 	}
 
 	return prefix + path
+}
+
+// collectMigrationContext collects migration-related information for the project
+func (p *PythonAnalyzer) collectMigrationContext(dependencies []string, serviceRequirements []ServiceRequirement) MigrationContext {
+	migrationContext := MigrationContext{
+		MigrationFiles: []string{},
+		ORMTools:       []string{},
+		ConfigFiles:    make(map[string]string),
+		PackageScripts: make(map[string]string),
+	}
+
+	// Detect ORM tools from dependencies
+	migrationContext.ORMTools = DetectORMTools(dependencies, "python")
+
+	// Find migration files and directories
+	migrationFiles, _ := FindMigrationFiles(p.ProjectFS.rootPath)
+	migrationContext.MigrationFiles = migrationFiles
+
+	// Check for Django manage.py
+	managePyPath := filepath.Join(p.ProjectFS.rootPath, "manage.py")
+	if _, err := os.Stat(managePyPath); err == nil {
+		// Read first 30 lines to include in context
+		if data, err := os.ReadFile(managePyPath); err == nil {
+			lines := strings.Split(string(data), "\n")
+			maxLines := 30
+			if len(lines) < maxLines {
+				maxLines = len(lines)
+			}
+			snippet := strings.Join(lines[:maxLines], "\n")
+			migrationContext.ConfigFiles["manage.py"] = snippet
+		}
+	}
+
+	// Check for Alembic config
+	alembicIniPath := filepath.Join(p.ProjectFS.rootPath, "alembic.ini")
+	if _, err := os.Stat(alembicIniPath); err == nil {
+		if data, err := os.ReadFile(alembicIniPath); err == nil {
+			lines := strings.Split(string(data), "\n")
+			maxLines := 50
+			if len(lines) < maxLines {
+				maxLines = len(lines)
+			}
+			snippet := strings.Join(lines[:maxLines], "\n")
+			migrationContext.ConfigFiles["alembic.ini"] = snippet
+		}
+	}
+
+	// Check for Flask-Migrate
+	migrationsDir := filepath.Join(p.ProjectFS.rootPath, "migrations")
+	if _, err := os.Stat(migrationsDir); err == nil {
+		// Check if it's likely Flask-Migrate by looking for alembic.ini inside migrations/
+		alembicInMigrations := filepath.Join(migrationsDir, "alembic.ini")
+		if _, err := os.Stat(alembicInMigrations); err == nil {
+			migrationContext.ConfigFiles["migrations/alembic.ini"] = "Flask-Migrate migrations directory detected"
+		}
+	}
+
+	// Extract any migration-related commands from Makefile or similar
+	makefilePath := filepath.Join(p.ProjectFS.rootPath, "Makefile")
+	if _, err := os.Stat(makefilePath); err == nil {
+		if data, err := os.ReadFile(makefilePath); err == nil {
+			lines := strings.Split(string(data), "\n")
+			for _, line := range lines {
+				lineLower := strings.ToLower(line)
+				if strings.Contains(lineLower, "migrate") || strings.Contains(lineLower, "alembic") ||
+				   strings.Contains(lineLower, "django") && strings.Contains(lineLower, "manage.py") {
+					// Extract make target name if it's a target line
+					if strings.Contains(line, ":") && !strings.HasPrefix(strings.TrimSpace(line), "#") {
+						parts := strings.Split(line, ":")
+						if len(parts) > 0 {
+							targetName := strings.TrimSpace(parts[0])
+							migrationContext.PackageScripts[targetName] = line
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return migrationContext
 }

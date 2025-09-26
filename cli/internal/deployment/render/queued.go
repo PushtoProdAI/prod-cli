@@ -250,6 +250,7 @@ func (qd *QueuedDeployment) createWebServiceStep(ownerID string, envVars []deplo
 		OwnerID:            ownerID,
 		BuildCommand:       config.buildCommand,
 		StartCommand:       config.startCommand,
+		PreDeployCommand:   qd.spec.MigrationCommand,
 		Environment:        config.environment,
 		Dockerfile:         config.dockerfile,
 		DockerImageStepID:  config.dockerImageStepID,
