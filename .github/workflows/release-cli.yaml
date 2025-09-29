@@ -269,6 +269,7 @@ jobs:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
     needs: [test, build-linux-staging, build-macos-staging]
     runs-on: ubuntu-latest
+    environment: staging
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -349,6 +350,12 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
     needs: [test, build-linux-production, build-macos-production]
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
