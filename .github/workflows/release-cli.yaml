@@ -325,6 +325,11 @@ jobs:
         mkdir -p releases/${VERSION}
         cp release-files/* releases/${VERSION}/
         
+        # List all files to be uploaded
+        echo "Files to be uploaded:"
+        ls -la releases/${VERSION}/
+        echo "Total files: $(ls releases/${VERSION}/ | wc -l)"
+        
         # Upload each binary to Supabase Storage
         for file in releases/${VERSION}/*; do
           filename=$(basename "$file")
@@ -332,12 +337,22 @@ jobs:
           echo "Uploading $filename (size: $filesize bytes) to releases/${VERSION}/$filename"
           
           # Remove existing file if it exists, then upload
+          echo "Removing existing file if it exists..."
           supabase storage rm "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental 2>/dev/null || true
-          supabase storage cp "$file" "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental --yes
           
-          # Get public URL
-          public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
-          echo "Public URL: $public_url"
+          # Upload with timeout and debug info
+          echo "Starting upload with timeout..."
+          timeout 300 supabase storage cp "$file" "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental --yes --debug
+          
+          if [ $? -eq 0 ]; then
+            echo "Upload successful for $filename"
+            # Get public URL
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
+            echo "Public URL: $public_url"
+          else
+            echo "Upload failed or timed out for $filename"
+            exit 1
+          fi
         done
         
         # Create and upload manifest
@@ -441,6 +456,11 @@ jobs:
         mkdir -p releases/${VERSION}
         cp release-files/* releases/${VERSION}/
         
+        # List all files to be uploaded
+        echo "Files to be uploaded:"
+        ls -la releases/${VERSION}/
+        echo "Total files: $(ls releases/${VERSION}/ | wc -l)"
+        
         # Upload each binary to Supabase Storage
         for file in releases/${VERSION}/*; do
           filename=$(basename "$file")
@@ -448,12 +468,22 @@ jobs:
           echo "Uploading $filename (size: $filesize bytes) to releases/${VERSION}/$filename"
           
           # Remove existing file if it exists, then upload
+          echo "Removing existing file if it exists..."
           supabase storage rm "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental 2>/dev/null || true
-          supabase storage cp "$file" "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental --yes
           
-          # Get public URL
-          public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
-          echo "Public URL: $public_url"
+          # Upload with timeout and debug info
+          echo "Starting upload with timeout..."
+          timeout 300 supabase storage cp "$file" "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental --yes --debug
+          
+          if [ $? -eq 0 ]; then
+            echo "Upload successful for $filename"
+            # Get public URL
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
+            echo "Public URL: $public_url"
+          else
+            echo "Upload failed or timed out for $filename"
+            exit 1
+          fi
         done
         
         # Create and upload manifest
