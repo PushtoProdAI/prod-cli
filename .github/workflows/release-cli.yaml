@@ -301,6 +301,7 @@ jobs:
 
     - name: Link Supabase project
       run: |
+        echo "Linking to project: ${{ secrets.SUPABASE_PROJECT_ID }}"
         supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
       env:
         SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -374,6 +375,7 @@ jobs:
 
     - name: Link Supabase project
       run: |
+        echo "Linking to project: ${{ secrets.SUPABASE_PROJECT_ID }}"
         supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
       env:
         SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
