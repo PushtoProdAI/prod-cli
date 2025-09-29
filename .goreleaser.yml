@@ -21,6 +21,9 @@ builds:
     dir: ./cli
     env:
       - CGO_ENABLED=1
+      - SUPABASE_URL={{.Env.SUPABASE_URL}}
+      - SUPABASE_ANON_KEY={{.Env.SUPABASE_ANON_KEY}}
+      - PROD_DEBUG={{.Env.PROD_DEBUG}}
     ldflags:
       - -s -w
       - -X 'github.com/meroxa/prod/cli/internal/config.SupabaseURL={{.Env.SUPABASE_URL}}'

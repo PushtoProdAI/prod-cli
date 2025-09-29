@@ -68,17 +68,19 @@ jobs:
       - name: Upload to Supabase Storage
         run: |
           # Make the upload script executable
-          chmod +x scripts/upload-to-supabase.sh
+          chmod +x scripts/upload-to-supabase-api.sh
           
           # Set version from tag or input
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            export GORELEASER_CURRENT_TAG="${{ github.event.inputs.version }}"
             export VERSION="${{ github.event.inputs.version }}"
           else
+            export GORELEASER_CURRENT_TAG="${{ github.ref_name }}"
             export VERSION="${{ github.ref_name }}"
           fi
           
           # Run the upload script
-          ./scripts/upload-to-supabase.sh
+          ./scripts/upload-to-supabase-api.sh
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

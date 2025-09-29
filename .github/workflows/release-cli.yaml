@@ -294,6 +294,36 @@ jobs:
         find artifacts -name "prod-*" -type f -exec cp {} release-files/ \;
         ls -la release-files/
 
+    - name: Install Supabase CLI
+      run: |
+        npm install -g supabase
+        supabase --version
+
+    - name: Link Supabase project
+      run: |
+        supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
+      env:
+        SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+    - name: Upload to Supabase Storage (Staging)
+      run: |
+        # Make the upload script executable
+        chmod +x scripts/upload-to-supabase-cli.sh
+        
+        # Set version for Supabase upload
+        export GORELEASER_CURRENT_TAG="staging-${{ steps.version.outputs.version }}"
+        export VERSION="staging-${{ steps.version.outputs.version }}"
+        
+        # Copy release files to dist directory for upload script
+        mkdir -p dist
+        cp release-files/* dist/
+        
+        # Run the upload script (non-interactive mode)
+        echo "y" | ./scripts/upload-to-supabase-cli.sh || true
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
     - name: Create Staging Release
       run: |
         gh release create staging-${{ steps.version.outputs.version }} \
@@ -337,6 +367,36 @@ jobs:
           echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
         fi
 
+    - name: Install Supabase CLI
+      run: |
+        npm install -g supabase
+        supabase --version
+
+    - name: Link Supabase project
+      run: |
+        supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
+      env:
+        SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+    - name: Upload to Supabase Storage (Production)
+      run: |
+        # Make the upload script executable
+        chmod +x scripts/upload-to-supabase-cli.sh
+        
+        # Set version for Supabase upload
+        export GORELEASER_CURRENT_TAG="${{ steps.prod-version.outputs.version }}"
+        export VERSION="${{ steps.prod-version.outputs.version }}"
+        
+        # Copy release files to dist directory for upload script
+        mkdir -p dist
+        cp release-files/* dist/
+        
+        # Run the upload script (non-interactive mode)
+        echo "y" | ./scripts/upload-to-supabase-cli.sh || true
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
     - name: Create Production Release
       run: |
         if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -352,3 +412,44 @@ jobs:
         fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Update Release with Supabase Download Links
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: release } = await github.rest.repos.getReleaseByTag({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            tag: context.ref.replace('refs/tags/', '')
+          });
+          
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const version = context.ref.replace('refs/tags/', '');
+          
+          const downloadLinks = `
+          ## Download Links
+          
+          ### Direct Downloads from Supabase
+          - **Linux AMD64**: [prod_${version}_linux_amd64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_linux_amd64)
+          - **Linux ARM64**: [prod_${version}_linux_arm64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_linux_arm64)
+          - **macOS AMD64**: [prod_${version}_darwin_amd64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_darwin_amd64)
+          - **macOS ARM64**: [prod_${version}_darwin_arm64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_darwin_arm64)
+          
+          ### Installer Script
+          ```bash
+          curl -sSL ${supabaseUrl}/storage/v1/object/public/cli-binaries/install.sh | bash
+          ```
+          
+          ### Release Manifest
+          [View all available files](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/manifest.json)
+          `;
+          
+          await github.rest.repos.updateRelease({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            release_id: release.id,
+            body: release.body + downloadLinks
+          });
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
