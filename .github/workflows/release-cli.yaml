@@ -341,25 +341,23 @@ jobs:
         
         # Create and upload manifest
         echo "Creating manifest for version $VERSION"
-        cat > releases/${VERSION}/manifest.json << EOF
-        {
-          "version": "$VERSION",
-          "files": [
-EOF
+        echo "{" > releases/${VERSION}/manifest.json
+        echo "  \"version\": \"$VERSION\"," >> releases/${VERSION}/manifest.json
+        echo "  \"files\": [" >> releases/${VERSION}/manifest.json
         
         for file in releases/${VERSION}/*; do
           if [[ "$(basename "$file")" != "manifest.json" ]]; then
             filename=$(basename "$file")
             size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
             public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
-            echo "            {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest.json
+            echo "    {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest.json
           fi
         done
         
         # Remove trailing comma and close JSON
         sed -i '' '$ s/,$//' releases/${VERSION}/manifest.json
-        echo "          ]" >> releases/${VERSION}/manifest.json
-        echo "        }" >> releases/${VERSION}/manifest.json
+        echo "  ]" >> releases/${VERSION}/manifest.json
+        echo "}" >> releases/${VERSION}/manifest.json
         
         # Upload manifest
         supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/${VERSION}/manifest.json" --linked --experimental --yes
@@ -458,25 +456,23 @@ EOF
         
         # Create and upload manifest
         echo "Creating manifest for version $VERSION"
-        cat > releases/${VERSION}/manifest.json << EOF
-        {
-          "version": "$VERSION",
-          "files": [
-EOF
+        echo "{" > releases/${VERSION}/manifest.json
+        echo "  \"version\": \"$VERSION\"," >> releases/${VERSION}/manifest.json
+        echo "  \"files\": [" >> releases/${VERSION}/manifest.json
         
         for file in releases/${VERSION}/*; do
           if [[ "$(basename "$file")" != "manifest.json" ]]; then
             filename=$(basename "$file")
             size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
             public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
-            echo "            {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest.json
+            echo "    {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest.json
           fi
         done
         
         # Remove trailing comma and close JSON
         sed -i '' '$ s/,$//' releases/${VERSION}/manifest.json
-        echo "          ]" >> releases/${VERSION}/manifest.json
-        echo "        }" >> releases/${VERSION}/manifest.json
+        echo "  ]" >> releases/${VERSION}/manifest.json
+        echo "}" >> releases/${VERSION}/manifest.json
         
         # Upload manifest
         supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/${VERSION}/manifest.json" --linked --experimental --yes
