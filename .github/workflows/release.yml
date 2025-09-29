@@ -45,7 +45,8 @@ jobs:
 
       - name: Install Supabase CLI
         run: |
-          npm install -g supabase
+          curl -sL https://github.com/supabase/cli/releases/latest/download/supabase-linux-amd64.tar.gz | tar -xz
+          sudo mv supabase /usr/local/bin/supabase
           supabase --version
 
       - name: Install GoReleaser
@@ -80,7 +81,7 @@ jobs:
           fi
           
           # Run the upload script
-          ./scripts/upload-to-supabase-api.sh
+          ./scripts/upload-to-supabase-cli.sh
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
