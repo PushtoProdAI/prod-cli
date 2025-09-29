@@ -11,8 +11,8 @@ VERSION="${GORELEASER_CURRENT_TAG:-latest}"
 PROJECT_NAME="prod"
 
 # Global variables for interactive mode
-OVERWRITE_ALL=false
-SKIP_ALL=false
+OVERWRITE_ALL="${OVERWRITE_ALL:-false}"
+SKIP_ALL="${SKIP_ALL:-false}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -175,7 +175,7 @@ upload_file() {
     log_info "Uploading $file_name to $remote_path..."
     
     # Try to upload first
-    if supabase storage cp "$file_path" "ss:///${BUCKET_NAME}/${remote_path}" --linked --experimental 2>/dev/null; then
+    if supabase storage cp "$file_path" "ss:///${BUCKET_NAME}/${remote_path}" --linked --experimental --yes --yes 2>/dev/null; then
         log_info "Successfully uploaded $file_name"
         
         # Get the public URL
@@ -188,11 +188,12 @@ upload_file() {
         # Upload failed, likely because file exists
         log_warn "File '$file_name' already exists in storage at $remote_path"
         
+        log_info "OVERWRITE_ALL is set to: $OVERWRITE_ALL"
         if [[ "$OVERWRITE_ALL" == "true" ]]; then
             log_info "Overwriting existing file (overwrite all mode)"
             # Remove existing file and retry upload
             supabase storage rm "ss:///${BUCKET_NAME}/${remote_path}" --linked --experimental 2>/dev/null || true
-            if supabase storage cp "$file_path" "ss:///${BUCKET_NAME}/${remote_path}" --linked --experimental; then
+            if supabase storage cp "$file_path" "ss:///${BUCKET_NAME}/${remote_path}" --linked --experimental --yes; then
                 log_info "Successfully uploaded $file_name"
                 local public_url="${SUPABASE_URL}/storage/v1/object/public/${BUCKET_NAME}/${remote_path}"
                 echo "Public URL: $public_url"
@@ -212,7 +213,7 @@ upload_file() {
                 # Remove existing file and retry upload
                 log_info "Removing existing file..."
                 supabase storage rm "ss:///${BUCKET_NAME}/${remote_path}" --linked --experimental 2>/dev/null || true
-                if supabase storage cp "$file_path" "ss:///${BUCKET_NAME}/${remote_path}" --linked --experimental; then
+                if supabase storage cp "$file_path" "ss:///${BUCKET_NAME}/${remote_path}" --linked --experimental --yes; then
                     log_info "Successfully uploaded $file_name"
                     local public_url="${SUPABASE_URL}/storage/v1/object/public/${BUCKET_NAME}/${remote_path}"
                     echo "Public URL: $public_url"
