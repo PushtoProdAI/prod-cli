@@ -318,25 +318,58 @@ jobs:
 
     - name: Upload to Supabase Storage (Staging)
       run: |
-        # Make the upload script executable
-        chmod +x scripts/upload-to-supabase-cli.sh
-        
-        # Set version for Supabase upload
-        export GORELEASER_CURRENT_TAG="staging-${{ steps.version.outputs.version }}"
+        # Set version for upload
         export VERSION="staging-${{ steps.version.outputs.version }}"
         
-        # Copy release files to dist directory for upload script
-        mkdir -p dist
-        cp release-files/* dist/
+        # Create releases directory structure
+        mkdir -p releases/${VERSION}
+        cp release-files/* releases/${VERSION}/
         
-        # Run the upload script (non-interactive mode)
-        ./scripts/upload-to-supabase-cli.sh
+        # Upload each binary to Supabase Storage
+        for file in releases/${VERSION}/*; do
+          filename=$(basename "$file")
+          echo "Uploading $filename to releases/${VERSION}/$filename"
+          
+          # Remove existing file if it exists, then upload
+          supabase storage rm "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental 2>/dev/null || true
+          supabase storage cp "$file" "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental --yes
+          
+          # Get public URL
+          public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
+          echo "Public URL: $public_url"
+        done
+        
+        # Create and upload manifest
+        echo "Creating manifest for version $VERSION"
+        cat > releases/${VERSION}/manifest.json << EOF
+        {
+          "version": "$VERSION",
+          "files": [
+EOF
+        
+        for file in releases/${VERSION}/*; do
+          if [[ "$(basename "$file")" != "manifest.json" ]]; then
+            filename=$(basename "$file")
+            size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
+            echo "            {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest.json
+          fi
+        done
+        
+        # Remove trailing comma and close JSON
+        sed -i '' '$ s/,$//' releases/${VERSION}/manifest.json
+        echo "          ]" >> releases/${VERSION}/manifest.json
+        echo "        }" >> releases/${VERSION}/manifest.json
+        
+        # Upload manifest
+        supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/${VERSION}/manifest.json" --linked --experimental --yes
+        
+        echo "Upload completed for version $VERSION"
       env:
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
         SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        OVERWRITE_ALL: true
 
     - name: Create Staging Release
       run: |
@@ -402,25 +435,58 @@ jobs:
 
     - name: Upload to Supabase Storage (Production)
       run: |
-        # Make the upload script executable
-        chmod +x scripts/upload-to-supabase-cli.sh
-        
-        # Set version for Supabase upload
-        export GORELEASER_CURRENT_TAG="${{ steps.prod-version.outputs.version }}"
+        # Set version for upload
         export VERSION="${{ steps.prod-version.outputs.version }}"
         
-        # Copy release files to dist directory for upload script
-        mkdir -p dist
-        cp release-files/* dist/
+        # Create releases directory structure
+        mkdir -p releases/${VERSION}
+        cp release-files/* releases/${VERSION}/
         
-        # Run the upload script (non-interactive mode)
-        ./scripts/upload-to-supabase-cli.sh
+        # Upload each binary to Supabase Storage
+        for file in releases/${VERSION}/*; do
+          filename=$(basename "$file")
+          echo "Uploading $filename to releases/${VERSION}/$filename"
+          
+          # Remove existing file if it exists, then upload
+          supabase storage rm "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental 2>/dev/null || true
+          supabase storage cp "$file" "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental --yes
+          
+          # Get public URL
+          public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
+          echo "Public URL: $public_url"
+        done
+        
+        # Create and upload manifest
+        echo "Creating manifest for version $VERSION"
+        cat > releases/${VERSION}/manifest.json << EOF
+        {
+          "version": "$VERSION",
+          "files": [
+EOF
+        
+        for file in releases/${VERSION}/*; do
+          if [[ "$(basename "$file")" != "manifest.json" ]]; then
+            filename=$(basename "$file")
+            size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
+            echo "            {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest.json
+          fi
+        done
+        
+        # Remove trailing comma and close JSON
+        sed -i '' '$ s/,$//' releases/${VERSION}/manifest.json
+        echo "          ]" >> releases/${VERSION}/manifest.json
+        echo "        }" >> releases/${VERSION}/manifest.json
+        
+        # Upload manifest
+        supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/${VERSION}/manifest.json" --linked --experimental --yes
+        
+        echo "Upload completed for version $VERSION"
       env:
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
         SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        OVERWRITE_ALL: true
 
     - name: Create Production Release
       run: |
