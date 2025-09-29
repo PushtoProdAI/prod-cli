@@ -328,7 +328,13 @@ jobs:
         # Upload each binary to Supabase Storage
         for file in releases/${VERSION}/*; do
           filename=$(basename "$file")
-          echo "Uploading $filename to releases/${VERSION}/$filename"
+          filesize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+          echo "Uploading $filename (size: $filesize bytes) to releases/${VERSION}/$filename"
+          
+          # Check if file is too large (50MB = 52428800 bytes)
+          if [ "$filesize" -gt 52428800 ]; then
+            echo "WARNING: File $filename is larger than 50MB ($filesize bytes). This may fail to upload."
+          fi
           
           # Remove existing file if it exists, then upload
           supabase storage rm "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental 2>/dev/null || true
@@ -443,7 +449,13 @@ jobs:
         # Upload each binary to Supabase Storage
         for file in releases/${VERSION}/*; do
           filename=$(basename "$file")
-          echo "Uploading $filename to releases/${VERSION}/$filename"
+          filesize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+          echo "Uploading $filename (size: $filesize bytes) to releases/${VERSION}/$filename"
+          
+          # Check if file is too large (50MB = 52428800 bytes)
+          if [ "$filesize" -gt 52428800 ]; then
+            echo "WARNING: File $filename is larger than 50MB ($filesize bytes). This may fail to upload."
+          fi
           
           # Remove existing file if it exists, then upload
           supabase storage rm "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental 2>/dev/null || true
