@@ -333,16 +333,28 @@ jobs:
           
           # Check if file is too large (50MB = 52428800 bytes)
           if [ "$filesize" -gt 52428800 ]; then
-            echo "WARNING: File $filename is larger than 50MB ($filesize bytes). This may fail to upload."
+            echo "WARNING: File $filename is larger than 50MB ($filesize bytes). Compressing..."
+            # Compress the file
+            gzip -c "$file" > "${file}.gz"
+            compressed_size=$(stat -f%z "${file}.gz" 2>/dev/null || stat -c%s "${file}.gz" 2>/dev/null || echo 0)
+            echo "Compressed size: $compressed_size bytes (reduction: $((filesize - compressed_size)) bytes)"
+            
+            # Upload compressed version
+            supabase storage rm "ss:///cli-binaries/releases/${VERSION}/${filename}.gz" --linked --experimental 2>/dev/null || true
+            supabase storage cp "${file}.gz" "ss:///cli-binaries/releases/${VERSION}/${filename}.gz" --linked --experimental --yes
+            
+            # Get public URL for compressed file
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/${filename}.gz"
+            echo "Public URL (compressed): $public_url"
+          else
+            # Remove existing file if it exists, then upload
+            supabase storage rm "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental 2>/dev/null || true
+            supabase storage cp "$file" "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental --yes
+            
+            # Get public URL
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
+            echo "Public URL: $public_url"
           fi
-          
-          # Remove existing file if it exists, then upload
-          supabase storage rm "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental 2>/dev/null || true
-          supabase storage cp "$file" "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental --yes
-          
-          # Get public URL
-          public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
-          echo "Public URL: $public_url"
         done
         
         # Create and upload manifest
@@ -353,6 +365,16 @@ jobs:
         
         for file in releases/${VERSION}/*; do
           if [[ "$(basename "$file")" != "manifest.json" ]]; then
+            filename=$(basename "$file")
+            size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
+            echo "    {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest.json
+          fi
+        done
+        
+        # Add compressed files to manifest if they exist
+        for file in releases/${VERSION}/*.gz; do
+          if [[ -f "$file" ]]; then
             filename=$(basename "$file")
             size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
             public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
@@ -454,16 +476,28 @@ jobs:
           
           # Check if file is too large (50MB = 52428800 bytes)
           if [ "$filesize" -gt 52428800 ]; then
-            echo "WARNING: File $filename is larger than 50MB ($filesize bytes). This may fail to upload."
+            echo "WARNING: File $filename is larger than 50MB ($filesize bytes). Compressing..."
+            # Compress the file
+            gzip -c "$file" > "${file}.gz"
+            compressed_size=$(stat -f%z "${file}.gz" 2>/dev/null || stat -c%s "${file}.gz" 2>/dev/null || echo 0)
+            echo "Compressed size: $compressed_size bytes (reduction: $((filesize - compressed_size)) bytes)"
+            
+            # Upload compressed version
+            supabase storage rm "ss:///cli-binaries/releases/${VERSION}/${filename}.gz" --linked --experimental 2>/dev/null || true
+            supabase storage cp "${file}.gz" "ss:///cli-binaries/releases/${VERSION}/${filename}.gz" --linked --experimental --yes
+            
+            # Get public URL for compressed file
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/${filename}.gz"
+            echo "Public URL (compressed): $public_url"
+          else
+            # Remove existing file if it exists, then upload
+            supabase storage rm "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental 2>/dev/null || true
+            supabase storage cp "$file" "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental --yes
+            
+            # Get public URL
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
+            echo "Public URL: $public_url"
           fi
-          
-          # Remove existing file if it exists, then upload
-          supabase storage rm "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental 2>/dev/null || true
-          supabase storage cp "$file" "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental --yes
-          
-          # Get public URL
-          public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
-          echo "Public URL: $public_url"
         done
         
         # Create and upload manifest
@@ -474,6 +508,16 @@ jobs:
         
         for file in releases/${VERSION}/*; do
           if [[ "$(basename "$file")" != "manifest.json" ]]; then
+            filename=$(basename "$file")
+            size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
+            echo "    {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest.json
+          fi
+        done
+        
+        # Add compressed files to manifest if they exist
+        for file in releases/${VERSION}/*.gz; do
+          if [[ -f "$file" ]]; then
             filename=$(basename "$file")
             size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
             public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
