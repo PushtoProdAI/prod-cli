@@ -106,14 +106,9 @@ setup_path() {
 install_binary() {
     local platform="$1"
     local manifest_url="${SUPABASE_URL}/storage/v1/object/public/${BUCKET_NAME}/releases/${VERSION}/manifest.json"
-    local binary_name="prod_${VERSION}_${platform}"
-    
-    # Add file extension for Windows
-    if [[ "$platform" == *"windows"* ]]; then
-        binary_name="${binary_name}.exe"
-    fi
     
     log_info "Downloading binary for platform: $platform"
+    log_info "Fetching manifest from: $manifest_url"
     
     # Download manifest
     local manifest=$(curl -s "$manifest_url")
@@ -122,13 +117,29 @@ install_binary() {
         exit 1
     fi
     
-    # Find the correct binary URL
-    local binary_url=$(echo "$manifest" | jq -r ".[] | select(.name == \"${binary_name}.tar.gz\" or .name == \"${binary_name}.zip\") | .url")
+    log_info "Manifest content: $manifest"
+    
+    # Check if manifest contains error
+    if echo "$manifest" | jq -e '.error' >/dev/null 2>&1; then
+        log_error "Manifest fetch failed: $manifest"
+        exit 1
+    fi
+    
+    # Parse manifest structure - it should have a "files" array
+    local files_array=$(echo "$manifest" | jq -r '.files // .')
+    if [[ "$files_array" == "null" || -z "$files_array" ]]; then
+        log_error "Could not parse manifest structure"
+        log_error "Manifest: $manifest"
+        exit 1
+    fi
+    
+    # Find binary that matches platform (look for compressed .gz files)
+    local binary_url=$(echo "$files_array" | jq -r ".[] | select(.name | contains(\"${platform}\") and endswith(\".gz\")) | .url")
     
     if [[ -z "$binary_url" || "$binary_url" == "null" ]]; then
         log_error "Binary not found for platform: $platform"
         log_error "Available platforms:"
-        echo "$manifest" | jq -r '.[] | .name' | sed 's/^/  - /'
+        echo "$files_array" | jq -r '.[] | .name' | sed 's/^/  - /'
         exit 1
     fi
     
@@ -156,16 +167,24 @@ install_binary() {
     
     # Extract and install
     cd "$temp_dir"
-    if [[ "$archive_file" == *.tar.gz ]]; then
+    local binary_file="prod"
+    
+    if [[ "$archive_file" == *.gz ]]; then
+        # Handle compressed binary files
+        gunzip -c "$archive_file" > "$binary_file"
+        chmod +x "$binary_file"
+    elif [[ "$archive_file" == *.tar.gz ]]; then
         tar -xzf "$archive_file"
     elif [[ "$archive_file" == *.zip ]]; then
         unzip -q "$archive_file"
+    else
+        log_error "Unsupported file format: $archive_file"
+        exit 1
     fi
     
-    # Find the binary
-    local binary_file=$(find . -name "prod*" -type f -executable | head -1)
-    if [[ -z "$binary_file" ]]; then
-        log_error "Binary not found in archive"
+    # Verify the binary exists
+    if [[ ! -f "$binary_file" ]]; then
+        log_error "Binary not found: $binary_file"
         exit 1
     fi
     
