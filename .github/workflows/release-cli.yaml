@@ -403,27 +403,33 @@ jobs:
           fi
         done
         
-        # Clear latest directory by deleting known file patterns
+        # Clear latest directory by listing and deleting specific files
         echo "Clearing latest directory..."
-        # Delete common file patterns that might exist
-        for pattern in "*.gz" "manifest.json"; do
-          echo "Attempting to delete files matching pattern: $pattern"
-          # Try to delete files with common patterns
-          curl -X DELETE \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$pattern" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -w "%{http_code}" -o /dev/null -s 2>/dev/null || true
-        done
         
-        # Also try to delete specific files that might exist from previous runs
-        echo "Deleting any remaining files from latest directory..."
-        for file in "prod-*-darwin-amd64.gz" "prod-*-darwin-arm64.gz" "prod-*-linux-amd64.gz" "prod-*-linux-arm64.gz" "manifest.json"; do
-          echo "Attempting to delete: $file"
-          curl -X DELETE \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$file" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -w "%{http_code}" -o /dev/null -s 2>/dev/null || true
-        done
+        # List existing files in latest directory
+        echo "Listing existing files in latest directory..."
+        latest_files_response=$(curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          "${{ secrets.SUPABASE_URL }}/storage/v1/object/list/cli-binaries/releases/latest")
+        
+        echo "Latest directory contents: $latest_files_response"
+        
+        # Extract file names from the response and delete them
+        if [ -n "$latest_files_response" ] && [ "$latest_files_response" != "[]" ]; then
+          echo "$latest_files_response" | grep -o '"name":"[^"]*"' | cut -d'"' -f4 | while read -r filename; do
+            if [ -n "$filename" ]; then
+              echo "Deleting existing file: $filename"
+              delete_response=$(curl -X DELETE \
+                "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$filename" \
+                -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+                -w "%{http_code}" \
+                -o /dev/null \
+                -s)
+              echo "Delete response for $filename: $delete_response"
+            fi
+          done
+        else
+          echo "No existing files found in latest directory"
+        fi
         
         # Copy all files from versioned directory to latest directory
         echo "Copying files from versioned directory to latest directory..."
@@ -655,27 +661,33 @@ jobs:
           fi
         done
         
-        # Clear latest directory by deleting known file patterns
+        # Clear latest directory by listing and deleting specific files
         echo "Clearing latest directory..."
-        # Delete common file patterns that might exist
-        for pattern in "*.gz" "manifest.json"; do
-          echo "Attempting to delete files matching pattern: $pattern"
-          # Try to delete files with common patterns
-          curl -X DELETE \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$pattern" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -w "%{http_code}" -o /dev/null -s 2>/dev/null || true
-        done
         
-        # Also try to delete specific files that might exist from previous runs
-        echo "Deleting any remaining files from latest directory..."
-        for file in "prod-*-darwin-amd64.gz" "prod-*-darwin-arm64.gz" "prod-*-linux-amd64.gz" "prod-*-linux-arm64.gz" "manifest.json"; do
-          echo "Attempting to delete: $file"
-          curl -X DELETE \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$file" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -w "%{http_code}" -o /dev/null -s 2>/dev/null || true
-        done
+        # List existing files in latest directory
+        echo "Listing existing files in latest directory..."
+        latest_files_response=$(curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          "${{ secrets.SUPABASE_URL }}/storage/v1/object/list/cli-binaries/releases/latest")
+        
+        echo "Latest directory contents: $latest_files_response"
+        
+        # Extract file names from the response and delete them
+        if [ -n "$latest_files_response" ] && [ "$latest_files_response" != "[]" ]; then
+          echo "$latest_files_response" | grep -o '"name":"[^"]*"' | cut -d'"' -f4 | while read -r filename; do
+            if [ -n "$filename" ]; then
+              echo "Deleting existing file: $filename"
+              delete_response=$(curl -X DELETE \
+                "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$filename" \
+                -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+                -w "%{http_code}" \
+                -o /dev/null \
+                -s)
+              echo "Delete response for $filename: $delete_response"
+            fi
+          done
+        else
+          echo "No existing files found in latest directory"
+        fi
         
         # Copy all files from versioned directory to latest directory
         echo "Copying files from versioned directory to latest directory..."
