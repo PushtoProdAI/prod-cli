@@ -370,7 +370,7 @@ jobs:
         ls -la releases/${VERSION}/
         echo "Total files: $(ls releases/${VERSION}/ | wc -l)"
         
-        # Compress and upload each binary to Supabase Storage using REST API
+        # Compress and upload each binary to versioned directory first
         for file in releases/${VERSION}/*; do
           filename=$(basename "$file")
           filesize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
@@ -383,10 +383,8 @@ jobs:
           compression_ratio=$(( (filesize - compressed_size) * 100 / filesize ))
           echo "Compressed size: $compressed_size bytes (${compression_ratio}% reduction)"
           
-          # Upload compressed version to both versioned and latest directories
+          # Upload compressed version to versioned directory
           compressed_filename="${filename}.gz"
-          
-          # Upload to versioned directory
           echo "Uploading $compressed_filename to versioned directory..."
           response=$(curl -X POST \
             "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$compressed_filename" \
@@ -403,33 +401,62 @@ jobs:
             echo "Versioned upload failed for $compressed_filename (HTTP $response)"
             exit 1
           fi
-          
-          # Remove existing file from latest directory first
-          echo "Removing existing $compressed_filename from latest directory..."
-          curl -X DELETE \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$compressed_filename" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -w "%{http_code}" -o /dev/null -s >/dev/null 2>&1 || true
-          
-          # Upload to latest directory
-          echo "Uploading $compressed_filename to latest directory..."
-          response=$(curl -X POST \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$compressed_filename" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -H "Content-Type: application/gzip" \
-            --data-binary @"${file}.gz" \
-            -w "%{http_code}" \
-            -o /dev/null \
-            -s)
-          
-          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-            echo "Latest upload successful for $compressed_filename (HTTP $response)"
-            # Get public URL (use latest for downloads)
-            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$compressed_filename"
-            echo "Public URL: $public_url"
-          else
-            echo "Latest upload failed for $compressed_filename (HTTP $response)"
-            exit 1
+        done
+        
+        # Clear latest directory and copy all files from versioned directory
+        echo "Clearing latest directory..."
+        # List all files in latest directory and delete them
+        latest_files=$(curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          "${{ secrets.SUPABASE_URL }}/storage/v1/object/list/cli-binaries/releases/latest" | \
+          jq -r '.[] | select(.name != null) | .name' 2>/dev/null || echo "")
+        
+        if [ -n "$latest_files" ]; then
+          echo "$latest_files" | while read -r file; do
+            if [ -n "$file" ]; then
+              echo "Deleting $file from latest directory..."
+              curl -X DELETE \
+                "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$file" \
+                -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+                -w "%{http_code}" -o /dev/null -s >/dev/null 2>&1 || true
+            fi
+          done
+        fi
+        
+        # Copy all files from versioned directory to latest directory
+        echo "Copying files from versioned directory to latest directory..."
+        for file in releases/${VERSION}/*.gz; do
+          if [[ -f "$file" ]]; then
+            filename=$(basename "$file")
+            echo "Copying $filename to latest directory..."
+            
+            # Download from versioned directory
+            temp_file="/tmp/$filename"
+            curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$filename" \
+              -o "$temp_file"
+            
+            # Upload to latest directory
+            response=$(curl -X POST \
+              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$filename" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+              -H "Content-Type: application/gzip" \
+              --data-binary @"$temp_file" \
+              -w "%{http_code}" \
+              -o /dev/null \
+              -s)
+            
+            if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+              echo "Latest copy successful for $filename (HTTP $response)"
+              # Get public URL (use latest for downloads)
+              public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$filename"
+              echo "Public URL: $public_url"
+            else
+              echo "Latest copy failed for $filename (HTTP $response)"
+              exit 1
+            fi
+            
+            # Clean up temp file
+            rm -f "$temp_file"
           fi
         done
         
@@ -453,15 +480,36 @@ jobs:
         echo "  ]" >> releases/${VERSION}/manifest.json
         echo "}" >> releases/${VERSION}/manifest.json
         
-        # Upload manifest to both versioned and latest directories
+        # Upload manifest to versioned directory first
         echo "Uploading manifest to versioned directory..."
         supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/${VERSION}/manifest.json" --linked --experimental --yes
         
-        echo "Removing existing manifest from latest directory..."
-        supabase storage rm "ss:///cli-binaries/releases/latest/manifest.json" --linked --experimental 2>/dev/null || true
+        # Copy manifest from versioned directory to latest directory
+        echo "Copying manifest to latest directory..."
+        temp_manifest="/tmp/manifest.json"
+        curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/manifest.json" \
+          -o "$temp_manifest"
         
-        echo "Uploading manifest to latest directory..."
-        supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/latest/manifest.json" --linked --experimental --yes
+        # Upload to latest directory
+        response=$(curl -X POST \
+          "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/manifest.json" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          -H "Content-Type: application/json" \
+          --data-binary @"$temp_manifest" \
+          -w "%{http_code}" \
+          -o /dev/null \
+          -s)
+        
+        if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+          echo "Latest manifest copy successful (HTTP $response)"
+        else
+          echo "Latest manifest copy failed (HTTP $response)"
+          exit 1
+        fi
+        
+        # Clean up temp file
+        rm -f "$temp_manifest"
         
         echo "Upload completed for version $VERSION"
       env:
@@ -546,7 +594,7 @@ jobs:
         ls -la releases/${VERSION}/
         echo "Total files: $(ls releases/${VERSION}/ | wc -l)"
         
-        # Compress and upload each binary to Supabase Storage using REST API
+        # Compress and upload each binary to versioned directory first
         for file in releases/${VERSION}/*; do
           filename=$(basename "$file")
           filesize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
@@ -559,10 +607,8 @@ jobs:
           compression_ratio=$(( (filesize - compressed_size) * 100 / filesize ))
           echo "Compressed size: $compressed_size bytes (${compression_ratio}% reduction)"
           
-          # Upload compressed version to both versioned and latest directories
+          # Upload compressed version to versioned directory
           compressed_filename="${filename}.gz"
-          
-          # Upload to versioned directory
           echo "Uploading $compressed_filename to versioned directory..."
           response=$(curl -X POST \
             "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$compressed_filename" \
@@ -579,33 +625,62 @@ jobs:
             echo "Versioned upload failed for $compressed_filename (HTTP $response)"
             exit 1
           fi
-          
-          # Remove existing file from latest directory first
-          echo "Removing existing $compressed_filename from latest directory..."
-          curl -X DELETE \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$compressed_filename" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -w "%{http_code}" -o /dev/null -s >/dev/null 2>&1 || true
-          
-          # Upload to latest directory
-          echo "Uploading $compressed_filename to latest directory..."
-          response=$(curl -X POST \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$compressed_filename" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -H "Content-Type: application/gzip" \
-            --data-binary @"${file}.gz" \
-            -w "%{http_code}" \
-            -o /dev/null \
-            -s)
-          
-          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-            echo "Latest upload successful for $compressed_filename (HTTP $response)"
-            # Get public URL (use latest for downloads)
-            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$compressed_filename"
-            echo "Public URL: $public_url"
-          else
-            echo "Latest upload failed for $compressed_filename (HTTP $response)"
-            exit 1
+        done
+        
+        # Clear latest directory and copy all files from versioned directory
+        echo "Clearing latest directory..."
+        # List all files in latest directory and delete them
+        latest_files=$(curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          "${{ secrets.SUPABASE_URL }}/storage/v1/object/list/cli-binaries/releases/latest" | \
+          jq -r '.[] | select(.name != null) | .name' 2>/dev/null || echo "")
+        
+        if [ -n "$latest_files" ]; then
+          echo "$latest_files" | while read -r file; do
+            if [ -n "$file" ]; then
+              echo "Deleting $file from latest directory..."
+              curl -X DELETE \
+                "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$file" \
+                -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+                -w "%{http_code}" -o /dev/null -s >/dev/null 2>&1 || true
+            fi
+          done
+        fi
+        
+        # Copy all files from versioned directory to latest directory
+        echo "Copying files from versioned directory to latest directory..."
+        for file in releases/${VERSION}/*.gz; do
+          if [[ -f "$file" ]]; then
+            filename=$(basename "$file")
+            echo "Copying $filename to latest directory..."
+            
+            # Download from versioned directory
+            temp_file="/tmp/$filename"
+            curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$filename" \
+              -o "$temp_file"
+            
+            # Upload to latest directory
+            response=$(curl -X POST \
+              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$filename" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+              -H "Content-Type: application/gzip" \
+              --data-binary @"$temp_file" \
+              -w "%{http_code}" \
+              -o /dev/null \
+              -s)
+            
+            if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+              echo "Latest copy successful for $filename (HTTP $response)"
+              # Get public URL (use latest for downloads)
+              public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$filename"
+              echo "Public URL: $public_url"
+            else
+              echo "Latest copy failed for $filename (HTTP $response)"
+              exit 1
+            fi
+            
+            # Clean up temp file
+            rm -f "$temp_file"
           fi
         done
         
@@ -629,15 +704,36 @@ jobs:
         echo "  ]" >> releases/${VERSION}/manifest.json
         echo "}" >> releases/${VERSION}/manifest.json
         
-        # Upload manifest to both versioned and latest directories
+        # Upload manifest to versioned directory first
         echo "Uploading manifest to versioned directory..."
         supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/${VERSION}/manifest.json" --linked --experimental --yes
         
-        echo "Removing existing manifest from latest directory..."
-        supabase storage rm "ss:///cli-binaries/releases/latest/manifest.json" --linked --experimental 2>/dev/null || true
+        # Copy manifest from versioned directory to latest directory
+        echo "Copying manifest to latest directory..."
+        temp_manifest="/tmp/manifest.json"
+        curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/manifest.json" \
+          -o "$temp_manifest"
         
-        echo "Uploading manifest to latest directory..."
-        supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/latest/manifest.json" --linked --experimental --yes
+        # Upload to latest directory
+        response=$(curl -X POST \
+          "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/manifest.json" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          -H "Content-Type: application/json" \
+          --data-binary @"$temp_manifest" \
+          -w "%{http_code}" \
+          -o /dev/null \
+          -s)
+        
+        if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+          echo "Latest manifest copy successful (HTTP $response)"
+        else
+          echo "Latest manifest copy failed (HTTP $response)"
+          exit 1
+        fi
+        
+        # Clean up temp file
+        rm -f "$temp_manifest"
         
         echo "Upload completed for version $VERSION"
       env:
