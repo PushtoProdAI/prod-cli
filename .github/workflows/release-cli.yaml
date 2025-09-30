@@ -335,6 +335,32 @@ jobs:
         # Set version for upload
         export VERSION="staging-${{ steps.version.outputs.version }}"
         
+        # Archive current latest if it exists
+        echo "Checking if latest release exists..."
+        latest_exists=$(curl -s -o /dev/null -w "%{http_code}" \
+          "${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/manifest.json")
+        
+        if [ "$latest_exists" = "200" ]; then
+          echo "Archiving current latest release to ${VERSION}..."
+          # Get the current latest manifest to find the version
+          current_manifest=$(curl -s "${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/manifest.json")
+          current_version=$(echo "$current_manifest" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+          
+          if [ -n "$current_version" ] && [ "$current_version" != "$VERSION" ]; then
+            echo "Archiving version $current_version to $VERSION"
+            # Copy latest to archived version
+            for file in $(echo "$current_manifest" | grep -o '"name":"[^"]*"' | cut -d'"' -f4); do
+              # Copy file from latest to archived version
+              curl -X POST \
+                "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$file" \
+                -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary "$(curl -s "${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$file")" \
+                -w "%{http_code}" -o /dev/null -s
+            done
+          fi
+        fi
+        
         # Create releases directory structure
         mkdir -p releases/${VERSION}
         cp release-files/* releases/${VERSION}/
