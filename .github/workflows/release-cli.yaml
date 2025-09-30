@@ -553,6 +553,13 @@ jobs:
         else
           echo "Install script has changes, uploading new version..."
           
+          # First, delete the existing install.sh
+          echo "Removing existing install.sh..."
+          curl -X DELETE \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -w "%{http_code}" -o /dev/null -s >/dev/null 2>&1 || true
+          
           # Upload the new install.sh script
           response=$(curl -X POST \
             "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
@@ -852,6 +859,13 @@ jobs:
           echo "Install script is unchanged, skipping upload"
         else
           echo "Install script has changes, uploading new version..."
+          
+          # First, delete the existing install.sh
+          echo "Removing existing install.sh..."
+          curl -X DELETE \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -w "%{http_code}" -o /dev/null -s >/dev/null 2>&1 || true
           
           # Upload the new install.sh script
           response=$(curl -X POST \
