@@ -133,8 +133,12 @@ install_binary() {
         exit 1
     fi
     
+    # Extract OS and architecture from platform string (e.g., "darwin_arm64" -> "darwin" and "arm64")
+    local os=$(echo "$platform" | cut -d'_' -f1)
+    local arch=$(echo "$platform" | cut -d'_' -f2)
+    
     # Find binary that matches platform (look for compressed .gz files)
-    local binary_url=$(echo "$files_array" | jq -r ".[] | select(.name | contains(\"${platform}\") and endswith(\".gz\")) | .url")
+    local binary_url=$(echo "$files_array" | jq -r ".[] | select(.name | contains(\"${os}\") and contains(\"${arch}\") and endswith(\".gz\")) | .url")
     
     if [[ -z "$binary_url" || "$binary_url" == "null" ]]; then
         log_error "Binary not found for platform: $platform"
