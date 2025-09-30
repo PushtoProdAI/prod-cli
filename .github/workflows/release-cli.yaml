@@ -480,23 +480,31 @@ jobs:
         echo "  ]" >> releases/${VERSION}/manifest.json
         echo "}" >> releases/${VERSION}/manifest.json
         
-        # Upload manifest to versioned directory first
+        # Upload manifest to versioned directory using REST API
         echo "Uploading manifest to versioned directory..."
-        supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/${VERSION}/manifest.json" --linked --experimental --yes
-        
-        # Copy manifest from versioned directory to latest directory
-        echo "Copying manifest to latest directory..."
-        temp_manifest="/tmp/manifest.json"
-        curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+        response=$(curl -X POST \
           "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/manifest.json" \
-          -o "$temp_manifest"
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          -H "Content-Type: application/json" \
+          --data-binary @"releases/${VERSION}/manifest.json" \
+          -w "%{http_code}" \
+          -o /dev/null \
+          -s)
         
-        # Upload to latest directory
+        if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+          echo "Versioned manifest upload successful (HTTP $response)"
+        else
+          echo "Versioned manifest upload failed (HTTP $response)"
+          exit 1
+        fi
+        
+        # Copy manifest directly from local file to latest directory
+        echo "Copying manifest to latest directory..."
         response=$(curl -X POST \
           "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/manifest.json" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
           -H "Content-Type: application/json" \
-          --data-binary @"$temp_manifest" \
+          --data-binary @"releases/${VERSION}/manifest.json" \
           -w "%{http_code}" \
           -o /dev/null \
           -s)
@@ -507,9 +515,6 @@ jobs:
           echo "Latest manifest copy failed (HTTP $response)"
           exit 1
         fi
-        
-        # Clean up temp file
-        rm -f "$temp_manifest"
         
         echo "Upload completed for version $VERSION"
       env:
@@ -704,23 +709,31 @@ jobs:
         echo "  ]" >> releases/${VERSION}/manifest.json
         echo "}" >> releases/${VERSION}/manifest.json
         
-        # Upload manifest to versioned directory first
+        # Upload manifest to versioned directory using REST API
         echo "Uploading manifest to versioned directory..."
-        supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/${VERSION}/manifest.json" --linked --experimental --yes
-        
-        # Copy manifest from versioned directory to latest directory
-        echo "Copying manifest to latest directory..."
-        temp_manifest="/tmp/manifest.json"
-        curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+        response=$(curl -X POST \
           "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/manifest.json" \
-          -o "$temp_manifest"
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          -H "Content-Type: application/json" \
+          --data-binary @"releases/${VERSION}/manifest.json" \
+          -w "%{http_code}" \
+          -o /dev/null \
+          -s)
         
-        # Upload to latest directory
+        if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+          echo "Versioned manifest upload successful (HTTP $response)"
+        else
+          echo "Versioned manifest upload failed (HTTP $response)"
+          exit 1
+        fi
+        
+        # Copy manifest directly from local file to latest directory
+        echo "Copying manifest to latest directory..."
         response=$(curl -X POST \
           "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/manifest.json" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
           -H "Content-Type: application/json" \
-          --data-binary @"$temp_manifest" \
+          --data-binary @"releases/${VERSION}/manifest.json" \
           -w "%{http_code}" \
           -o /dev/null \
           -s)
@@ -731,9 +744,6 @@ jobs:
           echo "Latest manifest copy failed (HTTP $response)"
           exit 1
         fi
-        
-        # Clean up temp file
-        rm -f "$temp_manifest"
         
         echo "Upload completed for version $VERSION"
       env:
