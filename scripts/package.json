@@ -1,0 +1,15 @@
+{
+  "name": "supabase-storage-scripts",
+  "version": "1.0.0",
+  "description": "Scripts for managing Supabase Storage",
+  "main": "clear-latest-directory.js",
+  "scripts": {
+    "clear-latest": "node clear-latest-directory.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

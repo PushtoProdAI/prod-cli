@@ -330,6 +330,18 @@ jobs:
       env:
         SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: scripts/package.json
+
+    - name: Install Supabase dependencies
+      run: |
+        cd scripts
+        npm install
+
     - name: Upload to Supabase Storage (Staging)
       run: |
         # Set version for upload
@@ -403,36 +415,11 @@ jobs:
           fi
         done
         
-        # Clear latest directory by deleting known file patterns
-        echo "Clearing latest directory..."
-        
-        # Delete known file patterns that might exist
-        echo "Deleting known file patterns from latest directory..."
-        
-        # Delete compressed binaries with known patterns
-        for os in "darwin" "linux"; do
-          for arch in "amd64" "arm64"; do
-            filename="prod-*-${os}-${arch}.gz"
-            echo "Attempting to delete: $filename"
-            delete_response=$(curl -X DELETE \
-              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$filename" \
-              -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-              -w "%{http_code}" \
-              -o /dev/null \
-              -s)
-            echo "Delete response for $filename: $delete_response"
-          done
-        done
-        
-        # Delete manifest.json
-        echo "Attempting to delete: manifest.json"
-        delete_response=$(curl -X DELETE \
-          "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/manifest.json" \
-          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          -w "%{http_code}" \
-          -o /dev/null \
-          -s)
-        echo "Delete response for manifest.json: $delete_response"
+        # Clear latest directory using JavaScript
+        echo "Clearing latest directory using JavaScript..."
+        cd scripts
+        node clear-latest-directory.js
+        cd ..
         
         # Copy all files from versioned directory to latest directory
         echo "Copying files from versioned directory to latest directory..."
