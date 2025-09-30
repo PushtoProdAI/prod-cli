@@ -330,27 +330,30 @@ jobs:
         ls -la releases/${VERSION}/
         echo "Total files: $(ls releases/${VERSION}/ | wc -l)"
         
-        # Upload each binary to Supabase Storage
+        # Upload each binary to Supabase Storage using REST API
         for file in releases/${VERSION}/*; do
           filename=$(basename "$file")
           filesize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
           echo "Uploading $filename (size: $filesize bytes) to releases/${VERSION}/$filename"
           
-          # Remove existing file if it exists, then upload
-          echo "Removing existing file if it exists..."
-          supabase storage rm "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental 2>/dev/null || true
+          # Use curl to upload directly to Supabase Storage API
+          echo "Uploading via REST API..."
+          response=$(curl -X POST \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$filename" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$file" \
+            -w "%{http_code}" \
+            -o /dev/null \
+            -s)
           
-          # Upload with timeout and debug info
-          echo "Starting upload with timeout..."
-          timeout 300 supabase storage cp "$file" "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental --yes --debug
-          
-          if [ $? -eq 0 ]; then
-            echo "Upload successful for $filename"
+          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+            echo "Upload successful for $filename (HTTP $response)"
             # Get public URL
             public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
             echo "Public URL: $public_url"
           else
-            echo "Upload failed or timed out for $filename"
+            echo "Upload failed for $filename (HTTP $response)"
             exit 1
           fi
         done
@@ -461,27 +464,30 @@ jobs:
         ls -la releases/${VERSION}/
         echo "Total files: $(ls releases/${VERSION}/ | wc -l)"
         
-        # Upload each binary to Supabase Storage
+        # Upload each binary to Supabase Storage using REST API
         for file in releases/${VERSION}/*; do
           filename=$(basename "$file")
           filesize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
           echo "Uploading $filename (size: $filesize bytes) to releases/${VERSION}/$filename"
           
-          # Remove existing file if it exists, then upload
-          echo "Removing existing file if it exists..."
-          supabase storage rm "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental 2>/dev/null || true
+          # Use curl to upload directly to Supabase Storage API
+          echo "Uploading via REST API..."
+          response=$(curl -X POST \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$filename" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$file" \
+            -w "%{http_code}" \
+            -o /dev/null \
+            -s)
           
-          # Upload with timeout and debug info
-          echo "Starting upload with timeout..."
-          timeout 300 supabase storage cp "$file" "ss:///cli-binaries/releases/${VERSION}/$filename" --linked --experimental --yes --debug
-          
-          if [ $? -eq 0 ]; then
-            echo "Upload successful for $filename"
+          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+            echo "Upload successful for $filename (HTTP $response)"
             # Get public URL
             public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
             echo "Public URL: $public_url"
           else
-            echo "Upload failed or timed out for $filename"
+            echo "Upload failed for $filename (HTTP $response)"
             exit 1
           fi
         done
