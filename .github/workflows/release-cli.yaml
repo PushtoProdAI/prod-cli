@@ -403,24 +403,27 @@ jobs:
           fi
         done
         
-        # Clear latest directory and copy all files from versioned directory
+        # Clear latest directory by deleting known file patterns
         echo "Clearing latest directory..."
-        # List all files in latest directory and delete them
-        latest_files=$(curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          "${{ secrets.SUPABASE_URL }}/storage/v1/object/list/cli-binaries/releases/latest" | \
-          jq -r '.[] | select(.name != null) | .name' 2>/dev/null || echo "")
+        # Delete common file patterns that might exist
+        for pattern in "*.gz" "manifest.json"; do
+          echo "Attempting to delete files matching pattern: $pattern"
+          # Try to delete files with common patterns
+          curl -X DELETE \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$pattern" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -w "%{http_code}" -o /dev/null -s 2>/dev/null || true
+        done
         
-        if [ -n "$latest_files" ]; then
-          echo "$latest_files" | while read -r file; do
-            if [ -n "$file" ]; then
-              echo "Deleting $file from latest directory..."
-              curl -X DELETE \
-                "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$file" \
-                -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-                -w "%{http_code}" -o /dev/null -s >/dev/null 2>&1 || true
-            fi
-          done
-        fi
+        # Also try to delete specific files that might exist from previous runs
+        echo "Deleting any remaining files from latest directory..."
+        for file in "prod-*-darwin-amd64.gz" "prod-*-darwin-arm64.gz" "prod-*-linux-amd64.gz" "prod-*-linux-arm64.gz" "manifest.json"; do
+          echo "Attempting to delete: $file"
+          curl -X DELETE \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$file" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -w "%{http_code}" -o /dev/null -s 2>/dev/null || true
+        done
         
         # Copy all files from versioned directory to latest directory
         echo "Copying files from versioned directory to latest directory..."
@@ -498,21 +501,41 @@ jobs:
           exit 1
         fi
         
-        # Copy manifest directly from local file to latest directory
-        echo "Copying manifest to latest directory..."
+        # Create a separate manifest for latest directory with correct URLs
+        echo "Creating manifest for latest directory..."
+        echo "{" > releases/${VERSION}/manifest-latest.json
+        echo "  \"version\": \"$VERSION\"," >> releases/${VERSION}/manifest-latest.json
+        echo "  \"files\": [" >> releases/${VERSION}/manifest-latest.json
+        
+        for file in releases/${VERSION}/*.gz; do
+          if [[ -f "$file" ]]; then
+            filename=$(basename "$file")
+            size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$filename"
+            echo "    {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest-latest.json
+          fi
+        done
+        
+        # Remove trailing comma and close JSON
+        sed -i '$ s/,$//' releases/${VERSION}/manifest-latest.json
+        echo "  ]" >> releases/${VERSION}/manifest-latest.json
+        echo "}" >> releases/${VERSION}/manifest-latest.json
+        
+        # Upload manifest to latest directory
+        echo "Uploading manifest to latest directory..."
         response=$(curl -X POST \
           "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/manifest.json" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
           -H "Content-Type: application/json" \
-          --data-binary @"releases/${VERSION}/manifest.json" \
+          --data-binary @"releases/${VERSION}/manifest-latest.json" \
           -w "%{http_code}" \
           -o /dev/null \
           -s)
         
         if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-          echo "Latest manifest copy successful (HTTP $response)"
+          echo "Latest manifest upload successful (HTTP $response)"
         else
-          echo "Latest manifest copy failed (HTTP $response)"
+          echo "Latest manifest upload failed (HTTP $response)"
           exit 1
         fi
         
@@ -632,24 +655,27 @@ jobs:
           fi
         done
         
-        # Clear latest directory and copy all files from versioned directory
+        # Clear latest directory by deleting known file patterns
         echo "Clearing latest directory..."
-        # List all files in latest directory and delete them
-        latest_files=$(curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          "${{ secrets.SUPABASE_URL }}/storage/v1/object/list/cli-binaries/releases/latest" | \
-          jq -r '.[] | select(.name != null) | .name' 2>/dev/null || echo "")
+        # Delete common file patterns that might exist
+        for pattern in "*.gz" "manifest.json"; do
+          echo "Attempting to delete files matching pattern: $pattern"
+          # Try to delete files with common patterns
+          curl -X DELETE \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$pattern" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -w "%{http_code}" -o /dev/null -s 2>/dev/null || true
+        done
         
-        if [ -n "$latest_files" ]; then
-          echo "$latest_files" | while read -r file; do
-            if [ -n "$file" ]; then
-              echo "Deleting $file from latest directory..."
-              curl -X DELETE \
-                "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$file" \
-                -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-                -w "%{http_code}" -o /dev/null -s >/dev/null 2>&1 || true
-            fi
-          done
-        fi
+        # Also try to delete specific files that might exist from previous runs
+        echo "Deleting any remaining files from latest directory..."
+        for file in "prod-*-darwin-amd64.gz" "prod-*-darwin-arm64.gz" "prod-*-linux-amd64.gz" "prod-*-linux-arm64.gz" "manifest.json"; do
+          echo "Attempting to delete: $file"
+          curl -X DELETE \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$file" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -w "%{http_code}" -o /dev/null -s 2>/dev/null || true
+        done
         
         # Copy all files from versioned directory to latest directory
         echo "Copying files from versioned directory to latest directory..."
@@ -727,21 +753,41 @@ jobs:
           exit 1
         fi
         
-        # Copy manifest directly from local file to latest directory
-        echo "Copying manifest to latest directory..."
+        # Create a separate manifest for latest directory with correct URLs
+        echo "Creating manifest for latest directory..."
+        echo "{" > releases/${VERSION}/manifest-latest.json
+        echo "  \"version\": \"$VERSION\"," >> releases/${VERSION}/manifest-latest.json
+        echo "  \"files\": [" >> releases/${VERSION}/manifest-latest.json
+        
+        for file in releases/${VERSION}/*.gz; do
+          if [[ -f "$file" ]]; then
+            filename=$(basename "$file")
+            size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$filename"
+            echo "    {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest-latest.json
+          fi
+        done
+        
+        # Remove trailing comma and close JSON
+        sed -i '$ s/,$//' releases/${VERSION}/manifest-latest.json
+        echo "  ]" >> releases/${VERSION}/manifest-latest.json
+        echo "}" >> releases/${VERSION}/manifest-latest.json
+        
+        # Upload manifest to latest directory
+        echo "Uploading manifest to latest directory..."
         response=$(curl -X POST \
           "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/manifest.json" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
           -H "Content-Type: application/json" \
-          --data-binary @"releases/${VERSION}/manifest.json" \
+          --data-binary @"releases/${VERSION}/manifest-latest.json" \
           -w "%{http_code}" \
           -o /dev/null \
           -s)
         
         if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-          echo "Latest manifest copy successful (HTTP $response)"
+          echo "Latest manifest upload successful (HTTP $response)"
         else
-          echo "Latest manifest copy failed (HTTP $response)"
+          echo "Latest manifest upload failed (HTTP $response)"
           exit 1
         fi
         
