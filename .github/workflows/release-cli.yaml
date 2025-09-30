@@ -535,6 +535,45 @@ jobs:
           exit 1
         fi
         
+        # Upload install.sh script to root of bucket (with change detection)
+        echo "Checking if install.sh needs to be updated..."
+        
+        # Download existing install.sh if it exists
+        local existing_script="/tmp/existing_install.sh"
+        local new_script="scripts/install.sh"
+        
+        echo "Downloading existing install.sh for comparison..."
+        curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
+          -o "$existing_script" 2>/dev/null || touch "$existing_script"
+        
+        # Compare files
+        if diff -q "$existing_script" "$new_script" >/dev/null 2>&1; then
+          echo "Install script is unchanged, skipping upload"
+        else
+          echo "Install script has changes, uploading new version..."
+          
+          # Upload the new install.sh script
+          response=$(curl -X POST \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: text/plain" \
+            --data-binary @"$new_script" \
+            -w "%{http_code}" \
+            -o /dev/null \
+            -s)
+          
+          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+            echo "Install script upload successful (HTTP $response)"
+          else
+            echo "Install script upload failed (HTTP $response)"
+            exit 1
+          fi
+        fi
+        
+        # Clean up temp file
+        rm -f "$existing_script"
+        
         echo "Upload completed for version $VERSION"
       env:
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -795,6 +834,45 @@ jobs:
           echo "Latest manifest upload failed (HTTP $response)"
           exit 1
         fi
+        
+        # Upload install.sh script to root of bucket (with change detection)
+        echo "Checking if install.sh needs to be updated..."
+        
+        # Download existing install.sh if it exists
+        local existing_script="/tmp/existing_install.sh"
+        local new_script="scripts/install.sh"
+        
+        echo "Downloading existing install.sh for comparison..."
+        curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
+          -o "$existing_script" 2>/dev/null || touch "$existing_script"
+        
+        # Compare files
+        if diff -q "$existing_script" "$new_script" >/dev/null 2>&1; then
+          echo "Install script is unchanged, skipping upload"
+        else
+          echo "Install script has changes, uploading new version..."
+          
+          # Upload the new install.sh script
+          response=$(curl -X POST \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: text/plain" \
+            --data-binary @"$new_script" \
+            -w "%{http_code}" \
+            -o /dev/null \
+            -s)
+          
+          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+            echo "Install script upload successful (HTTP $response)"
+          else
+            echo "Install script upload failed (HTTP $response)"
+            exit 1
+          fi
+        fi
+        
+        # Clean up temp file
+        rm -f "$existing_script"
         
         echo "Upload completed for version $VERSION"
       env:
