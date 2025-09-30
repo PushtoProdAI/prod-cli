@@ -344,30 +344,38 @@ jobs:
         ls -la releases/${VERSION}/
         echo "Total files: $(ls releases/${VERSION}/ | wc -l)"
         
-        # Upload each binary to Supabase Storage using REST API
+        # Compress and upload each binary to Supabase Storage using REST API
         for file in releases/${VERSION}/*; do
           filename=$(basename "$file")
           filesize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
-          echo "Uploading $filename (size: $filesize bytes) to releases/${VERSION}/$filename"
+          echo "Processing $filename (size: $filesize bytes)"
           
-          # Use curl to upload directly to Supabase Storage API
-          echo "Uploading via REST API..."
+          # Compress the file
+          echo "Compressing $filename..."
+          gzip -c "$file" > "${file}.gz"
+          compressed_size=$(stat -f%z "${file}.gz" 2>/dev/null || stat -c%s "${file}.gz" 2>/dev/null || echo 0)
+          compression_ratio=$(( (filesize - compressed_size) * 100 / filesize ))
+          echo "Compressed size: $compressed_size bytes (${compression_ratio}% reduction)"
+          
+          # Upload compressed version
+          compressed_filename="${filename}.gz"
+          echo "Uploading $compressed_filename via REST API..."
           response=$(curl -X POST \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$filename" \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$compressed_filename" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary @"$file" \
+            -H "Content-Type: application/gzip" \
+            --data-binary @"${file}.gz" \
             -w "%{http_code}" \
             -o /dev/null \
             -s)
           
           if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-            echo "Upload successful for $filename (HTTP $response)"
+            echo "Upload successful for $compressed_filename (HTTP $response)"
             # Get public URL
-            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$compressed_filename"
             echo "Public URL: $public_url"
           else
-            echo "Upload failed for $filename (HTTP $response)"
+            echo "Upload failed for $compressed_filename (HTTP $response)"
             exit 1
           fi
         done
@@ -378,8 +386,8 @@ jobs:
         echo "  \"version\": \"$VERSION\"," >> releases/${VERSION}/manifest.json
         echo "  \"files\": [" >> releases/${VERSION}/manifest.json
         
-        for file in releases/${VERSION}/*; do
-          if [[ "$(basename "$file")" != "manifest.json" ]]; then
+        for file in releases/${VERSION}/*.gz; do
+          if [[ -f "$file" ]]; then
             filename=$(basename "$file")
             size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
             public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
@@ -478,30 +486,38 @@ jobs:
         ls -la releases/${VERSION}/
         echo "Total files: $(ls releases/${VERSION}/ | wc -l)"
         
-        # Upload each binary to Supabase Storage using REST API
+        # Compress and upload each binary to Supabase Storage using REST API
         for file in releases/${VERSION}/*; do
           filename=$(basename "$file")
           filesize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
-          echo "Uploading $filename (size: $filesize bytes) to releases/${VERSION}/$filename"
+          echo "Processing $filename (size: $filesize bytes)"
           
-          # Use curl to upload directly to Supabase Storage API
-          echo "Uploading via REST API..."
+          # Compress the file
+          echo "Compressing $filename..."
+          gzip -c "$file" > "${file}.gz"
+          compressed_size=$(stat -f%z "${file}.gz" 2>/dev/null || stat -c%s "${file}.gz" 2>/dev/null || echo 0)
+          compression_ratio=$(( (filesize - compressed_size) * 100 / filesize ))
+          echo "Compressed size: $compressed_size bytes (${compression_ratio}% reduction)"
+          
+          # Upload compressed version
+          compressed_filename="${filename}.gz"
+          echo "Uploading $compressed_filename via REST API..."
           response=$(curl -X POST \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$filename" \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$compressed_filename" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -H "Content-Type: application/octet-stream" \
-            --data-binary @"$file" \
+            -H "Content-Type: application/gzip" \
+            --data-binary @"${file}.gz" \
             -w "%{http_code}" \
             -o /dev/null \
             -s)
           
           if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-            echo "Upload successful for $filename (HTTP $response)"
+            echo "Upload successful for $compressed_filename (HTTP $response)"
             # Get public URL
-            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$compressed_filename"
             echo "Public URL: $public_url"
           else
-            echo "Upload failed for $filename (HTTP $response)"
+            echo "Upload failed for $compressed_filename (HTTP $response)"
             exit 1
           fi
         done
@@ -512,8 +528,8 @@ jobs:
         echo "  \"version\": \"$VERSION\"," >> releases/${VERSION}/manifest.json
         echo "  \"files\": [" >> releases/${VERSION}/manifest.json
         
-        for file in releases/${VERSION}/*; do
-          if [[ "$(basename "$file")" != "manifest.json" ]]; then
+        for file in releases/${VERSION}/*.gz; do
+          if [[ -f "$file" ]]; then
             filename=$(basename "$file")
             size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
             public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
