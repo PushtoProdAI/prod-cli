@@ -90,7 +90,14 @@ jobs:
 
     - name: Get version
       id: version
-      run: echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      run: |
+        # Try to get the latest tag, fallback to commit hash
+        latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+        if [ -n "$latest_tag" ]; then
+          echo "version=$latest_tag" >> $GITHUB_OUTPUT
+        else
+          echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        fi
 
     - name: Upload Linux AMD64 artifact
       uses: actions/upload-artifact@v4
@@ -194,7 +201,14 @@ jobs:
 
     - name: Get version
       id: version
-      run: echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      run: |
+        # Try to get the latest tag, fallback to commit hash
+        latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+        if [ -n "$latest_tag" ]; then
+          echo "version=$latest_tag" >> $GITHUB_OUTPUT
+        else
+          echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        fi
 
     - name: Upload macOS AMD64 artifact
       uses: actions/upload-artifact@v4
@@ -374,7 +388,7 @@ jobs:
         done
         
         # Remove trailing comma and close JSON
-        sed -i '' '$ s/,$//' releases/${VERSION}/manifest.json
+        sed -i '$ s/,$//' releases/${VERSION}/manifest.json
         echo "  ]" >> releases/${VERSION}/manifest.json
         echo "}" >> releases/${VERSION}/manifest.json
         
@@ -508,7 +522,7 @@ jobs:
         done
         
         # Remove trailing comma and close JSON
-        sed -i '' '$ s/,$//' releases/${VERSION}/manifest.json
+        sed -i '$ s/,$//' releases/${VERSION}/manifest.json
         echo "  ]" >> releases/${VERSION}/manifest.json
         echo "}" >> releases/${VERSION}/manifest.json
         
