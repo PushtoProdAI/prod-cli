@@ -539,8 +539,8 @@ jobs:
         echo "Checking if install.sh needs to be updated..."
         
         # Download existing install.sh if it exists
-        local existing_script="/tmp/existing_install.sh"
-        local new_script="scripts/install.sh"
+        existing_script="/tmp/existing_install.sh"
+        new_script="scripts/install.sh"
         
         echo "Downloading existing install.sh for comparison..."
         curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
@@ -839,8 +839,8 @@ jobs:
         echo "Checking if install.sh needs to be updated..."
         
         # Download existing install.sh if it exists
-        local existing_script="/tmp/existing_install.sh"
-        local new_script="scripts/install.sh"
+        existing_script="/tmp/existing_install.sh"
+        new_script="scripts/install.sh"
         
         echo "Downloading existing install.sh for comparison..."
         curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
