@@ -111,7 +111,7 @@ func (vqd *VercelQueuedDeployment) GenerateAPISteps() []VercelAPIStep {
 
 	// Step 5: Build project (required for --prebuilt deployment)
 	if vqd.spec.BuildCommand != "" {
-		buildStep := NewBuildProjectStep(vqd.spec.BuildCommand, vqd.getSourcePath(), vqd.spec.EnvVars, vqd.writer)
+		buildStep := NewBuildProjectStep(vqd.spec.BuildCommand, vqd.spec.MigrationCommand, vqd.getSourcePath(), vqd.spec.EnvVars, vqd.writer)
 		steps = append(steps, buildStep)
 	}
 

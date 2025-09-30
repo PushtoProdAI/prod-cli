@@ -17,10 +17,12 @@ type ProjectSpec struct {
 	ServiceRequirements []ServiceRequirement
 	BuildCommand        string
 	StartCommand        string
+	MigrationCommand    string
 	EnvVars             []EnvVarCandidate
 	Routes              []RouteCandidate
 	BuildOutput         BuildOutputCandidate
 	LaunchContext       LaunchContext
+	MigrationContext    MigrationContext
 }
 
 type ServiceRequirement struct {

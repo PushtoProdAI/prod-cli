@@ -176,6 +176,45 @@ func DetermineLaunchCommand(ctx context.Context, language string, frameworks []s
 	return casted, nil
 }
 
+func DetermineMigrationCommand(ctx context.Context, language string, frameworks []string, ormTools []string, migrationContext types.MigrationContext, opts ...CallOptionFunc) (types.MigrationCommand, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"language": language, "frameworks": frameworks, "ormTools": ormTools, "migrationContext": migrationContext},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	encoded, err := baml.EncodeArgs(args)
+	if err != nil {
+		panic(err)
+	}
+
+	result, err := bamlRuntime.CallFunction(ctx, "DetermineMigrationCommand", encoded)
+	if err != nil {
+		return types.MigrationCommand{}, err
+	}
+
+	if result.Error != nil {
+		return types.MigrationCommand{}, result.Error
+	}
+
+	casted := *(result.Data).(*types.MigrationCommand)
+
+	return casted, nil
+}
+
 func ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) (types.Intent, error) {
 
 	var callOpts callOption
