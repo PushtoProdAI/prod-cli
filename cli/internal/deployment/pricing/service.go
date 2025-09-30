@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/llm"
@@ -68,13 +69,13 @@ func (ps *PricingService) EstimateCosts(ctx context.Context, services []deployme
 	// Fetch content with retries
 	content, err := ps.fetchContentWithRetries()
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch pricing content: %w", err)
+		return nil, errors.Errorf("failed to fetch pricing content: %w", err)
 	}
 
 	for i, service := range services {
 		result, err := ps.extractPricingForService(ctx, service, content)
 		if err != nil {
-			return nil, fmt.Errorf("failed to extract pricing for service %s: %w", service.Name, err)
+			return nil, errors.Errorf("failed to extract pricing for service %s: %w", service.Name, err)
 		}
 		costs[i] = result.Cost
 	}
@@ -87,7 +88,7 @@ func (ps *PricingService) EstimateCost(ctx context.Context, service deployment.C
 	// Fetch content with retries
 	content, err := ps.fetchContentWithRetries()
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch pricing content: %w", err)
+		return nil, errors.Errorf("failed to fetch pricing content: %w", err)
 	}
 
 	return ps.extractPricingForService(ctx, service, content)
@@ -128,7 +129,7 @@ func (ps *PricingService) extractPricingForService(ctx context.Context, service 
 	// Call BAML pricing function through our LLM client
 	resp, err := ps.llmClient.FetchPricing(ctx, s, content)
 	if err != nil {
-		return nil, fmt.Errorf("BAML pricing extraction failed: %w", err)
+		return nil, errors.Errorf("BAML pricing extraction failed: %w", err)
 	}
 
 	// Handle "NOT_FOUND" gracefully
