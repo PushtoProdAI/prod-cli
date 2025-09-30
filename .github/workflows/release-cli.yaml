@@ -383,9 +383,11 @@ jobs:
           compression_ratio=$(( (filesize - compressed_size) * 100 / filesize ))
           echo "Compressed size: $compressed_size bytes (${compression_ratio}% reduction)"
           
-          # Upload compressed version
+          # Upload compressed version to both versioned and latest directories
           compressed_filename="${filename}.gz"
-          echo "Uploading $compressed_filename via REST API..."
+          
+          # Upload to versioned directory
+          echo "Uploading $compressed_filename to versioned directory..."
           response=$(curl -X POST \
             "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$compressed_filename" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
@@ -396,12 +398,30 @@ jobs:
             -s)
           
           if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-            echo "Upload successful for $compressed_filename (HTTP $response)"
-            # Get public URL
-            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$compressed_filename"
+            echo "Versioned upload successful for $compressed_filename (HTTP $response)"
+          else
+            echo "Versioned upload failed for $compressed_filename (HTTP $response)"
+            exit 1
+          fi
+          
+          # Upload to latest directory
+          echo "Uploading $compressed_filename to latest directory..."
+          response=$(curl -X POST \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$compressed_filename" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/gzip" \
+            --data-binary @"${file}.gz" \
+            -w "%{http_code}" \
+            -o /dev/null \
+            -s)
+          
+          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+            echo "Latest upload successful for $compressed_filename (HTTP $response)"
+            # Get public URL (use latest for downloads)
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$compressed_filename"
             echo "Public URL: $public_url"
           else
-            echo "Upload failed for $compressed_filename (HTTP $response)"
+            echo "Latest upload failed for $compressed_filename (HTTP $response)"
             exit 1
           fi
         done
@@ -426,8 +446,12 @@ jobs:
         echo "  ]" >> releases/${VERSION}/manifest.json
         echo "}" >> releases/${VERSION}/manifest.json
         
-        # Upload manifest
+        # Upload manifest to both versioned and latest directories
+        echo "Uploading manifest to versioned directory..."
         supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/${VERSION}/manifest.json" --linked --experimental --yes
+        
+        echo "Uploading manifest to latest directory..."
+        supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/latest/manifest.json" --linked --experimental --yes
         
         echo "Upload completed for version $VERSION"
       env:
@@ -525,9 +549,11 @@ jobs:
           compression_ratio=$(( (filesize - compressed_size) * 100 / filesize ))
           echo "Compressed size: $compressed_size bytes (${compression_ratio}% reduction)"
           
-          # Upload compressed version
+          # Upload compressed version to both versioned and latest directories
           compressed_filename="${filename}.gz"
-          echo "Uploading $compressed_filename via REST API..."
+          
+          # Upload to versioned directory
+          echo "Uploading $compressed_filename to versioned directory..."
           response=$(curl -X POST \
             "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$compressed_filename" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
@@ -538,12 +564,30 @@ jobs:
             -s)
           
           if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-            echo "Upload successful for $compressed_filename (HTTP $response)"
-            # Get public URL
-            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$compressed_filename"
+            echo "Versioned upload successful for $compressed_filename (HTTP $response)"
+          else
+            echo "Versioned upload failed for $compressed_filename (HTTP $response)"
+            exit 1
+          fi
+          
+          # Upload to latest directory
+          echo "Uploading $compressed_filename to latest directory..."
+          response=$(curl -X POST \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$compressed_filename" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/gzip" \
+            --data-binary @"${file}.gz" \
+            -w "%{http_code}" \
+            -o /dev/null \
+            -s)
+          
+          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+            echo "Latest upload successful for $compressed_filename (HTTP $response)"
+            # Get public URL (use latest for downloads)
+            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$compressed_filename"
             echo "Public URL: $public_url"
           else
-            echo "Upload failed for $compressed_filename (HTTP $response)"
+            echo "Latest upload failed for $compressed_filename (HTTP $response)"
             exit 1
           fi
         done
@@ -568,8 +612,12 @@ jobs:
         echo "  ]" >> releases/${VERSION}/manifest.json
         echo "}" >> releases/${VERSION}/manifest.json
         
-        # Upload manifest
+        # Upload manifest to both versioned and latest directories
+        echo "Uploading manifest to versioned directory..."
         supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/${VERSION}/manifest.json" --linked --experimental --yes
+        
+        echo "Uploading manifest to latest directory..."
+        supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/latest/manifest.json" --linked --experimental --yes
         
         echo "Upload completed for version $VERSION"
       env:
