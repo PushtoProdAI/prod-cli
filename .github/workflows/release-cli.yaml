@@ -404,6 +404,13 @@ jobs:
             exit 1
           fi
           
+          # Remove existing file from latest directory first
+          echo "Removing existing $compressed_filename from latest directory..."
+          curl -X DELETE \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$compressed_filename" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -w "%{http_code}" -o /dev/null -s >/dev/null 2>&1 || true
+          
           # Upload to latest directory
           echo "Uploading $compressed_filename to latest directory..."
           response=$(curl -X POST \
@@ -449,6 +456,9 @@ jobs:
         # Upload manifest to both versioned and latest directories
         echo "Uploading manifest to versioned directory..."
         supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/${VERSION}/manifest.json" --linked --experimental --yes
+        
+        echo "Removing existing manifest from latest directory..."
+        supabase storage rm "ss:///cli-binaries/releases/latest/manifest.json" --linked --experimental 2>/dev/null || true
         
         echo "Uploading manifest to latest directory..."
         supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/latest/manifest.json" --linked --experimental --yes
@@ -570,6 +580,13 @@ jobs:
             exit 1
           fi
           
+          # Remove existing file from latest directory first
+          echo "Removing existing $compressed_filename from latest directory..."
+          curl -X DELETE \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$compressed_filename" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -w "%{http_code}" -o /dev/null -s >/dev/null 2>&1 || true
+          
           # Upload to latest directory
           echo "Uploading $compressed_filename to latest directory..."
           response=$(curl -X POST \
@@ -615,6 +632,9 @@ jobs:
         # Upload manifest to both versioned and latest directories
         echo "Uploading manifest to versioned directory..."
         supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/${VERSION}/manifest.json" --linked --experimental --yes
+        
+        echo "Removing existing manifest from latest directory..."
+        supabase storage rm "ss:///cli-binaries/releases/latest/manifest.json" --linked --experimental 2>/dev/null || true
         
         echo "Uploading manifest to latest directory..."
         supabase storage cp "releases/${VERSION}/manifest.json" "ss:///cli-binaries/releases/latest/manifest.json" --linked --experimental --yes
