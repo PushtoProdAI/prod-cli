@@ -2,8 +2,8 @@ package llm
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/config"
@@ -104,7 +104,7 @@ func (c *client) ExtractIntent(ctx context.Context, prompt string) (types.Intent
 	opts := c.getCallOptions(ctx)
 	intent, err := baml_client.ExtractIntent(ctx, prompt, opts...)
 	if err != nil {
-		return types.Intent{}, fmt.Errorf("failed to extract intent: %w", err)
+		return types.Intent{}, errors.Errorf("failed to extract intent: %w", err)
 	}
 	return intent, nil
 }
@@ -114,7 +114,7 @@ func (c *client) SummarizeIntent(ctx context.Context, intent types.Intent, name,
 	opts := c.getCallOptions(ctx)
 	summary, err := baml_client.SummarizeIntent(ctx, intent, name, language, opts...)
 	if err != nil {
-		return types.Summary{}, fmt.Errorf("failed to summarize intent: %w", err)
+		return types.Summary{}, errors.Errorf("failed to summarize intent: %w", err)
 	}
 	return summary, nil
 }
@@ -124,7 +124,7 @@ func (c *client) DetermineLaunchCommand(ctx context.Context, language string, fr
 	opts := c.getCallOptions(ctx)
 	cmd, err := baml_client.DetermineLaunchCommand(ctx, language, frameworks, envVars, lc, opts...)
 	if err != nil {
-		return types.LaunchCommand{}, fmt.Errorf("failed to determine launch command: %w", err)
+		return types.LaunchCommand{}, errors.Errorf("failed to determine launch command: %w", err)
 	}
 	return cmd, nil
 }
@@ -134,7 +134,7 @@ func (c *client) SummarizeSteps(ctx context.Context, steps []string) (types.Summ
 	opts := c.getCallOptions(ctx)
 	summary, err := baml_client.SummarizeSteps(ctx, steps, opts...)
 	if err != nil {
-		return types.Summary{}, fmt.Errorf("failed to summarize steps: %w", err)
+		return types.Summary{}, errors.Errorf("failed to summarize steps: %w", err)
 	}
 	return summary, nil
 }
@@ -144,7 +144,7 @@ func (c *client) DetermineEnvVarRoles(ctx context.Context, ev types.EnvVarCandid
 	opts := c.getCallOptions(ctx)
 	role, err := baml_client.DetermineEnvVarRoles(ctx, ev, dbList, opts...)
 	if err != nil {
-		return types.EnvVarCategory{}, fmt.Errorf("failed to determine env var roles: %w", err)
+		return types.EnvVarCategory{}, errors.Errorf("failed to determine env var roles: %w", err)
 	}
 	return role, nil
 }
@@ -154,7 +154,7 @@ func (c *client) DetermineBuildOutput(ctx context.Context, bo types.BuildOutputC
 	opts := c.getCallOptions(ctx)
 	output, err := baml_client.DetermineBuildOutput(ctx, bo, opts...)
 	if err != nil {
-		return types.BuildOutput{}, fmt.Errorf("failed to determine build output: %w", err)
+		return types.BuildOutput{}, errors.Errorf("failed to determine build output: %w", err)
 	}
 	return output, nil
 }
@@ -164,7 +164,7 @@ func (c *client) SummarizeDeployError(ctx context.Context, error string, intent 
 	opts := c.getCallOptions(ctx)
 	summary, err := baml_client.SummarizeDeployError(ctx, error, intent, spec, os, violations, opts...)
 	if err != nil {
-		return types.Error{}, fmt.Errorf("failed to summarize deploy error: %w", err)
+		return types.Error{}, errors.Errorf("failed to summarize deploy error: %w", err)
 	}
 	return summary, nil
 }
@@ -174,7 +174,7 @@ func (c *client) CategorizeRoutes(ctx context.Context, routes []types.RouteCandi
 	opts := c.getCallOptions(ctx)
 	analysis, err := baml_client.CategorizeRoutes(ctx, routes, opts...)
 	if err != nil {
-		return types.CategorizedRoutes{}, fmt.Errorf("failed to categorize routes: %w", err)
+		return types.CategorizedRoutes{}, errors.Errorf("failed to categorize routes: %w", err)
 	}
 	return analysis, nil
 }
@@ -184,7 +184,7 @@ func (c *client) FetchPricing(ctx context.Context, service types.Service, conten
 	opts := c.getCallOptions(ctx)
 	pricing, err := baml_client.FetchPricing(ctx, service, content, opts...)
 	if err != nil {
-		return types.ServicePricing{}, fmt.Errorf("failed to fetch pricing: %w", err)
+		return types.ServicePricing{}, errors.Errorf("failed to fetch pricing: %w", err)
 	}
 	return pricing, nil
 }
