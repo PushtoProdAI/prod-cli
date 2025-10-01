@@ -27,7 +27,9 @@ endif
 # Build flags for setting variables at build time
 LDFLAGS := -X 'github.com/meroxa/prod/cli/internal/config.SupabaseURL=$(SUPABASE_URL)' \
            -X 'github.com/meroxa/prod/cli/internal/config.SupabaseAnonKey=$(SUPABASE_ANON_KEY)' \
-           -X 'github.com/meroxa/prod/cli/internal/config.ProdDebug=$(PROD_DEBUG)'
+           -X 'github.com/meroxa/prod/cli/internal/config.ProdDebug=$(PROD_DEBUG)' \
+					 -X 'github.com/meroxa/prod/cli/internal/config.Environment=$(ENVIRONMENT)' \
+					 -X 'github.com/meroxa/prod/cli/internal/config.SentryDSN=$(CLI_SENTRY_DSN)'
 
 .PHONY: build
 build: build-cli-darwin-arm64
