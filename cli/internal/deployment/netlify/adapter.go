@@ -58,7 +58,7 @@ func (n *NetlifyDeploymentAdapter) GenerateArtifacts(spec *deployment.Deployment
 }
 
 // EstimateCost estimates the cost of deployment on Netlify
-func (n *NetlifyDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+func (n *NetlifyDeploymentAdapter) EstimateCost(ctx context.Context, spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
 	slog.Info("Estimating costs for Netlify deployment", "name", spec.Name)
 
 	// Build cost request from deployment spec
@@ -89,14 +89,13 @@ func (n *NetlifyDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec,
 	}
 	cr.Services = append(cr.Services, cs)
 
-	ce, err := estimateNetlifyCost(cr)
+	ce, err := estimateNetlifyCost(ctx, cr)
 	return ce, err
 }
 
-func estimateNetlifyCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
+func estimateNetlifyCost(ctx context.Context, cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	slog.Info("Estimating Netlify costs", "serviceCount", len(cr.Services))
 
-	ctx := context.Background()
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 

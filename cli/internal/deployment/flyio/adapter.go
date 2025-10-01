@@ -75,7 +75,7 @@ func (fda *FlyioDeploymentAdapter) GenerateArtifactsWithSource(spec *deployment.
 }
 
 // EstimateCost estimates the cost of deployment on Fly.io
-func (fda *FlyioDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+func (fda *FlyioDeploymentAdapter) EstimateCost(ctx context.Context, spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
 	slog.Info("Estimating costs for spec", "spec", spec, "strategy", strategy)
 
 	// Build cost request from deployment spec
@@ -108,14 +108,13 @@ func (fda *FlyioDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec,
 	}
 	cr.Services = append(cr.Services, cs)
 
-	ce, err := fda.estimateFlyioCost(cr)
+	ce, err := fda.estimateFlyioCost(ctx, cr)
 	return ce, err
 }
 
-func (fda *FlyioDeploymentAdapter) estimateFlyioCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
+func (fda *FlyioDeploymentAdapter) estimateFlyioCost(ctx context.Context, cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	slog.Info("Estimating Fly.io costs for request", "request", cr)
 
-	ctx := context.Background()
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 

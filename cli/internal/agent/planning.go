@@ -11,7 +11,6 @@ import (
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/deployment"
@@ -203,11 +202,13 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 
 func (a *Activities) determineIntent(ctx context.Context, prompt string) (types.Intent, error) {
 	a.uiWriter.SendStatus("planning", "Understanding your request...")
-	intent, err := baml_client.ExtractIntent(ctx, prompt)
+
+	intent, err := a.llmClient.ExtractIntent(ctx, prompt)
 	if err != nil {
 		a.uiWriter.SendStatusComplete("planning", "❌ Failed to understand request")
 		return types.Intent{}, errors.Errorf("failed to extract intent: %w", err)
 	}
+
 	if intent.Source == "pwd" {
 		path, err := os.Getwd()
 		if err != nil {
@@ -236,7 +237,7 @@ func (a *Activities) analyze(_ context.Context, intent types.Intent) (analyzer.P
 
 func (a *Activities) summarize(ctx context.Context, intent types.Intent, name string, language string) (string, error) {
 	a.uiWriter.SendStatus("summarizing", "Summarizing your request...")
-	summary, err := baml_client.SummarizeIntent(ctx, intent, name, language)
+	summary, err := a.llmClient.SummarizeIntent(ctx, intent, name, language)
 	if err != nil {
 		a.uiWriter.SendStatusComplete("summarizing", "❌ Failed to summarize request")
 		return "", errors.Errorf("failed to summarize intent: %w", err)
@@ -283,7 +284,7 @@ func (a *Activities) determineRunCommand(ctx context.Context, spec analyzer.Proj
 			Content: l.Content,
 		})
 	}
-	cmd, err := baml_client.DetermineLaunchCommand(ctx, spec.Language, frameworks, envVars, lc)
+	cmd, err := a.llmClient.DetermineLaunchCommand(ctx, spec.Language, frameworks, envVars, lc)
 	if err != nil {
 		a.uiWriter.SendStatusComplete("planning", "❌ Failed to calculate run command")
 		return "", errors.Errorf("failed to determine launch command: %w", err)
@@ -342,7 +343,7 @@ func (a *Activities) determineMigrationCommand(ctx context.Context, spec analyze
 		mc.ConfigSnippets = strings.Join(configSnippets, "\n\n")
 	}
 
-	cmd, err := baml_client.DetermineMigrationCommand(ctx, spec.Language, frameworks, spec.MigrationContext.ORMTools, mc)
+	cmd, err := a.llmClient.DetermineMigrationCommand(ctx, spec.Language, frameworks, spec.MigrationContext.ORMTools, mc)
 	if err != nil {
 		a.uiWriter.SendStatusComplete("planning", "❌ Failed to detect migration command")
 		return "", errors.Errorf("failed to determine migration command: %w", err)
@@ -355,4 +356,23 @@ func (a *Activities) determineMigrationCommand(ctx context.Context, spec analyze
 	}
 
 	return cmd.Command, nil
+}
+
+// maskToken masks sensitive tokens for logging
+func maskToken(token string) string {
+	if token == "" {
+		return "(empty)"
+	}
+	if len(token) < 8 {
+		return "***"
+	}
+	return token[:4] + "***" + token[len(token)-4:]
+}
+
+// min returns the smaller of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

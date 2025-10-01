@@ -10,6 +10,11 @@ type Session struct {
 	User         *User     `json:"user,omitempty"`
 }
 
+// GetAccessToken implements the llm.SessionProvider interface.
+func (s *Session) GetAccessToken() string {
+	return s.AccessToken
+}
+
 // User represents the authenticated user
 type User struct {
 	ID    string `json:"id"`

@@ -126,7 +126,7 @@ func (rda *RenderDeploymentAdapter) shouldUseDockerfile(spec *deployment.Deploym
 	return !hasNativeSupport || hasComplexServices || hasCustomCommands
 }
 
-func (rda *RenderDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+func (rda *RenderDeploymentAdapter) EstimateCost(ctx context.Context, spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
 	slog.Info("Estimating costs for spec", "spec", spec, "strategy", strategy)
 	cr := deployment.CostRequest{Services: make([]deployment.CostService, 0)}
 	for _, service := range spec.Services {
@@ -153,14 +153,13 @@ func (rda *RenderDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec
 		Plan: webServicePlan,
 	}
 	cr.Services = append(cr.Services, cs)
-	ce, _ := estimateCost(cr)
+	ce, _ := estimateCost(ctx, cr)
 	return ce, nil
 }
 
-func estimateCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
+func estimateCost(ctx context.Context, cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	slog.Info("Estimating costs for request", "request", cr)
 
-	ctx := context.Background()
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 
