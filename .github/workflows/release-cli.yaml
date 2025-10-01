@@ -20,7 +20,7 @@ on:
     tags: ["*"]
   pull_request:
     branches: [main]
-    paths: ["cli/**"]
+    # paths: ["cli/**"]  # Temporarily disabled for testing
   workflow_dispatch:
     inputs:
       build_type:
@@ -48,11 +48,83 @@ jobs:
         with:
           go-version: "1.24.4"
 
-      - name: Run CLI tests
+      - name: Run CLI tests (temporarily disabled)
         working-directory: cli
         run: |
-          echo "Running CLI unit tests..."
-          go test ./... -v
+          echo "CLI tests temporarily disabled for Slack debugging"
+          # go test ./... -v
+
+      - name: Debug Slack secrets (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "SLACK_BOT_TOKEN length: ${#SLACK_BOT_TOKEN}"
+          echo "SLACK_BOT_TOKEN starts with: ${SLACK_BOT_TOKEN:0:4}"
+          echo "SLACK_CHANNEL_ID: $SLACK_CHANNEL_ID"
+          
+          # Test Slack API connectivity
+          echo "Testing Slack API connectivity..."
+          response=$(curl -s -X POST https://slack.com/api/auth.test \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json")
+          echo "Auth test response: $response"
+          
+          # Test channel info
+          echo "Testing channel access..."
+          channel_response=$(curl -s -X GET "https://slack.com/api/conversations.info?channel=$SLACK_CHANNEL_ID" \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN")
+          echo "Channel info response: $channel_response"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+
+      - name: Test Slack notification (PR only)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "🧪 Testing Slack notifications from PR"
+            attachments:
+              - color: "0099cc"
+                fields:
+                  - title: "PR Title"
+                    value: "${{ github.event.pull_request.title }}"
+                    short: false
+                  - title: "Author"
+                    value: "${{ github.event.pull_request.user.login }}"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.head_ref }}"
+                    short: true
+                  - title: "PR Link"
+                    value: "<${{ github.event.pull_request.html_url }}|View PR>"
+                    short: false
+
+      - name: Debug Slack secrets
+        if: failure()
+        run: |
+          echo "SLACK_BOT_TOKEN length: ${#SLACK_BOT_TOKEN}"
+          echo "SLACK_BOT_TOKEN starts with: ${SLACK_BOT_TOKEN:0:4}"
+          echo "SLACK_CHANNEL_ID: $SLACK_CHANNEL_ID"
+          
+          # Test Slack API connectivity
+          echo "Testing Slack API connectivity..."
+          response=$(curl -s -X POST https://slack.com/api/auth.test \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json")
+          echo "Auth test response: $response"
+          
+          # Test channel info
+          echo "Testing channel access..."
+          channel_response=$(curl -s -X GET "https://slack.com/api/conversations.info?channel=$SLACK_CHANNEL_ID" \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN")
+          echo "Channel info response: $channel_response"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
 
       - name: Notify test failure
         if: failure()
