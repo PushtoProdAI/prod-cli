@@ -1,6 +1,9 @@
 -- Deployment Operations Logging Migration
 -- This migration adds comprehensive deployment operation logging
 
+-- Create audit schema
+CREATE SCHEMA IF NOT EXISTS audit;
+
 -- Create deployment operations audit table
 CREATE TABLE IF NOT EXISTS audit.deployment_operations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
