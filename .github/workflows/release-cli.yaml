@@ -43,31 +43,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Notify test start
-        continue-on-error: true
-        uses: slackapi/slack-github-action@v2.1.1
-        with:
-          method: chat.postMessage
-          token: ${{ secrets.SLACK_BOT_TOKEN }}
-          payload: |
-            channel: ${{ secrets.SLACK_CHANNEL_ID }}
-            text: "🧪 CLI unit tests started"
-            attachments:
-              - color: "ffc107"
-                fields:
-                  - title: "Event"
-                    value: "${{ github.event_name }}"
-                    short: true
-                  - title: "Status"
-                    value: "Started"
-                    short: true
-                  - title: "Branch"
-                    value: "${{ github.ref_name }}"
-                    short: true
-                  - title: "Commit"
-                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
-                    short: true
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -78,32 +53,6 @@ jobs:
         run: |
           echo "Running CLI unit tests..."
           go test ./... -v
-
-      - name: Notify test success
-        if: success()
-        continue-on-error: true
-        uses: slackapi/slack-github-action@v2.1.1
-        with:
-          method: chat.postMessage
-          token: ${{ secrets.SLACK_BOT_TOKEN }}
-          payload: |
-            channel: ${{ secrets.SLACK_CHANNEL_ID }}
-            text: "✅ CLI unit tests completed successfully! :test_tube:"
-            attachments:
-              - color: "28a745"
-                fields:
-                  - title: "Event"
-                    value: "${{ github.event_name }}"
-                    short: true
-                  - title: "Status"
-                    value: "Success"
-                    short: true
-                  - title: "Branch"
-                    value: "${{ github.ref_name }}"
-                    short: true
-                  - title: "Commit"
-                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
-                    short: true
 
       - name: Notify test failure
         if: failure()
