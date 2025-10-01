@@ -13,6 +13,7 @@ require (
 	github.com/conduitio/ecdysis v0.4.2
 	github.com/cschleiden/go-workflows v0.0.0-00010101000000-000000000000
 	github.com/docker/docker v28.3.3+incompatible
+	github.com/getsentry/sentry-go v0.35.3
 	github.com/go-errors/errors v1.5.1
 	github.com/heroku/heroku-go/v6 v6.0.0
 	github.com/joho/godotenv v1.5.1

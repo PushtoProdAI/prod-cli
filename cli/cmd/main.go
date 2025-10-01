@@ -19,6 +19,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/config"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
+	prod_error "github.com/meroxa/prod/cli/internal/error"
 	prod_log "github.com/meroxa/prod/cli/internal/log"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
@@ -75,6 +76,12 @@ func main() {
 			log.Fatalf("failed to shutdown workflows provider: %v", err)
 		}
 	}()
+
+	// init sentry error reporting
+	if err := prod_error.Initialize(); err != nil {
+		slog.Error("could not initialize error reporting", "error", err)
+	}
+	defer prod_error.Flush()
 
 	if config.DebugMode() {
 		logdyHandler := prod_log.NewLogdyHandler(handler, true, mux)

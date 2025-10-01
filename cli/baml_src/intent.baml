@@ -669,3 +669,90 @@ test envVarRoles {
     dbList ["PostgreSQL", "MySQL", "MongoDB"]
   }
 }
+
+class MigrationCommand {
+  command string
+  confidence string // "high", "medium", "low"
+  explanation string
+}
+
+class MigrationFile {
+  path string
+  type string // "migration", "config", "schema"
+}
+
+class MigrationContext {
+  migrationFiles MigrationFile[]
+  ormTools string[]
+  packageScripts string @description("JSON string of package.json scripts or similar")
+  configSnippets string @description("Relevant config file snippets")
+}
+
+function DetermineMigrationCommand(
+  language: string,
+  frameworks: string[],
+  ormTools: string[],
+  migrationContext: MigrationContext
+) -> MigrationCommand {
+  client "OllamaClient"
+  prompt #"
+{{_.role("system")}}
+You are an expert in database migration tools and ORMs across different programming languages.
+Your task is to determine the production database migration command for a project.
+
+IMPORTANT: Only suggest a migration command if you have strong evidence the project uses migrations.
+If unsure or no clear migration tool is detected, return an empty command.
+
+Common migration patterns by language and tool:
+
+**Node.js/JavaScript:**
+- Prisma: `npx prisma migrate deploy` (production) or `npx prisma db push` (development)
+- TypeORM: `npm run typeorm migration:run` or `npx typeorm migration:run`
+- Sequelize: `npx sequelize-cli db:migrate` or `npm run db:migrate`
+- Knex: `npx knex migrate:latest` or `npm run knex migrate:latest`
+- Mikro-ORM: `npx mikro-orm migration:up`
+- db-migrate: `npx db-migrate up`
+
+**Python:**
+- Django: `python manage.py migrate` or `./manage.py migrate`
+- Alembic (SQLAlchemy): `alembic upgrade head`
+- Flask-Migrate: `flask db upgrade` or `python -m flask db upgrade`
+- Peewee: `python migrate.py`
+- Tortoise ORM: `aerich upgrade`
+
+**Ruby:**
+- Rails: `rails db:migrate` or `bundle exec rake db:migrate`
+- Sequel: `sequel -m migrations postgres://...`
+- Hanami: `hanami db migrate`
+
+**Java/JVM:**
+- Flyway: `flyway migrate`
+- Liquibase: `liquibase update`
+
+Rules for determining the command:
+1. Prefer commands that appear in package.json scripts (for Node.js projects)
+2. Use production-safe commands (e.g., `prisma migrate deploy` not `prisma db push`)
+3. Include necessary prefixes (npx, bundle exec, python, etc.)
+4. Don't include environment-specific flags (--env=production, etc.)
+5. Don't include connection strings or credentials
+6. Return empty command if no clear migration tool is found
+
+Output confidence levels:
+- "high": Clear migration tool detected with standard patterns
+- "medium": Migration files found but command pattern unclear
+- "low": Possible migrations but very uncertain
+- Return empty command if confidence would be below "low"
+
+{{ _.role("user") }}
+Language: {{ language }}
+Frameworks: {{ frameworks }}
+ORM/Migration Tools Detected: {{ ormTools }}
+Migration Context: {{ migrationContext }}
+
+Analyze the project and determine the production migration command.
+If package.json scripts are provided, prefer using those script names with npm/yarn.
+Return empty command if you cannot determine a migration command with reasonable confidence.
+
+{{ctx.output_format }}
+"#
+}

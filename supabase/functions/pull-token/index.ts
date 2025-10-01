@@ -1,13 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { ecrTokenRequest } from "../_shared/aws.ts";
+import { initSentry, captureException, flushSentry } from '../_shared/sentry.ts';
 
-import {
-  ecrTokenRequest,
-} from "../_shared/aws.ts";
+// Initialize Sentry
+initSentry();
 
 
 Deno.serve(async (req) => {
-
+  try {
     if (req.method !== 'POST') {
     return new Response(
       JSON.stringify({ error: 'Method not allowed' }),
@@ -45,9 +46,30 @@ Deno.serve(async (req) => {
 
   if (result instanceof Error) {
     console.error("Pull token error:", result);
+    captureException(result, {
+      function: 'pull-token',
+      operation: 'ecr_token_request',
+      user_id: data?.user?.id,
+      repo_name: name
+    });
     return new Response(result.message, { status: 500 });
   }
 
   return Response.json(result);
+  
+  } catch (error) {
+    console.error('Unexpected error in pull-token function:', error);
+    captureException(error instanceof Error ? error : new Error(String(error)), {
+      function: 'pull-token',
+      operation: 'general_error',
+      method: req.method
+    });
+    await flushSentry();
+    
+    return new Response(
+      JSON.stringify({ error: 'Internal server error' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
 });
 

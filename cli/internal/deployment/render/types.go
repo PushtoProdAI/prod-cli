@@ -33,16 +33,17 @@ func (b *BaseStep) GetDependencies() []string {
 }
 
 type CreateWebServiceRequest struct {
-	Name           string                `json:"name"`
-	Type           string                `json:"type"` // "web_service"
-	OwnerID        string                `json:"ownerId"`
-	Repo           string                `json:"repo,omitempty"`
-	Branch         string                `json:"branch,omitempty"`
-	BuildCommand   string                `json:"buildCommand,omitempty"`
-	StartCommand   string                `json:"startCommand,omitempty"`
-	Image          *ImageDetails         `json:"image,omitempty"` // For Docker image deployments
-	EnvVars        []CreateServiceEnvVar `json:"envVars,omitempty"`
-	ServiceDetails *WebServiceDetails    `json:"serviceDetails,omitempty"`
+	Name             string                `json:"name"`
+	Type             string                `json:"type"` // "web_service"
+	OwnerID          string                `json:"ownerId"`
+	Repo             string                `json:"repo,omitempty"`
+	Branch           string                `json:"branch,omitempty"`
+	BuildCommand     string                `json:"buildCommand,omitempty"`
+	StartCommand     string                `json:"startCommand,omitempty"`
+	PreDeployCommand string                `json:"preDeployCommand,omitempty"`
+	Image            *ImageDetails         `json:"image,omitempty"` // For Docker image deployments
+	EnvVars          []CreateServiceEnvVar `json:"envVars,omitempty"`
+	ServiceDetails   *WebServiceDetails    `json:"serviceDetails,omitempty"`
 }
 
 type CreateServiceEnvVar struct {
@@ -155,16 +156,17 @@ type RenderBlueprint struct {
 }
 
 type BlueprintService struct {
-	Name         string            `json:"name"`
-	Type         string            `json:"type"`
-	Env          string            `json:"env,omitempty"`
-	Repo         string            `json:"repo,omitempty"`
-	Branch       string            `json:"branch,omitempty"`
-	BuildCommand string            `json:"buildCommand,omitempty"`
-	StartCommand string            `json:"startCommand,omitempty"`
-	Dockerfile   string            `json:"dockerfile,omitempty"`
-	EnvVars      map[string]string `json:"envVars,omitempty"`
-	DatabaseName string            `json:"databaseName,omitempty"` // For postgres services
+	Name             string            `json:"name"`
+	Type             string            `json:"type"`
+	Env              string            `json:"env,omitempty"`
+	Repo             string            `json:"repo,omitempty"`
+	Branch           string            `json:"branch,omitempty"`
+	BuildCommand     string            `json:"buildCommand,omitempty"`
+	StartCommand     string            `json:"startCommand,omitempty"`
+	PreDeployCommand string            `json:"preDeployCommand,omitempty"`
+	Dockerfile       string            `json:"dockerfile,omitempty"`
+	EnvVars          map[string]string `json:"envVars,omitempty"`
+	DatabaseName     string            `json:"databaseName,omitempty"` // For postgres services
 }
 
 type RenderWorkspace struct {

@@ -344,21 +344,23 @@ func (s *SetHerokuBuildpacksStep) Rollback(ctx context.Context, client *HerokuCl
 // GitDeployStep handles git-based deployment to Heroku
 type GitDeployStep struct {
 	BaseStep
-	AppID        string `json:"appId"`
-	BuildContext string `json:"buildContext"`
-	StartCommand string `json:"startCommand,omitempty"`
+	AppID            string `json:"appId"`
+	BuildContext     string `json:"buildContext"`
+	StartCommand     string `json:"startCommand,omitempty"`
+	MigrationCommand string `json:"migrationCommand,omitempty"`
 }
 
-func NewGitDeployStep(id, description, appID, buildContext, startCommand string, deps []string) *GitDeployStep {
+func NewGitDeployStep(id, description, appID, buildContext, startCommand, migrationCommand string, deps []string) *GitDeployStep {
 	return &GitDeployStep{
 		BaseStep: BaseStep{
 			ID:          id,
 			Description: description,
 			DependsOn:   deps,
 		},
-		AppID:        appID,
-		BuildContext: buildContext,
-		StartCommand: startCommand,
+		AppID:            appID,
+		BuildContext:     buildContext,
+		StartCommand:     startCommand,
+		MigrationCommand: migrationCommand,
 	}
 }
 
@@ -400,7 +402,13 @@ func (s *GitDeployStep) Execute(ctx context.Context, client *HerokuClient, stepR
 func (s *GitDeployStep) createProcfile() error {
 	procfilePath := filepath.Join(s.BuildContext, "Procfile")
 	if _, err := os.Stat(procfilePath); os.IsNotExist(err) {
-		procfileContent := fmt.Sprintf("web: %s", s.StartCommand)
+		var procfileContent string
+		if s.MigrationCommand != "" {
+			// Include release phase for migrations
+			procfileContent = fmt.Sprintf("release: %s\nweb: %s", s.MigrationCommand, s.StartCommand)
+		} else {
+			procfileContent = fmt.Sprintf("web: %s", s.StartCommand)
+		}
 		if err := os.WriteFile(procfilePath, []byte(procfileContent), 0644); err != nil {
 			return err
 		}

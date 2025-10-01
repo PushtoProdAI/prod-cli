@@ -1,0 +1,106 @@
+# GoReleaser configuration for multi-architecture CLI builds
+# This configuration builds the CLI for multiple platforms and architectures
+# and can be extended to upload to Supabase storage
+# NOTE: used for local testing only, CI uses a different config
+version: 2
+
+# Project metadata
+project_name: prod
+
+before:
+  hooks:
+    - cd cli && go mod download
+    - cd cli && go mod tidy
+
+# Build configuration - focus on macOS only for now
+# Windows and Linux builds have cross-compilation issues with BAML dependencies
+builds:
+  - id: prod-cli
+    binary: prod
+    main: ./cmd/main.go
+    dir: ./cli
+    env:
+      - CGO_ENABLED=1
+      - SUPABASE_URL={{.Env.SUPABASE_URL}}
+      - SUPABASE_ANON_KEY={{.Env.SUPABASE_ANON_KEY}}
+      - PROD_DEBUG={{.Env.PROD_DEBUG}}
+    ldflags:
+      - -s -w
+      - -X 'github.com/meroxa/prod/cli/internal/config.SupabaseURL={{.Env.SUPABASE_URL}}'
+      - -X 'github.com/meroxa/prod/cli/internal/config.SupabaseAnonKey={{.Env.SUPABASE_ANON_KEY}}'
+      - -X 'github.com/meroxa/prod/cli/internal/config.ProdDebug={{.Env.PROD_DEBUG}}'
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+# Archive configuration
+archives:
+  - id: prod-cli
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    files:
+      - README.md
+
+# Checksum configuration
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+# Release configuration
+release:
+  github:
+    owner: meroxa
+    name: prod
+  draft: false
+  prerelease: false
+  name_template: "{{ .ProjectName }} {{ .Tag }}"
+  header: |
+    ## What's Changed
+    See the [changelog](CHANGELOG.md) for details.
+  footer: |
+    ## Installation
+    
+    ### Using the installer script (recommended)
+    ```bash
+    curl -sSL https://install.prod.dev | sh
+    ```
+    
+    ### Manual installation
+    Download the appropriate binary for your platform:
+    
+    - **macOS AMD64**: `prod_{{ .Tag }}_darwin_amd64.tar.gz`
+    - **macOS ARM64**: `prod_{{ .Tag }}_darwin_arm64.tar.gz`
+    
+    **Note**: Windows and Linux builds are not available due to cross-compilation constraints with BAML dependencies. Use Docker or platform-specific CI environments for these builds.
+    
+    ### Verify installation
+    ```bash
+    prod --version
+    ```
+
+# Homebrew formula (optional)
+brews:
+  - name: prod
+    description: "Prod CLI for deployment automation"
+    homepage: "https://prod.dev"
+    license: "MIT"
+    test: |
+      system "#{bin}/prod --version"
+    install: |
+      bin.install "prod"
+    dependencies:
+      - go
+
+# Custom publishers for Supabase storage
+publishers:
+  - name: supabase-storage
+    # This will be implemented as a custom publisher
+    # that uploads binaries to Supabase storage
+    # See scripts/upload-to-supabase.sh for implementation
+    cmd: ./scripts/upload-to-supabase.sh
+    env:
+      - SUPABASE_URL
+      - SUPABASE_ANON_KEY
+      - SUPABASE_SERVICE_ROLE_KEY

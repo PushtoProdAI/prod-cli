@@ -28,6 +28,31 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Notify deployment start
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "🚀 Supabase Functions deployment started"
+            attachments:
+              - color: "ffc107"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Status"
+                    value: "Started"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
@@ -42,6 +67,61 @@ jobs:
           echo "Project ID: $PROJECT_ID"
           supabase functions deploy --project-ref $PROJECT_ID
 
+      - name: Notify deployment success
+        if: success()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "✅ Supabase Functions deployment completed successfully! :rocket:"
+            attachments:
+              - color: "28a745"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Status"
+                    value: "Success"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+
+      - name: Notify deployment failure
+        if: failure()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "❌ Supabase Functions deployment failed"
+            attachments:
+              - color: "dc3545"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Status"
+                    value: "Failed"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+                  - title: "Workflow"
+                    value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                    short: false
+
   deploy-production:
     name: Deploy to Production
     if: github.event.inputs.environment == 'prod'
@@ -51,6 +131,31 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Notify deployment start
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "🚀 Supabase Functions deployment started"
+            attachments:
+              - color: "ffc107"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Status"
+                    value: "Started"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
@@ -65,3 +170,58 @@ jobs:
           echo "Deploying Supabase functions to production environment"
           echo "Project ID: $PROJECT_ID"
           supabase functions deploy --project-ref $PROJECT_ID
+
+      - name: Notify deployment success
+        if: success()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "✅ Supabase Functions deployment completed successfully! :rocket:"
+            attachments:
+              - color: "28a745"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Status"
+                    value: "Success"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+
+      - name: Notify deployment failure
+        if: failure()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "❌ Supabase Functions deployment failed"
+            attachments:
+              - color: "dc3545"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Status"
+                    value: "Failed"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+                  - title: "Workflow"
+                    value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                    short: false
