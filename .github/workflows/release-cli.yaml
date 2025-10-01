@@ -53,35 +53,6 @@ jobs:
         run: |
           echo "Running CLI unit tests..."
           go test ./... -v
-      - name: Notify test failure
-        if: failure()
-        continue-on-error: true
-        uses: slackapi/slack-github-action@v2.1.1
-        with:
-          method: chat.postMessage
-          token: ${{ secrets.SLACK_BOT_TOKEN }}
-          payload: |
-            channel: ${{ secrets.SLACK_CHANNEL_ID }}
-            text: "❌ CLI unit tests failed"
-            attachments:
-              - color: "dc3545"
-                fields:
-                  - title: "Event"
-                    value: "${{ github.event_name }}"
-                    short: true
-                  - title: "Status"
-                    value: "Failed"
-                    short: true
-                  - title: "Branch"
-                    value: "${{ github.ref_name }}"
-                    short: true
-                  - title: "Commit"
-                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
-                    short: true
-                  - title: "Workflow"
-                    value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
-                    short: false
-
   build-linux-staging:
     name: Build Linux (Staging)
     runs-on: ubuntu-latest
