@@ -58,7 +58,7 @@ jobs:
         if: failure()
         continue-on-error: true
         uses: slackapi/slack-github-action@v2.1.1
-       with:
+        with:
          method: chat.postMessage
          token: ${{ secrets.SLACK_BOT_TOKEN }}
          payload: |
