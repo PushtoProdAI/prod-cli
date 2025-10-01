@@ -16,6 +16,7 @@ type Client interface {
 	ExtractIntent(ctx context.Context, prompt string) (types.Intent, error)
 	SummarizeIntent(ctx context.Context, intent types.Intent, name, language string) (types.Summary, error)
 	DetermineLaunchCommand(ctx context.Context, language string, frameworks, envVars []string, lc types.LaunchContext) (types.LaunchCommand, error)
+	DetermineMigrationCommand(ctx context.Context, language string, frameworks, ormTools []string, migrationContext types.MigrationContext) (types.MigrationCommand, error)
 
 	// Deployment operations
 	SummarizeSteps(ctx context.Context, steps []string) (types.Summary, error)
@@ -125,6 +126,16 @@ func (c *client) DetermineLaunchCommand(ctx context.Context, language string, fr
 	cmd, err := baml_client.DetermineLaunchCommand(ctx, language, frameworks, envVars, lc, opts...)
 	if err != nil {
 		return types.LaunchCommand{}, errors.Errorf("failed to determine launch command: %w", err)
+	}
+	return cmd, nil
+}
+
+// DetermineMigrationCommand determines the appropriate migration command for a project.
+func (c *client) DetermineMigrationCommand(ctx context.Context, language string, frameworks, ormTools []string, migrationContext types.MigrationContext) (types.MigrationCommand, error) {
+	opts := c.getCallOptions(ctx)
+	cmd, err := baml_client.DetermineMigrationCommand(ctx, language, frameworks, ormTools, migrationContext, opts...)
+	if err != nil {
+		return types.MigrationCommand{}, errors.Errorf("failed to determine migration command: %w", err)
 	}
 	return cmd, nil
 }

@@ -10,15 +10,16 @@ import (
 // Useful for unit testing without making actual LLM calls.
 type MockClient struct {
 	// Function implementations can be overridden for specific test scenarios
-	ExtractIntentFunc          func(ctx context.Context, prompt string) (types.Intent, error)
-	SummarizeIntentFunc        func(ctx context.Context, intent types.Intent, name, language string) (types.Summary, error)
-	DetermineLaunchCommandFunc func(ctx context.Context, language string, frameworks, envVars []string, lc types.LaunchContext) (types.LaunchCommand, error)
-	SummarizeStepsFunc         func(ctx context.Context, steps []string) (types.Summary, error)
-	DetermineEnvVarRolesFunc   func(ctx context.Context, ev types.EnvVarCandidate, dbList []string) (types.EnvVarCategory, error)
-	DetermineBuildOutputFunc   func(ctx context.Context, bo types.BuildOutputCandidate) (types.BuildOutput, error)
-	SummarizeDeployErrorFunc   func(ctx context.Context, error string, intent types.Intent, spec types.ProjectSpec, os string, violations []string) (types.Error, error)
-	CategorizeRoutesFunc       func(ctx context.Context, routes []types.RouteCandidate) (types.CategorizedRoutes, error)
-	FetchPricingFunc           func(ctx context.Context, service types.Service, content string) (types.ServicePricing, error)
+	ExtractIntentFunc             func(ctx context.Context, prompt string) (types.Intent, error)
+	SummarizeIntentFunc           func(ctx context.Context, intent types.Intent, name, language string) (types.Summary, error)
+	DetermineLaunchCommandFunc    func(ctx context.Context, language string, frameworks, envVars []string, lc types.LaunchContext) (types.LaunchCommand, error)
+	DetermineMigrationCommandFunc func(ctx context.Context, language string, frameworks, ormTools []string, migrationContext types.MigrationContext) (types.MigrationCommand, error)
+	SummarizeStepsFunc            func(ctx context.Context, steps []string) (types.Summary, error)
+	DetermineEnvVarRolesFunc      func(ctx context.Context, ev types.EnvVarCandidate, dbList []string) (types.EnvVarCategory, error)
+	DetermineBuildOutputFunc      func(ctx context.Context, bo types.BuildOutputCandidate) (types.BuildOutput, error)
+	SummarizeDeployErrorFunc      func(ctx context.Context, error string, intent types.Intent, spec types.ProjectSpec, os string, violations []string) (types.Error, error)
+	CategorizeRoutesFunc          func(ctx context.Context, routes []types.RouteCandidate) (types.CategorizedRoutes, error)
+	FetchPricingFunc              func(ctx context.Context, service types.Service, content string) (types.ServicePricing, error)
 }
 
 // NewMockClient creates a new mock client with default implementations.
@@ -39,6 +40,13 @@ func NewMockClient() *MockClient {
 		DetermineLaunchCommandFunc: func(ctx context.Context, language string, frameworks, envVars []string, lc types.LaunchContext) (types.LaunchCommand, error) {
 			return types.LaunchCommand{
 				Command: "npm start",
+			}, nil
+		},
+		DetermineMigrationCommandFunc: func(ctx context.Context, language string, frameworks, ormTools []string, migrationContext types.MigrationContext) (types.MigrationCommand, error) {
+			return types.MigrationCommand{
+				Command:     "npm run migrate",
+				Confidence:  "high",
+				Explanation: "Mock migration command",
 			}, nil
 		},
 		SummarizeStepsFunc: func(ctx context.Context, steps []string) (types.Summary, error) {
@@ -99,6 +107,11 @@ func (m *MockClient) SummarizeIntent(ctx context.Context, intent types.Intent, n
 // DetermineLaunchCommand implements the Client interface.
 func (m *MockClient) DetermineLaunchCommand(ctx context.Context, language string, frameworks, envVars []string, lc types.LaunchContext) (types.LaunchCommand, error) {
 	return m.DetermineLaunchCommandFunc(ctx, language, frameworks, envVars, lc)
+}
+
+// DetermineMigrationCommand implements the Client interface.
+func (m *MockClient) DetermineMigrationCommand(ctx context.Context, language string, frameworks, ormTools []string, migrationContext types.MigrationContext) (types.MigrationCommand, error) {
+	return m.DetermineMigrationCommandFunc(ctx, language, frameworks, ormTools, migrationContext)
 }
 
 // SummarizeSteps implements the Client interface.
