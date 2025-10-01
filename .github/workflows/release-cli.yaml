@@ -96,6 +96,30 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Notify build start
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "🔨 CLI build started"
+           attachments:
+             - color: "ffc107"
+               fields:
+                 - title: "Environment"
+                   value: "Staging"
+                   short: true
+                 - title: "Platform"
+                   value: "Linux"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
