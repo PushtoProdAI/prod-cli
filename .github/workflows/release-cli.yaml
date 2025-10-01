@@ -83,16 +83,16 @@ jobs:
                    value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
                    short: false
 
-  build-linux-staging:
-    name: Build Linux (Staging)
-    runs-on: ubuntu-latest
-    environment: staging
-    needs: test
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+   build-linux-staging:
+     name: Build Linux (Staging)
+     runs-on: ubuntu-latest
+     environment: staging
+     needs: test
+     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
+     
+     steps:
+     - name: Checkout code
+       uses: actions/checkout@v4
        with:
          fetch-depth: 0
 
