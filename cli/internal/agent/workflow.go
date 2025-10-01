@@ -19,6 +19,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/deployment/vercel"
+	prod_error "github.com/meroxa/prod/cli/internal/error"
 	"github.com/meroxa/prod/cli/internal/llm"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
@@ -70,8 +71,8 @@ type SetupJavaScriptProjectResult struct {
 	ConfigPath         string      `json:"configPath,omitempty"`
 	PackageJsonUpdated bool        `json:"packageJsonUpdated"`
 	PackageJsonDiff    []DiffLine  `json:"packageJsonDiff,omitempty"`
-	Error              deployError `json:"error,omitempty"`
-	UpdatedPlan        DeployPlan  `json:"updatedPlan,omitempty"`
+	Error              deployError `json:"error"`
+	UpdatedPlan        DeployPlan  `json:"updatedPlan"`
 }
 
 var _ workflowext.Registerer = (*Workflows)(nil)
@@ -219,9 +220,28 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	// Generate and summarize deployment steps (for UI feedback)
 	workspaceID, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderWorkspace).Get(ctx)
 	if err != nil {
+		// Send the original error before summarizing
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployRenderWorkflowName,
+			"activity":     AgentGetRenderWorkspace,
+			"component":    "deployment",
+			"platform":     "render",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
-			slog.Info("Failed to get Render workspace", "error", e1)
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     DeployRenderWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "deployment",
+				"platform":     "render",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
+			slog.Info("Failed to summarize error", "error", e1)
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		return deployResult{Error: summary}, nil
@@ -229,9 +249,28 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 
 	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentCreateDockerRepo, input.Spec.Name).Get(ctx)
 	if err != nil {
+		// Send the original error before summarizing
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployRenderWorkflowName,
+			"activity":     AgentCreateDockerRepo,
+			"component":    "deployment",
+			"platform":     "render",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
-			slog.Info("Failed to get Render workspace", "error", e1)
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     DeployRenderWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "deployment",
+				"platform":     "render",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
+			slog.Info("Failed to summarize error", "error", e1)
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		return deployResult{Error: summary}, nil
@@ -246,11 +285,27 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
 	if err != nil {
 		slog.Info("Failed to summarize deployment steps", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployRenderWorkflowName,
+			"activity":     AgentSummarizeDeploySteps,
+			"component":    "deployment",
+			"platform":     "render",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 	}
 
 	buildOutputPath, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineBuildOutput, input.Spec.BuildOutput).Get(ctx)
 	if err != nil {
 		slog.Info("Failed to determine build output path", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployRenderWorkflowName,
+			"activity":     AgentDetermineBuildOutput,
+			"component":    "deployment",
+			"platform":     "render",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 	} else {
 		slog.Info("Using build output path", "path", buildOutputPath)
 		// Update the deployment spec's OutputDir with the final resolved build output path
@@ -259,8 +314,27 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 
 	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
 	if err != nil {
+		// Send the original error before summarizing
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployRenderWorkflowName,
+			"activity":     AgentDeploySteps,
+			"component":    "deployment",
+			"platform":     "render",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     DeployRenderWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "deployment",
+				"platform":     "render",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		slog.Info("Deployment failed", "error", err)
@@ -303,8 +377,27 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	liveCheckOpts.RetryOptions.MaxAttempts = 15
 	_, err = workflow.ExecuteActivity[string](ctx, liveCheckOpts, AgentIsURLLive, fullUrl).Get(ctx)
 	if err != nil {
+		// Send the original error before summarizing
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployRenderWorkflowName,
+			"activity":     AgentIsURLLive,
+			"component":    "deployment",
+			"platform":     "render",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     DeployRenderWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "deployment",
+				"platform":     "render",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		slog.Info("service URL is not live", "url", fullUrl, "error", err)
@@ -339,12 +432,39 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
 	if err != nil {
 		slog.Info("Failed to summarize deployment steps", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployFlyioWorkflowName,
+			"activity":     AgentSummarizeDeploySteps,
+			"component":    "deployment",
+			"platform":     "flyio",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 	}
 
 	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
 	if err != nil {
+		// Send the original error before summarizing
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployFlyioWorkflowName,
+			"activity":     AgentDeploySteps,
+			"component":    "deployment",
+			"platform":     "flyio",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     DeployFlyioWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "deployment",
+				"platform":     "flyio",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		slog.Info("Deployment failed", "error", err)
@@ -383,6 +503,15 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 
 	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
 	if err != nil {
+		// Send the original error
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployFlyioWorkflowName,
+			"activity":     AgentIsURLLive,
+			"component":    "deployment",
+			"platform":     "flyio",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 		return deployResult{}, errors.Errorf("service URL %s is not live: %w", fullUrl, err)
 	}
 	return deployResult{Url: fullUrl}, nil
@@ -435,8 +564,16 @@ func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input DeployPlan) (
 	}
 
 	estimatedCosts, err := workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateRenderCosts, spec, deployment.StrategyRenderQueued).Get(ctx)
-	slog.Error("Error", "error", err)
 	if err != nil {
+		slog.Error("Error estimating costs", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DryRunRenderWorkflowName,
+			"activity":     AgentEstimateRenderCosts,
+			"component":    "deployment",
+			"platform":     "render",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 		return DryRunResult{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
 
@@ -542,6 +679,13 @@ func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPla
 
 		if err != nil {
 			workflow.Logger(ctx).Error("failed to read environment variables from .env files", "error", err, "duration", envFilesDuration)
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":     CategorizeEnvVarsWorkflowName,
+				"activity":     AgentReadEnvFiles,
+				"component":    "workflow",
+				"project_name": deployPlan.Spec.Name,
+				"language":     deployPlan.Spec.Language,
+			})
 			return []deployment.EnvVar{}, errors.Errorf("failed to read environment variables from .env files: %w", err)
 		}
 		workflow.Logger(ctx).Info("completed reading env files", "count", len(fromEnvFiles), "duration", envFilesDuration)
@@ -605,6 +749,13 @@ func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPla
 
 	if err != nil {
 		workflow.Logger(ctx).Error("failed to read environment variables from .env files", "error", err, "duration", envFilesDuration)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     CategorizeEnvVarsWorkflowName,
+			"activity":     AgentReadEnvFiles,
+			"component":    "workflow",
+			"project_name": deployPlan.Spec.Name,
+			"language":     deployPlan.Spec.Language,
+		})
 		return []deployment.EnvVar{}, errors.Errorf("failed to read environment variables from .env files: %w", err)
 	}
 	workflow.Logger(ctx).Info("completed reading env files", "count", len(fromEnvFiles), "duration", envFilesDuration)
@@ -806,12 +957,39 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to summarize deployment steps", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployNetlifyWorkflowName,
+			"activity":     AgentSummarizeDeploySteps,
+			"component":    "deployment",
+			"platform":     "netlify",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 	}
 
 	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
 	if err != nil {
+		// Send the original error before summarizing
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployNetlifyWorkflowName,
+			"activity":     AgentDeploySteps,
+			"component":    "deployment",
+			"platform":     "netlify",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     DeployNetlifyWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "deployment",
+				"platform":     "netlify",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		slog.Error("Deployment failed", "error", err)
@@ -865,12 +1043,39 @@ func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deploy
 	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to summarize deployment steps", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployVercelWorkflowName,
+			"activity":     AgentSummarizeDeploySteps,
+			"component":    "deployment",
+			"platform":     "vercel",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 	}
 
 	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
 	if err != nil {
+		// Send the original error before summarizing
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployVercelWorkflowName,
+			"activity":     AgentDeploySteps,
+			"component":    "deployment",
+			"platform":     "vercel",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     DeployVercelWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "deployment",
+				"platform":     "vercel",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		slog.Error("Deployment failed", "error", err)
@@ -936,6 +1141,14 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 	d, err := herokuAdapter.GenerateArtifactsWithSource(spec, deployment.StrategyHeroku, input.Source)
 	if err != nil {
 		slog.Error("Failed to generate Heroku deployment", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployHerokuWorkflowName,
+			"activity":     "generate_artifacts", // This is not an activity, it's a local operation
+			"component":    "deployment",
+			"platform":     "heroku",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to generate deployment: %v", err)}}, nil
 	}
 
@@ -949,6 +1162,14 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 		_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentSummarizeDeploySteps, descriptions).Get(ctx)
 		if err != nil {
 			slog.Error("Failed to summarize deployment steps", "error", err)
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":     DeployHerokuWorkflowName,
+				"activity":     AgentSummarizeDeploySteps,
+				"component":    "deployment",
+				"platform":     "heroku",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+			})
 		}
 	}
 
@@ -960,8 +1181,27 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 
 	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, deployOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
 	if err != nil {
+		// Send the original error before summarizing
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployHerokuWorkflowName,
+			"activity":     AgentDeploySteps,
+			"component":    "deployment",
+			"platform":     "heroku",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     DeployHerokuWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "deployment",
+				"platform":     "heroku",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		slog.Error("Deployment failed", "error", err)
@@ -1025,8 +1265,26 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 	jsConfig, err := workflow.ExecuteActivity[JavaScriptConfigResult](ctx, ActivityOpts, AgentUpdateJavaScriptConfig, input).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to update JavaScript configuration", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     SetupJavaScriptProjectWorkflowName,
+			"activity":     AgentUpdateJavaScriptConfig,
+			"component":    "javascript_config",
+			"platform":     input.Platform.String(),
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     SetupJavaScriptProjectWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "javascript_config",
+				"platform":     input.Platform.String(),
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
 			slog.Error("Failed to summarize JavaScript config error", "error", e1)
 			return SetupJavaScriptProjectResult{Error: deployError{Summary: err.Error()}}, nil
 		}
@@ -1057,8 +1315,26 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentCreatePackageLock, input, configUpdated).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to create package-lock.json", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     SetupJavaScriptProjectWorkflowName,
+			"activity":     AgentCreatePackageLock,
+			"component":    "javascript_config",
+			"platform":     input.Platform.String(),
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     SetupJavaScriptProjectWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "javascript_config",
+				"platform":     input.Platform.String(),
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
 			slog.Error("Failed to summarize package-lock error", "error", e1)
 			return SetupJavaScriptProjectResult{Error: deployError{Summary: err.Error()}}, nil
 		}
@@ -1067,7 +1343,18 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 	result.PackageLockCreated = true
 	slog.Info("Package-lock.json handling completed")
 
-	plan, _ := workflow.ExecuteActivity[DeployPlan](ctx, ActivityOpts, AgentPrepareDeployment, input).Get(ctx)
+	plan, err := workflow.ExecuteActivity[DeployPlan](ctx, ActivityOpts, AgentPrepareDeployment, input).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to prepare deployment", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     SetupJavaScriptProjectWorkflowName,
+			"activity":     AgentPrepareDeployment,
+			"component":    "javascript_config",
+			"platform":     input.Platform.String(),
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
+	}
 	result.UpdatedPlan = plan
 	slog.Info("JavaScript project setup completed successfully")
 	return result, nil
