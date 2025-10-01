@@ -1,6 +1,7 @@
 package vercel
 
 import (
+	"context"
 	"testing"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
@@ -36,7 +37,8 @@ func TestVercelDeploymentAdapter_EstimateCost(t *testing.T) {
 		},
 	}
 
-	estimate, err := adapter.EstimateCost(spec, deployment.StrategyVercel)
+	ctx := context.Background()
+	estimate, err := adapter.EstimateCost(ctx, spec, deployment.StrategyVercel)
 	if err != nil {
 		t.Fatalf("EstimateCost failed: %v", err)
 	}

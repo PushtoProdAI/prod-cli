@@ -7,7 +7,6 @@ import (
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/deployment"
@@ -80,7 +79,7 @@ func (a *Activities) deploySteps(ctx context.Context, spec deployment.Deployment
 func (a *Activities) summarizeDeploySteps(ctx context.Context, steps []string) error {
 	a.uiWriter.SendStatus("summarizing", "Summarizing deployment steps")
 
-	summary, err := baml_client.SummarizeSteps(ctx, steps)
+	summary, err := a.llmClient.SummarizeSteps(ctx, steps)
 	if err != nil {
 		return errors.Errorf("failed to summarize deploy steps: %w", err)
 	}
@@ -89,36 +88,36 @@ func (a *Activities) summarizeDeploySteps(ctx context.Context, steps []string) e
 	return nil
 }
 
-func (a *Activities) estimateRenderCosts(_ context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+func (a *Activities) estimateRenderCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
 	ra := render.NewRenderDeploymentAdapter(a.renderClient, a.uiWriter)
-	costs, err := ra.EstimateCost(&spec, strategy)
+	costs, err := ra.EstimateCost(ctx, &spec, strategy)
 	if err != nil {
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
 	return costs, nil
 }
 
-func (a *Activities) estimateFlyioCosts(_ context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+func (a *Activities) estimateFlyioCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
 	fa := flyio.NewFlyioDeploymentAdapter(a.flyClient, a.uiWriter)
-	costs, err := fa.EstimateCost(&spec, strategy)
+	costs, err := fa.EstimateCost(ctx, &spec, strategy)
 	if err != nil {
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
 	return costs, nil
 }
 
-func (a *Activities) estimateNetlifyCosts(_ context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+func (a *Activities) estimateNetlifyCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
 	na := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter)
-	costs, err := na.EstimateCost(&spec, strategy)
+	costs, err := na.EstimateCost(ctx, &spec, strategy)
 	if err != nil {
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
 	return costs, nil
 }
 
-func (a *Activities) estimateVercelCosts(_ context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+func (a *Activities) estimateVercelCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
 	va := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter)
-	costs, err := va.EstimateCost(&spec, strategy)
+	costs, err := va.EstimateCost(ctx, &spec, strategy)
 	if err != nil {
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
@@ -135,7 +134,7 @@ func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, dbList 
 		Context: envVar.Context,
 		File:    envVar.File,
 	}
-	cat, err := baml_client.DetermineEnvVarRoles(ctx, ev, dbList)
+	cat, err := a.llmClient.DetermineEnvVarRoles(ctx, ev, dbList)
 	if err != nil {
 		return deployment.EnvVar{}, errors.Errorf("failed to determine env var roles: %w", err)
 	}
@@ -176,7 +175,7 @@ func (a *Activities) determineBuildOutput(ctx context.Context, candidate analyze
 		Default:   candidate.Path,
 		Source:    candidate.Source,
 	}
-	output, err := baml_client.DetermineBuildOutput(ctx, bo)
+	output, err := a.llmClient.DetermineBuildOutput(ctx, bo)
 	if err != nil {
 		return "", errors.Errorf("failed to determine build output: %w", err)
 	}
