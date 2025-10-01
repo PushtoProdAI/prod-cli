@@ -409,3 +409,9 @@ entrypoint = "./functions/cli-auth/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/cli-auth/*.html" ]
+
+[functions.deployment-logger]
+enabled = true
+verify_jwt = true
+import_map = "./functions/deployment-logger/deno.json"
+entrypoint = "./functions/deployment-logger/index.ts"

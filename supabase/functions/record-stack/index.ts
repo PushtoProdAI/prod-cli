@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+
 import { initSentry, captureException, flushSentry } from '../_shared/sentry.ts';
 
 // Initialize Sentry
@@ -121,6 +122,7 @@ Deno.serve(async (req) => {
     ? usageData.serviceRequirements
     : [{ type: 'none', provider: 'none' }] // Default service for basic usage of just a web app
 
+
   for (const service of servicesToProcess) {
     const { error } = await updateUsageStats(
       supabase,
@@ -145,6 +147,7 @@ Deno.serve(async (req) => {
       )
     }
   }
+
 
   return new Response(
     JSON.stringify({
