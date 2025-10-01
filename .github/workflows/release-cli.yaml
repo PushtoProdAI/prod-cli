@@ -48,26 +48,80 @@ jobs:
       with:
         go-version: '1.24.4'
 
-    - name: Run CLI tests
-      working-directory: cli
-      run: |
-        echo "Running CLI unit tests..."
-        go test ./... -v
+     - name: Run CLI tests
+       working-directory: cli
+       run: |
+         echo "Running CLI unit tests..."
+         go test ./... -v
 
-  build-linux-staging:
-    name: Build Linux (Staging)
-    runs-on: ubuntu-latest
-    environment: staging
-    needs: test
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+     - name: Notify test failure
+       if: failure()
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "❌ CLI unit tests failed"
+           attachments:
+             - color: "dc3545"
+               fields:
+                 - title: "Event"
+                   value: "${{ github.event_name }}"
+                   short: true
+                 - title: "Status"
+                   value: "Failed"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+                 - title: "Workflow"
+                   value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                   short: false
 
-    - name: Set up Go
+   build-linux-staging:
+     name: Build Linux (Staging)
+     runs-on: ubuntu-latest
+     environment: staging
+     needs: test
+     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
+     
+     steps:
+     - name: Checkout code
+       uses: actions/checkout@v4
+       with:
+         fetch-depth: 0
+
+     - name: Notify build start
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "🔨 CLI build started"
+           attachments:
+             - color: "ffc107"
+               fields:
+                 - title: "Environment"
+                   value: "Staging"
+                   short: true
+                 - title: "Platform"
+                   value: "Linux"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+
+     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: '1.24.4'
@@ -107,27 +161,113 @@ jobs:
         path: bin/prod-*-linux-amd64
         retention-days: 7
 
-    - name: Upload Linux ARM64 artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: prod-staging-linux-arm64-${{ steps.version.outputs.version }}
-        path: bin/prod-*-linux-arm64
-        retention-days: 7
+     - name: Upload Linux ARM64 artifact
+       uses: actions/upload-artifact@v4
+       with:
+         name: prod-staging-linux-arm64-${{ steps.version.outputs.version }}
+         path: bin/prod-*-linux-arm64
+         retention-days: 7
 
-  build-linux-production:
-    name: Build Linux (Production)
-    runs-on: ubuntu-latest
-    environment: prod
-    needs: test
-    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+     - name: Notify build success
+       if: success()
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "✅ CLI build completed successfully! :hammer_and_wrench:"
+           attachments:
+             - color: "28a745"
+               fields:
+                 - title: "Environment"
+                   value: "Staging"
+                   short: true
+                 - title: "Platform"
+                   value: "Linux"
+                   short: true
+                 - title: "Status"
+                   value: "Success"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
 
-    - name: Set up Go
+     - name: Notify build failure
+       if: failure()
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "❌ CLI build failed"
+           attachments:
+             - color: "dc3545"
+               fields:
+                 - title: "Environment"
+                   value: "Staging"
+                   short: true
+                 - title: "Platform"
+                   value: "Linux"
+                   short: true
+                 - title: "Status"
+                   value: "Failed"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+                 - title: "Workflow"
+                   value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                   short: false
+
+   build-linux-production:
+     name: Build Linux (Production)
+     runs-on: ubuntu-latest
+     environment: prod
+     needs: test
+     if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
+     
+     steps:
+     - name: Checkout code
+       uses: actions/checkout@v4
+       with:
+         fetch-depth: 0
+
+     - name: Notify build start
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "🔨 CLI build started"
+           attachments:
+             - color: "ffc107"
+               fields:
+                 - title: "Environment"
+                   value: "Production"
+                   short: true
+                 - title: "Platform"
+                   value: "Linux"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+
+     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: '1.24.4'
@@ -160,27 +300,113 @@ jobs:
         path: bin/prod-*-linux-amd64
         retention-days: 90
 
-    - name: Upload Linux ARM64 artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: prod-production-linux-arm64-${{ steps.version.outputs.version }}
-        path: bin/prod-*-linux-arm64
-        retention-days: 90
+     - name: Upload Linux ARM64 artifact
+       uses: actions/upload-artifact@v4
+       with:
+         name: prod-production-linux-arm64-${{ steps.version.outputs.version }}
+         path: bin/prod-*-linux-arm64
+         retention-days: 90
 
-  build-macos-staging:
-    name: Build macOS (Staging)
-    runs-on: macos-latest
-    environment: staging
-    needs: test
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+     - name: Notify build success
+       if: success()
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "✅ CLI build completed successfully! :hammer_and_wrench:"
+           attachments:
+             - color: "28a745"
+               fields:
+                 - title: "Environment"
+                   value: "Production"
+                   short: true
+                 - title: "Platform"
+                   value: "Linux"
+                   short: true
+                 - title: "Status"
+                   value: "Success"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
 
-    - name: Set up Go
+     - name: Notify build failure
+       if: failure()
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "❌ CLI build failed"
+           attachments:
+             - color: "dc3545"
+               fields:
+                 - title: "Environment"
+                   value: "Production"
+                   short: true
+                 - title: "Platform"
+                   value: "Linux"
+                   short: true
+                 - title: "Status"
+                   value: "Failed"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+                 - title: "Workflow"
+                   value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                   short: false
+
+   build-macos-staging:
+     name: Build macOS (Staging)
+     runs-on: macos-latest
+     environment: staging
+     needs: test
+     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
+     
+     steps:
+     - name: Checkout code
+       uses: actions/checkout@v4
+       with:
+         fetch-depth: 0
+
+     - name: Notify build start
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "🔨 CLI build started"
+           attachments:
+             - color: "ffc107"
+               fields:
+                 - title: "Environment"
+                   value: "Staging"
+                   short: true
+                 - title: "Platform"
+                   value: "macOS"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+
+     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: '1.24.4'
@@ -221,27 +447,113 @@ jobs:
         path: bin/prod-*-darwin-amd64
         retention-days: 7
 
-    - name: Upload macOS ARM64 artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: prod-staging-darwin-arm64-${{ steps.version.outputs.version }}
-        path: bin/prod-*-darwin-arm64
-        retention-days: 7
+     - name: Upload macOS ARM64 artifact
+       uses: actions/upload-artifact@v4
+       with:
+         name: prod-staging-darwin-arm64-${{ steps.version.outputs.version }}
+         path: bin/prod-*-darwin-arm64
+         retention-days: 7
 
-  build-macos-production:
-    name: Build macOS (Production)
-    runs-on: macos-latest
-    environment: prod
-    needs: test
-    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+     - name: Notify build success
+       if: success()
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "✅ CLI build completed successfully! :hammer_and_wrench:"
+           attachments:
+             - color: "28a745"
+               fields:
+                 - title: "Environment"
+                   value: "Staging"
+                   short: true
+                 - title: "Platform"
+                   value: "macOS"
+                   short: true
+                 - title: "Status"
+                   value: "Success"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
 
-    - name: Set up Go
+     - name: Notify build failure
+       if: failure()
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "❌ CLI build failed"
+           attachments:
+             - color: "dc3545"
+               fields:
+                 - title: "Environment"
+                   value: "Staging"
+                   short: true
+                 - title: "Platform"
+                   value: "macOS"
+                   short: true
+                 - title: "Status"
+                   value: "Failed"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+                 - title: "Workflow"
+                   value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                   short: false
+
+   build-macos-production:
+     name: Build macOS (Production)
+     runs-on: macos-latest
+     environment: prod
+     needs: test
+     if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
+     
+     steps:
+     - name: Checkout code
+       uses: actions/checkout@v4
+       with:
+         fetch-depth: 0
+
+     - name: Notify build start
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "🔨 CLI build started"
+           attachments:
+             - color: "ffc107"
+               fields:
+                 - title: "Environment"
+                   value: "Production"
+                   short: true
+                 - title: "Platform"
+                   value: "macOS"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+
+     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: '1.24.4'
@@ -275,12 +587,73 @@ jobs:
         path: bin/prod-*-darwin-amd64
         retention-days: 90
 
-    - name: Upload macOS ARM64 artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: prod-production-darwin-arm64-${{ steps.version.outputs.version }}
-        path: bin/prod-*-darwin-arm64
-        retention-days: 90
+     - name: Upload macOS ARM64 artifact
+       uses: actions/upload-artifact@v4
+       with:
+         name: prod-production-darwin-arm64-${{ steps.version.outputs.version }}
+         path: bin/prod-*-darwin-arm64
+         retention-days: 90
+
+     - name: Notify build success
+       if: success()
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "✅ CLI build completed successfully! :hammer_and_wrench:"
+           attachments:
+             - color: "28a745"
+               fields:
+                 - title: "Environment"
+                   value: "Production"
+                   short: true
+                 - title: "Platform"
+                   value: "macOS"
+                   short: true
+                 - title: "Status"
+                   value: "Success"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+
+     - name: Notify build failure
+       if: failure()
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "❌ CLI build failed"
+           attachments:
+             - color: "dc3545"
+               fields:
+                 - title: "Environment"
+                   value: "Production"
+                   short: true
+                 - title: "Platform"
+                   value: "macOS"
+                   short: true
+                 - title: "Status"
+                   value: "Failed"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+                 - title: "Workflow"
+                   value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                   short: false
 
   # Create a staging release with all binaries for staging builds
   release-staging:
@@ -346,8 +719,36 @@ jobs:
         cd scripts
         npm install
 
-    - name: Upload to Supabase Storage (Staging)
-      run: |
+     - name: Notify supabase upload start
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "📦 Supabase upload started"
+           attachments:
+             - color: "ffc107"
+               fields:
+                 - title: "Environment"
+                   value: "Staging"
+                   short: true
+                 - title: "Status"
+                   value: "Started"
+                   short: true
+                 - title: "Version"
+                   value: "staging-${{ steps.version.outputs.version }}"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+
+     - name: Upload to Supabase Storage (Staging)
+       run: |
         # Set version for upload
         export VERSION="staging-${{ steps.version.outputs.version }}"
         
@@ -585,14 +986,75 @@ jobs:
         # Clean up temp file
         rm -f "$existing_script"
         
-        echo "Upload completed for version $VERSION"
-      env:
-        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-        SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+         echo "Upload completed for version $VERSION"
+       env:
+         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+         SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+         SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-    - name: Create Staging Release
+     - name: Notify supabase upload success
+       if: success()
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "✅ Supabase upload completed successfully! :package:"
+           attachments:
+             - color: "28a745"
+               fields:
+                 - title: "Environment"
+                   value: "Staging"
+                   short: true
+                 - title: "Status"
+                   value: "Success"
+                   short: true
+                 - title: "Version"
+                   value: "staging-${{ steps.version.outputs.version }}"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+
+     - name: Notify supabase upload failure
+       if: failure()
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "❌ Supabase upload failed"
+           attachments:
+             - color: "dc3545"
+               fields:
+                 - title: "Environment"
+                   value: "Staging"
+                   short: true
+                 - title: "Status"
+                   value: "Failed"
+                   short: true
+                 - title: "Version"
+                   value: "staging-${{ steps.version.outputs.version }}"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+                 - title: "Workflow"
+                   value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                   short: false
+
+     - name: Create Staging Release
       run: |
         gh release create staging-${{ steps.version.outputs.version }} \
           --title "Staging Release (build ${{ steps.version.outputs.version }})" \
@@ -654,8 +1116,36 @@ jobs:
       env:
         SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-    - name: Upload to Supabase Storage (Production)
-      run: |
+     - name: Notify supabase upload start
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "📦 Supabase upload started"
+           attachments:
+             - color: "ffc107"
+               fields:
+                 - title: "Environment"
+                   value: "Production"
+                   short: true
+                 - title: "Status"
+                   value: "Started"
+                   short: true
+                 - title: "Version"
+                   value: "${{ steps.prod-version.outputs.version }}"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+
+     - name: Upload to Supabase Storage (Production)
+       run: |
         # Set version for upload
         export VERSION="${{ steps.prod-version.outputs.version }}"
         
@@ -892,14 +1382,75 @@ jobs:
         # Clean up temp file
         rm -f "$existing_script"
         
-        echo "Upload completed for version $VERSION"
-      env:
-        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-        SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+         echo "Upload completed for version $VERSION"
+       env:
+         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+         SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+         SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-    - name: Create Production Release
+     - name: Notify supabase upload success
+       if: success()
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "✅ Supabase upload completed successfully! :package:"
+           attachments:
+             - color: "28a745"
+               fields:
+                 - title: "Environment"
+                   value: "Production"
+                   short: true
+                 - title: "Status"
+                   value: "Success"
+                   short: true
+                 - title: "Version"
+                   value: "${{ steps.prod-version.outputs.version }}"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+
+     - name: Notify supabase upload failure
+       if: failure()
+       continue-on-error: true
+       uses: slackapi/slack-github-action@v2.1.1
+       with:
+         method: chat.postMessage
+         token: ${{ secrets.SLACK_BOT_TOKEN }}
+         payload: |
+           channel: ${{ secrets.SLACK_CHANNEL_ID }}
+           text: "❌ Supabase upload failed"
+           attachments:
+             - color: "dc3545"
+               fields:
+                 - title: "Environment"
+                   value: "Production"
+                   short: true
+                 - title: "Status"
+                   value: "Failed"
+                   short: true
+                 - title: "Version"
+                   value: "${{ steps.prod-version.outputs.version }}"
+                   short: true
+                 - title: "Branch"
+                   value: "${{ github.ref_name }}"
+                   short: true
+                 - title: "Commit"
+                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                   short: true
+                 - title: "Workflow"
+                   value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                   short: false
+
+     - name: Create Production Release
       run: |
         if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
           gh release create ${{ steps.prod-version.outputs.version }} \
