@@ -103,23 +103,23 @@ jobs:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
-           channel: ${{ secrets.SLACK_CHANNEL_ID }}
-           text: "🔨 CLI build started"
-           attachments:
-             - color: "ffc107"
-               fields:
-                 - title: "Environment"
-                   value: "Staging"
-                   short: true
-                 - title: "Platform"
-                   value: "Linux"
-                   short: true
-                 - title: "Branch"
-                   value: "${{ github.ref_name }}"
-                   short: true
-                 - title: "Commit"
-                   value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
-                   short: true
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "🔨 CLI build started"
+            attachments:
+              - color: "ffc107"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Platform"
+                    value: "Linux"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -167,6 +167,61 @@ jobs:
           path: bin/prod-*-linux-arm64
           retention-days: 7
 
+      - name: Notify build success
+        if: success()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "✅ CLI build completed successfully! :hammer_and_wrench:"
+            attachments:
+              - color: "28a745"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Platform"
+                    value: "Linux"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+
+      - name: Notify build failure
+        if: failure()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "❌ CLI build failed"
+            attachments:
+              - color: "dc3545"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Platform"
+                    value: "Linux"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+                  - title: "Workflow"
+                    value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                    short: false
+
   build-linux-production:
     name: Build Linux (Production)
     runs-on: ubuntu-latest
@@ -179,6 +234,31 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Notify build start
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "🔨 CLI build started"
+            attachments:
+              - color: "ffc107"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Platform"
+                    value: "Linux"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -220,6 +300,61 @@ jobs:
           path: bin/prod-*-linux-arm64
           retention-days: 90
 
+      - name: Notify build success
+        if: success()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "✅ CLI build completed successfully! :hammer_and_wrench:"
+            attachments:
+              - color: "28a745"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Platform"
+                    value: "Linux"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+
+      - name: Notify build failure
+        if: failure()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "❌ CLI build failed"
+            attachments:
+              - color: "dc3545"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Platform"
+                    value: "Linux"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+                  - title: "Workflow"
+                    value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                    short: false
+
   build-macos-staging:
     name: Build macOS (Staging)
     runs-on: macos-latest
@@ -232,6 +367,31 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Notify build start
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "🔨 CLI build started"
+            attachments:
+              - color: "ffc107"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Platform"
+                    value: "macOS"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -281,6 +441,61 @@ jobs:
           path: bin/prod-*-darwin-arm64
           retention-days: 7
 
+      - name: Notify build success
+        if: success()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "✅ CLI build completed successfully! :hammer_and_wrench:"
+            attachments:
+              - color: "28a745"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Platform"
+                    value: "macOS"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+
+      - name: Notify build failure
+        if: failure()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "❌ CLI build failed"
+            attachments:
+              - color: "dc3545"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Platform"
+                    value: "macOS"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+                  - title: "Workflow"
+                    value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                    short: false
+
   build-macos-production:
     name: Build macOS (Production)
     runs-on: macos-latest
@@ -293,6 +508,31 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Notify build start
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "🔨 CLI build started"
+            attachments:
+              - color: "ffc107"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Platform"
+                    value: "macOS"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -335,6 +575,61 @@ jobs:
           path: bin/prod-*-darwin-arm64
           retention-days: 90
 
+      - name: Notify build success
+        if: success()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "✅ CLI build completed successfully! :hammer_and_wrench:"
+            attachments:
+              - color: "28a745"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Platform"
+                    value: "macOS"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+
+      - name: Notify build failure
+        if: failure()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "❌ CLI build failed"
+            attachments:
+              - color: "dc3545"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Platform"
+                    value: "macOS"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+                  - title: "Workflow"
+                    value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                    short: false
+
   # Create a staging release with all binaries for staging builds
   release-staging:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
@@ -346,6 +641,31 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Notify release start
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "📦 CLI release started"
+            attachments:
+              - color: "ffc107"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Status"
+                    value: "Started"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
 
       - name: Get version
         id: version
@@ -370,15 +690,6 @@ jobs:
         uses: supabase/setup-cli@v1
         with:
           version: latest
-
-      - name: Debug Secrets
-        run: |
-          echo "Checking available secrets..."
-          echo "SUPABASE_PROJECT_ID is set: ${{ secrets.SUPABASE_PROJECT_ID != '' }}"
-          echo "SUPABASE_ACCESS_TOKEN is set: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}"
-          echo "SUPABASE_URL is set: ${{ secrets.SUPABASE_URL != '' }}"
-          echo "SUPABASE_SERVICE_ROLE_KEY is set: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}"
-          echo "SUPABASE_ANON_KEY is set: ${{ secrets.SUPABASE_ANON_KEY != '' }}"
 
       - name: Link Supabase project
         run: |
@@ -655,6 +966,61 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Notify release success
+        if: success()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "✅ CLI release completed successfully! :package:"
+            attachments:
+              - color: "28a745"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Status"
+                    value: "Success"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+
+      - name: Notify release failure
+        if: failure()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "❌ CLI release failed"
+            attachments:
+              - color: "dc3545"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Status"
+                    value: "Failed"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+                  - title: "Workflow"
+                    value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                    short: false
+
   # Create a production release with all binaries when a tag is pushed
   release-production:
     if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
@@ -664,6 +1030,31 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Notify release start
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "📦 CLI release started"
+            attachments:
+              - color: "ffc107"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Status"
+                    value: "Started"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
 
       - name: Download all production artifacts
         uses: actions/download-artifact@v4
@@ -693,12 +1084,6 @@ jobs:
         uses: supabase/setup-cli@v1
         with:
           version: latest
-
-      - name: Debug Secrets
-        run: |
-          curl -sL https://github.com/supabase/cli/releases/latest/download/supabase-linux-amd64.tar.gz | tar -xz
-          sudo mv supabase /usr/local/bin/supabase
-          supabase --version
 
       - name: Link Supabase project
         run: |
@@ -1008,4 +1393,59 @@ jobs:
             });
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+
+      - name: Notify release success
+        if: success()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "✅ CLI release completed successfully! :package:"
+            attachments:
+              - color: "28a745"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Status"
+                    value: "Success"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+
+      - name: Notify release failure
+        if: failure()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "❌ CLI release failed"
+            attachments:
+              - color: "dc3545"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Status"
+                    value: "Failed"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+                  - title: "Workflow"
+                    value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                    short: false
 
