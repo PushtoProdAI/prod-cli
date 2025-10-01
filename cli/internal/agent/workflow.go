@@ -392,12 +392,27 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 		return deployResult{}, errors.New("workflow registry is not set")
 	}
 
+	// Log deployment start
+	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "flyio", input.Spec, input.Source).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to log deployment start", "error", err)
+		// Continue with deployment even if logging fails
+	}
+
 	envVars := input.CollectedEnvVars
 
 	// Build deployment spec
 	db := deployment.NewDeploymentBuilder(&input.Spec, envVars)
 	spec, err := db.Build()
 	if err != nil {
+		// Log deployment failure
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    err.Error(),
+				"platform": "flyio",
+				"stage":    "spec_build",
+			}).Get(ctx)
+		}
 		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
 	}
 	spec.Metadata["buildContext"] = input.Source
@@ -433,6 +448,14 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 			"project_name": input.Spec.Name,
 			"language":     input.Spec.Language,
 		})
+		// Log deployment failure
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    err.Error(),
+				"platform": "flyio",
+				"stage":    "deployment_steps",
+			}).Get(ctx)
+		}
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
 			// Send the summarize error
@@ -492,8 +515,28 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 			"project_name": input.Spec.Name,
 			"language":     input.Spec.Language,
 		})
+		// Log deployment failure
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    err.Error(),
+				"platform": "flyio",
+				"stage":    "url_verification",
+				"url":      fullUrl,
+			}).Get(ctx)
+		}
 		return deployResult{}, errors.Errorf("service URL %s is not live: %w", fullUrl, err)
 	}
+
+	// Log deployment success
+	if operationId != "" {
+		workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", map[string]any{
+			"url":               fullUrl,
+			"platform":          "flyio",
+			"resources_created": createdResources,
+			"app_id":            ws.ID,
+		}).Get(ctx)
+	}
+
 	return deployResult{Url: fullUrl}, nil
 }
 
@@ -914,6 +957,13 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	slog.Info("deployNetlify workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
+	// Log deployment start
+	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "netlify", input.Spec, input.Source).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to log deployment start", "error", err)
+		// Continue with deployment even if logging fails
+	}
+
 	// Build deployment spec from the plan
 	slog.Info("Building deployment spec")
 	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars)
@@ -958,6 +1008,14 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 			"project_name": input.Spec.Name,
 			"language":     input.Spec.Language,
 		})
+		// Log deployment failure
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    err.Error(),
+				"platform": "netlify",
+				"stage":    "deployment_steps",
+			}).Get(ctx)
+		}
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
 			// Send the summarize error
@@ -990,6 +1048,15 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 		deploymentURL = "Deployment completed but URL not available"
 	}
 
+	// Log deployment success
+	if operationId != "" {
+		workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", map[string]any{
+			"url":               deploymentURL,
+			"platform":          "netlify",
+			"resources_created": createdResources,
+		}).Get(ctx)
+	}
+
 	slog.Info("Netlify deployment workflow completed successfully")
 	return deployResult{
 		Url: deploymentURL,
@@ -997,8 +1064,15 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 }
 
 func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deployResult, error) {
-	slog.Info("deployNetlify workflow started", "platform", input.Platform)
+	slog.Info("deployVercel workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
+
+	// Log deployment start
+	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "vercel", input.Spec, input.Source).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to log deployment start", "error", err)
+		// Continue with deployment even if logging fails
+	}
 
 	// Build deployment spec from the plan
 	slog.Info("Building deployment spec")
@@ -1044,6 +1118,14 @@ func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deploy
 			"project_name": input.Spec.Name,
 			"language":     input.Spec.Language,
 		})
+		// Log deployment failure
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    err.Error(),
+				"platform": "vercel",
+				"stage":    "deployment_steps",
+			}).Get(ctx)
+		}
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
 			// Send the summarize error
@@ -1091,16 +1173,41 @@ func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deploy
 
 	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
 	if err != nil {
+		// Log deployment failure
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    err.Error(),
+				"platform": "vercel",
+				"stage":    "url_verification",
+				"url":      fullUrl,
+			}).Get(ctx)
+		}
 		return deployResult{}, errors.Errorf("service URL %s is not live: %w", fullUrl, err)
 	}
-	slog.Info("Netlify deployment workflow completed successfully")
 
+	// Log deployment success
+	if operationId != "" {
+		workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", map[string]any{
+			"url":               fullUrl,
+			"platform":          "vercel",
+			"resources_created": createdResources,
+		}).Get(ctx)
+	}
+
+	slog.Info("Vercel deployment workflow completed successfully")
 	return deployResult{Url: fullUrl}, nil
 }
 
 func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deployResult, error) {
 	slog.Info("deployHeroku workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
+
+	// Log deployment start
+	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "heroku", input.Spec, input.Source).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to log deployment start", "error", err)
+		// Continue with deployment even if logging fails
+	}
 
 	// Build deployment spec from the plan
 	slog.Info("Building deployment spec")
@@ -1217,10 +1324,28 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 
 	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
 	if err != nil {
+		// Log deployment failure
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    err.Error(),
+				"platform": "heroku",
+				"stage":    "url_verification",
+				"url":      fullUrl,
+			}).Get(ctx)
+		}
 		return deployResult{}, errors.Errorf("service URL %s is not live: %w", fullUrl, err)
 	}
-	slog.Info("Heroku deployment workflow completed successfully")
 
+	// Log deployment success
+	if operationId != "" {
+		workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", map[string]any{
+			"url":               fullUrl,
+			"platform":          "heroku",
+			"resources_created": createdResources,
+		}).Get(ctx)
+	}
+
+	slog.Info("Heroku deployment workflow completed successfully")
 	return deployResult{Url: fullUrl}, nil
 }
 

@@ -257,6 +257,81 @@ func (a *Activities) sendProjectStats(ctx context.Context, platform string, spec
 	return nil
 }
 
+func (a *Activities) logDeploymentStart(ctx context.Context, platform string, spec analyzer.ProjectSpec, source string) (string, error) {
+	session := CtxSession(ctx)
+	if session == nil {
+		return "", workflow.NewPermanentError(errors.New("no session found in context"))
+	}
+
+	// Build deployment operation data
+	operation := map[string]any{
+		"user_id":        session.User.ID,
+		"operation_type": "deploy",
+		"resource_type":  "app",
+		"resource_id":    fmt.Sprintf("%s-%s", platform, spec.Name),
+		"resource_name":  spec.Name,
+		"status":         "started",
+		"platform":       platform,
+		"language":       spec.Language,
+		"deployment_config": map[string]any{
+			"source":        source,
+			"build_command": spec.BuildCommand,
+			"start_command": spec.StartCommand,
+		},
+		"metadata": map[string]any{
+			"service_requirements": spec.ServiceRequirements,
+			"env_vars_count":       len(spec.EnvVars),
+			"framework":            getFrameworkFromSpec(spec),
+		},
+	}
+
+	// Add service type and provider if available
+	if len(spec.ServiceRequirements) > 0 {
+		for _, req := range spec.ServiceRequirements {
+			if req.Type != "framework" {
+				operation["service_type"] = req.Type
+				operation["service_provider"] = req.Provider
+				break
+			}
+		}
+	}
+
+	operationId, err := a.beClient.LogDeploymentOperation(ctx, session.AccessToken, operation)
+	if err != nil {
+		slog.Error("Failed to log deployment start", "error", err)
+		return "", errors.Errorf("failed to log deployment start: %w", err)
+	}
+
+	slog.Info("Deployment start logged", "operation_id", operationId, "platform", platform)
+	return operationId, nil
+}
+
+func (a *Activities) updateDeploymentStatus(ctx context.Context, operationId string, status string, metadata map[string]any) error {
+	session := CtxSession(ctx)
+	if session == nil {
+		return workflow.NewPermanentError(errors.New("no session found in context"))
+	}
+
+	err := a.beClient.UpdateDeploymentOperation(ctx, session.AccessToken, operationId, status, metadata)
+	if err != nil {
+		slog.Error("Failed to update deployment status", "error", err, "operation_id", operationId, "status", status)
+		return errors.Errorf("failed to update deployment status: %w", err)
+	}
+
+	slog.Info("Deployment status updated", "operation_id", operationId, "status", status)
+	return nil
+}
+
+// Helper function to extract framework from spec
+func getFrameworkFromSpec(spec analyzer.ProjectSpec) string {
+	for _, req := range spec.ServiceRequirements {
+		if req.Type == "framework" {
+			return req.Provider
+		}
+	}
+	return "unknown"
+}
+
 func (a *Activities) determineRunCommand(ctx context.Context, spec analyzer.ProjectSpec) (string, error) {
 	a.uiWriter.SendStatus("planning", "Calculating run command")
 	var frameworks []string

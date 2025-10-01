@@ -32,11 +32,13 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
+  
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // Skip JWT verification for this function
   if (req.method !== 'POST') {
     return new Response(
       JSON.stringify({ error: 'Method not allowed' }),
@@ -44,13 +46,31 @@ Deno.serve(async (req) => {
     )
   }
 
+  // Extract access token from custom CLI token or use Authorization header directly
+  let accessToken = req.headers.get('authorization')?.replace('Bearer ', '')
+  
+  // If the token looks like a custom CLI token (base64 JSON), extract the access_token
+  if (accessToken && !accessToken.includes('.')) {
+    try {
+      const tokenData = JSON.parse(atob(accessToken))
+      if (tokenData.access_token) {
+        accessToken = tokenData.access_token
+        console.log('Extracted access token from custom CLI token')
+      }
+    } catch (error) {
+      console.log('Token is not a custom CLI token, using as-is')
+    }
+  }
+
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     {
       global: {
-        headers: { Authorization: req.headers.get('Authorization')! },
-      },
+        headers: {
+          Authorization: accessToken ? `Bearer ${accessToken}` : undefined
+        }
+      }
     }
   )
 
@@ -66,9 +86,8 @@ Deno.serve(async (req) => {
     }
 
     // Extract client information
-    const ip_address = req.headers.get('x-forwarded-for') || 
-                     req.headers.get('x-real-ip') || 
-                     'unknown'
+    const forwarded_for = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown'
+    const ip_address = forwarded_for.split(',')[0].trim()
     const user_agent = req.headers.get('user-agent') || 'unknown'
 
     let result
