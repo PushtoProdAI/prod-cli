@@ -19,7 +19,9 @@ import (
 	"github.com/meroxa/prod/cli/internal/deployment/heroku"
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
+	prod_error "github.com/meroxa/prod/cli/internal/error"
 	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/meroxa/prod/cli/internal/settings"
 )
 
 type TUIWriter interface {
@@ -200,12 +202,12 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 
 	// Check for error tracking consent first
 	if !a.errorTrackingEnabled {
-		hasConsentValue, err := hasConsent()
+		hasConsentValue, err := settings.HasConsent()
 		if err != nil {
 			slog.Error("Failed to check consent", "error", err)
 		} else if !hasConsentValue {
 			// Check if settings file exists - if not, this is first run
-			filePath, err := getSettingsFilePath()
+			filePath, err := settings.GetSettingsPath()
 			if err == nil {
 				if _, err := os.Stat(filePath); os.IsNotExist(err) {
 					// First run - need to prompt for consent using state machine
@@ -273,7 +275,7 @@ func (a *Agent) processConsentResponse(ctx context.Context, input string, out io
 	}
 
 	// Save the consent choice
-	err := saveConsent(consentGiven)
+	err := settings.SaveConsent(consentGiven)
 	if err != nil {
 		slog.Error("Failed to save consent", "error", err)
 	} else {
@@ -298,11 +300,21 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 	wf, err := Workflows{}.PlanDeploy(ctx, a.wfClient, input)
 	if err != nil {
 		slog.Info("Workflow execution result", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":  "plan_deploy",
+			"component": "agent",
+			"operation": "workflow_execution",
+		})
 	}
 
 	plan, err := client.GetWorkflowResult[DeployPlan](ctx, a.wfClient, wf, 5*time.Minute)
 	if err != nil {
 		fmt.Fprintf(out, "Error getting workflow result: %v\n", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":  "plan_deploy",
+			"component": "agent",
+			"operation": "get_workflow_result",
+		})
 	}
 
 	// Check if dry-run was inferred from the prompt and merge with existing flag
@@ -376,12 +388,28 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 	wf, err := Workflows{}.CategorizeEnvVars(ctx, a.wfClient, *a.DeployPlan)
 	if err != nil {
 		fmt.Fprintf(out, "❌ Error categorizing environment variables: %v\n", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     "categorize_env_vars",
+			"component":    "agent",
+			"operation":    "workflow_execution",
+			"platform":     a.DeployPlan.Platform,
+			"project_name": a.DeployPlan.Spec.Name,
+			"language":     a.DeployPlan.Spec.Language,
+		})
 		return a.deploy(ctx, input, out)
 	}
 
 	envVars, err := client.GetWorkflowResult[[]deployment.EnvVar](ctx, a.wfClient, wf, 5*time.Minute)
 	if err != nil {
 		fmt.Fprintf(out, "❌ Error getting categorization result: %v\n", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     "categorize_env_vars",
+			"component":    "agent",
+			"operation":    "get_workflow_result",
+			"platform":     a.DeployPlan.Platform,
+			"project_name": a.DeployPlan.Spec.Name,
+			"language":     a.DeployPlan.Spec.Language,
+		})
 		return a.deploy(ctx, input, out)
 	}
 
@@ -494,6 +522,12 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 		wf, err := Workflows{}.SetupJavaScriptProject(ctx, a.wfClient, *a.DeployPlan)
 		if err != nil {
 			slog.Error("Workflow execution result", "error", err)
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":     "setup_javascript_project",
+				"component":    "agent",
+				"platform":     a.DeployPlan.Platform,
+				"project_type": "javascript",
+			})
 			fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
 			return a.plan, nil
 		}
@@ -501,6 +535,14 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 		result, err := client.GetWorkflowResult[SetupJavaScriptProjectResult](ctx, a.wfClient, wf, 2*time.Minute)
 		if err != nil {
 			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":     "setup_javascript_project",
+				"component":    "agent",
+				"operation":    "get_workflow_result",
+				"platform":     a.DeployPlan.Platform,
+				"project_name": a.DeployPlan.Spec.Name,
+				"language":     a.DeployPlan.Spec.Language,
+			})
 			return a.confirmWithPrompt(ctx, "", out)
 		}
 		if result.Error.Summary != "" {
@@ -588,6 +630,14 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 	wf, err := Workflows{}.Deploy(ctx, a.wfClient, DeployPlanWithEnvVars)
 	if err != nil {
 		slog.Info("Workflow execution result", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     "deploy",
+			"component":    "agent",
+			"operation":    "workflow_execution",
+			"platform":     DeployPlanWithEnvVars.Platform,
+			"project_name": DeployPlanWithEnvVars.Spec.Name,
+			"language":     DeployPlanWithEnvVars.Spec.Language,
+		})
 		fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
 		return a.plan, nil
 	}
@@ -599,6 +649,14 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 
 	if err != nil {
 		slog.Info("Deployment workflow execution result", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     "deploy",
+			"component":    "agent",
+			"operation":    "get_workflow_result",
+			"platform":     a.DeployPlan.Platform,
+			"project_name": a.DeployPlan.Spec.Name,
+			"language":     a.DeployPlan.Spec.Language,
+		})
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
 		fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
 		return a.plan, nil
@@ -861,6 +919,13 @@ func (a *Agent) waitForAPIKey(ctx context.Context, input string, out io.Writer) 
 	valid, err := a.auth.ValidateAPIKey(ctx, apiKey)
 	if err != nil {
 		fmt.Fprintf(out, "❌ Failed to validate API key: %v\n", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"component": "agent",
+			"operation": "api_key_validation",
+			"auth_type": "api_key",
+			"platform":  a.DeployPlan.Platform.String(),
+			"flow":      "deployment",
+		})
 		return a.promptForAPIKey(ctx, "", out)
 	}
 
@@ -882,6 +947,13 @@ func (a *Agent) performOAuthLogin(ctx context.Context, input string, out io.Writ
 	// Perform OAuth login using the auth package
 	if err := a.auth.PerformOAuthLogin(ctx); err != nil {
 		fmt.Fprintf(out, "❌ Authentication failed: %v\n", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"component": "agent",
+			"operation": "oauth_login",
+			"auth_type": "oauth",
+			"platform":  a.DeployPlan.Platform.String(),
+			"flow":      "deployment",
+		})
 		fmt.Fprint(out, "🔧 You can try option 2 (Manual API key setup) instead\n")
 		return a.waitForAuthSelection, nil
 	}
@@ -983,6 +1055,13 @@ func (a *Agent) waitForAPIKeyDryRun(ctx context.Context, input string, out io.Wr
 	valid, err := a.auth.ValidateAPIKey(ctx, apiKey)
 	if err != nil {
 		fmt.Fprintf(out, "❌ Failed to validate API key: %v\n", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"component": "agent",
+			"operation": "api_key_validation",
+			"auth_type": "api_key",
+			"platform":  a.DeployPlan.Platform.String(),
+			"flow":      "dry_run",
+		})
 		os.Unsetenv("RENDER_API_KEY")
 		return a.promptForAPIKeyDryRun(ctx, "", out)
 	}
@@ -1007,6 +1086,13 @@ func (a *Agent) performOAuthLoginDryRun(ctx context.Context, input string, out i
 	// Perform OAuth login using the auth package
 	if err := a.auth.PerformOAuthLogin(ctx); err != nil {
 		fmt.Fprintf(out, "❌ Authentication failed: %v\n", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"component": "agent",
+			"operation": "oauth_login",
+			"auth_type": "oauth",
+			"platform":  a.DeployPlan.Platform.String(),
+			"flow":      "dry_run",
+		})
 		fmt.Fprint(out, "🔧 You can try option 2 (Manual API key setup) instead\n")
 		return a.waitForAuthSelectionDryRun, nil
 	}
@@ -1021,6 +1107,14 @@ func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) 
 	wf, err := Workflows{}.DryRunDeploy(ctx, a.wfClient, *a.DeployPlan)
 	if err != nil {
 		slog.Info("Dry-run workflow execution result", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     "dry_run_deploy",
+			"component":    "agent",
+			"operation":    "workflow_execution",
+			"platform":     a.DeployPlan.Platform,
+			"project_name": a.DeployPlan.Spec.Name,
+			"language":     a.DeployPlan.Spec.Language,
+		})
 		fmt.Fprint(out, "Sorry, couldn't create a dry-run deployment plan \n")
 		return a.plan, nil
 	}
@@ -1028,6 +1122,14 @@ func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) 
 	// get the dry-run result with a longer timeout to accommodate LLM operations
 	result, err := client.GetWorkflowResult[DryRunResult](ctx, a.wfClient, wf, 5*time.Minute)
 	if err != nil {
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     "dry_run_deploy",
+			"component":    "agent",
+			"operation":    "get_workflow_result",
+			"platform":     a.DeployPlan.Platform,
+			"project_name": a.DeployPlan.Spec.Name,
+			"language":     a.DeployPlan.Spec.Language,
+		})
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
 		fmt.Fprint(out, "Sorry that we had trouble creating the dry-run preview \n")
 		return a.plan, nil
@@ -1048,6 +1150,11 @@ func (a *Agent) authenticateCLI(ctx context.Context) bool {
 	err := a.internalAuth.LoginWithSupabaseFunction(ctx)
 	if err != nil {
 		slog.Error("Failed to authenticate CLI", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"component": "authentication",
+			"operation": "supabase_login",
+			"auth_type": "cli",
+		})
 		return false
 	}
 	return true
