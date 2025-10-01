@@ -357,7 +357,7 @@ func (*stream) DetermineMigrationCommand(ctx context.Context, language string, f
 	if err != nil {
 		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
 		// and include the type of the args you're passing in.
-		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: DetermineMigrationCommand: %w", err)
+		wrapped_err := errors.Errorf("BAML INTERNAL ERROR: DetermineMigrationCommand: %w", err)
 		panic(wrapped_err)
 	}
 
