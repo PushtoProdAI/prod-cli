@@ -1,7 +1,7 @@
 # GoReleaser configuration for multi-architecture CLI builds
 # This configuration builds the CLI for multiple platforms and architectures
 # and can be extended to upload to Supabase storage
-
+# NOTE: used for local testing only, CI uses a different config
 version: 2
 
 # Project metadata
