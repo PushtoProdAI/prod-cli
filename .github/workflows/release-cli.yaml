@@ -691,15 +691,6 @@ jobs:
         with:
           version: latest
 
-      - name: Debug Secrets
-        run: |
-          echo "Checking available secrets..."
-          echo "SUPABASE_PROJECT_ID is set: ${{ secrets.SUPABASE_PROJECT_ID != '' }}"
-          echo "SUPABASE_ACCESS_TOKEN is set: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}"
-          echo "SUPABASE_URL is set: ${{ secrets.SUPABASE_URL != '' }}"
-          echo "SUPABASE_SERVICE_ROLE_KEY is set: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}"
-          echo "SUPABASE_ANON_KEY is set: ${{ secrets.SUPABASE_ANON_KEY != '' }}"
-
       - name: Link Supabase project
         run: |
           echo "Linking to project: ${{ secrets.SUPABASE_PROJECT_ID }}"
@@ -1093,12 +1084,6 @@ jobs:
         uses: supabase/setup-cli@v1
         with:
           version: latest
-
-      - name: Debug Secrets
-        run: |
-          curl -sL https://github.com/supabase/cli/releases/latest/download/supabase-linux-amd64.tar.gz | tar -xz
-          sudo mv supabase /usr/local/bin/supabase
-          supabase --version
 
       - name: Link Supabase project
         run: |
