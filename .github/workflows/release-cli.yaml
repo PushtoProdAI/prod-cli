@@ -1,7 +1,7 @@
 # Combined build and release workflow for CLI
 # Uses GitHub environments for secret management
 # Supports cross-platform builds with proper CGO handling for BAML dependency
-# 
+#
 # Triggers:
 # - PRs: Tests only
 # - Push to main: Tests + staging builds (uses 'staging' environment)
@@ -15,18 +15,18 @@ permissions:
 
 on:
   push:
-    branches: [ main ]
-    paths: [ 'cli/**' ]
-    tags: [ "*" ]
+    branches: [main]
+    paths: ["cli/**"]
+    tags: ["*"]
   pull_request:
-    branches: [ main ]
-    paths: [ 'cli/**' ]
+    branches: [main]
+    paths: ["cli/**"]
   workflow_dispatch:
     inputs:
       build_type:
-        description: 'Build type to create'
+        description: "Build type to create"
         required: true
-        default: 'staging'
+        default: "staging"
         type: choice
         options:
           - staging
@@ -38,21 +38,49 @@ jobs:
     name: Test CLI
     runs-on: ubuntu-latest
     # Run tests on both PRs and pushes to main
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.24.4'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.4"
 
-    - name: Run CLI tests
-      working-directory: cli
-      run: |
-        echo "Running CLI unit tests..."
-        go test ./... -v
+      - name: Run CLI tests
+        working-directory: cli
+        run: |
+          echo "Running CLI unit tests..."
+          go test ./... -v
+      - name: Notify test failure
+        if: failure()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "❌ CLI unit tests failed"
+            attachments:
+              - color: "dc3545"
+                fields:
+                  - title: "Event"
+                    value: "${{ github.event_name }}"
+                    short: true
+                  - title: "Status"
+                    value: "Failed"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+                  - title: "Workflow"
+                    value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                    short: false
 
   build-linux-staging:
     name: Build Linux (Staging)
@@ -60,59 +88,59 @@ jobs:
     environment: staging
     needs: test
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.24.4'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.4"
 
-    - name: Set up Docker
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
 
-    - name: Create bin directory
-      run: mkdir -p bin
+      - name: Create bin directory
+        run: mkdir -p bin
 
-    - name: Build Linux binaries (Staging)
-      env:
-        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        PROD_DEBUG: true
-        ENVIRONMENT: staging
-      run: |
-        echo "Building staging binaries with PROD_DEBUG=true, ENVIRONMENT=staging"
-        cd cli
-        make build-linux-all
+      - name: Build Linux binaries (Staging)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_DEBUG: true
+          ENVIRONMENT: staging
+        run: |
+          echo "Building staging binaries with PROD_DEBUG=true, ENVIRONMENT=staging"
+          cd cli
+          make build-linux-all
 
-    - name: Get version
-      id: version
-      run: |
-        # Try to get the latest tag, fallback to commit hash
-        latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-        if [ -n "$latest_tag" ]; then
-          echo "version=$latest_tag" >> $GITHUB_OUTPUT
-        else
-          echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        fi
+      - name: Get version
+        id: version
+        run: |
+          # Try to get the latest tag, fallback to commit hash
+          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$latest_tag" ]; then
+            echo "version=$latest_tag" >> $GITHUB_OUTPUT
+          else
+            echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          fi
 
-    - name: Upload Linux AMD64 artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: prod-staging-linux-amd64-${{ steps.version.outputs.version }}
-        path: bin/prod-*-linux-amd64
-        retention-days: 7
+      - name: Upload Linux AMD64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-staging-linux-amd64-${{ steps.version.outputs.version }}
+          path: bin/prod-*-linux-amd64
+          retention-days: 7
 
-    - name: Upload Linux ARM64 artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: prod-staging-linux-arm64-${{ steps.version.outputs.version }}
-        path: bin/prod-*-linux-arm64
-        retention-days: 7
+      - name: Upload Linux ARM64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-staging-linux-arm64-${{ steps.version.outputs.version }}
+          path: bin/prod-*-linux-arm64
+          retention-days: 7
 
   build-linux-production:
     name: Build Linux (Production)
@@ -120,52 +148,52 @@ jobs:
     environment: prod
     needs: test
     if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.24.4'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.4"
 
-    - name: Set up Docker
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
 
-    - name: Create bin directory
-      run: mkdir -p bin
+      - name: Create bin directory
+        run: mkdir -p bin
 
-    - name: Build Linux binaries (Production)
-      env:
-        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        PROD_DEBUG: false
-        ENVIRONMENT: production
-      run: |
-        echo "Building production binaries with PROD_DEBUG=false, ENVIRONMENT=production"
-        cd cli
-        make build-linux-all
+      - name: Build Linux binaries (Production)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_DEBUG: false
+          ENVIRONMENT: production
+        run: |
+          echo "Building production binaries with PROD_DEBUG=false, ENVIRONMENT=production"
+          cd cli
+          make build-linux-all
 
-    - name: Get version
-      id: version
-      run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      - name: Get version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-    - name: Upload Linux AMD64 artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: prod-production-linux-amd64-${{ steps.version.outputs.version }}
-        path: bin/prod-*-linux-amd64
-        retention-days: 90
+      - name: Upload Linux AMD64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-production-linux-amd64-${{ steps.version.outputs.version }}
+          path: bin/prod-*-linux-amd64
+          retention-days: 90
 
-    - name: Upload Linux ARM64 artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: prod-production-linux-arm64-${{ steps.version.outputs.version }}
-        path: bin/prod-*-linux-arm64
-        retention-days: 90
+      - name: Upload Linux ARM64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-production-linux-arm64-${{ steps.version.outputs.version }}
+          path: bin/prod-*-linux-arm64
+          retention-days: 90
 
   build-macos-staging:
     name: Build macOS (Staging)
@@ -173,60 +201,60 @@ jobs:
     environment: staging
     needs: test
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.24.4'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.4"
 
-    - name: Create bin directory
-      run: mkdir -p bin
+      - name: Create bin directory
+        run: mkdir -p bin
 
-    - name: Build macOS binaries (Staging)
-      env:
-        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        PROD_DEBUG: true
-        ENVIRONMENT: staging
-      run: |
-        echo "Building staging binaries with PROD_DEBUG=true, ENVIRONMENT=staging"
-        cd cli
-        # Build ARM64 (should always work)
-        make build-cli-darwin-arm64
-        # Try to build AMD64 (may fail on some macOS versions)
-        make build-cli-darwin || echo "Warning: macOS AMD64 build failed, continuing with ARM64 only"
+      - name: Build macOS binaries (Staging)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_DEBUG: true
+          ENVIRONMENT: staging
+        run: |
+          echo "Building staging binaries with PROD_DEBUG=true, ENVIRONMENT=staging"
+          cd cli
+          # Build ARM64 (should always work)
+          make build-cli-darwin-arm64
+          # Try to build AMD64 (may fail on some macOS versions)
+          make build-cli-darwin || echo "Warning: macOS AMD64 build failed, continuing with ARM64 only"
 
-    - name: Get version
-      id: version
-      run: |
-        # Try to get the latest tag, fallback to commit hash
-        latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-        if [ -n "$latest_tag" ]; then
-          echo "version=$latest_tag" >> $GITHUB_OUTPUT
-        else
-          echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        fi
+      - name: Get version
+        id: version
+        run: |
+          # Try to get the latest tag, fallback to commit hash
+          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$latest_tag" ]; then
+            echo "version=$latest_tag" >> $GITHUB_OUTPUT
+          else
+            echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          fi
 
-    - name: Upload macOS AMD64 artifact
-      uses: actions/upload-artifact@v4
-      if: hashFiles('bin/prod-*-darwin-amd64') != ''
-      with:
-        name: prod-staging-darwin-amd64-${{ steps.version.outputs.version }}
-        path: bin/prod-*-darwin-amd64
-        retention-days: 7
+      - name: Upload macOS AMD64 artifact
+        uses: actions/upload-artifact@v4
+        if: hashFiles('bin/prod-*-darwin-amd64') != ''
+        with:
+          name: prod-staging-darwin-amd64-${{ steps.version.outputs.version }}
+          path: bin/prod-*-darwin-amd64
+          retention-days: 7
 
-    - name: Upload macOS ARM64 artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: prod-staging-darwin-arm64-${{ steps.version.outputs.version }}
-        path: bin/prod-*-darwin-arm64
-        retention-days: 7
+      - name: Upload macOS ARM64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-staging-darwin-arm64-${{ steps.version.outputs.version }}
+          path: bin/prod-*-darwin-arm64
+          retention-days: 7
 
   build-macos-production:
     name: Build macOS (Production)
@@ -234,53 +262,53 @@ jobs:
     environment: prod
     needs: test
     if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.24.4'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.4"
 
-    - name: Create bin directory
-      run: mkdir -p bin
+      - name: Create bin directory
+        run: mkdir -p bin
 
-    - name: Build macOS binaries (Production)
-      env:
-        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        PROD_DEBUG: false
-        ENVIRONMENT: production
-      run: |
-        echo "Building production binaries with PROD_DEBUG=false, ENVIRONMENT=production"
-        cd cli
-        # Build ARM64 (should always work)
-        make build-cli-darwin-arm64
-        # Try to build AMD64 (may fail on some macOS versions)
-        make build-cli-darwin || echo "Warning: macOS AMD64 build failed, continuing with ARM64 only"
+      - name: Build macOS binaries (Production)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_DEBUG: false
+          ENVIRONMENT: production
+        run: |
+          echo "Building production binaries with PROD_DEBUG=false, ENVIRONMENT=production"
+          cd cli
+          # Build ARM64 (should always work)
+          make build-cli-darwin-arm64
+          # Try to build AMD64 (may fail on some macOS versions)
+          make build-cli-darwin || echo "Warning: macOS AMD64 build failed, continuing with ARM64 only"
 
-    - name: Get version
-      id: version
-      run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      - name: Get version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-    - name: Upload macOS AMD64 artifact
-      uses: actions/upload-artifact@v4
-      if: hashFiles('bin/prod-*-darwin-amd64') != ''
-      with:
-        name: prod-production-darwin-amd64-${{ steps.version.outputs.version }}
-        path: bin/prod-*-darwin-amd64
-        retention-days: 90
+      - name: Upload macOS AMD64 artifact
+        uses: actions/upload-artifact@v4
+        if: hashFiles('bin/prod-*-darwin-amd64') != ''
+        with:
+          name: prod-production-darwin-amd64-${{ steps.version.outputs.version }}
+          path: bin/prod-*-darwin-amd64
+          retention-days: 90
 
-    - name: Upload macOS ARM64 artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: prod-production-darwin-arm64-${{ steps.version.outputs.version }}
-        path: bin/prod-*-darwin-arm64
-        retention-days: 90
+      - name: Upload macOS ARM64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-production-darwin-arm64-${{ steps.version.outputs.version }}
+          path: bin/prod-*-darwin-arm64
+          retention-days: 90
 
   # Create a staging release with all binaries for staging builds
   release-staging:
@@ -289,318 +317,318 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Get version
-      id: version
-      run: echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - name: Get version
+        id: version
+        run: echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
-    - name: Download all staging artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
-        pattern: prod-staging-*
+      - name: Download all staging artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: prod-staging-*
 
-    - name: Display structure of downloaded files
-      run: ls -la artifacts/
+      - name: Display structure of downloaded files
+        run: ls -la artifacts/
 
-    - name: Prepare release files
-      run: |
-        mkdir -p release-files
-        find artifacts -name "prod-*" -type f -exec cp {} release-files/ \;
-        ls -la release-files/
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          find artifacts -name "prod-*" -type f -exec cp {} release-files/ \;
+          ls -la release-files/
 
-    - name: Install Supabase CLI
-      uses: supabase/setup-cli@v1
-      with:
-        version: latest
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
 
-    - name: Debug Secrets
-      run: |
-        echo "Checking available secrets..."
-        echo "SUPABASE_PROJECT_ID is set: ${{ secrets.SUPABASE_PROJECT_ID != '' }}"
-        echo "SUPABASE_ACCESS_TOKEN is set: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}"
-        echo "SUPABASE_URL is set: ${{ secrets.SUPABASE_URL != '' }}"
-        echo "SUPABASE_SERVICE_ROLE_KEY is set: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}"
-        echo "SUPABASE_ANON_KEY is set: ${{ secrets.SUPABASE_ANON_KEY != '' }}"
+      - name: Debug Secrets
+        run: |
+          echo "Checking available secrets..."
+          echo "SUPABASE_PROJECT_ID is set: ${{ secrets.SUPABASE_PROJECT_ID != '' }}"
+          echo "SUPABASE_ACCESS_TOKEN is set: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}"
+          echo "SUPABASE_URL is set: ${{ secrets.SUPABASE_URL != '' }}"
+          echo "SUPABASE_SERVICE_ROLE_KEY is set: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY != '' }}"
+          echo "SUPABASE_ANON_KEY is set: ${{ secrets.SUPABASE_ANON_KEY != '' }}"
 
-    - name: Link Supabase project
-      run: |
-        echo "Linking to project: ${{ secrets.SUPABASE_PROJECT_ID }}"
-        supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
-      env:
-        SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Link Supabase project
+        run: |
+          echo "Linking to project: ${{ secrets.SUPABASE_PROJECT_ID }}"
+          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: scripts/package.json
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: scripts/package.json
 
-    - name: Install Supabase dependencies
-      run: |
-        cd scripts
-        npm install
+      - name: Install Supabase dependencies
+        run: |
+          cd scripts
+          npm install
 
-    - name: Upload to Supabase Storage (Staging)
-      run: |
-        # Set version for upload
-        export VERSION="staging-${{ steps.version.outputs.version }}"
-        
-        # Archive current latest if it exists
-        echo "Checking if latest release exists..."
-        latest_exists=$(curl -s -o /dev/null -w "%{http_code}" \
-          "${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/manifest.json")
-        
-        if [ "$latest_exists" = "200" ]; then
-          echo "Archiving current latest release to ${VERSION}..."
-          # Get the current latest manifest to find the version
-          current_manifest=$(curl -s "${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/manifest.json")
-          current_version=$(echo "$current_manifest" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
-          
-          if [ -n "$current_version" ] && [ "$current_version" != "$VERSION" ]; then
-            echo "Archiving version $current_version to $VERSION"
-            # Copy latest to archived version
-            for file in $(echo "$current_manifest" | grep -o '"name":"[^"]*"' | cut -d'"' -f4); do
-              # Copy file from latest to archived version
-              curl -X POST \
-                "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$file" \
-                -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-                -H "Content-Type: application/octet-stream" \
-                --data-binary "$(curl -s "${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$file")" \
-                -w "%{http_code}" -o /dev/null -s
-            done
+      - name: Upload to Supabase Storage (Staging)
+        run: |
+          # Set version for upload
+          export VERSION="staging-${{ steps.version.outputs.version }}"
+
+          # Archive current latest if it exists
+          echo "Checking if latest release exists..."
+          latest_exists=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/manifest.json")
+
+          if [ "$latest_exists" = "200" ]; then
+            echo "Archiving current latest release to ${VERSION}..."
+            # Get the current latest manifest to find the version
+            current_manifest=$(curl -s "${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/manifest.json")
+            current_version=$(echo "$current_manifest" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+            
+            if [ -n "$current_version" ] && [ "$current_version" != "$VERSION" ]; then
+              echo "Archiving version $current_version to $VERSION"
+              # Copy latest to archived version
+              for file in $(echo "$current_manifest" | grep -o '"name":"[^"]*"' | cut -d'"' -f4); do
+                # Copy file from latest to archived version
+                curl -X POST \
+                  "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$file" \
+                  -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+                  -H "Content-Type: application/octet-stream" \
+                  --data-binary "$(curl -s "${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$file")" \
+                  -w "%{http_code}" -o /dev/null -s
+              done
+            fi
           fi
-        fi
-        
-        # Create releases directory structure
-        mkdir -p releases/${VERSION}
-        cp release-files/* releases/${VERSION}/
-        
-        # List all files to be uploaded
-        echo "Files to be uploaded:"
-        ls -la releases/${VERSION}/
-        echo "Total files: $(ls releases/${VERSION}/ | wc -l)"
-        
-        # Compress and upload each binary to versioned directory first
-        for file in releases/${VERSION}/*; do
-          filename=$(basename "$file")
-          filesize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
-          echo "Processing $filename (size: $filesize bytes)"
-          
-          # Compress the file
-          echo "Compressing $filename..."
-          gzip -c "$file" > "${file}.gz"
-          compressed_size=$(stat -f%z "${file}.gz" 2>/dev/null || stat -c%s "${file}.gz" 2>/dev/null || echo 0)
-          compression_ratio=$(( (filesize - compressed_size) * 100 / filesize ))
-          echo "Compressed size: $compressed_size bytes (${compression_ratio}% reduction)"
-          
-          # Upload compressed version to versioned directory
-          compressed_filename="${filename}.gz"
-          echo "Uploading $compressed_filename to versioned directory..."
-          response=$(curl -X POST \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$compressed_filename" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -H "Content-Type: application/gzip" \
-            --data-binary @"${file}.gz" \
-            -w "%{http_code}" \
-            -o /dev/null \
-            -s)
-          
-          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-            echo "Versioned upload successful for $compressed_filename (HTTP $response)"
-          else
-            echo "Versioned upload failed for $compressed_filename (HTTP $response)"
-            exit 1
-          fi
-        done
-        
-        # Clear latest directory using JavaScript
-        echo "Clearing latest directory using JavaScript..."
-        cd scripts
-        node clear-latest-directory.js
-        cd ..
-        
-        # Copy all files from versioned directory to latest directory
-        echo "Copying files from versioned directory to latest directory..."
-        for file in releases/${VERSION}/*.gz; do
-          if [[ -f "$file" ]]; then
+
+          # Create releases directory structure
+          mkdir -p releases/${VERSION}
+          cp release-files/* releases/${VERSION}/
+
+          # List all files to be uploaded
+          echo "Files to be uploaded:"
+          ls -la releases/${VERSION}/
+          echo "Total files: $(ls releases/${VERSION}/ | wc -l)"
+
+          # Compress and upload each binary to versioned directory first
+          for file in releases/${VERSION}/*; do
             filename=$(basename "$file")
-            echo "Copying $filename to latest directory..."
+            filesize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+            echo "Processing $filename (size: $filesize bytes)"
             
-            # Download from versioned directory
-            temp_file="/tmp/$filename"
-            curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$filename" \
-              -o "$temp_file"
+            # Compress the file
+            echo "Compressing $filename..."
+            gzip -c "$file" > "${file}.gz"
+            compressed_size=$(stat -f%z "${file}.gz" 2>/dev/null || stat -c%s "${file}.gz" 2>/dev/null || echo 0)
+            compression_ratio=$(( (filesize - compressed_size) * 100 / filesize ))
+            echo "Compressed size: $compressed_size bytes (${compression_ratio}% reduction)"
             
-            # Upload to latest directory
+            # Upload compressed version to versioned directory
+            compressed_filename="${filename}.gz"
+            echo "Uploading $compressed_filename to versioned directory..."
             response=$(curl -X POST \
-              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$filename" \
+              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$compressed_filename" \
               -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
               -H "Content-Type: application/gzip" \
-              --data-binary @"$temp_file" \
+              --data-binary @"${file}.gz" \
               -w "%{http_code}" \
               -o /dev/null \
               -s)
             
             if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-              echo "Latest copy successful for $filename (HTTP $response)"
-              # Get public URL (use latest for downloads)
-              public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$filename"
-              echo "Public URL: $public_url"
+              echo "Versioned upload successful for $compressed_filename (HTTP $response)"
             else
-              echo "Latest copy failed for $filename (HTTP $response)"
+              echo "Versioned upload failed for $compressed_filename (HTTP $response)"
               exit 1
             fi
-            
-            # Clean up temp file
-            rm -f "$temp_file"
-          fi
-        done
-        
-        # Create and upload manifest
-        echo "Creating manifest for version $VERSION"
-        echo "{" > releases/${VERSION}/manifest.json
-        echo "  \"version\": \"$VERSION\"," >> releases/${VERSION}/manifest.json
-        echo "  \"files\": [" >> releases/${VERSION}/manifest.json
-        
-        for file in releases/${VERSION}/*.gz; do
-          if [[ -f "$file" ]]; then
-            filename=$(basename "$file")
-            size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
-            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
-            echo "    {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest.json
-          fi
-        done
-        
-        # Remove trailing comma and close JSON
-        sed -i '$ s/,$//' releases/${VERSION}/manifest.json
-        echo "  ]" >> releases/${VERSION}/manifest.json
-        echo "}" >> releases/${VERSION}/manifest.json
-        
-        # Upload manifest to versioned directory using REST API
-        echo "Uploading manifest to versioned directory..."
-        response=$(curl -X POST \
-          "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/manifest.json" \
-          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          -H "Content-Type: application/json" \
-          --data-binary @"releases/${VERSION}/manifest.json" \
-          -w "%{http_code}" \
-          -o /dev/null \
-          -s)
-        
-        if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-          echo "Versioned manifest upload successful (HTTP $response)"
-        else
-          echo "Versioned manifest upload failed (HTTP $response)"
-          exit 1
-        fi
-        
-        # Create a separate manifest for latest directory with correct URLs
-        echo "Creating manifest for latest directory..."
-        echo "{" > releases/${VERSION}/manifest-latest.json
-        echo "  \"version\": \"$VERSION\"," >> releases/${VERSION}/manifest-latest.json
-        echo "  \"files\": [" >> releases/${VERSION}/manifest-latest.json
-        
-        for file in releases/${VERSION}/*.gz; do
-          if [[ -f "$file" ]]; then
-            filename=$(basename "$file")
-            size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
-            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$filename"
-            echo "    {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest-latest.json
-          fi
-        done
-        
-        # Remove trailing comma and close JSON
-        sed -i '$ s/,$//' releases/${VERSION}/manifest-latest.json
-        echo "  ]" >> releases/${VERSION}/manifest-latest.json
-        echo "}" >> releases/${VERSION}/manifest-latest.json
-        
-        # Upload manifest to latest directory
-        echo "Uploading manifest to latest directory..."
-        response=$(curl -X POST \
-          "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/manifest.json" \
-          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          -H "Content-Type: application/json" \
-          --data-binary @"releases/${VERSION}/manifest-latest.json" \
-          -w "%{http_code}" \
-          -o /dev/null \
-          -s)
-        
-        if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-          echo "Latest manifest upload successful (HTTP $response)"
-        else
-          echo "Latest manifest upload failed (HTTP $response)"
-          exit 1
-        fi
-        
-        # Upload install.sh script to root of bucket (with change detection)
-        echo "Checking if install.sh needs to be updated..."
-        
-        # Download existing install.sh if it exists
-        existing_script="/tmp/existing_install.sh"
-        new_script="scripts/install.sh"
-        
-        echo "Downloading existing install.sh for comparison..."
-        curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
-          -o "$existing_script" 2>/dev/null || touch "$existing_script"
-        
-        # Compare files
-        if diff -q "$existing_script" "$new_script" >/dev/null 2>&1; then
-          echo "Install script is unchanged, skipping upload"
-        else
-          echo "Install script has changes, uploading new version..."
-          
-          # First, delete the existing install.sh
-          echo "Removing existing install.sh..."
-          curl -X DELETE \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -w "%{http_code}" -o /dev/null -s >/dev/null 2>&1 || true
-          
-          # Upload the new install.sh script
+          done
+
+          # Clear latest directory using JavaScript
+          echo "Clearing latest directory using JavaScript..."
+          cd scripts
+          node clear-latest-directory.js
+          cd ..
+
+          # Copy all files from versioned directory to latest directory
+          echo "Copying files from versioned directory to latest directory..."
+          for file in releases/${VERSION}/*.gz; do
+            if [[ -f "$file" ]]; then
+              filename=$(basename "$file")
+              echo "Copying $filename to latest directory..."
+              
+              # Download from versioned directory
+              temp_file="/tmp/$filename"
+              curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+                "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$filename" \
+                -o "$temp_file"
+              
+              # Upload to latest directory
+              response=$(curl -X POST \
+                "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$filename" \
+                -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+                -H "Content-Type: application/gzip" \
+                --data-binary @"$temp_file" \
+                -w "%{http_code}" \
+                -o /dev/null \
+                -s)
+              
+              if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+                echo "Latest copy successful for $filename (HTTP $response)"
+                # Get public URL (use latest for downloads)
+                public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$filename"
+                echo "Public URL: $public_url"
+              else
+                echo "Latest copy failed for $filename (HTTP $response)"
+                exit 1
+              fi
+              
+              # Clean up temp file
+              rm -f "$temp_file"
+            fi
+          done
+
+          # Create and upload manifest
+          echo "Creating manifest for version $VERSION"
+          echo "{" > releases/${VERSION}/manifest.json
+          echo "  \"version\": \"$VERSION\"," >> releases/${VERSION}/manifest.json
+          echo "  \"files\": [" >> releases/${VERSION}/manifest.json
+
+          for file in releases/${VERSION}/*.gz; do
+            if [[ -f "$file" ]]; then
+              filename=$(basename "$file")
+              size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+              public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
+              echo "    {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest.json
+            fi
+          done
+
+          # Remove trailing comma and close JSON
+          sed -i '$ s/,$//' releases/${VERSION}/manifest.json
+          echo "  ]" >> releases/${VERSION}/manifest.json
+          echo "}" >> releases/${VERSION}/manifest.json
+
+          # Upload manifest to versioned directory using REST API
+          echo "Uploading manifest to versioned directory..."
           response=$(curl -X POST \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/manifest.json" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -H "Content-Type: text/plain" \
-            --data-binary @"$new_script" \
+            -H "Content-Type: application/json" \
+            --data-binary @"releases/${VERSION}/manifest.json" \
             -w "%{http_code}" \
             -o /dev/null \
             -s)
-          
+
           if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-            echo "Install script upload successful (HTTP $response)"
+            echo "Versioned manifest upload successful (HTTP $response)"
           else
-            echo "Install script upload failed (HTTP $response)"
+            echo "Versioned manifest upload failed (HTTP $response)"
             exit 1
           fi
-        fi
-        
-        # Clean up temp file
-        rm -f "$existing_script"
-        
-        echo "Upload completed for version $VERSION"
-      env:
-        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-        SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-    - name: Create Staging Release
-      run: |
-        gh release create staging-${{ steps.version.outputs.version }} \
-          --title "Staging Release (build ${{ steps.version.outputs.version }})" \
-          --notes "Staging build from commit ${{ steps.version.outputs.version }}" \
-          --prerelease \
-          release-files/*
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Create a separate manifest for latest directory with correct URLs
+          echo "Creating manifest for latest directory..."
+          echo "{" > releases/${VERSION}/manifest-latest.json
+          echo "  \"version\": \"$VERSION\"," >> releases/${VERSION}/manifest-latest.json
+          echo "  \"files\": [" >> releases/${VERSION}/manifest-latest.json
+
+          for file in releases/${VERSION}/*.gz; do
+            if [[ -f "$file" ]]; then
+              filename=$(basename "$file")
+              size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+              public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$filename"
+              echo "    {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest-latest.json
+            fi
+          done
+
+          # Remove trailing comma and close JSON
+          sed -i '$ s/,$//' releases/${VERSION}/manifest-latest.json
+          echo "  ]" >> releases/${VERSION}/manifest-latest.json
+          echo "}" >> releases/${VERSION}/manifest-latest.json
+
+          # Upload manifest to latest directory
+          echo "Uploading manifest to latest directory..."
+          response=$(curl -X POST \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/manifest.json" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            --data-binary @"releases/${VERSION}/manifest-latest.json" \
+            -w "%{http_code}" \
+            -o /dev/null \
+            -s)
+
+          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+            echo "Latest manifest upload successful (HTTP $response)"
+          else
+            echo "Latest manifest upload failed (HTTP $response)"
+            exit 1
+          fi
+
+          # Upload install.sh script to root of bucket (with change detection)
+          echo "Checking if install.sh needs to be updated..."
+
+          # Download existing install.sh if it exists
+          existing_script="/tmp/existing_install.sh"
+          new_script="scripts/install.sh"
+
+          echo "Downloading existing install.sh for comparison..."
+          curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
+            -o "$existing_script" 2>/dev/null || touch "$existing_script"
+
+          # Compare files
+          if diff -q "$existing_script" "$new_script" >/dev/null 2>&1; then
+            echo "Install script is unchanged, skipping upload"
+          else
+            echo "Install script has changes, uploading new version..."
+            
+            # First, delete the existing install.sh
+            echo "Removing existing install.sh..."
+            curl -X DELETE \
+              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+              -w "%{http_code}" -o /dev/null -s >/dev/null 2>&1 || true
+            
+            # Upload the new install.sh script
+            response=$(curl -X POST \
+              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+              -H "Content-Type: text/plain" \
+              --data-binary @"$new_script" \
+              -w "%{http_code}" \
+              -o /dev/null \
+              -s)
+            
+            if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+              echo "Install script upload successful (HTTP $response)"
+            else
+              echo "Install script upload failed (HTTP $response)"
+              exit 1
+            fi
+          fi
+
+          # Clean up temp file
+          rm -f "$existing_script"
+
+          echo "Upload completed for version $VERSION"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Create Staging Release
+        run: |
+          gh release create staging-${{ steps.version.outputs.version }} \
+            --title "Staging Release (build ${{ steps.version.outputs.version }})" \
+            --notes "Staging build from commit ${{ steps.version.outputs.version }}" \
+            --prerelease \
+            release-files/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Create a production release with all binaries when a tag is pushed
   release-production:
@@ -609,349 +637,350 @@ jobs:
     runs-on: ubuntu-latest
     environment: prod
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Download all production artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
-        pattern: prod-production-*
+      - name: Download all production artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: prod-production-*
 
-    - name: Display structure of downloaded files
-      run: ls -la artifacts/
+      - name: Display structure of downloaded files
+        run: ls -la artifacts/
 
-    - name: Prepare release files
-      run: |
-        mkdir -p release-files
-        find artifacts -name "prod-*" -type f -exec cp {} release-files/ \;
-        ls -la release-files/
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          find artifacts -name "prod-*" -type f -exec cp {} release-files/ \;
+          ls -la release-files/
 
-    - name: Get version for production release
-      id: prod-version
-      run: |
-        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-          echo "version=manual-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-        else
-          echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Install Supabase CLI
-      uses: supabase/setup-cli@v1
-      with:
-        version: latest
-
-    - name: Debug Secrets
-      run: |
-        curl -sL https://github.com/supabase/cli/releases/latest/download/supabase-linux-amd64.tar.gz | tar -xz
-        sudo mv supabase /usr/local/bin/supabase
-        supabase --version
-
-    - name: Link Supabase project
-      run: |
-        echo "Linking to project: ${{ secrets.SUPABASE_PROJECT_ID }}"
-        supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
-      env:
-        SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-
-    - name: Upload to Supabase Storage (Production)
-      run: |
-        # Set version for upload
-        export VERSION="${{ steps.prod-version.outputs.version }}"
-        
-        # Create releases directory structure
-        mkdir -p releases/${VERSION}
-        cp release-files/* releases/${VERSION}/
-        
-        # List all files to be uploaded
-        echo "Files to be uploaded:"
-        ls -la releases/${VERSION}/
-        echo "Total files: $(ls releases/${VERSION}/ | wc -l)"
-        
-        # Compress and upload each binary to versioned directory first
-        for file in releases/${VERSION}/*; do
-          filename=$(basename "$file")
-          filesize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
-          echo "Processing $filename (size: $filesize bytes)"
-          
-          # Compress the file
-          echo "Compressing $filename..."
-          gzip -c "$file" > "${file}.gz"
-          compressed_size=$(stat -f%z "${file}.gz" 2>/dev/null || stat -c%s "${file}.gz" 2>/dev/null || echo 0)
-          compression_ratio=$(( (filesize - compressed_size) * 100 / filesize ))
-          echo "Compressed size: $compressed_size bytes (${compression_ratio}% reduction)"
-          
-          # Upload compressed version to versioned directory
-          compressed_filename="${filename}.gz"
-          echo "Uploading $compressed_filename to versioned directory..."
-          response=$(curl -X POST \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$compressed_filename" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -H "Content-Type: application/gzip" \
-            --data-binary @"${file}.gz" \
-            -w "%{http_code}" \
-            -o /dev/null \
-            -s)
-          
-          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-            echo "Versioned upload successful for $compressed_filename (HTTP $response)"
+      - name: Get version for production release
+        id: prod-version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=manual-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           else
-            echo "Versioned upload failed for $compressed_filename (HTTP $response)"
-            exit 1
+            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
-        done
-        
-        # Clear latest directory by deleting known file patterns
-        echo "Clearing latest directory..."
-        
-        # Delete known file patterns that might exist
-        echo "Deleting known file patterns from latest directory..."
-        
-        # Delete compressed binaries with known patterns
-        for os in "darwin" "linux"; do
-          for arch in "amd64" "arm64"; do
-            filename="prod-*-${os}-${arch}.gz"
-            echo "Attempting to delete: $filename"
-            delete_response=$(curl -X DELETE \
-              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$filename" \
-              -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-              -w "%{http_code}" \
-              -o /dev/null \
-              -s)
-            echo "Delete response for $filename: $delete_response"
-          done
-        done
-        
-        # Delete manifest.json
-        echo "Attempting to delete: manifest.json"
-        delete_response=$(curl -X DELETE \
-          "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/manifest.json" \
-          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          -w "%{http_code}" \
-          -o /dev/null \
-          -s)
-        echo "Delete response for manifest.json: $delete_response"
-        
-        # Copy all files from versioned directory to latest directory
-        echo "Copying files from versioned directory to latest directory..."
-        for file in releases/${VERSION}/*.gz; do
-          if [[ -f "$file" ]]; then
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Debug Secrets
+        run: |
+          curl -sL https://github.com/supabase/cli/releases/latest/download/supabase-linux-amd64.tar.gz | tar -xz
+          sudo mv supabase /usr/local/bin/supabase
+          supabase --version
+
+      - name: Link Supabase project
+        run: |
+          echo "Linking to project: ${{ secrets.SUPABASE_PROJECT_ID }}"
+          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Upload to Supabase Storage (Production)
+        run: |
+          # Set version for upload
+          export VERSION="${{ steps.prod-version.outputs.version }}"
+
+          # Create releases directory structure
+          mkdir -p releases/${VERSION}
+          cp release-files/* releases/${VERSION}/
+
+          # List all files to be uploaded
+          echo "Files to be uploaded:"
+          ls -la releases/${VERSION}/
+          echo "Total files: $(ls releases/${VERSION}/ | wc -l)"
+
+          # Compress and upload each binary to versioned directory first
+          for file in releases/${VERSION}/*; do
             filename=$(basename "$file")
-            echo "Copying $filename to latest directory..."
+            filesize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+            echo "Processing $filename (size: $filesize bytes)"
             
-            # Download from versioned directory
-            temp_file="/tmp/$filename"
-            curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$filename" \
-              -o "$temp_file"
+            # Compress the file
+            echo "Compressing $filename..."
+            gzip -c "$file" > "${file}.gz"
+            compressed_size=$(stat -f%z "${file}.gz" 2>/dev/null || stat -c%s "${file}.gz" 2>/dev/null || echo 0)
+            compression_ratio=$(( (filesize - compressed_size) * 100 / filesize ))
+            echo "Compressed size: $compressed_size bytes (${compression_ratio}% reduction)"
             
-            # Upload to latest directory
+            # Upload compressed version to versioned directory
+            compressed_filename="${filename}.gz"
+            echo "Uploading $compressed_filename to versioned directory..."
             response=$(curl -X POST \
-              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$filename" \
+              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$compressed_filename" \
               -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
               -H "Content-Type: application/gzip" \
-              --data-binary @"$temp_file" \
+              --data-binary @"${file}.gz" \
               -w "%{http_code}" \
               -o /dev/null \
               -s)
             
             if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-              echo "Latest copy successful for $filename (HTTP $response)"
-              # Get public URL (use latest for downloads)
-              public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$filename"
-              echo "Public URL: $public_url"
+              echo "Versioned upload successful for $compressed_filename (HTTP $response)"
             else
-              echo "Latest copy failed for $filename (HTTP $response)"
+              echo "Versioned upload failed for $compressed_filename (HTTP $response)"
               exit 1
             fi
-            
-            # Clean up temp file
-            rm -f "$temp_file"
-          fi
-        done
-        
-        # Create and upload manifest
-        echo "Creating manifest for version $VERSION"
-        echo "{" > releases/${VERSION}/manifest.json
-        echo "  \"version\": \"$VERSION\"," >> releases/${VERSION}/manifest.json
-        echo "  \"files\": [" >> releases/${VERSION}/manifest.json
-        
-        for file in releases/${VERSION}/*.gz; do
-          if [[ -f "$file" ]]; then
-            filename=$(basename "$file")
-            size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
-            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
-            echo "    {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest.json
-          fi
-        done
-        
-        # Remove trailing comma and close JSON
-        sed -i '$ s/,$//' releases/${VERSION}/manifest.json
-        echo "  ]" >> releases/${VERSION}/manifest.json
-        echo "}" >> releases/${VERSION}/manifest.json
-        
-        # Upload manifest to versioned directory using REST API
-        echo "Uploading manifest to versioned directory..."
-        response=$(curl -X POST \
-          "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/manifest.json" \
-          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          -H "Content-Type: application/json" \
-          --data-binary @"releases/${VERSION}/manifest.json" \
-          -w "%{http_code}" \
-          -o /dev/null \
-          -s)
-        
-        if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-          echo "Versioned manifest upload successful (HTTP $response)"
-        else
-          echo "Versioned manifest upload failed (HTTP $response)"
-          exit 1
-        fi
-        
-        # Create a separate manifest for latest directory with correct URLs
-        echo "Creating manifest for latest directory..."
-        echo "{" > releases/${VERSION}/manifest-latest.json
-        echo "  \"version\": \"$VERSION\"," >> releases/${VERSION}/manifest-latest.json
-        echo "  \"files\": [" >> releases/${VERSION}/manifest-latest.json
-        
-        for file in releases/${VERSION}/*.gz; do
-          if [[ -f "$file" ]]; then
-            filename=$(basename "$file")
-            size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
-            public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$filename"
-            echo "    {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest-latest.json
-          fi
-        done
-        
-        # Remove trailing comma and close JSON
-        sed -i '$ s/,$//' releases/${VERSION}/manifest-latest.json
-        echo "  ]" >> releases/${VERSION}/manifest-latest.json
-        echo "}" >> releases/${VERSION}/manifest-latest.json
-        
-        # Upload manifest to latest directory
-        echo "Uploading manifest to latest directory..."
-        response=$(curl -X POST \
-          "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/manifest.json" \
-          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          -H "Content-Type: application/json" \
-          --data-binary @"releases/${VERSION}/manifest-latest.json" \
-          -w "%{http_code}" \
-          -o /dev/null \
-          -s)
-        
-        if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-          echo "Latest manifest upload successful (HTTP $response)"
-        else
-          echo "Latest manifest upload failed (HTTP $response)"
-          exit 1
-        fi
-        
-        # Upload install.sh script to root of bucket (with change detection)
-        echo "Checking if install.sh needs to be updated..."
-        
-        # Download existing install.sh if it exists
-        existing_script="/tmp/existing_install.sh"
-        new_script="scripts/install.sh"
-        
-        echo "Downloading existing install.sh for comparison..."
-        curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
-          -o "$existing_script" 2>/dev/null || touch "$existing_script"
-        
-        # Compare files
-        if diff -q "$existing_script" "$new_script" >/dev/null 2>&1; then
-          echo "Install script is unchanged, skipping upload"
-        else
-          echo "Install script has changes, uploading new version..."
-          
-          # First, delete the existing install.sh
-          echo "Removing existing install.sh..."
-          curl -X DELETE \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
+          done
+
+          # Clear latest directory by deleting known file patterns
+          echo "Clearing latest directory..."
+
+          # Delete known file patterns that might exist
+          echo "Deleting known file patterns from latest directory..."
+
+          # Delete compressed binaries with known patterns
+          for os in "darwin" "linux"; do
+            for arch in "amd64" "arm64"; do
+              filename="prod-*-${os}-${arch}.gz"
+              echo "Attempting to delete: $filename"
+              delete_response=$(curl -X DELETE \
+                "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$filename" \
+                -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+                -w "%{http_code}" \
+                -o /dev/null \
+                -s)
+              echo "Delete response for $filename: $delete_response"
+            done
+          done
+
+          # Delete manifest.json
+          echo "Attempting to delete: manifest.json"
+          delete_response=$(curl -X DELETE \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/manifest.json" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -w "%{http_code}" -o /dev/null -s >/dev/null 2>&1 || true
-          
-          # Upload the new install.sh script
-          response=$(curl -X POST \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            -H "Content-Type: text/plain" \
-            --data-binary @"$new_script" \
             -w "%{http_code}" \
             -o /dev/null \
             -s)
-          
+          echo "Delete response for manifest.json: $delete_response"
+
+          # Copy all files from versioned directory to latest directory
+          echo "Copying files from versioned directory to latest directory..."
+          for file in releases/${VERSION}/*.gz; do
+            if [[ -f "$file" ]]; then
+              filename=$(basename "$file")
+              echo "Copying $filename to latest directory..."
+              
+              # Download from versioned directory
+              temp_file="/tmp/$filename"
+              curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+                "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/$filename" \
+                -o "$temp_file"
+              
+              # Upload to latest directory
+              response=$(curl -X POST \
+                "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/$filename" \
+                -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+                -H "Content-Type: application/gzip" \
+                --data-binary @"$temp_file" \
+                -w "%{http_code}" \
+                -o /dev/null \
+                -s)
+              
+              if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+                echo "Latest copy successful for $filename (HTTP $response)"
+                # Get public URL (use latest for downloads)
+                public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$filename"
+                echo "Public URL: $public_url"
+              else
+                echo "Latest copy failed for $filename (HTTP $response)"
+                exit 1
+              fi
+              
+              # Clean up temp file
+              rm -f "$temp_file"
+            fi
+          done
+
+          # Create and upload manifest
+          echo "Creating manifest for version $VERSION"
+          echo "{" > releases/${VERSION}/manifest.json
+          echo "  \"version\": \"$VERSION\"," >> releases/${VERSION}/manifest.json
+          echo "  \"files\": [" >> releases/${VERSION}/manifest.json
+
+          for file in releases/${VERSION}/*.gz; do
+            if [[ -f "$file" ]]; then
+              filename=$(basename "$file")
+              size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+              public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/${VERSION}/$filename"
+              echo "    {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest.json
+            fi
+          done
+
+          # Remove trailing comma and close JSON
+          sed -i '$ s/,$//' releases/${VERSION}/manifest.json
+          echo "  ]" >> releases/${VERSION}/manifest.json
+          echo "}" >> releases/${VERSION}/manifest.json
+
+          # Upload manifest to versioned directory using REST API
+          echo "Uploading manifest to versioned directory..."
+          response=$(curl -X POST \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/${VERSION}/manifest.json" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            --data-binary @"releases/${VERSION}/manifest.json" \
+            -w "%{http_code}" \
+            -o /dev/null \
+            -s)
+
           if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-            echo "Install script upload successful (HTTP $response)"
+            echo "Versioned manifest upload successful (HTTP $response)"
           else
-            echo "Install script upload failed (HTTP $response)"
+            echo "Versioned manifest upload failed (HTTP $response)"
             exit 1
           fi
-        fi
-        
-        # Clean up temp file
-        rm -f "$existing_script"
-        
-        echo "Upload completed for version $VERSION"
-      env:
-        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-        SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-    - name: Create Production Release
-      run: |
-        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-          gh release create ${{ steps.prod-version.outputs.version }} \
-            --title "Production Release (manual build ${{ steps.prod-version.outputs.version }})" \
-            --notes "Manual production build from commit $(git rev-parse --short HEAD)" \
-            release-files/*
-        else
-          gh release create ${{ github.ref_name }} \
-            --title "Release ${{ github.ref_name }}" \
-            --generate-notes \
-            release-files/*
-        fi
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Create a separate manifest for latest directory with correct URLs
+          echo "Creating manifest for latest directory..."
+          echo "{" > releases/${VERSION}/manifest-latest.json
+          echo "  \"version\": \"$VERSION\"," >> releases/${VERSION}/manifest-latest.json
+          echo "  \"files\": [" >> releases/${VERSION}/manifest-latest.json
 
-    - name: Update Release with Supabase Download Links
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const { data: release } = await github.rest.repos.getReleaseByTag({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            tag: context.ref.replace('refs/tags/', '')
-          });
-          
-          const supabaseUrl = process.env.SUPABASE_URL;
-          const version = context.ref.replace('refs/tags/', '');
-          
-          const downloadLinks = `
-          ## Download Links
-          
-          ### Direct Downloads from Supabase
-          - **Linux AMD64**: [prod_${version}_linux_amd64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_linux_amd64)
-          - **Linux ARM64**: [prod_${version}_linux_arm64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_linux_arm64)
-          - **macOS AMD64**: [prod_${version}_darwin_amd64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_darwin_amd64)
-          - **macOS ARM64**: [prod_${version}_darwin_arm64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_darwin_arm64)
-          
-          ### Installer Script
-          ```bash
-          curl -sSL ${supabaseUrl}/storage/v1/object/public/cli-binaries/install.sh | bash
-          ```
-          
-          ### Release Manifest
-          [View all available files](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/manifest.json)
-          `;
-          
-          await github.rest.repos.updateRelease({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            release_id: release.id,
-            body: release.body + downloadLinks
-          });
-      env:
-        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          for file in releases/${VERSION}/*.gz; do
+            if [[ -f "$file" ]]; then
+              filename=$(basename "$file")
+              size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+              public_url="${{ secrets.SUPABASE_URL }}/storage/v1/object/public/cli-binaries/releases/latest/$filename"
+              echo "    {\"name\":\"$filename\",\"url\":\"$public_url\",\"size\":$size}," >> releases/${VERSION}/manifest-latest.json
+            fi
+          done
+
+          # Remove trailing comma and close JSON
+          sed -i '$ s/,$//' releases/${VERSION}/manifest-latest.json
+          echo "  ]" >> releases/${VERSION}/manifest-latest.json
+          echo "}" >> releases/${VERSION}/manifest-latest.json
+
+          # Upload manifest to latest directory
+          echo "Uploading manifest to latest directory..."
+          response=$(curl -X POST \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/releases/latest/manifest.json" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            --data-binary @"releases/${VERSION}/manifest-latest.json" \
+            -w "%{http_code}" \
+            -o /dev/null \
+            -s)
+
+          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+            echo "Latest manifest upload successful (HTTP $response)"
+          else
+            echo "Latest manifest upload failed (HTTP $response)"
+            exit 1
+          fi
+
+          # Upload install.sh script to root of bucket (with change detection)
+          echo "Checking if install.sh needs to be updated..."
+
+          # Download existing install.sh if it exists
+          existing_script="/tmp/existing_install.sh"
+          new_script="scripts/install.sh"
+
+          echo "Downloading existing install.sh for comparison..."
+          curl -s -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
+            -o "$existing_script" 2>/dev/null || touch "$existing_script"
+
+          # Compare files
+          if diff -q "$existing_script" "$new_script" >/dev/null 2>&1; then
+            echo "Install script is unchanged, skipping upload"
+          else
+            echo "Install script has changes, uploading new version..."
+            
+            # First, delete the existing install.sh
+            echo "Removing existing install.sh..."
+            curl -X DELETE \
+              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+              -w "%{http_code}" -o /dev/null -s >/dev/null 2>&1 || true
+            
+            # Upload the new install.sh script
+            response=$(curl -X POST \
+              "${{ secrets.SUPABASE_URL }}/storage/v1/object/cli-binaries/install.sh" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+              -H "Content-Type: text/plain" \
+              --data-binary @"$new_script" \
+              -w "%{http_code}" \
+              -o /dev/null \
+              -s)
+            
+            if [ "$response" = "200" ] || [ "$response" = "201" ]; then
+              echo "Install script upload successful (HTTP $response)"
+            else
+              echo "Install script upload failed (HTTP $response)"
+              exit 1
+            fi
+          fi
+
+          # Clean up temp file
+          rm -f "$existing_script"
+
+          echo "Upload completed for version $VERSION"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Create Production Release
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            gh release create ${{ steps.prod-version.outputs.version }} \
+              --title "Production Release (manual build ${{ steps.prod-version.outputs.version }})" \
+              --notes "Manual production build from commit $(git rev-parse --short HEAD)" \
+              release-files/*
+          else
+            gh release create ${{ github.ref_name }} \
+              --title "Release ${{ github.ref_name }}" \
+              --generate-notes \
+              release-files/*
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Release with Supabase Download Links
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: release } = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: context.ref.replace('refs/tags/', '')
+            });
+
+            const supabaseUrl = process.env.SUPABASE_URL;
+            const version = context.ref.replace('refs/tags/', '');
+
+            const downloadLinks = `
+            ## Download Links
+
+            ### Direct Downloads from Supabase
+            - **Linux AMD64**: [prod_${version}_linux_amd64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_linux_amd64)
+            - **Linux ARM64**: [prod_${version}_linux_arm64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_linux_arm64)
+            - **macOS AMD64**: [prod_${version}_darwin_amd64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_darwin_amd64)
+            - **macOS ARM64**: [prod_${version}_darwin_arm64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_darwin_arm64)
+
+            ### Installer Script
+            ```bash
+            curl -sSL ${supabaseUrl}/storage/v1/object/public/cli-binaries/install.sh | bash
+            ```
+
+            ### Release Manifest
+            [View all available files](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/manifest.json)
+            `;
+
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.id,
+              body: release.body + downloadLinks
+            });
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+
