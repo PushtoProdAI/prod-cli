@@ -158,19 +158,17 @@ func (m *Model) selectAll() {
 
 	m.selection = SelectionState{
 		Active:     true,
-		StartLine:  0,
-		StartCol:   0,
-		EndLine:    len(m.content) - 1,
-		EndCol:     0, // Will be set to end of last line
+		StartY:     0,
+		StartX:     0,
+		EndY:       len(m.content) - 1,
+		EndX:       0,
 		LastAction: "Select All",
 	}
 
-	// Set end column to the end of the last line
 	if len(m.content) > 0 {
 		lastLine := m.content[len(m.content)-1]
-		// Remove ANSI codes to get actual text length
 		cleanLine := stripANSI(lastLine)
-		m.selection.EndCol = len(cleanLine)
+		m.selection.EndX = len(cleanLine)
 	}
 
 	m.updateSelectionContent()
@@ -182,10 +180,9 @@ func (m Model) isLineInSelection(lineIndex int) bool {
 		return false
 	}
 
-	startLine := m.selection.StartLine
-	endLine := m.selection.EndLine
+	startLine := m.selection.StartY
+	endLine := m.selection.EndY
 
-	// Ensure start <= end
 	if startLine > endLine {
 		startLine, endLine = endLine, startLine
 	}
@@ -199,31 +196,27 @@ func (m Model) isCharInSelection(lineIndex, charIndex int) bool {
 		return false
 	}
 
-	startLine, startCol := m.selection.StartLine, m.selection.StartCol
-	endLine, endCol := m.selection.EndLine, m.selection.EndCol
+	startLine, startCol := m.selection.StartY, m.selection.StartX
+	endLine, endCol := m.selection.EndY, m.selection.EndX
 
-	// Normalize selection bounds (ensure start <= end)
 	if startLine > endLine || (startLine == endLine && startCol > endCol) {
 		startLine, startCol, endLine, endCol = endLine, endCol, startLine, startCol
 	}
 
-	// Check if line is in range
 	if lineIndex < startLine || lineIndex > endLine {
 		return false
 	}
 
-	// For single line selection
 	if startLine == endLine {
 		return lineIndex == startLine && charIndex >= startCol && charIndex < endCol
 	}
 
-	// For multi-line selection
 	if lineIndex == startLine {
 		return charIndex >= startCol
 	} else if lineIndex == endLine {
 		return charIndex < endCol
 	} else {
-		return true // Middle lines are fully selected
+		return true
 	}
 }
 
@@ -234,51 +227,35 @@ func (m *Model) updateSelectionContent() {
 		return
 	}
 
-	// Get the actual viewport content that the user sees and selects from
-	viewportContent := m.viewport.GetContent()
-	if viewportContent == "" {
+	if len(m.content) == 0 {
 		m.selection.Content = []string{}
 		return
 	}
 
-	// Split into lines, removing empty trailing lines
-	availableLines := strings.Split(viewportContent, "\n")
-	for len(availableLines) > 0 && availableLines[len(availableLines)-1] == "" {
-		availableLines = availableLines[:len(availableLines)-1]
-	}
+	startLine, startCol := m.selection.StartY, m.selection.StartX
+	endLine, endCol := m.selection.EndY, m.selection.EndX
 
-	if len(availableLines) == 0 {
-		m.selection.Content = []string{}
-		return
-	}
-
-	startLine, startCol := m.selection.StartLine, m.selection.StartCol
-	endLine, endCol := m.selection.EndLine, m.selection.EndCol
-
-	// Normalize selection bounds
 	if startLine > endLine || (startLine == endLine && startCol > endCol) {
 		startLine, startCol, endLine, endCol = endLine, endCol, startLine, startCol
 	}
 
-	// Ensure bounds are within the actual visible content
 	if startLine < 0 {
 		startLine = 0
 	}
-	if endLine >= len(availableLines) {
-		endLine = len(availableLines) - 1
+	if endLine >= len(m.content) {
+		endLine = len(m.content) - 1
 	}
-	if startLine >= len(availableLines) {
+	if startLine >= len(m.content) {
 		m.selection.Content = []string{}
 		return
 	}
 
 	var selectedLines []string
 
-	for i := startLine; i <= endLine && i < len(availableLines); i++ {
-		line := cleanForClipboard(availableLines[i]) // Clean for clipboard
+	for i := startLine; i <= endLine && i < len(m.content); i++ {
+		line := cleanForClipboard(m.content[i])
 
 		if startLine == endLine {
-			// Single line selection
 			if startCol < len(line) && startCol >= 0 {
 				endColClamped := endCol
 				if endColClamped > len(line) {
@@ -289,14 +266,12 @@ func (m *Model) updateSelectionContent() {
 				}
 			}
 		} else if i == startLine {
-			// First line of multi-line selection
 			if startCol < len(line) && startCol >= 0 {
 				selectedLines = append(selectedLines, line[startCol:])
 			} else if startCol <= 0 {
 				selectedLines = append(selectedLines, line)
 			}
 		} else if i == endLine {
-			// Last line of multi-line selection
 			endColClamped := endCol
 			if endColClamped > len(line) {
 				endColClamped = len(line)
@@ -305,42 +280,11 @@ func (m *Model) updateSelectionContent() {
 				selectedLines = append(selectedLines, line[:endColClamped])
 			}
 		} else {
-			// Middle lines - select entire line
 			selectedLines = append(selectedLines, line)
 		}
 	}
 
 	m.selection.Content = selectedLines
-}
-
-// viewportLineFromY converts a Y coordinate to a line index relative to viewport content
-func (m Model) viewportLineFromY(y int) int {
-	// Account for viewport padding and borders when mapping Y to line
-	lineInViewport := y - 2 // Account for border/padding
-	if lineInViewport < 0 {
-		lineInViewport = 0
-	}
-
-	// Get the actual viewport content to determine line count
-	viewportContent := m.viewport.GetContent()
-	if viewportContent == "" {
-		return 0
-	}
-
-	availableLines := strings.Split(viewportContent, "\n")
-	// Remove empty trailing lines
-	for len(availableLines) > 0 && availableLines[len(availableLines)-1] == "" {
-		availableLines = availableLines[:len(availableLines)-1]
-	}
-
-	if lineInViewport >= len(availableLines) {
-		lineInViewport = len(availableLines) - 1
-	}
-	if lineInViewport < 0 {
-		lineInViewport = 0
-	}
-
-	return lineInViewport
 }
 
 // stripANSI removes ANSI escape codes from text for accurate length calculation
@@ -440,46 +384,6 @@ func cleanForClipboard(text string) string {
 				// Keep other Unicode characters as-is (like emojis)
 				result.WriteRune(char)
 			}
-		} else {
-			result.WriteRune(char)
-		}
-	}
-
-	return result.String()
-}
-
-// renderContentWithSelection renders content with visual selection highlighting
-func (m Model) renderContentWithSelection(content []string) []string {
-	if !m.selection.Active {
-		return content
-	}
-
-	result := make([]string, len(content))
-
-	for i, line := range content {
-		if m.isLineInSelection(i) {
-			// For lines in selection, we need character-level highlighting
-			result[i] = m.renderLineWithSelection(line, i)
-		} else {
-			result[i] = line
-		}
-	}
-
-	return result
-}
-
-// renderLineWithSelection renders a single line with character-level selection highlighting
-func (m Model) renderLineWithSelection(line string, lineIndex int) string {
-	if !m.isLineInSelection(lineIndex) {
-		return line
-	}
-
-	cleanLine := stripANSI(line)
-	var result strings.Builder
-
-	for i, char := range cleanLine {
-		if m.isCharInSelection(lineIndex, i) {
-			result.WriteString(selectionStyle.Render(string(char)))
 		} else {
 			result.WriteRune(char)
 		}

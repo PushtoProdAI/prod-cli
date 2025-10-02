@@ -13,7 +13,6 @@ import (
 	"github.com/meroxa/prod/cli/internal/agent"
 )
 
-// UIMode represents the current mode of the TUI
 type UIMode int
 
 const (
@@ -25,24 +24,22 @@ const (
 	ModeText
 )
 
-// Constants for UI layout and history
 const (
 	maxHistoryLength = 500
-	viewportPadding  = 4
-	inputPadding     = 8
 	promptHeight     = 5
 	statusBarHeight  = 1
 )
 
-// SelectionState manages text selection in the viewport
 type SelectionState struct {
-	Active     bool     // Whether selection is currently active
-	StartLine  int      // Starting line (0-based relative to viewport content)
-	StartCol   int      // Starting column (0-based)
-	EndLine    int      // Ending line (0-based relative to viewport content)
-	EndCol     int      // Ending column (0-based)
-	Content    []string // Currently selected text lines
-	LastAction string   // Last selection action (for UI feedback)
+	Active        bool
+	StartX        int
+	StartY        int
+	EndX          int
+	EndY          int
+	Content       []string
+	LastAction    string
+	DragStartLine int
+	DragStartCol  int
 }
 
 type Model struct {
@@ -63,25 +60,22 @@ type Model struct {
 	textPrompt          *TextPrompt
 	width               int
 	height              int
-	content             []string // Store raw content lines
+	content             []string
 	spinner             spinner.Model
 	spinnerActive       bool
 	spinnerMessage      string
-	currentDir          string // Current working directory
+	currentDir          string
+	lastContentLen      int
+	autoScrollEnabled   bool
 
-	// Text selection state
 	selection    SelectionState
 	mousePressed bool
-	lastMouseX   int
-	lastMouseY   int
 }
 
-// setMode changes the current UI mode
 func (m *Model) setMode(mode UIMode) {
 	m.currentMode = mode
 }
 
-// isMode checks if the current mode matches the given mode
 func (m Model) isMode(mode UIMode) bool {
 	return m.currentMode == mode
 }
@@ -90,61 +84,57 @@ func NewModel(agent *agent.Agent) Model {
 	vp := viewport.New()
 	vp.MouseWheelEnabled = true
 	vp.MouseWheelDelta = 3
-	vp.SoftWrap = true // Ensure soft wrapping is enabled
+	vp.SoftWrap = false
 
-	// Set initial reasonable dimensions
 	vp.SetWidth(80)
 	vp.SetHeight(20)
 
-	// Apply the original beautiful styling directly to the viewport
 	vp.Style = outputViewStyle
 
-	// Get current working directory
 	currentDir, err := os.Getwd()
 	if err != nil {
 		currentDir = "unknown"
 	}
 
-	// Initialize content with banner and greeting
 	banner := getBanner()
 	greeting := greetUser()
 
-	initialContent := []string{
-		headerStyle.Render(banner),
-		"",
-		logStyle.Render(greeting),
-		"",
-		logStyle.Render("Type 'exit' or press Ctrl+C to quit."),
-		"",
-	}
+	// Split banner into individual lines (it contains embedded newlines)
+	var initialContent []string
+	bannerLines := strings.Split(headerStyle.Render(banner), "\n")
+	initialContent = append(initialContent, bannerLines...)
+	initialContent = append(initialContent, "")
+	initialContent = append(initialContent, logStyle.Render(greeting))
+	initialContent = append(initialContent, "")
+	initialContent = append(initialContent, logStyle.Render("Type 'exit' or press Ctrl+C to quit."))
+	initialContent = append(initialContent, "")
 
 	vp.SetContentLines(initialContent)
 
-	// Initialize text input
 	ti := textinput.New()
-	ti.Prompt = ""           // Remove default prompt
-	ti.CharLimit = 0         // No character limit
-	ti.VirtualCursor = false // Use real cursor for proper rendering
+	ti.Prompt = ""
+	ti.CharLimit = 0
+	ti.VirtualCursor = false
 	ti.Focus()
 
-	// Initialize spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(primaryColor)
 
 	m := Model{
-		agent:         agent,
-		viewport:      vp,
-		textInput:     ti,
-		ready:         false,
-		history:       []string{},
-		historyIndex:  0,
-		historyFile:   "/tmp/.prodcli_app_history",
-		currentMode:   ModeNormal,
-		content:       initialContent,
-		spinner:       s,
-		spinnerActive: false,
-		currentDir:    currentDir,
+		agent:             agent,
+		viewport:          vp,
+		textInput:         ti,
+		ready:             false,
+		history:           []string{},
+		historyIndex:      0,
+		historyFile:       "/tmp/.prodcli_app_history",
+		currentMode:       ModeNormal,
+		content:           initialContent,
+		spinner:           s,
+		spinnerActive:     false,
+		currentDir:        currentDir,
+		autoScrollEnabled: true,
 	}
 	m.loadHistory()
 	return m
@@ -152,7 +142,6 @@ func NewModel(agent *agent.Agent) Model {
 
 func (m *Model) SetProgram(program *tea.Program) {
 	m.program = program
-	// Set up the agent with TeaWriter that implements StatusWriter
 	if m.agent != nil {
 		teaWriter := NewTeaWriter(func(msg tea.Msg) {
 			program.Send(msg)
@@ -171,6 +160,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleWindowResize(msg)
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	case tea.MouseWheelMsg:
+		// IMPORTANT: Set viewport content before processing scroll
+		// The viewport needs content to calculate scroll bounds
+		viewportContent := m.renderViewportContent()
+		m.viewport.SetContent(viewportContent)
+
+		// Now handle the scroll
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		m.autoScrollEnabled = m.viewport.AtBottom()
+
+		return m, cmd
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
 	case UIMessage:
@@ -191,7 +192,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.apiKeyPrompt = &msg
 		m.setMode(ModeAPIKey)
 		m.textInput.SetValue("")
-		// Set password mode for API key input
 		m.textInput.EchoMode = textinput.EchoPassword
 		m.textInput.EchoCharacter = '*'
 		return m, nil
@@ -203,7 +203,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case TextPrompt:
 		m.textPrompt = &msg
 		m.setMode(ModeText)
-		// Pre-fill with default value if provided
 		if msg.DefaultValue != "" {
 			m.textInput.SetValue(msg.DefaultValue)
 			m.textInput.CursorEnd()
@@ -220,17 +219,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinnerMessage = ""
 		return m, nil
 	case ClipboardCopyMsg:
-		// Handle clipboard copy results
 		if msg.Success {
 			m.selection.LastAction = "Copied to clipboard"
-			// Optionally clear selection after copy
-			// m.clearSelection()
 		} else {
 			m.selection.LastAction = "Copy failed: " + msg.Error
 		}
 		return m, nil
 	case tea.PasteMsg:
-		// Handle paste events - forward to textinput if not in select mode
 		if !m.isMode(ModeSelect) {
 			var cmd tea.Cmd
 			m.textInput, cmd = m.textInput.Update(msg)
@@ -245,10 +240,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
-		// Update viewport for any unhandled messages (like mouse events)
-		var cmd tea.Cmd
-		m.viewport, cmd = m.viewport.Update(msg)
-		return m, cmd
+		// Don't pass mouse events to viewport here - they're handled above
+		// This prevents double-handling of MouseWheelMsg
+		return m, nil
 	}
 }
 
@@ -265,34 +259,31 @@ func (m Model) View() (string, *tea.Cursor) {
 			Render("Goodbye! 👋"), nil
 	}
 
-	// Get viewport content with selection highlighting
-	viewportContent := m.viewport.GetContent()
-	contentLines := strings.Split(viewportContent, "\n")
+	viewportContent := m.renderViewportContent()
 
-	// Apply selection highlighting if active
-	if m.selection.Active {
-		contentLines = m.renderContentWithSelection(contentLines)
-		// Update viewport with highlighted content
-		m.viewport.SetContentLines(contentLines)
+	contentChanged := len(m.content) != m.lastContentLen
+	m.lastContentLen = len(m.content)
+
+	m.viewport.SetContent(viewportContent)
+
+	if contentChanged && m.autoScrollEnabled {
+		m.viewport.GotoBottom()
 	}
 
 	outputView := m.viewport.View()
 
-	// Prompt view (bottom panel) - restored original styling
 	var promptText string
 	var promptPrefix string
 
 	if m.isMode(ModeConfirmation) && m.confirmationPrompt != nil {
 		promptPrefix = confirmationPromptStyle.Render(m.confirmationPrompt.Message + " (y/n)")
 	} else if m.isMode(ModeAuthSelection) && m.authSelectionPrompt != nil {
-		// Show simple selection prompt (options are shown in output area)
 		promptPrefix = confirmationPromptStyle.Render(m.authSelectionPrompt.Message)
 	} else if m.isMode(ModeAPIKey) && m.apiKeyPrompt != nil {
 		promptPrefix = confirmationPromptStyle.Render(m.apiKeyPrompt.Message)
 	} else if m.isMode(ModeText) && m.textPrompt != nil {
 		promptPrefix = confirmationPromptStyle.Render(m.textPrompt.Message)
 	} else if m.isMode(ModeSelect) && m.selectPrompt != nil {
-		// Render select options in the prompt area
 		selectText := m.selectPrompt.Message + "\n"
 		for i, option := range m.selectPrompt.Options {
 			if i == m.selectPrompt.Cursor {
@@ -307,17 +298,11 @@ func (m Model) View() (string, *tea.Cursor) {
 		promptPrefix = promptStyle.Render("❯")
 	}
 
-	// Build input with cursor (mask API key input, hide input in select mode)
 	var inputWithCursor string
 	if m.isMode(ModeSelect) {
-		// In select mode, don't show input field
 		inputWithCursor = ""
 	} else {
-		// Always use the textinput component's view for proper cursor handling
 		inputWithCursor = m.textInput.View()
-
-		// For API key mode, we need to set up the textinput to show masked characters
-		// This should be handled in the textinput configuration, not in rendering
 	}
 
 	promptText = promptPrefix + " " + inputWithCursor
@@ -326,13 +311,11 @@ func (m Model) View() (string, *tea.Cursor) {
 		Width(m.width - 4).
 		Render(promptText)
 
-	// Status bar view
 	statusBarContent := m.formatCurrentDir()
 	statusBarView := statusBarStyle.
 		Width(m.width).
 		Render(statusBarContent)
 
-	// Add scroll indicators if content is scrollable - restored original beautiful version
 	var scrollIndicator string
 	totalLines := m.viewport.TotalLineCount()
 	viewportHeight := m.viewport.Height()
@@ -345,13 +328,10 @@ func (m Model) View() (string, *tea.Cursor) {
 			scrollPercent = 100
 		}
 
-		// Show current line position and total lines
 		currentLine := m.viewport.YOffset + 1
 
-		// Create scroll info text with selection status
 		var scrollText string
 		if m.selection.Active && len(m.selection.Content) > 0 {
-			// Show selection info when text is selected
 			selectionInfo := fmt.Sprintf("Selected: %d lines", len(m.selection.Content))
 			if m.selection.LastAction != "" {
 				selectionInfo += " • " + m.selection.LastAction
@@ -362,7 +342,6 @@ func (m Model) View() (string, *tea.Cursor) {
 				" • Ctrl+C to copy • Esc to clear • ",
 				lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("Line %d/%d", currentLine, totalLines)))
 		} else {
-			// Original scroll text when no selection
 			scrollText = lipgloss.JoinHorizontal(lipgloss.Left,
 				"🖱️ Mouse wheel • PgUp/PgDown • Ctrl+U/D • Home/End • Shift+↑/↓ • Ctrl+A • ",
 				lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("Line %d/%d", currentLine, totalLines)),
@@ -376,10 +355,8 @@ func (m Model) View() (string, *tea.Cursor) {
 			Width(m.width - 6).
 			Render(scrollText)
 
-		// Restored original sophisticated layout with proper view management
 		views := []string{outputView, scrollIndicator}
 
-		// Add spinner view if active
 		if m.spinnerActive {
 			spinnerText := m.spinner.View() + " " + m.spinnerMessage
 			spinnerView := lipgloss.NewStyle().
@@ -391,42 +368,31 @@ func (m Model) View() (string, *tea.Cursor) {
 
 		views = append(views, promptView, statusBarView)
 
-		// Get cursor from textinput if focused and not in select mode
 		var cursor *tea.Cursor
 		if m.textInput.Focused() && !m.isMode(ModeSelect) {
 			cursor = m.textInput.Cursor()
 			if cursor != nil {
-				// Calculate cursor position offset based on layout
-				// Account for: output view + scroll indicator + spinner (if active) + prompt prefix
 				yOffset := 0
 
-				// Add output view height (this includes viewport + borders/padding)
-				yOffset += m.viewport.Height() + 4 // viewport + border + padding
+				yOffset += m.viewport.Height() + 4
 
-				// Add scroll indicator line
 				yOffset += 1
 
-				// Add spinner height if active
 				if m.spinnerActive {
 					yOffset += 1
 				}
 
-				// Add padding for prompt area (prompt has padding internally)
 				yOffset += 1
 
-				// X offset includes prompt prefix and padding
 				promptPrefixLen := 0
 				if m.isMode(ModeNormal) {
-					promptPrefixLen = 2 // "❯ " length
+					promptPrefixLen = 2
 				} else {
-					// For other modes, we'd calculate based on the actual prompt text
-					// For now, assume similar length
 					promptPrefixLen = 2
 				}
 
-				xOffset := promptPrefixLen + 2 // prompt prefix + padding from promptViewStyle
+				xOffset := promptPrefixLen + 2
 
-				// Apply the offset
 				cursor.Position.Y += yOffset
 				cursor.Position.X += xOffset
 			}
@@ -435,7 +401,6 @@ func (m Model) View() (string, *tea.Cursor) {
 		return lipgloss.JoinVertical(lipgloss.Left, views...), cursor
 	}
 
-	// Layout without scroll indicator but with original styling
 	views := []string{outputView}
 
 	if m.spinnerActive {
@@ -449,43 +414,91 @@ func (m Model) View() (string, *tea.Cursor) {
 
 	views = append(views, promptView, statusBarView)
 
-	// Get cursor from textinput if focused and not in select mode
 	var cursor *tea.Cursor
 	if m.textInput.Focused() && !m.isMode(ModeSelect) {
 		cursor = m.textInput.Cursor()
 		if cursor != nil {
-			// Calculate cursor position offset based on layout
-			// Account for: output view + spinner (if active) + prompt prefix
 			yOffset := 0
 
-			// Add output view height (this includes viewport + borders/padding)
-			yOffset += m.viewport.Height() + 4 // viewport + border + padding
+			yOffset += m.viewport.Height() + 4
 
-			// Add spinner height if active
 			if m.spinnerActive {
 				yOffset += 1
 			}
 
-			// Add padding for prompt area (prompt has padding internally)
 			yOffset += 1
 
-			// X offset includes prompt prefix and padding
 			promptPrefixLen := 0
 			if m.isMode(ModeNormal) {
-				promptPrefixLen = 2 // "❯ " length
+				promptPrefixLen = 2
 			} else {
-				// For other modes, we'd calculate based on the actual prompt text
-				// For now, assume similar length
 				promptPrefixLen = 2
 			}
 
-			xOffset := promptPrefixLen + 2 // prompt prefix + padding from promptViewStyle
+			xOffset := promptPrefixLen + 2
 
-			// Apply the offset
 			cursor.Position.Y += yOffset
 			cursor.Position.X += xOffset
 		}
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, views...), cursor
+}
+
+func (m Model) renderViewportContent() string {
+	if len(m.content) == 0 {
+		return ""
+	}
+
+	if !m.selection.Active {
+		return strings.Join(m.content, "\n")
+	}
+
+	lines := make([]string, len(m.content))
+	copy(lines, m.content)
+
+	startY, endY := m.selection.StartY, m.selection.EndY
+	startX, endX := m.selection.StartX, m.selection.EndX
+
+	if startY > endY || (startY == endY && startX > endX) {
+		startY, endY = endY, startY
+		startX, endX = endX, startX
+	}
+
+	for i := range lines {
+		if i < startY || i > endY {
+			continue
+		}
+
+		cleanLine := stripANSI(lines[i])
+		if len(cleanLine) == 0 {
+			continue
+		}
+
+		var renderedLine strings.Builder
+		runes := []rune(cleanLine)
+
+		for j := 0; j < len(runes); j++ {
+			isSelected := false
+			if i == startY && i == endY {
+				isSelected = j >= startX && j < endX
+			} else if i == startY {
+				isSelected = j >= startX
+			} else if i == endY {
+				isSelected = j < endX
+			} else {
+				isSelected = true
+			}
+
+			if isSelected {
+				renderedLine.WriteString(selectionStyle.Render(string(runes[j])))
+			} else {
+				renderedLine.WriteRune(runes[j])
+			}
+		}
+
+		lines[i] = renderedLine.String()
+	}
+
+	return strings.Join(lines, "\n")
 }
