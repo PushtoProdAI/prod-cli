@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"fmt"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/textinput"
@@ -16,31 +14,6 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch mouseMsg := msg.(type) {
 	case tea.MouseClickMsg:
 		if mouseMsg.Button == ansi.MouseLeft {
-			// DEBUG: Full viewport state
-			f, _ := os.Create("/tmp/selection_debug.txt")
-			f.WriteString(fmt.Sprintf("=== CLICK DEBUG ===\n"))
-			f.WriteString(fmt.Sprintf("Mouse: X=%d, Y=%d\n", mouseMsg.X, mouseMsg.Y))
-			f.WriteString(fmt.Sprintf("Viewport: YOffset=%d, Height=%d, TotalLines=%d, AtBottom=%v\n",
-				m.viewport.YOffset, m.viewport.Height(), m.viewport.TotalLineCount(), m.viewport.AtBottom()))
-			f.WriteString(fmt.Sprintf("Content array: %d lines\n", len(m.content)))
-			f.WriteString(fmt.Sprintf("AutoScrollEnabled: %v\n", m.autoScrollEnabled))
-			f.WriteString(fmt.Sprintf("LastContentLen: %d\n", m.lastContentLen))
-
-			// Show last 10 lines for context
-			startIdx := 0
-			if len(m.content) > 10 {
-				startIdx = len(m.content) - 10
-			}
-			f.WriteString(fmt.Sprintf("\nLast %d content lines:\n", len(m.content)-startIdx))
-			for i := startIdx; i < len(m.content); i++ {
-				clean := stripANSI(m.content[i])
-				if len(clean) > 50 {
-					clean = clean[:50] + "..."
-				}
-				f.WriteString(fmt.Sprintf("  [%d]: %q\n", i, clean))
-			}
-			f.Close()
-
 			// Account for viewport border (1) + padding top (1)
 			viewportY := mouseMsg.Y - 2
 			if viewportY < 0 {
@@ -71,11 +44,6 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 					col = lineLen
 				}
 			}
-
-			f, _ = os.OpenFile("/tmp/selection_debug.txt", os.O_APPEND|os.O_WRONLY, 0644)
-			f.WriteString(fmt.Sprintf("\nCalculated: viewportY=%d, absoluteLine=%d, col=%d\n",
-				viewportY, absoluteLine, col))
-			f.Close()
 
 			m.selection = SelectionState{
 				Active:        true,
