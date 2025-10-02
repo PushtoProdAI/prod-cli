@@ -20,13 +20,24 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			f, _ := os.Create("/tmp/selection_debug.txt")
 			f.WriteString(fmt.Sprintf("=== CLICK DEBUG ===\n"))
 			f.WriteString(fmt.Sprintf("Mouse: X=%d, Y=%d\n", mouseMsg.X, mouseMsg.Y))
-			f.WriteString(fmt.Sprintf("Viewport: YOffset=%d, Height=%d, TotalLines=%d\n",
-				m.viewport.YOffset, m.viewport.Height(), m.viewport.TotalLineCount()))
+			f.WriteString(fmt.Sprintf("Viewport: YOffset=%d, Height=%d, TotalLines=%d, AtBottom=%v\n",
+				m.viewport.YOffset, m.viewport.Height(), m.viewport.TotalLineCount(), m.viewport.AtBottom()))
 			f.WriteString(fmt.Sprintf("Content array: %d lines\n", len(m.content)))
-			f.WriteString(fmt.Sprintf("Content lines:\n"))
-			for i, line := range m.content {
-				clean := stripANSI(line)
-				f.WriteString(fmt.Sprintf("  [%d]: %q (len=%d)\n", i, clean, len([]rune(clean))))
+			f.WriteString(fmt.Sprintf("AutoScrollEnabled: %v\n", m.autoScrollEnabled))
+			f.WriteString(fmt.Sprintf("LastContentLen: %d\n", m.lastContentLen))
+
+			// Show last 10 lines for context
+			startIdx := 0
+			if len(m.content) > 10 {
+				startIdx = len(m.content) - 10
+			}
+			f.WriteString(fmt.Sprintf("\nLast %d content lines:\n", len(m.content)-startIdx))
+			for i := startIdx; i < len(m.content); i++ {
+				clean := stripANSI(m.content[i])
+				if len(clean) > 50 {
+					clean = clean[:50] + "..."
+				}
+				f.WriteString(fmt.Sprintf("  [%d]: %q\n", i, clean))
 			}
 			f.Close()
 
@@ -338,6 +349,15 @@ func (m Model) handleUIMessage(msg UIMessage) (tea.Model, tea.Cmd) {
 		m.content = m.content[len(m.content)-maxHistoryLength:]
 	}
 
+	// Immediately update viewport content to keep in sync
+	viewportContent := m.renderViewportContent()
+	m.viewport.SetContent(viewportContent)
+
+	// If auto-scroll is enabled, scroll to bottom immediately
+	if m.autoScrollEnabled {
+		m.viewport.GotoBottom()
+	}
+
 	return m, nil
 }
 
@@ -358,6 +378,15 @@ func (m Model) handlePlanDisplayMessage(msg PlanDisplayMessage) (tea.Model, tea.
 
 	if len(m.content) > maxHistoryLength {
 		m.content = m.content[len(m.content)-maxHistoryLength:]
+	}
+
+	// Immediately update viewport content to keep in sync
+	viewportContent := m.renderViewportContent()
+	m.viewport.SetContent(viewportContent)
+
+	// If auto-scroll is enabled, scroll to bottom immediately
+	if m.autoScrollEnabled {
+		m.viewport.GotoBottom()
 	}
 
 	return m, nil
