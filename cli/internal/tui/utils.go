@@ -56,28 +56,42 @@ func greetUser() string {
 
 // formatCurrentDir formats the current directory for display
 func (m Model) formatCurrentDir() string {
+	var dirPart string
+
 	if m.currentDir == "" || m.currentDir == "unknown" {
-		return "📁 unknown"
-	}
-
-	// Get home directory for shortening paths
-	homeDir, err := os.UserHomeDir()
-	if err == nil && strings.HasPrefix(m.currentDir, homeDir) {
-		// Replace home directory with ~
-		shortPath := "~" + strings.TrimPrefix(m.currentDir, homeDir)
-		return fmt.Sprintf("📁 %s", shortPath)
-	}
-
-	// For very long paths, show just the last few components
-	if len(m.currentDir) > 50 {
-		parts := strings.Split(m.currentDir, string(filepath.Separator))
-		if len(parts) > 3 {
-			shortPath := "..." + string(filepath.Separator) + strings.Join(parts[len(parts)-2:], string(filepath.Separator))
-			return fmt.Sprintf("📁 %s", shortPath)
+		dirPart = "📁 unknown"
+	} else {
+		// Get home directory for shortening paths
+		homeDir, err := os.UserHomeDir()
+		if err == nil && strings.HasPrefix(m.currentDir, homeDir) {
+			// Replace home directory with ~
+			shortPath := "~" + strings.TrimPrefix(m.currentDir, homeDir)
+			dirPart = fmt.Sprintf("📁 %s", shortPath)
+		} else if len(m.currentDir) > 50 {
+			// For very long paths, show just the last few components
+			parts := strings.Split(m.currentDir, string(filepath.Separator))
+			if len(parts) > 3 {
+				shortPath := "..." + string(filepath.Separator) + strings.Join(parts[len(parts)-2:], string(filepath.Separator))
+				dirPart = fmt.Sprintf("📁 %s", shortPath)
+			} else {
+				dirPart = fmt.Sprintf("📁 %s", m.currentDir)
+			}
+		} else {
+			dirPart = fmt.Sprintf("📁 %s", m.currentDir)
 		}
 	}
 
-	return fmt.Sprintf("📁 %s", m.currentDir)
+	// Add selection status if active
+	if m.selection.Active && len(m.selection.Content) > 0 {
+		selectionInfo := fmt.Sprintf("📋 Selected: %d lines", len(m.selection.Content))
+		if m.selection.LastAction != "" {
+			selectionInfo += " • " + m.selection.LastAction
+		}
+		selectionInfo += " • Ctrl+C to copy • Esc to clear"
+		return dirPart + " • " + selectionInfo
+	}
+
+	return dirPart
 }
 
 // updateCurrentDir updates the current directory (for future use)
