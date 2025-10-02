@@ -330,24 +330,12 @@ func (m Model) View() (string, *tea.Cursor) {
 
 		currentLine := m.viewport.YOffset + 1
 
-		var scrollText string
-		if m.selection.Active && len(m.selection.Content) > 0 {
-			selectionInfo := fmt.Sprintf("Selected: %d lines", len(m.selection.Content))
-			if m.selection.LastAction != "" {
-				selectionInfo += " • " + m.selection.LastAction
-			}
-			scrollText = lipgloss.JoinHorizontal(lipgloss.Left,
-				selectionIndicatorStyle.Render("📋 "),
-				selectionIndicatorStyle.Render(selectionInfo),
-				" • Ctrl+C to copy • Esc to clear • ",
-				lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("Line %d/%d", currentLine, totalLines)))
-		} else {
-			scrollText = lipgloss.JoinHorizontal(lipgloss.Left,
-				"🖱️ Mouse wheel • PgUp/PgDown • Ctrl+U/D • Home/End • Shift+↑/↓ • Ctrl+A • ",
-				lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("Line %d/%d", currentLine, totalLines)),
-				" • ",
-				lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("%d%%", scrollPercent)))
-		}
+		// Simplified scroll indicator (selection info moved to status bar)
+		scrollText := lipgloss.JoinHorizontal(lipgloss.Left,
+			"🖱️ Mouse wheel • PgUp/PgDown • Ctrl+U/D • Home/End • Shift+↑/↓ • Ctrl+A • ",
+			lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("Line %d/%d", currentLine, totalLines)),
+			" • ",
+			lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("%d%%", scrollPercent)))
 
 		scrollIndicator = lipgloss.NewStyle().
 			Foreground(mutedColor).
