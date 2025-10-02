@@ -154,7 +154,7 @@ func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
 
-	reservedHeight := promptHeight + statusBarHeight + 1 + 4
+	reservedHeight := promptHeight + statusBarHeight
 	outputHeight := m.height - reservedHeight
 	if outputHeight < 10 {
 		outputHeight = 10
