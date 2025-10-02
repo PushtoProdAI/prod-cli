@@ -5,12 +5,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/bubbles/v2/spinner"
+	"github.com/charmbracelet/bubbles/v2/textinput"
+	"github.com/charmbracelet/bubbles/v2/viewport"
+	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/meroxa/prod/cli/internal/agent"
 )
 
@@ -35,6 +34,17 @@ const (
 	statusBarHeight  = 1
 )
 
+// SelectionState manages text selection in the viewport
+type SelectionState struct {
+	Active     bool     // Whether selection is currently active
+	StartLine  int      // Starting line (0-based relative to viewport content)
+	StartCol   int      // Starting column (0-based)
+	EndLine    int      // Ending line (0-based relative to viewport content)
+	EndCol     int      // Ending column (0-based)
+	Content    []string // Currently selected text lines
+	LastAction string   // Last selection action (for UI feedback)
+}
+
 type Model struct {
 	agent               *agent.Agent
 	viewport            viewport.Model
@@ -58,6 +68,12 @@ type Model struct {
 	spinnerActive       bool
 	spinnerMessage      string
 	currentDir          string // Current working directory
+
+	// Text selection state
+	selection    SelectionState
+	mousePressed bool
+	lastMouseX   int
+	lastMouseY   int
 }
 
 // setMode changes the current UI mode
@@ -71,7 +87,17 @@ func (m Model) isMode(mode UIMode) bool {
 }
 
 func NewModel(agent *agent.Agent) Model {
-	vp := viewport.New(120, 20)
+	vp := viewport.New()
+	vp.MouseWheelEnabled = true
+	vp.MouseWheelDelta = 3
+	vp.SoftWrap = true // Ensure soft wrapping is enabled
+
+	// Set initial reasonable dimensions
+	vp.SetWidth(80)
+	vp.SetHeight(20)
+
+	// Apply the original beautiful styling directly to the viewport
+	vp.Style = outputViewStyle
 
 	// Get current working directory
 	currentDir, err := os.Getwd()
@@ -92,20 +118,14 @@ func NewModel(agent *agent.Agent) Model {
 		"",
 	}
 
-	vp.SetContent(strings.Join(initialContent, "\n"))
+	vp.SetContentLines(initialContent)
 
 	// Initialize text input
 	ti := textinput.New()
+	ti.Prompt = ""           // Remove default prompt
+	ti.CharLimit = 0         // No character limit
+	ti.VirtualCursor = false // Use real cursor for proper rendering
 	ti.Focus()
-	ti.CharLimit = 0 // No limit
-	ti.Width = 120
-	ti.Prompt = "" // Remove the default prompt since we'll render our own
-
-	// Style the textinput to match our theme
-	ti.TextStyle = inputStyle
-	ti.Cursor.Style = lipgloss.NewStyle().Foreground(primaryColor).Bold(true)
-	ti.Cursor.TextStyle = lipgloss.NewStyle().Background(primaryColor).Foreground(backgroundColor)
-	ti.Cursor.SetMode(cursor.CursorStatic) // Use a static block cursor
 
 	// Initialize spinner
 	s := spinner.New()
@@ -171,6 +191,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.apiKeyPrompt = &msg
 		m.setMode(ModeAPIKey)
 		m.textInput.SetValue("")
+		// Set password mode for API key input
+		m.textInput.EchoMode = textinput.EchoPassword
+		m.textInput.EchoCharacter = '*'
 		return m, nil
 	case SelectPrompt:
 		m.selectPrompt = &msg
@@ -196,6 +219,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinnerActive = false
 		m.spinnerMessage = ""
 		return m, nil
+	case ClipboardCopyMsg:
+		// Handle clipboard copy results
+		if msg.Success {
+			m.selection.LastAction = "Copied to clipboard"
+			// Optionally clear selection after copy
+			// m.clearSelection()
+		} else {
+			m.selection.LastAction = "Copy failed: " + msg.Error
+		}
+		return m, nil
+	case tea.PasteMsg:
+		// Handle paste events - forward to textinput if not in select mode
+		if !m.isMode(ModeSelect) {
+			var cmd tea.Cmd
+			m.textInput, cmd = m.textInput.Update(msg)
+			return m, cmd
+		}
+		return m, nil
 	default:
 		// Update spinner if active
 		if m.spinnerActive {
@@ -203,72 +244,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
 		}
-		return m, nil
+
+		// Update viewport for any unhandled messages (like mouse events)
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		return m, cmd
 	}
 }
 
-func (m Model) View() string {
+func (m Model) View() (string, *tea.Cursor) {
 	if !m.ready {
 		return lipgloss.NewStyle().
 			Foreground(textColor).
-			Background(backgroundColor).
-			Padding(1).
-			Render("Loading...")
+			Render("Loading..."), nil
 	}
 
 	if m.quitting {
 		return lipgloss.NewStyle().
 			Foreground(successColor).
-			Background(backgroundColor).
-			Padding(1).
-			Render("Goodbye! 👋")
+			Render("Goodbye! 👋"), nil
 	}
 
-	// Output view (top panel) with scroll indicators
-	viewportContent := m.viewport.View()
+	// Get viewport content with selection highlighting
+	viewportContent := m.viewport.GetContent()
+	contentLines := strings.Split(viewportContent, "\n")
 
-	// Add scroll indicators if content is scrollable
-	scrollInfo := ""
-	extraHeight := 0
-	if m.viewport.TotalLineCount() > m.viewport.Height {
-		scrollPercent := int((float64(m.viewport.YOffset) / float64(m.viewport.TotalLineCount()-m.viewport.Height)) * 100)
-		if scrollPercent < 0 {
-			scrollPercent = 0
-		}
-		if scrollPercent > 100 {
-			scrollPercent = 100
-		}
-
-		// Show current line position and total lines
-		currentLine := m.viewport.YOffset + 1
-		totalLines := m.viewport.TotalLineCount()
-
-		// Create scroll info text with more detail
-		scrollText := lipgloss.JoinHorizontal(lipgloss.Left,
-			"🖱️ Mouse wheel • PgUp/PgDown • Ctrl+U/D • Home/End • Shift+↑/↓ • ",
-			lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("Line %d/%d", currentLine, totalLines)),
-			" • ",
-			lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("%d%%", scrollPercent)))
-
-		scrollInfo = lipgloss.NewStyle().
-			Foreground(mutedColor).
-			Align(lipgloss.Right).
-			Width(m.width - 6).
-			Render(scrollText)
-		extraHeight = 1
+	// Apply selection highlighting if active
+	if m.selection.Active {
+		contentLines = m.renderContentWithSelection(contentLines)
+		// Update viewport with highlighted content
+		m.viewport.SetContentLines(contentLines)
 	}
 
-	outputContent := viewportContent
-	if scrollInfo != "" {
-		outputContent = lipgloss.JoinVertical(lipgloss.Left, viewportContent, scrollInfo)
-	}
+	outputView := m.viewport.View()
 
-	outputView := outputViewStyle.
-		Width(m.width - 4).
-		Height(m.viewport.Height + 2 + extraHeight).
-		Render(outputContent)
-
-	// Prompt view (bottom panel)
+	// Prompt view (bottom panel) - restored original styling
 	var promptText string
 	var promptPrefix string
 
@@ -303,14 +313,11 @@ func (m Model) View() string {
 		// In select mode, don't show input field
 		inputWithCursor = ""
 	} else {
-		if m.isMode(ModeAPIKey) {
-			// For API key mode, create a masked version
-			maskedInput := strings.Repeat("*", len(m.textInput.Value()))
-			inputWithCursor = inputStyle.Render(maskedInput)
-		} else {
-			// Use the textinput component's view
-			inputWithCursor = m.textInput.View()
-		}
+		// Always use the textinput component's view for proper cursor handling
+		inputWithCursor = m.textInput.View()
+
+		// For API key mode, we need to set up the textinput to show masked characters
+		// This should be handled in the textinput configuration, not in rendering
 	}
 
 	promptText = promptPrefix + " " + inputWithCursor
@@ -325,7 +332,110 @@ func (m Model) View() string {
 		Width(m.width).
 		Render(statusBarContent)
 
-	// Add spinner view if active
+	// Add scroll indicators if content is scrollable - restored original beautiful version
+	var scrollIndicator string
+	totalLines := m.viewport.TotalLineCount()
+	viewportHeight := m.viewport.Height()
+	if totalLines > viewportHeight {
+		scrollPercent := int((float64(m.viewport.YOffset) / float64(totalLines-viewportHeight)) * 100)
+		if scrollPercent < 0 {
+			scrollPercent = 0
+		}
+		if scrollPercent > 100 {
+			scrollPercent = 100
+		}
+
+		// Show current line position and total lines
+		currentLine := m.viewport.YOffset + 1
+
+		// Create scroll info text with selection status
+		var scrollText string
+		if m.selection.Active && len(m.selection.Content) > 0 {
+			// Show selection info when text is selected
+			selectionInfo := fmt.Sprintf("Selected: %d lines", len(m.selection.Content))
+			if m.selection.LastAction != "" {
+				selectionInfo += " • " + m.selection.LastAction
+			}
+			scrollText = lipgloss.JoinHorizontal(lipgloss.Left,
+				selectionIndicatorStyle.Render("📋 "),
+				selectionIndicatorStyle.Render(selectionInfo),
+				" • Ctrl+C to copy • Esc to clear • ",
+				lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("Line %d/%d", currentLine, totalLines)))
+		} else {
+			// Original scroll text when no selection
+			scrollText = lipgloss.JoinHorizontal(lipgloss.Left,
+				"🖱️ Mouse wheel • PgUp/PgDown • Ctrl+U/D • Home/End • Shift+↑/↓ • Ctrl+A • ",
+				lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("Line %d/%d", currentLine, totalLines)),
+				" • ",
+				lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("%d%%", scrollPercent)))
+		}
+
+		scrollIndicator = lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Align(lipgloss.Right).
+			Width(m.width - 6).
+			Render(scrollText)
+
+		// Restored original sophisticated layout with proper view management
+		views := []string{outputView, scrollIndicator}
+
+		// Add spinner view if active
+		if m.spinnerActive {
+			spinnerText := m.spinner.View() + " " + m.spinnerMessage
+			spinnerView := lipgloss.NewStyle().
+				Width(m.width-4).
+				Padding(0, 2).
+				Render(spinnerText)
+			views = append(views, spinnerView)
+		}
+
+		views = append(views, promptView, statusBarView)
+
+		// Get cursor from textinput if focused and not in select mode
+		var cursor *tea.Cursor
+		if m.textInput.Focused() && !m.isMode(ModeSelect) {
+			cursor = m.textInput.Cursor()
+			if cursor != nil {
+				// Calculate cursor position offset based on layout
+				// Account for: output view + scroll indicator + spinner (if active) + prompt prefix
+				yOffset := 0
+
+				// Add output view height (this includes viewport + borders/padding)
+				yOffset += m.viewport.Height() + 4 // viewport + border + padding
+
+				// Add scroll indicator line
+				yOffset += 1
+
+				// Add spinner height if active
+				if m.spinnerActive {
+					yOffset += 1
+				}
+
+				// Add padding for prompt area (prompt has padding internally)
+				yOffset += 1
+
+				// X offset includes prompt prefix and padding
+				promptPrefixLen := 0
+				if m.isMode(ModeNormal) {
+					promptPrefixLen = 2 // "❯ " length
+				} else {
+					// For other modes, we'd calculate based on the actual prompt text
+					// For now, assume similar length
+					promptPrefixLen = 2
+				}
+
+				xOffset := promptPrefixLen + 2 // prompt prefix + padding from promptViewStyle
+
+				// Apply the offset
+				cursor.Position.Y += yOffset
+				cursor.Position.X += xOffset
+			}
+		}
+
+		return lipgloss.JoinVertical(lipgloss.Left, views...), cursor
+	}
+
+	// Layout without scroll indicator but with original styling
 	views := []string{outputView}
 
 	if m.spinnerActive {
@@ -339,6 +449,43 @@ func (m Model) View() string {
 
 	views = append(views, promptView, statusBarView)
 
-	// Combine views vertically
-	return lipgloss.JoinVertical(lipgloss.Left, views...)
+	// Get cursor from textinput if focused and not in select mode
+	var cursor *tea.Cursor
+	if m.textInput.Focused() && !m.isMode(ModeSelect) {
+		cursor = m.textInput.Cursor()
+		if cursor != nil {
+			// Calculate cursor position offset based on layout
+			// Account for: output view + spinner (if active) + prompt prefix
+			yOffset := 0
+
+			// Add output view height (this includes viewport + borders/padding)
+			yOffset += m.viewport.Height() + 4 // viewport + border + padding
+
+			// Add spinner height if active
+			if m.spinnerActive {
+				yOffset += 1
+			}
+
+			// Add padding for prompt area (prompt has padding internally)
+			yOffset += 1
+
+			// X offset includes prompt prefix and padding
+			promptPrefixLen := 0
+			if m.isMode(ModeNormal) {
+				promptPrefixLen = 2 // "❯ " length
+			} else {
+				// For other modes, we'd calculate based on the actual prompt text
+				// For now, assume similar length
+				promptPrefixLen = 2
+			}
+
+			xOffset := promptPrefixLen + 2 // prompt prefix + padding from promptViewStyle
+
+			// Apply the offset
+			cursor.Position.Y += yOffset
+			cursor.Position.X += xOffset
+		}
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, views...), cursor
 }

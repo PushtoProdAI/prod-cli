@@ -4,7 +4,7 @@ import (
 	"io"
 	"sync"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/agent"
 	"github.com/meroxa/prod/cli/internal/output"

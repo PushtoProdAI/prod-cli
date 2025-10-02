@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/v2/textinput"
+	tea "github.com/charmbracelet/bubbletea/v2"
 )
 
 // handleEnterKey processes Enter key based on current mode
@@ -81,6 +82,8 @@ func (m Model) handleAPIKeyEnter() (tea.Model, tea.Cmd) {
 		m.setMode(ModeNormal)
 		m.apiKeyPrompt = nil
 		m.textInput.SetValue("")
+		// Restore normal echo mode
+		m.textInput.EchoMode = textinput.EchoNormal
 		// Process the API key response with the agent
 		if m.agent != nil {
 			go func() {
