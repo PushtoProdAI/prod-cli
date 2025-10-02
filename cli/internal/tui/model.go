@@ -114,7 +114,7 @@ func NewModel(agent *agent.Agent) Model {
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.CharLimit = 0
-	ti.VirtualCursor = false
+	ti.VirtualCursor = true
 	ti.Focus()
 
 	s := spinner.New()
