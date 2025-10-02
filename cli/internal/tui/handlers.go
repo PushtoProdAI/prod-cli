@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/textinput"
@@ -10,48 +12,111 @@ import (
 
 // handleMouse processes mouse events including text selection
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	// Handle text selection mouse events first
+	// Handle text selection for clicks
 	switch mouseMsg := msg.(type) {
 	case tea.MouseClickMsg:
 		if mouseMsg.Button == ansi.MouseLeft {
-			// Start text selection
-			line := m.viewportLineFromY(mouseMsg.Y)
-			col := mouseMsg.X - 2 // Account for viewport padding
+			// DEBUG: Full viewport state
+			f, _ := os.Create("/tmp/selection_debug.txt")
+			f.WriteString(fmt.Sprintf("=== CLICK DEBUG ===\n"))
+			f.WriteString(fmt.Sprintf("Mouse: X=%d, Y=%d\n", mouseMsg.X, mouseMsg.Y))
+			f.WriteString(fmt.Sprintf("Viewport: YOffset=%d, Height=%d, TotalLines=%d\n",
+				m.viewport.YOffset, m.viewport.Height(), m.viewport.TotalLineCount()))
+			f.WriteString(fmt.Sprintf("Content array: %d lines\n", len(m.content)))
+			f.WriteString(fmt.Sprintf("Content lines:\n"))
+			for i, line := range m.content {
+				clean := stripANSI(line)
+				f.WriteString(fmt.Sprintf("  [%d]: %q (len=%d)\n", i, clean, len([]rune(clean))))
+			}
+			f.Close()
+
+			// Account for viewport border (1) + padding top (1)
+			viewportY := mouseMsg.Y - 2
+			if viewportY < 0 {
+				viewportY = 0
+			}
+
+			absoluteLine := m.viewport.YOffset + viewportY
+
+			// Clamp to actual content bounds
+			if absoluteLine >= len(m.content) {
+				absoluteLine = len(m.content) - 1
+			}
+			if absoluteLine < 0 {
+				absoluteLine = 0
+			}
+
+			// Account for viewport border (1) + padding left (2)
+			col := mouseMsg.X - 3
 			if col < 0 {
 				col = 0
 			}
 
-			// Clear any existing selection and start new one
+			// Clamp column to line length
+			if absoluteLine < len(m.content) {
+				cleanLine := stripANSI(m.content[absoluteLine])
+				lineLen := len([]rune(cleanLine))
+				if col > lineLen {
+					col = lineLen
+				}
+			}
+
+			f, _ = os.OpenFile("/tmp/selection_debug.txt", os.O_APPEND|os.O_WRONLY, 0644)
+			f.WriteString(fmt.Sprintf("\nCalculated: viewportY=%d, absoluteLine=%d, col=%d\n",
+				viewportY, absoluteLine, col))
+			f.Close()
+
 			m.selection = SelectionState{
-				Active:     true,
-				StartLine:  line,
-				StartCol:   col,
-				EndLine:    line,
-				EndCol:     col,
-				LastAction: "Selection Started",
+				Active:        true,
+				StartY:        absoluteLine,
+				StartX:        col,
+				EndY:          absoluteLine,
+				EndX:          col,
+				LastAction:    "Selection Started",
+				DragStartLine: absoluteLine,
+				DragStartCol:  col,
 			}
 			m.mousePressed = true
-			m.lastMouseX = mouseMsg.X
-			m.lastMouseY = mouseMsg.Y
 
 			return m, nil
 		}
 
 	case tea.MouseMotionMsg:
 		if m.mousePressed && m.selection.Active {
-			// Update selection end point during drag
-			line := m.viewportLineFromY(mouseMsg.Y)
-			col := mouseMsg.X - 2 // Account for viewport padding
+			// Account for viewport border (1) + padding top (1)
+			viewportY := mouseMsg.Y - 2
+			if viewportY < 0 {
+				viewportY = 0
+			}
+
+			absoluteLine := m.viewport.YOffset + viewportY
+
+			// Clamp to actual content bounds
+			if absoluteLine >= len(m.content) {
+				absoluteLine = len(m.content) - 1
+			}
+			if absoluteLine < 0 {
+				absoluteLine = 0
+			}
+
+			// Account for viewport border (1) + padding left (2)
+			col := mouseMsg.X - 3
 			if col < 0 {
 				col = 0
 			}
 
-			m.selection.EndLine = line
-			m.selection.EndCol = col
-			m.lastMouseX = mouseMsg.X
-			m.lastMouseY = mouseMsg.Y
+			// Clamp column to line length
+			if absoluteLine < len(m.content) {
+				cleanLine := stripANSI(m.content[absoluteLine])
+				lineLen := len([]rune(cleanLine))
+				if col > lineLen {
+					col = lineLen
+				}
+			}
 
-			// Update selection content
+			m.selection.EndY = absoluteLine
+			m.selection.EndX = col
+
 			m.updateSelectionContent()
 
 			return m, nil
@@ -65,16 +130,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-
-	case tea.MouseWheelMsg:
-		// Let viewport handle scrolling, but clear selection if active
-		if m.selection.Active {
-			m.clearSelection()
-		}
-		// Fall through to let viewport handle the scroll
 	}
 
-	// Let the viewport handle other mouse events (like scrolling)
+	// Pass all other mouse events to viewport
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
@@ -85,22 +143,17 @@ func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
 
-	// Reserve space for prompt and status bar and styling
-	// Account for: prompt (5) + status (1) + scroll indicator (1) + borders/padding (4)
 	reservedHeight := promptHeight + statusBarHeight + 1 + 4
 	outputHeight := m.height - reservedHeight
 	if outputHeight < 10 {
-		outputHeight = 10 // Minimum height
+		outputHeight = 10
 	}
 
-	// Set viewport size accounting for the lipgloss border and padding that will be applied
-	// outputView has Border + Padding(1,2) = 2 (top/bottom) + 4 (left/right padding)
-	viewportWidth := m.width - viewportPadding - 4 // Account for lipgloss padding
+	viewportWidth := m.width - 8
 	m.viewport.SetWidth(viewportWidth)
 	m.viewport.SetHeight(outputHeight)
 
-	// Update textinput width to match terminal width
-	m.textInput.SetWidth(m.width - inputPadding)
+	m.textInput.SetWidth(m.width - 8)
 
 	m.ready = true
 	return m, nil
@@ -128,29 +181,35 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.handleDownKey()
 		case "pgup":
 			m.viewport.HalfViewUp()
+			m.autoScrollEnabled = false
 			return m, nil
 		case "pgdown":
 			m.viewport.HalfViewDown()
+			m.autoScrollEnabled = m.viewport.AtBottom()
 			return m, nil
 		case "home":
 			m.viewport.GotoTop()
+			m.autoScrollEnabled = false
 			return m, nil
 		case "end":
 			m.viewport.GotoBottom()
+			m.autoScrollEnabled = true
 			return m, nil
 		case "ctrl+u":
 			m.viewport.HalfViewUp()
+			m.autoScrollEnabled = false
 			return m, nil
 		case "ctrl+d":
 			m.viewport.HalfViewDown()
+			m.autoScrollEnabled = m.viewport.AtBottom()
 			return m, nil
 		case "shift+up":
-			// Shift+Up for line-by-line scrolling up
 			m.viewport.LineUp(1)
+			m.autoScrollEnabled = false
 			return m, nil
 		case "shift+down":
-			// Shift+Down for line-by-line scrolling down
 			m.viewport.LineDown(1)
+			m.autoScrollEnabled = m.viewport.AtBottom()
 			return m, nil
 		case "ctrl+a":
 			// Select all text
@@ -259,63 +318,47 @@ func (m Model) handleSpecialModeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleUIMessage processes UI messages
 func (m Model) handleUIMessage(msg UIMessage) (tea.Model, tea.Cmd) {
-	// Calculate available width for text to match viewport width
-	// Viewport is set to m.width - viewportPadding (4), with additional padding from styling
-	availableWidth := m.viewport.Width() - 4 // Account for lipgloss padding
+	availableWidth := m.viewport.Width() - 4
 	if availableWidth < 20 {
-		availableWidth = 20 // Minimum width
+		availableWidth = 20
 	}
 
-	// Wrap the text to fit the viewport width
 	wrappedLines := wrapText(msg.Content, availableWidth)
 
-	// Add wrapped lines to content with basic styling
 	for _, line := range wrappedLines {
-		m.content = append(m.content, m.styleLogMessage(line))
+		styledLine := m.styleLogMessage(line)
+		// Split on embedded newlines to ensure one line per content entry
+		splitLines := strings.Split(styledLine, "\n")
+		for _, splitLine := range splitLines {
+			m.content = append(m.content, splitLine)
+		}
 	}
 
-	// Limit content length to prevent memory issues and display problems
 	if len(m.content) > maxHistoryLength {
-		// Keep the last maxHistoryLength lines
 		m.content = m.content[len(m.content)-maxHistoryLength:]
 	}
-
-	// Update viewport content using SetContentLines for better line management
-	m.viewport.SetContentLines(m.content)
-
-	// Auto-scroll to bottom
-	m.viewport.GotoBottom()
 
 	return m, nil
 }
 
 // handlePlanDisplayMessage processes plan display messages and renders them as a table
 func (m Model) handlePlanDisplayMessage(msg PlanDisplayMessage) (tea.Model, tea.Cmd) {
-	// Add the summary first with basic styling
-	m.content = append(m.content, m.styleLogMessage(msg.Summary))
+	// Split summary in case it has embedded newlines
+	summaryLines := strings.Split(m.styleLogMessage(msg.Summary), "\n")
+	m.content = append(m.content, summaryLines...)
 	m.content = append(m.content, "")
 
-	// Format the plan information as a table
 	tableContent := m.formatPlanAsTable(msg)
 
-	// Add each line of the table to content
 	for _, line := range strings.Split(tableContent, "\n") {
 		if line != "" {
 			m.content = append(m.content, line)
 		}
 	}
 
-	// Limit content length to prevent memory issues and display problems
 	if len(m.content) > maxHistoryLength {
-		// Keep the last maxHistoryLength lines
 		m.content = m.content[len(m.content)-maxHistoryLength:]
 	}
-
-	// Update viewport content using SetContentLines for better line management
-	m.viewport.SetContentLines(m.content)
-
-	// Auto-scroll to bottom
-	m.viewport.GotoBottom()
 
 	return m, nil
 }
