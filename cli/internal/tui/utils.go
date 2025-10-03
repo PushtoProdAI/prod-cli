@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/atotto/clipboard"
+	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
 )
 
 var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -54,28 +56,42 @@ func greetUser() string {
 
 // formatCurrentDir formats the current directory for display
 func (m Model) formatCurrentDir() string {
+	var dirPart string
+
 	if m.currentDir == "" || m.currentDir == "unknown" {
-		return "📁 unknown"
-	}
-
-	// Get home directory for shortening paths
-	homeDir, err := os.UserHomeDir()
-	if err == nil && strings.HasPrefix(m.currentDir, homeDir) {
-		// Replace home directory with ~
-		shortPath := "~" + strings.TrimPrefix(m.currentDir, homeDir)
-		return fmt.Sprintf("📁 %s", shortPath)
-	}
-
-	// For very long paths, show just the last few components
-	if len(m.currentDir) > 50 {
-		parts := strings.Split(m.currentDir, string(filepath.Separator))
-		if len(parts) > 3 {
-			shortPath := "..." + string(filepath.Separator) + strings.Join(parts[len(parts)-2:], string(filepath.Separator))
-			return fmt.Sprintf("📁 %s", shortPath)
+		dirPart = "📁 unknown"
+	} else {
+		// Get home directory for shortening paths
+		homeDir, err := os.UserHomeDir()
+		if err == nil && strings.HasPrefix(m.currentDir, homeDir) {
+			// Replace home directory with ~
+			shortPath := "~" + strings.TrimPrefix(m.currentDir, homeDir)
+			dirPart = fmt.Sprintf("📁 %s", shortPath)
+		} else if len(m.currentDir) > 50 {
+			// For very long paths, show just the last few components
+			parts := strings.Split(m.currentDir, string(filepath.Separator))
+			if len(parts) > 3 {
+				shortPath := "..." + string(filepath.Separator) + strings.Join(parts[len(parts)-2:], string(filepath.Separator))
+				dirPart = fmt.Sprintf("📁 %s", shortPath)
+			} else {
+				dirPart = fmt.Sprintf("📁 %s", m.currentDir)
+			}
+		} else {
+			dirPart = fmt.Sprintf("📁 %s", m.currentDir)
 		}
 	}
 
-	return fmt.Sprintf("📁 %s", m.currentDir)
+	// Add selection status if active
+	if m.selection.Active && len(m.selection.Content) > 0 {
+		selectionInfo := fmt.Sprintf("📋 Selected: %d lines", len(m.selection.Content))
+		if m.selection.LastAction != "" {
+			selectionInfo += " • " + m.selection.LastAction
+		}
+		selectionInfo += " • Ctrl+C to copy • Esc to clear"
+		return dirPart + " • " + selectionInfo
+	}
+
+	return dirPart
 }
 
 // updateCurrentDir updates the current directory (for future use)
@@ -141,6 +157,283 @@ func (m *Model) styleLogMessage(content string) string {
 
 	// Default styling
 	return logStyle.Render(content)
+}
+
+// clearSelection clears the current text selection
+func (m *Model) clearSelection() {
+	m.selection = SelectionState{}
+}
+
+// selectAll selects all visible content in the viewport
+func (m *Model) selectAll() {
+	if len(m.content) == 0 {
+		return
+	}
+
+	m.selection = SelectionState{
+		Active:     true,
+		StartY:     0,
+		StartX:     0,
+		EndY:       len(m.content) - 1,
+		EndX:       0,
+		LastAction: "Select All",
+	}
+
+	if len(m.content) > 0 {
+		lastLine := m.content[len(m.content)-1]
+		cleanLine := stripANSI(lastLine)
+		m.selection.EndX = len(cleanLine)
+	}
+
+	m.updateSelectionContent()
+}
+
+// isLineInSelection checks if a given line is within the current selection
+func (m Model) isLineInSelection(lineIndex int) bool {
+	if !m.selection.Active {
+		return false
+	}
+
+	startLine := m.selection.StartY
+	endLine := m.selection.EndY
+
+	if startLine > endLine {
+		startLine, endLine = endLine, startLine
+	}
+
+	return lineIndex >= startLine && lineIndex <= endLine
+}
+
+// isCharInSelection checks if a character at line, col is within selection
+func (m Model) isCharInSelection(lineIndex, charIndex int) bool {
+	if !m.selection.Active {
+		return false
+	}
+
+	startLine, startCol := m.selection.StartY, m.selection.StartX
+	endLine, endCol := m.selection.EndY, m.selection.EndX
+
+	if startLine > endLine || (startLine == endLine && startCol > endCol) {
+		startLine, startCol, endLine, endCol = endLine, endCol, startLine, startCol
+	}
+
+	if lineIndex < startLine || lineIndex > endLine {
+		return false
+	}
+
+	if startLine == endLine {
+		return lineIndex == startLine && charIndex >= startCol && charIndex < endCol
+	}
+
+	if lineIndex == startLine {
+		return charIndex >= startCol
+	} else if lineIndex == endLine {
+		return charIndex < endCol
+	} else {
+		return true
+	}
+}
+
+// updateSelectionContent updates the Content field of selection with current text
+func (m *Model) updateSelectionContent() {
+	if !m.selection.Active {
+		m.selection.Content = []string{}
+		return
+	}
+
+	if len(m.content) == 0 {
+		m.selection.Content = []string{}
+		return
+	}
+
+	startLine, startCol := m.selection.StartY, m.selection.StartX
+	endLine, endCol := m.selection.EndY, m.selection.EndX
+
+	if startLine > endLine || (startLine == endLine && startCol > endCol) {
+		startLine, startCol, endLine, endCol = endLine, endCol, startLine, startCol
+	}
+
+	if startLine < 0 {
+		startLine = 0
+	}
+	if endLine >= len(m.content) {
+		endLine = len(m.content) - 1
+	}
+	if startLine >= len(m.content) {
+		m.selection.Content = []string{}
+		return
+	}
+
+	var selectedLines []string
+
+	for i := startLine; i <= endLine && i < len(m.content); i++ {
+		line := cleanForClipboard(m.content[i])
+
+		if startLine == endLine {
+			if startCol < len(line) && startCol >= 0 {
+				endColClamped := endCol
+				if endColClamped > len(line) {
+					endColClamped = len(line)
+				}
+				if startCol < endColClamped {
+					selectedLines = append(selectedLines, line[startCol:endColClamped])
+				}
+			}
+		} else if i == startLine {
+			if startCol < len(line) && startCol >= 0 {
+				selectedLines = append(selectedLines, line[startCol:])
+			} else if startCol <= 0 {
+				selectedLines = append(selectedLines, line)
+			}
+		} else if i == endLine {
+			endColClamped := endCol
+			if endColClamped > len(line) {
+				endColClamped = len(line)
+			}
+			if endColClamped > 0 {
+				selectedLines = append(selectedLines, line[:endColClamped])
+			}
+		} else {
+			selectedLines = append(selectedLines, line)
+		}
+	}
+
+	m.selection.Content = selectedLines
+}
+
+// stripANSI removes ANSI escape codes from text for accurate length calculation
+func stripANSI(text string) string {
+	// Simple ANSI stripping - in practice you might want a more robust solution
+	// This handles basic lipgloss color codes
+	var result strings.Builder
+	inEscape := false
+
+	for _, char := range text {
+		if char == '\x1b' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if char == 'm' {
+				inEscape = false
+			}
+			continue
+		}
+		result.WriteRune(char)
+	}
+
+	return result.String()
+}
+
+// cleanForClipboard removes ANSI codes and converts Unicode box drawing to ASCII for clipboard
+func cleanForClipboard(text string) string {
+	// First strip ANSI escape codes
+	cleaned := stripANSI(text)
+
+	// Unicode box drawing character mappings to ASCII equivalents
+	boxCharMap := map[rune]string{
+		// Top borders
+		'┌': "+", // top-left corner
+		'┬': "+", // top junction
+		'┐': "+", // top-right corner
+		'╭': "+", // rounded top-left
+		'╮': "+", // rounded top-right
+
+		// Bottom borders
+		'└': "+", // bottom-left corner
+		'┴': "+", // bottom junction
+		'┘': "+", // bottom-right corner
+		'╰': "+", // rounded bottom-left
+		'╯': "+", // rounded bottom-right
+
+		// Side borders
+		'├': "+", // left junction
+		'┤': "+", // right junction
+		'┼': "+", // cross junction
+
+		// Horizontal lines
+		'─': "-", // horizontal line
+		'━': "-", // thick horizontal line
+
+		// Vertical lines
+		'│': "|", // vertical line
+		'┃': "|", // thick vertical line
+		'║': "|", // double vertical line
+
+		// Double line characters
+		'╔': "+", // double top-left
+		'╦': "+", // double top junction
+		'╗': "+", // double top-right
+		'╠': "+", // double left junction
+		'╬': "+", // double cross
+		'╣': "+", // double right junction
+		'╚': "+", // double bottom-left
+		'╩': "+", // double bottom junction
+		'╝': "+", // double bottom-right
+		'═': "=", // double horizontal
+
+		// Other common characters
+		'•': "*", // bullet point
+		'◦': "-", // white bullet
+		'▸': ">", // triangle
+		'▪': "*", // small square
+		'▫': "-", // small white square
+	}
+
+	var result strings.Builder
+	for _, char := range cleaned {
+		if replacement, exists := boxCharMap[char]; exists {
+			result.WriteString(replacement)
+		} else if char > 127 {
+			// For other Unicode characters, check if they're printable ASCII equivalents
+			// or skip them if they're likely decorative
+			switch {
+			case char >= 0x2500 && char <= 0x257F: // Box Drawing block
+				result.WriteString("+") // Default box char replacement
+			case char >= 0x2580 && char <= 0x259F: // Block Elements
+				result.WriteString("#") // Block replacement
+			case char >= 0x25A0 && char <= 0x25FF: // Geometric Shapes
+				result.WriteString("*") // Shape replacement
+			default:
+				// Keep other Unicode characters as-is (like emojis)
+				result.WriteRune(char)
+			}
+		} else {
+			result.WriteRune(char)
+		}
+	}
+
+	return result.String()
+}
+
+// copySelectionToClipboard copies the current selection to the system clipboard
+func (m Model) copySelectionToClipboard() tea.Cmd {
+	if !m.selection.Active || len(m.selection.Content) == 0 {
+		return func() tea.Msg {
+			return ClipboardCopyMsg{
+				Success: false,
+				Error:   "No text selected",
+			}
+		}
+	}
+
+	content := strings.Join(m.selection.Content, "\n")
+
+	return func() tea.Msg {
+		err := clipboard.WriteAll(content)
+		if err != nil {
+			return ClipboardCopyMsg{
+				Success: false,
+				Content: content,
+				Error:   err.Error(),
+			}
+		}
+
+		return ClipboardCopyMsg{
+			Success: true,
+			Content: content,
+		}
+	}
 }
 
 // formatPlanAsTable formats the deployment plan data using clean lipgloss tables

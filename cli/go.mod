@@ -7,9 +7,10 @@ replace github.com/cschleiden/go-workflows => github.com/lyuboxa/go-workflows v0
 require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.4.0
 	github.com/boundaryml/baml v0.201.0
-	github.com/charmbracelet/bubbles v0.21.0
+	github.com/charmbracelet/bubbles/v2 v2.0.0-beta.1
 	github.com/charmbracelet/bubbletea v1.3.6
-	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/charmbracelet/bubbletea/v2 v2.0.0-beta.4
+	github.com/charmbracelet/lipgloss/v2 v2.0.0-beta1
 	github.com/conduitio/ecdysis v0.4.2
 	github.com/cschleiden/go-workflows v0.0.0-00010101000000-000000000000
 	github.com/docker/docker v28.3.3+incompatible
@@ -39,10 +40,13 @@ require (
 	github.com/brianvoe/gofakeit/v6 v6.28.0 // indirect
 	github.com/cenkalti/backoff v2.1.1+incompatible // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
-	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
+	github.com/charmbracelet/colorprofile v0.3.1 // indirect
+	github.com/charmbracelet/lipgloss v1.1.0 // indirect
 	github.com/charmbracelet/x/ansi v0.9.3 // indirect
-	github.com/charmbracelet/x/cellbuf v0.0.13-0.20250311204145-2c3ea96c31dd // indirect
+	github.com/charmbracelet/x/cellbuf v0.0.14-0.20250505150409-97991a1f17d1 // indirect
+	github.com/charmbracelet/x/input v0.3.7 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
+	github.com/charmbracelet/x/windows v0.2.1 // indirect
 	github.com/cheggaaa/pb/v3 v3.1.5 // indirect
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect

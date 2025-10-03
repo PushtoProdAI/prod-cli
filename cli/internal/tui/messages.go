@@ -1,6 +1,6 @@
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import tea "github.com/charmbracelet/bubbletea/v2"
 
 // AuthOption represents an authentication option
 // This is defined here to avoid import cycles, but matches agent.AuthOption
@@ -119,6 +119,20 @@ func (p PlanDisplayMessage) String() string {
 	return "Plan Display"
 }
 
+// ClipboardCopyMsg represents a message sent when text is copied to clipboard
+type ClipboardCopyMsg struct {
+	Success bool
+	Content string
+	Error   string
+}
+
+func (c ClipboardCopyMsg) String() string {
+	if c.Success {
+		return "Copied to clipboard"
+	}
+	return "Failed to copy: " + c.Error
+}
+
 var _ tea.Msg = UIMessage{}
 var _ tea.Msg = ConfirmationPrompt{}
 var _ tea.Msg = SpinnerStartMsg{}
@@ -128,3 +142,4 @@ var _ tea.Msg = APIKeyPrompt{}
 var _ tea.Msg = SelectPrompt{}
 var _ tea.Msg = TextPrompt{}
 var _ tea.Msg = PlanDisplayMessage{}
+var _ tea.Msg = ClipboardCopyMsg{}
