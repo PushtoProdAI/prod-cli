@@ -3,6 +3,7 @@ package pricing
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"strings"
 
@@ -36,17 +37,15 @@ type PricingService struct {
 	llmClient llm.Client
 }
 
-// NewPricingService creates a new pricing service with the given pricing provider
-func NewPricingService(provider PricingProvider, retries int) *PricingService {
+// NewPricingService creates a new pricing service with the given pricing provider and LLM client
+func NewPricingService(provider PricingProvider, retries int, client llm.Client) *PricingService {
 	if retries <= 0 {
 		retries = 3 // default retries
 	}
-	// Note: The pricing service may be called outside of agent workflows,
-	// so we use the default session extraction which handles both cases
 	return &PricingService{
 		provider:  provider,
 		retries:   retries,
-		llmClient: llm.NewDefault(),
+		llmClient: client,
 	}
 }
 
@@ -129,6 +128,7 @@ func (ps *PricingService) extractPricingForService(ctx context.Context, service 
 	// Call BAML pricing function through our LLM client
 	resp, err := ps.llmClient.FetchPricing(ctx, s, content)
 	if err != nil {
+		log.Println(err)
 		return nil, errors.Errorf("BAML pricing extraction failed: %w", err)
 	}
 
