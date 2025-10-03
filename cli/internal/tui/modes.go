@@ -124,6 +124,20 @@ func (m Model) handleNormalEnter() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Handle slash command selection
+	if m.showSlashCommands {
+		filtered := m.getFilteredSlashCommands()
+		if len(filtered) > 0 && m.slashCommandCursor < len(filtered) {
+			// Auto-complete with selected command
+			m.textInput.SetValue(filtered[m.slashCommandCursor].Command)
+			m.textInput.CursorEnd()
+			m.showSlashCommands = false
+
+			// Execute the command
+			input = filtered[m.slashCommandCursor].Command
+		}
+	}
+
 	if input == "exit" {
 		m.quitting = true
 		m.saveHistoryOnExit()
@@ -133,6 +147,9 @@ func (m Model) handleNormalEnter() (tea.Model, tea.Cmd) {
 	// Add to history and clear input
 	m.addToHistory(input)
 	m.textInput.SetValue("")
+
+	// Hide slash commands
+	m.showSlashCommands = false
 
 	// Process input with agent
 	if m.agent != nil {

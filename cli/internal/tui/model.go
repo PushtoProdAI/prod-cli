@@ -42,6 +42,11 @@ type SelectionState struct {
 	DragStartCol  int
 }
 
+type SlashCommand struct {
+	Command     string
+	Description string
+}
+
 type Model struct {
 	agent               *agent.Agent
 	viewport            viewport.Model
@@ -68,8 +73,11 @@ type Model struct {
 	lastContentLen      int
 	autoScrollEnabled   bool
 
-	selection    SelectionState
-	mousePressed bool
+	selection          SelectionState
+	mousePressed       bool
+	showSlashCommands  bool
+	slashCommandCursor int
+	availableCommands  []SlashCommand
 }
 
 func (m *Model) setMode(mode UIMode) {
@@ -122,19 +130,26 @@ func NewModel(agent *agent.Agent) Model {
 	s.Style = lipgloss.NewStyle().Foreground(primaryColor)
 
 	m := Model{
-		agent:             agent,
-		viewport:          vp,
-		textInput:         ti,
-		ready:             false,
-		history:           []string{},
-		historyIndex:      0,
-		historyFile:       "/tmp/.prodcli_app_history",
-		currentMode:       ModeNormal,
-		content:           initialContent,
-		spinner:           s,
-		spinnerActive:     false,
-		currentDir:        currentDir,
-		autoScrollEnabled: true,
+		agent:              agent,
+		viewport:           vp,
+		textInput:          ti,
+		ready:              false,
+		history:            []string{},
+		historyIndex:       0,
+		historyFile:        "/tmp/.prodcli_app_history",
+		currentMode:        ModeNormal,
+		content:            initialContent,
+		spinner:            s,
+		spinnerActive:      false,
+		currentDir:         currentDir,
+		autoScrollEnabled:  true,
+		showSlashCommands:  false,
+		slashCommandCursor: 0,
+		availableCommands: []SlashCommand{
+			{Command: "/clear", Description: "Clear the screen"},
+			{Command: "/logout", Description: "Logout from Prod CLI"},
+			{Command: "/quit", Description: "Exit the application"},
+		},
 	}
 	m.loadHistory()
 	return m
@@ -280,6 +295,7 @@ func (m Model) View() (string, *tea.Cursor) {
 
 	var promptText string
 	var promptPrefix string
+	var slashCommandMenu string
 
 	if m.isMode(ModeConfirmation) && m.confirmationPrompt != nil {
 		promptPrefix = confirmationPromptStyle.Render(m.confirmationPrompt.Message + " (y/n)")
@@ -302,6 +318,23 @@ func (m Model) View() (string, *tea.Cursor) {
 		promptPrefix = confirmationPromptStyle.Render(selectText)
 	} else {
 		promptPrefix = promptStyle.Render("❯")
+	}
+
+	// Build slash command menu if visible
+	if m.showSlashCommands && m.isMode(ModeNormal) {
+		filtered := m.getFilteredSlashCommands()
+		if len(filtered) > 0 {
+			var menuText strings.Builder
+			for i, cmd := range filtered {
+				if i == m.slashCommandCursor {
+					menuText.WriteString(fmt.Sprintf("❯ %s - %s\n", cmd.Command, cmd.Description))
+				} else {
+					menuText.WriteString(fmt.Sprintf("  %s - %s\n", cmd.Command, cmd.Description))
+				}
+			}
+			menuText.WriteString("Use ↑/↓ to navigate, Tab/Enter to select, Esc to cancel")
+			slashCommandMenu = confirmationPromptStyle.Render(menuText.String())
+		}
 	}
 
 	var inputWithCursor string
@@ -360,6 +393,11 @@ func (m Model) View() (string, *tea.Cursor) {
 			views = append(views, spinnerView)
 		}
 
+		// Add slash command menu if visible
+		if slashCommandMenu != "" {
+			views = append(views, slashCommandMenu)
+		}
+
 		views = append(views, promptView, statusBarView)
 
 		var cursor *tea.Cursor
@@ -404,6 +442,11 @@ func (m Model) View() (string, *tea.Cursor) {
 			Padding(0, 2).
 			Render(spinnerText)
 		views = append(views, spinnerView)
+	}
+
+	// Add slash command menu if visible
+	if slashCommandMenu != "" {
+		views = append(views, slashCommandMenu)
 	}
 
 	views = append(views, promptView, statusBarView)

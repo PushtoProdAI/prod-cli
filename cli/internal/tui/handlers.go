@@ -214,7 +214,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoBottom()
 			m.autoScrollEnabled = true
 			return m, nil
+		case tea.KeyTab:
+			// Handle Tab for slash command autocomplete
+			if m.showSlashCommands && m.isMode(ModeNormal) {
+				filtered := m.getFilteredSlashCommands()
+				if len(filtered) > 0 && m.slashCommandCursor < len(filtered) {
+					m.textInput.SetValue(filtered[m.slashCommandCursor].Command)
+					m.textInput.CursorEnd()
+					m.showSlashCommands = false
+				}
+				return m, nil
+			}
 		case tea.KeyEsc:
+			// Hide slash commands on Esc
+			if m.showSlashCommands {
+				m.showSlashCommands = false
+				return m, nil
+			}
 			// Clear selection if active
 			if m.selection.Active {
 				m.clearSelection()
@@ -230,6 +246,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Update text input for normal mode
 			var cmd tea.Cmd
 			m.textInput, cmd = m.textInput.Update(msg)
+
+			// Check if we should show slash commands
+			m.updateSlashCommandVisibility()
+
 			return m, cmd
 		}
 	}
@@ -242,6 +262,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Update text input for normal mode
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(msg)
+
+	// Check if we should show slash commands
+	m.updateSlashCommandVisibility()
+
 	return m, cmd
 }
 
@@ -252,6 +276,15 @@ func (m Model) handleUpKey() (tea.Model, tea.Cmd) {
 			if m.selectPrompt.Cursor > 0 {
 				m.selectPrompt.Cursor--
 			}
+		}
+		return m, nil
+	}
+
+	// Slash command navigation
+	if m.showSlashCommands {
+		filtered := m.getFilteredSlashCommands()
+		if len(filtered) > 0 && m.slashCommandCursor > 0 {
+			m.slashCommandCursor--
 		}
 		return m, nil
 	}
@@ -272,6 +305,15 @@ func (m Model) handleDownKey() (tea.Model, tea.Cmd) {
 			if m.selectPrompt.Cursor < len(m.selectPrompt.Options)-1 {
 				m.selectPrompt.Cursor++
 			}
+		}
+		return m, nil
+	}
+
+	// Slash command navigation
+	if m.showSlashCommands {
+		filtered := m.getFilteredSlashCommands()
+		if len(filtered) > 0 && m.slashCommandCursor < len(filtered)-1 {
+			m.slashCommandCursor++
 		}
 		return m, nil
 	}
@@ -401,4 +443,33 @@ func (m Model) handleClearScreen() (tea.Model, tea.Cmd) {
 	m.autoScrollEnabled = true
 
 	return m, nil
+}
+
+func (m *Model) updateSlashCommandVisibility() {
+	input := m.textInput.Value()
+
+	// Show slash commands if input starts with /
+	if strings.HasPrefix(input, "/") && m.isMode(ModeNormal) {
+		m.showSlashCommands = true
+		m.slashCommandCursor = 0
+	} else {
+		m.showSlashCommands = false
+	}
+}
+
+func (m Model) getFilteredSlashCommands() []SlashCommand {
+	input := m.textInput.Value()
+
+	if !strings.HasPrefix(input, "/") {
+		return []SlashCommand{}
+	}
+
+	var filtered []SlashCommand
+	for _, cmd := range m.availableCommands {
+		if strings.HasPrefix(cmd.Command, input) {
+			filtered = append(filtered, cmd)
+		}
+	}
+
+	return filtered
 }
