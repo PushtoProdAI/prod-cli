@@ -3,30 +3,118 @@ package tui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/v2/textinput"
+	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
-// handleMouse processes mouse events
+// handleMouse processes mouse events including text selection
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	switch msg.Action {
-	case tea.MouseActionPress:
-		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			m.viewport.ScrollUp(3)
-			return m, nil
-		case tea.MouseButtonWheelDown:
-			m.viewport.ScrollDown(3)
-			return m, nil
-		case tea.MouseButtonLeft, tea.MouseButtonRight, tea.MouseButtonMiddle:
-			// Handle mouse clicks - for now just ignore them
+	// Handle text selection for clicks
+	switch mouseMsg := msg.(type) {
+	case tea.MouseClickMsg:
+		if mouseMsg.Button == ansi.MouseLeft {
+			// Account for viewport border (1) + padding top (1)
+			viewportY := mouseMsg.Y - 2
+			if viewportY < 0 {
+				viewportY = 0
+			}
+
+			absoluteLine := m.viewport.YOffset + viewportY
+
+			// Clamp to actual content bounds
+			if absoluteLine >= len(m.content) {
+				absoluteLine = len(m.content) - 1
+			}
+			if absoluteLine < 0 {
+				absoluteLine = 0
+			}
+
+			// Account for viewport border (1) + padding left (2)
+			col := mouseMsg.X - 3
+			if col < 0 {
+				col = 0
+			}
+
+			// Clamp column to line length
+			if absoluteLine < len(m.content) {
+				cleanLine := stripANSI(m.content[absoluteLine])
+				lineLen := len([]rune(cleanLine))
+				if col > lineLen {
+					col = lineLen
+				}
+			}
+
+			m.selection = SelectionState{
+				Active:        true,
+				StartY:        absoluteLine,
+				StartX:        col,
+				EndY:          absoluteLine,
+				EndX:          col,
+				LastAction:    "Selection Started",
+				DragStartLine: absoluteLine,
+				DragStartCol:  col,
+			}
+			m.mousePressed = true
+
 			return m, nil
 		}
-	case tea.MouseActionMotion:
-		// Handle mouse motion - ignore to prevent character input
-		return m, nil
+
+	case tea.MouseMotionMsg:
+		if m.mousePressed && m.selection.Active {
+			// Account for viewport border (1) + padding top (1)
+			viewportY := mouseMsg.Y - 2
+			if viewportY < 0 {
+				viewportY = 0
+			}
+
+			absoluteLine := m.viewport.YOffset + viewportY
+
+			// Clamp to actual content bounds
+			if absoluteLine >= len(m.content) {
+				absoluteLine = len(m.content) - 1
+			}
+			if absoluteLine < 0 {
+				absoluteLine = 0
+			}
+
+			// Account for viewport border (1) + padding left (2)
+			col := mouseMsg.X - 3
+			if col < 0 {
+				col = 0
+			}
+
+			// Clamp column to line length
+			if absoluteLine < len(m.content) {
+				cleanLine := stripANSI(m.content[absoluteLine])
+				lineLen := len([]rune(cleanLine))
+				if col > lineLen {
+					col = lineLen
+				}
+			}
+
+			m.selection.EndY = absoluteLine
+			m.selection.EndX = col
+
+			m.updateSelectionContent()
+
+			return m, nil
+		}
+
+	case tea.MouseReleaseMsg:
+		if m.mousePressed {
+			m.mousePressed = false
+			if m.selection.Active && len(m.selection.Content) > 0 {
+				m.selection.LastAction = "Text Selected"
+			}
+			return m, nil
+		}
 	}
-	// Return early for any other mouse event to prevent it from being processed as key input
-	return m, nil
+
+	// Pass all other mouse events to viewport
+	var cmd tea.Cmd
+	m.viewport, cmd = m.viewport.Update(msg)
+	return m, cmd
 }
 
 // handleWindowResize processes window resize events
@@ -34,17 +122,17 @@ func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
 
-	// Reserve space for prompt and status bar
-	outputHeight := m.height - promptHeight - statusBarHeight
-	if outputHeight < promptHeight {
-		outputHeight = promptHeight
+	reservedHeight := promptHeight + statusBarHeight
+	outputHeight := m.height - reservedHeight
+	if outputHeight < 10 {
+		outputHeight = 10
 	}
 
-	m.viewport.Width = m.width - viewportPadding
-	m.viewport.Height = outputHeight
+	viewportWidth := m.width - 8
+	m.viewport.SetWidth(viewportWidth)
+	m.viewport.SetHeight(outputHeight)
 
-	// Update textinput width to match terminal width
-	m.textInput.Width = m.width - inputPadding
+	m.textInput.SetWidth(m.width - 8)
 
 	m.ready = true
 	return m, nil
@@ -52,54 +140,109 @@ func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 // handleKey processes keyboard events
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyCtrlC:
-		m.quitting = true
-		m.saveHistoryOnExit()
-		return m, tea.Quit
-	case tea.KeyEnter:
-		return m.handleEnterKey()
-	case tea.KeyUp:
-		return m.handleUpKey()
-	case tea.KeyDown:
-		return m.handleDownKey()
-	case tea.KeyPgUp:
-		m.viewport.HalfPageUp()
-		return m, nil
-	case tea.KeyPgDown:
-		m.viewport.HalfPageDown()
-		return m, nil
-	case tea.KeyHome:
-		m.viewport.GotoTop()
-		return m, nil
-	case tea.KeyEnd:
-		m.viewport.GotoBottom()
-		return m, nil
-	case tea.KeyCtrlU:
-		m.viewport.HalfPageUp()
-		return m, nil
-	case tea.KeyCtrlD:
-		m.viewport.HalfPageDown()
-		return m, nil
-	case tea.KeyShiftUp:
-		// Shift+Up for line-by-line scrolling up
-		m.viewport.ScrollUp(1)
-		return m, nil
-	case tea.KeyShiftDown:
-		// Shift+Down for line-by-line scrolling down
-		m.viewport.ScrollDown(1)
-		return m, nil
-	default:
-		// Handle special keys based on current mode
-		if !m.isMode(ModeNormal) {
-			return m.handleSpecialModeKeys(msg)
+	// Check if it's a key press event
+	if keyPress, ok := msg.(tea.KeyPressMsg); ok {
+		key := keyPress.Key()
+
+		// Handle Ctrl+C
+		if key.Code == 'c' && key.Mod == tea.ModCtrl {
+			// If text is selected, copy to clipboard instead of quitting
+			if m.selection.Active && len(m.selection.Content) > 0 {
+				return m, m.copySelectionToClipboard()
+			}
+			// Otherwise quit as usual
+			m.quitting = true
+			m.saveHistoryOnExit()
+			return m, tea.Quit
 		}
 
-		// Update text input for normal mode
-		var cmd tea.Cmd
-		m.textInput, cmd = m.textInput.Update(msg)
-		return m, cmd
+		// Handle Ctrl+U
+		if key.Code == 'u' && key.Mod == tea.ModCtrl {
+			m.viewport.HalfViewUp()
+			m.autoScrollEnabled = false
+			return m, nil
+		}
+
+		// Handle Ctrl+D
+		if key.Code == 'd' && key.Mod == tea.ModCtrl {
+			m.viewport.HalfViewDown()
+			m.autoScrollEnabled = m.viewport.AtBottom()
+			return m, nil
+		}
+
+		// Handle Ctrl+A
+		if key.Code == 'a' && key.Mod == tea.ModCtrl {
+			// Select all text
+			m.selectAll()
+			return m, nil
+		}
+
+		// Handle Shift+Up
+		if key.Code == tea.KeyUp && key.Mod == tea.ModShift {
+			m.viewport.LineUp(1)
+			m.autoScrollEnabled = false
+			return m, nil
+		}
+
+		// Handle Shift+Down
+		if key.Code == tea.KeyDown && key.Mod == tea.ModShift {
+			m.viewport.LineDown(1)
+			m.autoScrollEnabled = m.viewport.AtBottom()
+			return m, nil
+		}
+
+		switch key.Code {
+		case tea.KeyEnter:
+			return m.handleEnterKey()
+		case tea.KeyUp:
+			return m.handleUpKey()
+		case tea.KeyDown:
+			return m.handleDownKey()
+		case tea.KeyPgUp:
+			m.viewport.HalfViewUp()
+			m.autoScrollEnabled = false
+			return m, nil
+		case tea.KeyPgDown:
+			m.viewport.HalfViewDown()
+			m.autoScrollEnabled = m.viewport.AtBottom()
+			return m, nil
+		case tea.KeyHome:
+			m.viewport.GotoTop()
+			m.autoScrollEnabled = false
+			return m, nil
+		case tea.KeyEnd:
+			m.viewport.GotoBottom()
+			m.autoScrollEnabled = true
+			return m, nil
+		case tea.KeyEsc:
+			// Clear selection if active
+			if m.selection.Active {
+				m.clearSelection()
+				return m, nil
+			}
+			// Fall through to default behavior
+		default:
+			// Handle special keys based on current mode
+			if !m.isMode(ModeNormal) {
+				return m.handleSpecialModeKeys(msg)
+			}
+
+			// Update text input for normal mode
+			var cmd tea.Cmd
+			m.textInput, cmd = m.textInput.Update(msg)
+			return m, cmd
+		}
 	}
+
+	// Handle other key events (like release)
+	if !m.isMode(ModeNormal) {
+		return m.handleSpecialModeKeys(msg)
+	}
+
+	// Update text input for normal mode
+	var cmd tea.Cmd
+	m.textInput, cmd = m.textInput.Update(msg)
+	return m, cmd
 }
 
 // handleUpKey processes Up arrow key
@@ -148,23 +291,28 @@ func (m Model) handleDownKey() (tea.Model, tea.Cmd) {
 
 // handleSpecialModeKeys processes keys in special modes
 func (m Model) handleSpecialModeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		// Exit any special mode
-		m.setMode(ModeNormal)
-		m.confirmationPrompt = nil
-		m.authSelectionPrompt = nil
-		m.apiKeyPrompt = nil
-		m.selectPrompt = nil
-		m.textPrompt = nil
-		m.textInput.SetValue("")
-		return m, nil
-	default:
-		// Update text input for non-select modes
-		if !m.isMode(ModeSelect) {
-			var cmd tea.Cmd
-			m.textInput, cmd = m.textInput.Update(msg)
-			return m, cmd
+	if keyPress, ok := msg.(tea.KeyPressMsg); ok {
+		key := keyPress.Key()
+		switch key.Code {
+		case tea.KeyEsc:
+			// Exit any special mode
+			m.setMode(ModeNormal)
+			m.confirmationPrompt = nil
+			m.authSelectionPrompt = nil
+			m.apiKeyPrompt = nil
+			m.selectPrompt = nil
+			m.textPrompt = nil
+			m.textInput.SetValue("")
+			// Restore normal echo mode
+			m.textInput.EchoMode = textinput.EchoNormal
+			return m, nil
+		default:
+			// Update text input for non-select modes
+			if !m.isMode(ModeSelect) {
+				var cmd tea.Cmd
+				m.textInput, cmd = m.textInput.Update(msg)
+				return m, cmd
+			}
 		}
 	}
 	return m, nil
@@ -172,50 +320,65 @@ func (m Model) handleSpecialModeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleUIMessage processes UI messages
 func (m Model) handleUIMessage(msg UIMessage) (tea.Model, tea.Cmd) {
-	// Calculate available width for text (accounting for padding and borders)
-	availableWidth := m.viewport.Width - 2 // Account for border/padding
+	availableWidth := m.viewport.Width() - 4
 	if availableWidth < 20 {
-		availableWidth = 20 // Minimum width
+		availableWidth = 20
 	}
 
-	// Wrap the text to fit the viewport width
 	wrappedLines := wrapText(msg.Content, availableWidth)
 
-	// Style each wrapped line and add to content
 	for _, line := range wrappedLines {
-		m.content = append(m.content, m.styleLogMessage(line))
+		styledLine := m.styleLogMessage(line)
+		// Split on embedded newlines to ensure one line per content entry
+		splitLines := strings.Split(styledLine, "\n")
+		for _, splitLine := range splitLines {
+			m.content = append(m.content, splitLine)
+		}
 	}
 
-	// Update viewport content
-	m.viewport.SetContent(strings.Join(m.content, "\n"))
+	if len(m.content) > maxHistoryLength {
+		m.content = m.content[len(m.content)-maxHistoryLength:]
+	}
 
-	// Auto-scroll to bottom
-	m.viewport.GotoBottom()
+	// Immediately update viewport content to keep in sync
+	viewportContent := m.renderViewportContent()
+	m.viewport.SetContent(viewportContent)
+
+	// If auto-scroll is enabled, scroll to bottom immediately
+	if m.autoScrollEnabled {
+		m.viewport.GotoBottom()
+	}
 
 	return m, nil
 }
 
 // handlePlanDisplayMessage processes plan display messages and renders them as a table
 func (m Model) handlePlanDisplayMessage(msg PlanDisplayMessage) (tea.Model, tea.Cmd) {
-	// Add the summary first
-	m.content = append(m.content, m.styleLogMessage(msg.Summary))
+	// Split summary in case it has embedded newlines
+	summaryLines := strings.Split(m.styleLogMessage(msg.Summary), "\n")
+	m.content = append(m.content, summaryLines...)
 	m.content = append(m.content, "")
 
-	// Format the plan information as a table
 	tableContent := m.formatPlanAsTable(msg)
 
-	// Add each line of the table to content
 	for _, line := range strings.Split(tableContent, "\n") {
 		if line != "" {
 			m.content = append(m.content, line)
 		}
 	}
 
-	// Update viewport content
-	m.viewport.SetContent(strings.Join(m.content, "\n"))
+	if len(m.content) > maxHistoryLength {
+		m.content = m.content[len(m.content)-maxHistoryLength:]
+	}
 
-	// Auto-scroll to bottom
-	m.viewport.GotoBottom()
+	// Immediately update viewport content to keep in sync
+	viewportContent := m.renderViewportContent()
+	m.viewport.SetContent(viewportContent)
+
+	// If auto-scroll is enabled, scroll to bottom immediately
+	if m.autoScrollEnabled {
+		m.viewport.GotoBottom()
+	}
 
 	return m, nil
 }

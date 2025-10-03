@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/conduitio/ecdysis"
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/cmd/auth"
@@ -83,11 +83,11 @@ ______              _
 		return nil
 	}
 
-	if c.flags.DryRun {
-		c.output.Stdout("🔍 DRY RUN MODE - Simulating execution without making changes\n\n")
-	}
-
 	if c.args.prompt != "" {
+		// For CLI mode with prompt, show dry run message
+		if c.flags.DryRun {
+			c.output.Stdout("🔍 DRY RUN MODE - Simulating execution without making changes\n\n")
+		}
 		c.processPrompt(c.args.prompt)
 		return nil
 	}
@@ -97,8 +97,8 @@ ______              _
 		// Initialize Bubble Tea model
 		model := tui.NewModel(c.Agent)
 
-		// Create Bubble Tea program with mouse support
-		program := tea.NewProgram(&model, tea.WithMouseCellMotion())
+		// Create Bubble Tea program with mouse support and alternate screen
+		program := tea.NewProgram(&model, tea.WithMouseAllMotion(), tea.WithAltScreen())
 
 		// Set the program reference in the model
 		model.SetProgram(program)

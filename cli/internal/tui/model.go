@@ -5,16 +5,14 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/bubbles/v2/spinner"
+	"github.com/charmbracelet/bubbles/v2/textinput"
+	"github.com/charmbracelet/bubbles/v2/viewport"
+	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/meroxa/prod/cli/internal/agent"
 )
 
-// UIMode represents the current mode of the TUI
 type UIMode int
 
 const (
@@ -26,14 +24,23 @@ const (
 	ModeText
 )
 
-// Constants for UI layout and history
 const (
 	maxHistoryLength = 500
-	viewportPadding  = 4
-	inputPadding     = 8
 	promptHeight     = 5
 	statusBarHeight  = 1
 )
+
+type SelectionState struct {
+	Active        bool
+	StartX        int
+	StartY        int
+	EndX          int
+	EndY          int
+	Content       []string
+	LastAction    string
+	DragStartLine int
+	DragStartCol  int
+}
 
 type Model struct {
 	agent               *agent.Agent
@@ -53,78 +60,81 @@ type Model struct {
 	textPrompt          *TextPrompt
 	width               int
 	height              int
-	content             []string // Store raw content lines
+	content             []string
 	spinner             spinner.Model
 	spinnerActive       bool
 	spinnerMessage      string
-	currentDir          string // Current working directory
+	currentDir          string
+	lastContentLen      int
+	autoScrollEnabled   bool
+
+	selection    SelectionState
+	mousePressed bool
 }
 
-// setMode changes the current UI mode
 func (m *Model) setMode(mode UIMode) {
 	m.currentMode = mode
 }
 
-// isMode checks if the current mode matches the given mode
 func (m Model) isMode(mode UIMode) bool {
 	return m.currentMode == mode
 }
 
 func NewModel(agent *agent.Agent) Model {
-	vp := viewport.New(120, 20)
+	vp := viewport.New()
+	vp.MouseWheelEnabled = true
+	vp.MouseWheelDelta = 3
+	vp.SoftWrap = false
 
-	// Get current working directory
+	vp.SetWidth(80)
+	vp.SetHeight(20)
+
+	vp.Style = outputViewStyle
+
 	currentDir, err := os.Getwd()
 	if err != nil {
 		currentDir = "unknown"
 	}
 
-	// Initialize content with banner and greeting
 	banner := getBanner()
 	greeting := greetUser()
 
-	initialContent := []string{
-		headerStyle.Render(banner),
-		"",
-		logStyle.Render(greeting),
-		"",
-		logStyle.Render("Type 'exit' or press Ctrl+C to quit."),
-		"",
-	}
+	// Split banner into individual lines (it contains embedded newlines)
+	var initialContent []string
+	bannerLines := strings.Split(headerStyle.Render(banner), "\n")
+	initialContent = append(initialContent, bannerLines...)
+	initialContent = append(initialContent, "")
+	initialContent = append(initialContent, logStyle.Render(greeting))
+	initialContent = append(initialContent, "")
+	initialContent = append(initialContent, logStyle.Render("Type 'exit' or press Ctrl+C to quit."))
+	initialContent = append(initialContent, "")
 
-	vp.SetContent(strings.Join(initialContent, "\n"))
+	vp.SetContentLines(initialContent)
 
-	// Initialize text input
 	ti := textinput.New()
+	ti.Prompt = ""
+	ti.CharLimit = 0
+	ti.VirtualCursor = true
 	ti.Focus()
-	ti.CharLimit = 0 // No limit
-	ti.Width = 120
-	ti.Prompt = "" // Remove the default prompt since we'll render our own
 
-	// Style the textinput to match our theme
-	ti.TextStyle = inputStyle
-	ti.Cursor.Style = lipgloss.NewStyle().Foreground(primaryColor).Bold(true)
-	ti.Cursor.TextStyle = lipgloss.NewStyle().Background(primaryColor).Foreground(backgroundColor)
-	ti.Cursor.SetMode(cursor.CursorStatic) // Use a static block cursor
-
-	// Initialize spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(primaryColor)
 
 	m := Model{
-		agent:         agent,
-		viewport:      vp,
-		textInput:     ti,
-		ready:         false,
-		history:       []string{},
-		historyIndex:  0,
-		historyFile:   "/tmp/.prodcli_app_history",
-		currentMode:   ModeNormal,
-		content:       initialContent,
-		spinner:       s,
-		spinnerActive: false,
-		currentDir:    currentDir,
+		agent:             agent,
+		viewport:          vp,
+		textInput:         ti,
+		ready:             false,
+		history:           []string{},
+		historyIndex:      0,
+		historyFile:       "/tmp/.prodcli_app_history",
+		currentMode:       ModeNormal,
+		content:           initialContent,
+		spinner:           s,
+		spinnerActive:     false,
+		currentDir:        currentDir,
+		autoScrollEnabled: true,
 	}
 	m.loadHistory()
 	return m
@@ -132,7 +142,6 @@ func NewModel(agent *agent.Agent) Model {
 
 func (m *Model) SetProgram(program *tea.Program) {
 	m.program = program
-	// Set up the agent with TeaWriter that implements StatusWriter
 	if m.agent != nil {
 		teaWriter := NewTeaWriter(func(msg tea.Msg) {
 			program.Send(msg)
@@ -151,6 +160,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleWindowResize(msg)
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	case tea.MouseWheelMsg:
+		// IMPORTANT: Set viewport content before processing scroll
+		// The viewport needs content to calculate scroll bounds
+		viewportContent := m.renderViewportContent()
+		m.viewport.SetContent(viewportContent)
+
+		// Now handle the scroll
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		m.autoScrollEnabled = m.viewport.AtBottom()
+
+		return m, cmd
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
 	case UIMessage:
@@ -171,6 +192,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.apiKeyPrompt = &msg
 		m.setMode(ModeAPIKey)
 		m.textInput.SetValue("")
+		m.textInput.EchoMode = textinput.EchoPassword
+		m.textInput.EchoCharacter = '*'
 		return m, nil
 	case SelectPrompt:
 		m.selectPrompt = &msg
@@ -180,7 +203,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case TextPrompt:
 		m.textPrompt = &msg
 		m.setMode(ModeText)
-		// Pre-fill with default value if provided
 		if msg.DefaultValue != "" {
 			m.textInput.SetValue(msg.DefaultValue)
 			m.textInput.CursorEnd()
@@ -196,6 +218,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinnerActive = false
 		m.spinnerMessage = ""
 		return m, nil
+	case ClipboardCopyMsg:
+		if msg.Success {
+			m.selection.LastAction = "Copied to clipboard"
+		} else {
+			m.selection.LastAction = "Copy failed: " + msg.Error
+		}
+		return m, nil
+	case tea.PasteMsg:
+		if !m.isMode(ModeSelect) {
+			var cmd tea.Cmd
+			m.textInput, cmd = m.textInput.Update(msg)
+			return m, cmd
+		}
+		return m, nil
 	default:
 		// Update spinner if active
 		if m.spinnerActive {
@@ -203,86 +239,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
 		}
+
+		// Don't pass mouse events to viewport here - they're handled above
+		// This prevents double-handling of MouseWheelMsg
 		return m, nil
 	}
 }
 
-func (m Model) View() string {
+func (m Model) View() (string, *tea.Cursor) {
 	if !m.ready {
 		return lipgloss.NewStyle().
 			Foreground(textColor).
-			Background(backgroundColor).
-			Padding(1).
-			Render("Loading...")
+			Render("Loading..."), nil
 	}
 
 	if m.quitting {
 		return lipgloss.NewStyle().
 			Foreground(successColor).
-			Background(backgroundColor).
-			Padding(1).
-			Render("Goodbye! 👋")
+			Render("Goodbye! 👋"), nil
 	}
 
-	// Output view (top panel) with scroll indicators
-	viewportContent := m.viewport.View()
+	viewportContent := m.renderViewportContent()
 
-	// Add scroll indicators if content is scrollable
-	scrollInfo := ""
-	extraHeight := 0
-	if m.viewport.TotalLineCount() > m.viewport.Height {
-		scrollPercent := int((float64(m.viewport.YOffset) / float64(m.viewport.TotalLineCount()-m.viewport.Height)) * 100)
-		if scrollPercent < 0 {
-			scrollPercent = 0
-		}
-		if scrollPercent > 100 {
-			scrollPercent = 100
-		}
+	contentChanged := len(m.content) != m.lastContentLen
+	m.lastContentLen = len(m.content)
 
-		// Show current line position and total lines
-		currentLine := m.viewport.YOffset + 1
-		totalLines := m.viewport.TotalLineCount()
+	m.viewport.SetContent(viewportContent)
 
-		// Create scroll info text with more detail
-		scrollText := lipgloss.JoinHorizontal(lipgloss.Left,
-			"🖱️ Mouse wheel • PgUp/PgDown • Ctrl+U/D • Home/End • Shift+↑/↓ • ",
-			lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("Line %d/%d", currentLine, totalLines)),
-			" • ",
-			lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("%d%%", scrollPercent)))
-
-		scrollInfo = lipgloss.NewStyle().
-			Foreground(mutedColor).
-			Align(lipgloss.Right).
-			Width(m.width - 6).
-			Render(scrollText)
-		extraHeight = 1
+	if contentChanged && m.autoScrollEnabled {
+		m.viewport.GotoBottom()
 	}
 
-	outputContent := viewportContent
-	if scrollInfo != "" {
-		outputContent = lipgloss.JoinVertical(lipgloss.Left, viewportContent, scrollInfo)
-	}
+	outputView := m.viewport.View()
 
-	outputView := outputViewStyle.
-		Width(m.width - 4).
-		Height(m.viewport.Height + 2 + extraHeight).
-		Render(outputContent)
-
-	// Prompt view (bottom panel)
 	var promptText string
 	var promptPrefix string
 
 	if m.isMode(ModeConfirmation) && m.confirmationPrompt != nil {
 		promptPrefix = confirmationPromptStyle.Render(m.confirmationPrompt.Message + " (y/n)")
 	} else if m.isMode(ModeAuthSelection) && m.authSelectionPrompt != nil {
-		// Show simple selection prompt (options are shown in output area)
 		promptPrefix = confirmationPromptStyle.Render(m.authSelectionPrompt.Message)
 	} else if m.isMode(ModeAPIKey) && m.apiKeyPrompt != nil {
 		promptPrefix = confirmationPromptStyle.Render(m.apiKeyPrompt.Message)
 	} else if m.isMode(ModeText) && m.textPrompt != nil {
 		promptPrefix = confirmationPromptStyle.Render(m.textPrompt.Message)
 	} else if m.isMode(ModeSelect) && m.selectPrompt != nil {
-		// Render select options in the prompt area
 		selectText := m.selectPrompt.Message + "\n"
 		for i, option := range m.selectPrompt.Options {
 			if i == m.selectPrompt.Cursor {
@@ -297,20 +298,11 @@ func (m Model) View() string {
 		promptPrefix = promptStyle.Render("❯")
 	}
 
-	// Build input with cursor (mask API key input, hide input in select mode)
 	var inputWithCursor string
 	if m.isMode(ModeSelect) {
-		// In select mode, don't show input field
 		inputWithCursor = ""
 	} else {
-		if m.isMode(ModeAPIKey) {
-			// For API key mode, create a masked version
-			maskedInput := strings.Repeat("*", len(m.textInput.Value()))
-			inputWithCursor = inputStyle.Render(maskedInput)
-		} else {
-			// Use the textinput component's view
-			inputWithCursor = m.textInput.View()
-		}
+		inputWithCursor = m.textInput.View()
 	}
 
 	promptText = promptPrefix + " " + inputWithCursor
@@ -319,13 +311,84 @@ func (m Model) View() string {
 		Width(m.width - 4).
 		Render(promptText)
 
-	// Status bar view
 	statusBarContent := m.formatCurrentDir()
 	statusBarView := statusBarStyle.
 		Width(m.width).
 		Render(statusBarContent)
 
-	// Add spinner view if active
+	var scrollIndicator string
+	totalLines := m.viewport.TotalLineCount()
+	viewportHeight := m.viewport.Height()
+	if totalLines > viewportHeight {
+		scrollPercent := int((float64(m.viewport.YOffset) / float64(totalLines-viewportHeight)) * 100)
+		if scrollPercent < 0 {
+			scrollPercent = 0
+		}
+		if scrollPercent > 100 {
+			scrollPercent = 100
+		}
+
+		currentLine := m.viewport.YOffset + 1
+
+		// Simplified scroll indicator (selection info moved to status bar)
+		scrollText := lipgloss.JoinHorizontal(lipgloss.Left,
+			"🖱️ Mouse wheel • PgUp/PgDown • Ctrl+U/D • Home/End • Shift+↑/↓ • Ctrl+A • ",
+			lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("Line %d/%d", currentLine, totalLines)),
+			" • ",
+			lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render(fmt.Sprintf("%d%%", scrollPercent)))
+
+		scrollIndicator = lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Align(lipgloss.Right).
+			Width(m.width - 6).
+			Render(scrollText)
+
+		views := []string{outputView, scrollIndicator}
+
+		if m.spinnerActive {
+			spinnerText := m.spinner.View() + " " + m.spinnerMessage
+			spinnerView := lipgloss.NewStyle().
+				Width(m.width-4).
+				Padding(0, 2).
+				Render(spinnerText)
+			views = append(views, spinnerView)
+		}
+
+		views = append(views, promptView, statusBarView)
+
+		var cursor *tea.Cursor
+		if m.textInput.Focused() && !m.isMode(ModeSelect) {
+			cursor = m.textInput.Cursor()
+			if cursor != nil {
+				yOffset := 0
+
+				yOffset += m.viewport.Height() + 4
+
+				yOffset += 1
+
+				if m.spinnerActive {
+					yOffset += 1
+				}
+
+				yOffset += 1
+
+				promptPrefixLen := 0
+				if m.isMode(ModeNormal) {
+					promptPrefixLen = 2
+				} else {
+					promptPrefixLen = 2
+				}
+
+				xOffset := promptPrefixLen + 2
+
+				cursor.Y += yOffset
+				cursor.X += xOffset
+			}
+		}
+
+		return lipgloss.JoinVertical(lipgloss.Left, views...), cursor
+	}
+
 	views := []string{outputView}
 
 	if m.spinnerActive {
@@ -339,6 +402,91 @@ func (m Model) View() string {
 
 	views = append(views, promptView, statusBarView)
 
-	// Combine views vertically
-	return lipgloss.JoinVertical(lipgloss.Left, views...)
+	var cursor *tea.Cursor
+	if m.textInput.Focused() && !m.isMode(ModeSelect) {
+		cursor = m.textInput.Cursor()
+		if cursor != nil {
+			yOffset := 0
+
+			yOffset += m.viewport.Height() + 4
+
+			if m.spinnerActive {
+				yOffset += 1
+			}
+
+			yOffset += 1
+
+			promptPrefixLen := 0
+			if m.isMode(ModeNormal) {
+				promptPrefixLen = 2
+			} else {
+				promptPrefixLen = 2
+			}
+
+			xOffset := promptPrefixLen + 2
+
+			cursor.Y += yOffset
+			cursor.X += xOffset
+		}
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, views...), cursor
+}
+
+func (m Model) renderViewportContent() string {
+	if len(m.content) == 0 {
+		return ""
+	}
+
+	if !m.selection.Active {
+		return strings.Join(m.content, "\n")
+	}
+
+	lines := make([]string, len(m.content))
+	copy(lines, m.content)
+
+	startY, endY := m.selection.StartY, m.selection.EndY
+	startX, endX := m.selection.StartX, m.selection.EndX
+
+	if startY > endY || (startY == endY && startX > endX) {
+		startY, endY = endY, startY
+		startX, endX = endX, startX
+	}
+
+	for i := range lines {
+		if i < startY || i > endY {
+			continue
+		}
+
+		cleanLine := stripANSI(lines[i])
+		if len(cleanLine) == 0 {
+			continue
+		}
+
+		var renderedLine strings.Builder
+		runes := []rune(cleanLine)
+
+		for j := range len(runes) {
+			isSelected := false
+			if i == startY && i == endY {
+				isSelected = j >= startX && j < endX
+			} else if i == startY {
+				isSelected = j >= startX
+			} else if i == endY {
+				isSelected = j < endX
+			} else {
+				isSelected = true
+			}
+
+			if isSelected {
+				renderedLine.WriteString(selectionStyle.Render(string(runes[j])))
+			} else {
+				renderedLine.WriteRune(runes[j])
+			}
+		}
+
+		lines[i] = renderedLine.String()
+	}
+
+	return strings.Join(lines, "\n")
 }
