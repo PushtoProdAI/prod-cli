@@ -33,6 +33,8 @@ type TUIWriter interface {
 	SendTextPromptWithDefault(message string, defaultValue string)
 	SendPlan(plan DeployPlan, dryRun bool)
 	StopSpinner()
+	ClearScreen()
+	Quit()
 }
 
 type EnvVarWithStatus struct {
@@ -316,8 +318,20 @@ func (a *Agent) handleSlashCommand(ctx context.Context, input string, out io.Wri
 
 	switch command {
 	case "/clear":
-		fmt.Fprint(out, "Command not yet implemented\n")
+		tuiWriter, ok := out.(TUIWriter)
+		if ok {
+			tuiWriter.ClearScreen()
+		}
 		return a.processInput, nil
+	case "/logout":
+		a.internalAuth.Logout(ctx)
+		return a.processInput, nil
+	case "/quit":
+		tuiWriter, ok := out.(TUIWriter)
+		if ok {
+			tuiWriter.Quit()
+		}
+		return nil, nil
 	default:
 		fmt.Fprintf(out, "Unknown command: %s\n", command)
 		return a.processInput, nil

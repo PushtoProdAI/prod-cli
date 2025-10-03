@@ -133,6 +133,18 @@ func (c ClipboardCopyMsg) String() string {
 	return "Failed to copy: " + c.Error
 }
 
+type ClearScreenMsg struct{}
+
+func (c ClearScreenMsg) String() string {
+	return "Clear screen"
+}
+
+type QuitMsg struct{}
+
+func (q QuitMsg) String() string {
+	return "Quit"
+}
+
 var _ tea.Msg = UIMessage{}
 var _ tea.Msg = ConfirmationPrompt{}
 var _ tea.Msg = SpinnerStartMsg{}
@@ -143,3 +155,5 @@ var _ tea.Msg = SelectPrompt{}
 var _ tea.Msg = TextPrompt{}
 var _ tea.Msg = PlanDisplayMessage{}
 var _ tea.Msg = ClipboardCopyMsg{}
+var _ tea.Msg = ClearScreenMsg{}
+var _ tea.Msg = QuitMsg{}

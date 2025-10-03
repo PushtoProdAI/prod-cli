@@ -225,6 +225,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selection.LastAction = "Copy failed: " + msg.Error
 		}
 		return m, nil
+	case ClearScreenMsg:
+		return m.handleClearScreen()
+	case QuitMsg:
+		m.quitting = true
+		m.saveHistoryOnExit()
+		return m, tea.Quit
 	case tea.PasteMsg:
 		if !m.isMode(ModeSelect) {
 			var cmd tea.Cmd
