@@ -97,11 +97,6 @@ ______              _
 		// Initialize Bubble Tea model
 		model := tui.NewModel(c.Agent)
 
-		// Pass dry run mode to the model so it can display it in the TUI
-		if c.flags.DryRun {
-			// TODO: Add dry run mode indication to TUI model if needed
-		}
-
 		// Create Bubble Tea program with mouse support and alternate screen
 		program := tea.NewProgram(&model, tea.WithMouseAllMotion(), tea.WithAltScreen())
 

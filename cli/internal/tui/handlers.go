@@ -142,8 +142,10 @@ func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Check if it's a key press event
 	if keyPress, ok := msg.(tea.KeyPressMsg); ok {
-		switch keyPress.String() {
-		case "ctrl+c":
+		key := keyPress.Key()
+
+		// Handle Ctrl+C
+		if key.Code == 'c' && key.Mod == tea.ModCtrl {
 			// If text is selected, copy to clipboard instead of quitting
 			if m.selection.Active && len(m.selection.Content) > 0 {
 				return m, m.copySelectionToClipboard()
@@ -152,49 +154,67 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			m.saveHistoryOnExit()
 			return m, tea.Quit
-		case "enter":
-			return m.handleEnterKey()
-		case "up":
-			return m.handleUpKey()
-		case "down":
-			return m.handleDownKey()
-		case "pgup":
+		}
+
+		// Handle Ctrl+U
+		if key.Code == 'u' && key.Mod == tea.ModCtrl {
 			m.viewport.HalfViewUp()
 			m.autoScrollEnabled = false
 			return m, nil
-		case "pgdown":
+		}
+
+		// Handle Ctrl+D
+		if key.Code == 'd' && key.Mod == tea.ModCtrl {
 			m.viewport.HalfViewDown()
 			m.autoScrollEnabled = m.viewport.AtBottom()
 			return m, nil
-		case "home":
-			m.viewport.GotoTop()
-			m.autoScrollEnabled = false
-			return m, nil
-		case "end":
-			m.viewport.GotoBottom()
-			m.autoScrollEnabled = true
-			return m, nil
-		case "ctrl+u":
-			m.viewport.HalfViewUp()
-			m.autoScrollEnabled = false
-			return m, nil
-		case "ctrl+d":
-			m.viewport.HalfViewDown()
-			m.autoScrollEnabled = m.viewport.AtBottom()
-			return m, nil
-		case "shift+up":
-			m.viewport.LineUp(1)
-			m.autoScrollEnabled = false
-			return m, nil
-		case "shift+down":
-			m.viewport.LineDown(1)
-			m.autoScrollEnabled = m.viewport.AtBottom()
-			return m, nil
-		case "ctrl+a":
+		}
+
+		// Handle Ctrl+A
+		if key.Code == 'a' && key.Mod == tea.ModCtrl {
 			// Select all text
 			m.selectAll()
 			return m, nil
-		case "esc":
+		}
+
+		// Handle Shift+Up
+		if key.Code == tea.KeyUp && key.Mod == tea.ModShift {
+			m.viewport.LineUp(1)
+			m.autoScrollEnabled = false
+			return m, nil
+		}
+
+		// Handle Shift+Down
+		if key.Code == tea.KeyDown && key.Mod == tea.ModShift {
+			m.viewport.LineDown(1)
+			m.autoScrollEnabled = m.viewport.AtBottom()
+			return m, nil
+		}
+
+		switch key.Code {
+		case tea.KeyEnter:
+			return m.handleEnterKey()
+		case tea.KeyUp:
+			return m.handleUpKey()
+		case tea.KeyDown:
+			return m.handleDownKey()
+		case tea.KeyPgUp:
+			m.viewport.HalfViewUp()
+			m.autoScrollEnabled = false
+			return m, nil
+		case tea.KeyPgDown:
+			m.viewport.HalfViewDown()
+			m.autoScrollEnabled = m.viewport.AtBottom()
+			return m, nil
+		case tea.KeyHome:
+			m.viewport.GotoTop()
+			m.autoScrollEnabled = false
+			return m, nil
+		case tea.KeyEnd:
+			m.viewport.GotoBottom()
+			m.autoScrollEnabled = true
+			return m, nil
+		case tea.KeyEsc:
 			// Clear selection if active
 			if m.selection.Active {
 				m.clearSelection()
@@ -271,25 +291,28 @@ func (m Model) handleDownKey() (tea.Model, tea.Cmd) {
 
 // handleSpecialModeKeys processes keys in special modes
 func (m Model) handleSpecialModeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		// Exit any special mode
-		m.setMode(ModeNormal)
-		m.confirmationPrompt = nil
-		m.authSelectionPrompt = nil
-		m.apiKeyPrompt = nil
-		m.selectPrompt = nil
-		m.textPrompt = nil
-		m.textInput.SetValue("")
-		// Restore normal echo mode
-		m.textInput.EchoMode = textinput.EchoNormal
-		return m, nil
-	default:
-		// Update text input for non-select modes
-		if !m.isMode(ModeSelect) {
-			var cmd tea.Cmd
-			m.textInput, cmd = m.textInput.Update(msg)
-			return m, cmd
+	if keyPress, ok := msg.(tea.KeyPressMsg); ok {
+		key := keyPress.Key()
+		switch key.Code {
+		case tea.KeyEsc:
+			// Exit any special mode
+			m.setMode(ModeNormal)
+			m.confirmationPrompt = nil
+			m.authSelectionPrompt = nil
+			m.apiKeyPrompt = nil
+			m.selectPrompt = nil
+			m.textPrompt = nil
+			m.textInput.SetValue("")
+			// Restore normal echo mode
+			m.textInput.EchoMode = textinput.EchoNormal
+			return m, nil
+		default:
+			// Update text input for non-select modes
+			if !m.isMode(ModeSelect) {
+				var cmd tea.Cmd
+				m.textInput, cmd = m.textInput.Update(msg)
+				return m, cmd
+			}
 		}
 	}
 	return m, nil

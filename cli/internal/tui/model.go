@@ -381,8 +381,8 @@ func (m Model) View() (string, *tea.Cursor) {
 
 				xOffset := promptPrefixLen + 2
 
-				cursor.Position.Y += yOffset
-				cursor.Position.X += xOffset
+				cursor.Y += yOffset
+				cursor.X += xOffset
 			}
 		}
 
@@ -425,8 +425,8 @@ func (m Model) View() (string, *tea.Cursor) {
 
 			xOffset := promptPrefixLen + 2
 
-			cursor.Position.Y += yOffset
-			cursor.Position.X += xOffset
+			cursor.Y += yOffset
+			cursor.X += xOffset
 		}
 	}
 
@@ -466,7 +466,7 @@ func (m Model) renderViewportContent() string {
 		var renderedLine strings.Builder
 		runes := []rune(cleanLine)
 
-		for j := 0; j < len(runes); j++ {
+		for j := range len(runes) {
 			isSelected := false
 			if i == startY && i == endY {
 				isSelected = j >= startX && j < endX
