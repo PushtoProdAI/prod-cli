@@ -382,3 +382,23 @@ func (m Model) handlePlanDisplayMessage(msg PlanDisplayMessage) (tea.Model, tea.
 
 	return m, nil
 }
+func (m Model) handleClearScreen() (tea.Model, tea.Cmd) {
+	banner := getBanner()
+	greeting := greetUser()
+
+	var initialContent []string
+	bannerLines := strings.Split(headerStyle.Render(banner), "\n")
+	initialContent = append(initialContent, bannerLines...)
+	initialContent = append(initialContent, "")
+	initialContent = append(initialContent, logStyle.Render(greeting))
+	initialContent = append(initialContent, "")
+	initialContent = append(initialContent, logStyle.Render("Type 'exit' or press Ctrl+C to quit."))
+	initialContent = append(initialContent, "")
+
+	m.content = initialContent
+	m.viewport.SetContentLines(initialContent)
+	m.viewport.GotoBottom()
+	m.autoScrollEnabled = true
+
+	return m, nil
+}
