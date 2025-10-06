@@ -69,7 +69,7 @@ func NewAgent(wfClient *client.Client, internalAuth *auth.SupabaseAuth, errorTra
 		internalAuth:         internalAuth,
 		errorTrackingEnabled: errorTrackingEnabled,
 	}
-	sm := deploySM{currentState: a.processInput}
+	sm := deploySM{currentState: a.plan}
 	a.sm = sm
 	return a
 }
@@ -225,6 +225,20 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 		}
 	}
 
+	// Handle slash commands before auth check - they bypass the state machine
+	if strings.HasPrefix(strings.TrimSpace(input), "/") {
+		nextState, err := a.handleSlashCommand(ctx, input, output)
+		if err != nil {
+			slog.Error("Error handling slash command", "error", err)
+			return
+		}
+		// Update the state machine's current state if the command returns one
+		if nextState != nil {
+			a.sm.currentState = nextState
+		}
+		return
+	}
+
 	// handle auth before processing the input
 	if !a.internalAuth.IsAuthenticated() {
 		fmt.Fprint(output, "🔐 Before we proceed, let's get you logged in!\n")
@@ -298,44 +312,24 @@ func (a *Agent) processConsentResponse(ctx context.Context, input string, out io
 	return a.plan, nil
 }
 
-func (a *Agent) processInput(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	input = strings.TrimSpace(input)
-
-	if strings.HasPrefix(input, "/") {
-		return a.handleSlashCommand(ctx, input, out)
-	}
-
-	return a.plan(ctx, input, out)
-}
-
 func (a *Agent) handleSlashCommand(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	parts := strings.Fields(input)
 	if len(parts) == 0 {
-		return a.processInput, nil
+		return a.plan, nil
 	}
 
-	command := parts[0]
+	commandName := parts[0]
 
-	switch command {
-	case "/clear":
-		tuiWriter, ok := out.(TUIWriter)
-		if ok {
-			tuiWriter.ClearScreen()
+	// Find and execute the matching command
+	for _, cmd := range a.GetAvailableSlashCommands() {
+		if cmd.Name == commandName {
+			return cmd.Handler(a, ctx, out)
 		}
-		return a.processInput, nil
-	case "/logout":
-		a.internalAuth.Logout(ctx)
-		return a.processInput, nil
-	case "/quit":
-		tuiWriter, ok := out.(TUIWriter)
-		if ok {
-			tuiWriter.Quit()
-		}
-		return nil, nil
-	default:
-		fmt.Fprintf(out, "Unknown command: %s\n", command)
-		return a.processInput, nil
 	}
+
+	// Command not found
+	fmt.Fprintf(out, "Unknown command: %s\n", commandName)
+	return a.plan, nil
 }
 
 func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -369,7 +363,7 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 
 	if !shouldProceed(plan) {
 		fmt.Fprintf(out, "Cannot proceed with deployment plan\n")
-		return a.processInput, nil
+		return a.plan, nil
 	}
 	a.DeployPlan = &plan
 
@@ -412,7 +406,7 @@ func (a *Agent) processConfirmationResponse(ctx context.Context, input string, o
 
 	if input == "n" || input == "no" {
 		fmt.Fprintf(out, "Deployment cancelled\n")
-		return a.processInput, nil
+		return a.plan, nil
 	}
 
 	// Invalid response - ask again
@@ -571,7 +565,7 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 				"project_type": "javascript",
 			})
 			fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
-			return a.processInput, nil
+			return a.plan, nil
 		}
 
 		result, err := client.GetWorkflowResult[SetupJavaScriptProjectResult](ctx, a.wfClient, wf, 2*time.Minute)
@@ -681,7 +675,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 			"language":     DeployPlanWithEnvVars.Spec.Language,
 		})
 		fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
-		return a.processInput, nil
+		return a.plan, nil
 	}
 
 	// give a generous timeout for the deployment to complete
@@ -701,7 +695,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 		})
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
 		fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
-		return a.processInput, nil
+		return a.plan, nil
 	}
 
 	if result.Error.Summary != "" {
@@ -723,7 +717,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 		if !a.interactive {
 			return nil, nil
 		}
-		return a.processInput, nil
+		return a.plan, nil
 	}
 
 	io.WriteString(out, "Deployed!...🚀\n")
@@ -737,7 +731,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 		return nil, nil
 	}
 	// In interactive mode, return to input processing state for more commands
-	return a.processInput, nil
+	return a.plan, nil
 }
 
 func (a *Agent) dryRunDeploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -877,7 +871,7 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 	authenticated, err := authProvider.CheckAuthentication(ctx)
 	if err != nil {
 		fmt.Fprintf(out, "Error checking authentication: %v\n", err)
-		return a.processInput, err
+		return a.plan, err
 	}
 
 	if !authenticated {
@@ -1018,7 +1012,7 @@ func (a *Agent) checkRenderAuthenticationForDryRun(ctx context.Context, input st
 	authenticated, err := renderAuth.CheckAuthentication(ctx)
 	if err != nil {
 		fmt.Fprintf(out, "Error checking authentication: %v\n", err)
-		return a.processInput, err
+		return a.plan, err
 	}
 
 	if !authenticated {
@@ -1158,7 +1152,7 @@ func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) 
 			"language":     a.DeployPlan.Spec.Language,
 		})
 		fmt.Fprint(out, "Sorry, couldn't create a dry-run deployment plan \n")
-		return a.processInput, nil
+		return a.plan, nil
 	}
 
 	// get the dry-run result with a longer timeout to accommodate LLM operations
@@ -1174,7 +1168,7 @@ func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) 
 		})
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
 		fmt.Fprint(out, "Sorry that we had trouble creating the dry-run preview \n")
-		return a.processInput, nil
+		return a.plan, nil
 	}
 
 	// Display the dry-run preview
@@ -1185,7 +1179,7 @@ func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) 
 		return nil, nil
 	}
 	// In interactive mode, return to input processing state for more commands
-	return a.processInput, nil
+	return a.plan, nil
 }
 
 func (a *Agent) authenticateCLI(ctx context.Context) bool {
