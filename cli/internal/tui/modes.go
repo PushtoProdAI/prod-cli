@@ -21,6 +21,8 @@ func (m Model) handleEnterKey() (tea.Model, tea.Cmd) {
 		return m.handleSelectEnter()
 	} else if m.isMode(ModeText) {
 		return m.handleTextEnter()
+	} else if m.isMode(ModeSearch) {
+		return m.handleSearchEnter()
 	} else {
 		return m.handleNormalEnter()
 	}
@@ -183,5 +185,24 @@ func (m Model) handleTextEnter() (tea.Model, tea.Cmd) {
 		}()
 	}
 
+	return m, nil
+}
+
+// handleSearchEnter processes Enter in search mode
+func (m Model) handleSearchEnter() (tea.Model, tea.Cmd) {
+	query := strings.TrimSpace(m.textInput.Value())
+	
+	if query == "" {
+		// Empty search, exit search mode
+		m.setMode(ModeNormal)
+		m.clearSearch()
+		m.textInput.Placeholder = ""
+		return m, nil
+	}
+	
+	// Perform search
+	m.performSearch(query)
+	
+	// Stay in search mode to allow navigation
 	return m, nil
 }

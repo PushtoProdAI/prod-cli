@@ -35,6 +35,7 @@ type TUIWriter interface {
 	StopSpinner()
 	ClearScreen()
 	Quit()
+	Search()
 }
 
 type EnvVarWithStatus struct {

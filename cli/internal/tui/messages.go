@@ -145,6 +145,12 @@ func (q QuitMsg) String() string {
 	return "Quit"
 }
 
+type SearchMsg struct{}
+
+func (s SearchMsg) String() string {
+	return "Search"
+}
+
 var _ tea.Msg = UIMessage{}
 var _ tea.Msg = ConfirmationPrompt{}
 var _ tea.Msg = SpinnerStartMsg{}
@@ -157,3 +163,4 @@ var _ tea.Msg = PlanDisplayMessage{}
 var _ tea.Msg = ClipboardCopyMsg{}
 var _ tea.Msg = ClearScreenMsg{}
 var _ tea.Msg = QuitMsg{}
+var _ tea.Msg = SearchMsg{}
