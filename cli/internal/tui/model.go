@@ -22,6 +22,7 @@ const (
 	ModeAPIKey
 	ModeSelect
 	ModeText
+	ModeSearch
 )
 
 const (
@@ -78,6 +79,17 @@ type Model struct {
 	showSlashCommands  bool
 	slashCommandCursor int
 	availableCommands  []SlashCommand
+
+	// Search state
+	searchQuery       string
+	searchMatches     []SearchMatch
+	currentMatchIndex int
+}
+
+type SearchMatch struct {
+	LineIndex int
+	StartCol  int
+	EndCol    int
 }
 
 func (m *Model) setMode(mode UIMode) {
@@ -254,6 +266,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		m.saveHistoryOnExit()
 		return m, tea.Quit
+	case SearchMsg:
+		m.setMode(ModeSearch)
+		m.textInput.SetValue("")
+		m.textInput.Placeholder = "Search..."
+		return m, nil
 	case tea.PasteMsg:
 		if !m.isMode(ModeSelect) {
 			var cmd tea.Cmd
@@ -324,6 +341,15 @@ func (m Model) View() (string, *tea.Cursor) {
 		}
 		selectText += "Use ↑/↓ to navigate, Enter to select"
 		promptPrefix = confirmationPromptStyle.Render(selectText)
+	} else if m.isMode(ModeSearch) {
+		searchInfo := "🔍 Search"
+		if m.searchQuery != "" && len(m.searchMatches) > 0 {
+			searchInfo = fmt.Sprintf("🔍 Search: %d/%d matches (Ctrl+N: next, Ctrl+P: prev, Esc: exit)",
+				m.currentMatchIndex+1, len(m.searchMatches))
+		} else if m.searchQuery != "" {
+			searchInfo = "🔍 Search: No matches (Esc: exit)"
+		}
+		promptPrefix = confirmationPromptStyle.Render(searchInfo)
 	} else {
 		promptPrefix = promptStyle.Render("❯")
 	}
@@ -495,12 +521,39 @@ func (m Model) renderViewportContent() string {
 		return ""
 	}
 
-	if !m.selection.Active {
+	// If no special rendering needed, return plain content
+	if !m.selection.Active && len(m.searchMatches) == 0 {
 		return strings.Join(m.content, "\n")
 	}
 
 	lines := make([]string, len(m.content))
 	copy(lines, m.content)
+
+	// Handle search highlighting (simplified - just highlight all matches)
+	if len(m.searchMatches) > 0 {
+		// Group matches by line
+		matchesByLine := make(map[int][]SearchMatch)
+		for matchIdx, match := range m.searchMatches {
+			match.StartCol = match.StartCol // Keep match data
+			matchesByLine[match.LineIndex] = append(matchesByLine[match.LineIndex], m.searchMatches[matchIdx])
+		}
+
+		// Apply highlighting to each line with matches
+		for lineIdx, lineMatches := range matchesByLine {
+			if lineIdx >= len(lines) {
+				continue
+			}
+
+			cleanLine := stripANSI(lines[lineIdx])
+			lines[lineIdx] = m.highlightSearchMatches(cleanLine, lineMatches, lineIdx)
+		}
+
+		if !m.selection.Active {
+			return strings.Join(lines, "\n")
+		}
+	}
+
+	// Handle selection rendering
 
 	startY, endY := m.selection.StartY, m.selection.EndY
 	startX, endX := m.selection.StartX, m.selection.EndX
@@ -546,4 +599,66 @@ func (m Model) renderViewportContent() string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+func (m Model) highlightSearchMatches(cleanLine string, matches []SearchMatch, lineIdx int) string {
+	runes := []rune(cleanLine)
+	if len(runes) == 0 {
+		return cleanLine
+	}
+
+	var result strings.Builder
+	lastEnd := 0
+
+	for _, match := range matches {
+		if match.StartCol < 0 || match.StartCol >= len(runes) {
+			continue
+		}
+
+		endCol := match.EndCol
+		if endCol > len(runes) {
+			endCol = len(runes)
+		}
+
+		// Add text before match
+		if match.StartCol > lastEnd {
+			result.WriteString(string(runes[lastEnd:match.StartCol]))
+		}
+
+		// Add highlighted match
+		matchText := string(runes[match.StartCol:endCol])
+
+		// Check if this is the current match
+		isCurrentMatch := false
+		for idx, sm := range m.searchMatches {
+			if sm.LineIndex == lineIdx && sm.StartCol == match.StartCol && idx == m.currentMatchIndex {
+				isCurrentMatch = true
+				break
+			}
+		}
+
+		if isCurrentMatch {
+			// Current match - use bright purple/magenta highlight
+			result.WriteString(lipgloss.NewStyle().
+				Background(secondaryColor).
+				Foreground(backgroundColor).
+				Bold(true).
+				Render(matchText))
+		} else {
+			// Other matches - use muted purple
+			result.WriteString(lipgloss.NewStyle().
+				Background(lipgloss.Color("#9333EA")).
+				Foreground(backgroundColor).
+				Render(matchText))
+		}
+
+		lastEnd = endCol
+	}
+
+	// Add remaining text after last match
+	if lastEnd < len(runes) {
+		result.WriteString(string(runes[lastEnd:]))
+	}
+
+	return result.String()
 }

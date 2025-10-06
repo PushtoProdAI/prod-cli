@@ -30,6 +30,11 @@ func (a *Agent) GetAvailableSlashCommands() []SlashCommand {
 			Description: "Exit the application",
 			Handler:     (*Agent).handleQuitCommand,
 		},
+		{
+			Name:        "/search",
+			Description: "Search through the output buffer",
+			Handler:     (*Agent).handleSearchCommand,
+		},
 	}
 }
 
@@ -54,4 +59,12 @@ func (a *Agent) handleQuitCommand(ctx context.Context, out io.Writer) (stateFn, 
 		tuiWriter.Quit()
 	}
 	return nil, nil
+}
+
+func (a *Agent) handleSearchCommand(ctx context.Context, out io.Writer) (stateFn, error) {
+	tuiWriter, ok := out.(TUIWriter)
+	if ok {
+		tuiWriter.Search()
+	}
+	return a.plan, nil
 }

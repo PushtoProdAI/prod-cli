@@ -177,6 +177,18 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Handle Ctrl+N (next match in search)
+		if key.Code == 'n' && key.Mod == tea.ModCtrl && m.isMode(ModeSearch) {
+			m.nextMatch()
+			return m, nil
+		}
+
+		// Handle Ctrl+P (previous match in search)
+		if key.Code == 'p' && key.Mod == tea.ModCtrl && m.isMode(ModeSearch) {
+			m.prevMatch()
+			return m, nil
+		}
+
 		// Handle Shift+Up
 		if key.Code == tea.KeyUp && key.Mod == tea.ModShift {
 			m.viewport.LineUp(1)
@@ -226,6 +238,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case tea.KeyEsc:
+			// Exit search mode on Esc
+			if m.isMode(ModeSearch) {
+				m.setMode(ModeNormal)
+				m.clearSearch()
+				m.textInput.SetValue("")
+				m.textInput.Placeholder = ""
+				return m, nil
+			}
 			// Hide slash commands on Esc
 			if m.showSlashCommands {
 				m.showSlashCommands = false
@@ -472,4 +492,96 @@ func (m Model) getFilteredSlashCommands() []SlashCommand {
 	}
 
 	return filtered
+}
+
+func (m *Model) performSearch(query string) {
+	m.searchQuery = query
+	m.searchMatches = []SearchMatch{}
+	m.currentMatchIndex = 0
+
+	if query == "" {
+		return
+	}
+
+	queryLower := strings.ToLower(query)
+	queryRunes := []rune(queryLower)
+	queryLen := len(queryRunes)
+
+	// Search through all content lines
+	for lineIdx, line := range m.content {
+		cleanLine := stripANSI(line)
+		cleanLineRunes := []rune(cleanLine)
+		cleanLineLower := strings.ToLower(string(cleanLineRunes))
+		cleanLineLowerRunes := []rune(cleanLineLower)
+
+		// Find all occurrences in this line using rune positions
+		for startPos := 0; startPos <= len(cleanLineLowerRunes)-queryLen; startPos++ {
+			// Check if query matches at this position
+			match := true
+			for i := 0; i < queryLen; i++ {
+				if cleanLineLowerRunes[startPos+i] != queryRunes[i] {
+					match = false
+					break
+				}
+			}
+
+			if match {
+				m.searchMatches = append(m.searchMatches, SearchMatch{
+					LineIndex: lineIdx,
+					StartCol:  startPos,
+					EndCol:    startPos + queryLen,
+				})
+			}
+		}
+	}
+
+	// Jump to first match
+	if len(m.searchMatches) > 0 {
+		m.jumpToMatch(0)
+	}
+}
+
+func (m *Model) jumpToMatch(index int) {
+	if index < 0 || index >= len(m.searchMatches) {
+		return
+	}
+
+	m.currentMatchIndex = index
+	match := m.searchMatches[index]
+
+	// Calculate the line to scroll to (center the match in viewport)
+	targetLine := match.LineIndex - m.viewport.Height()/2
+	if targetLine < 0 {
+		targetLine = 0
+	}
+
+	m.viewport.SetYOffset(targetLine)
+	m.autoScrollEnabled = false
+}
+
+func (m *Model) nextMatch() {
+	if len(m.searchMatches) == 0 {
+		return
+	}
+
+	nextIndex := (m.currentMatchIndex + 1) % len(m.searchMatches)
+	m.jumpToMatch(nextIndex)
+}
+
+func (m *Model) prevMatch() {
+	if len(m.searchMatches) == 0 {
+		return
+	}
+
+	prevIndex := m.currentMatchIndex - 1
+	if prevIndex < 0 {
+		prevIndex = len(m.searchMatches) - 1
+	}
+	m.jumpToMatch(prevIndex)
+}
+
+func (m *Model) clearSearch() {
+	m.searchQuery = ""
+	m.searchMatches = []SearchMatch{}
+	m.currentMatchIndex = 0
 }
