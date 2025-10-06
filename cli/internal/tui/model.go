@@ -145,12 +145,20 @@ func NewModel(agent *agent.Agent) Model {
 		autoScrollEnabled:  true,
 		showSlashCommands:  false,
 		slashCommandCursor: 0,
-		availableCommands: []SlashCommand{
-			{Command: "/clear", Description: "Clear the screen"},
-			{Command: "/logout", Description: "Logout from Prod CLI"},
-			{Command: "/quit", Description: "Exit the application"},
-		},
 	}
+
+	// Load slash commands from agent
+	if agent != nil {
+		agentCommands := agent.GetAvailableSlashCommands()
+		m.availableCommands = make([]SlashCommand, len(agentCommands))
+		for i, cmd := range agentCommands {
+			m.availableCommands[i] = SlashCommand{
+				Command:     cmd.Name,
+				Description: cmd.Description,
+			}
+		}
+	}
+
 	m.loadHistory()
 	return m
 }
