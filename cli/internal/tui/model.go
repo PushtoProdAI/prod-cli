@@ -22,6 +22,7 @@ const (
 	ModeAPIKey
 	ModeSelect
 	ModeText
+	ModeSearch
 )
 
 const (
@@ -40,6 +41,11 @@ type SelectionState struct {
 	LastAction    string
 	DragStartLine int
 	DragStartCol  int
+}
+
+type SlashCommand struct {
+	Command     string
+	Description string
 }
 
 type Model struct {
@@ -68,8 +74,22 @@ type Model struct {
 	lastContentLen      int
 	autoScrollEnabled   bool
 
-	selection    SelectionState
-	mousePressed bool
+	selection          SelectionState
+	mousePressed       bool
+	showSlashCommands  bool
+	slashCommandCursor int
+	availableCommands  []SlashCommand
+
+	// Search state
+	searchQuery       string
+	searchMatches     []SearchMatch
+	currentMatchIndex int
+}
+
+type SearchMatch struct {
+	LineIndex int
+	StartCol  int
+	EndCol    int
 }
 
 func (m *Model) setMode(mode UIMode) {
@@ -122,20 +142,35 @@ func NewModel(agent *agent.Agent) Model {
 	s.Style = lipgloss.NewStyle().Foreground(primaryColor)
 
 	m := Model{
-		agent:             agent,
-		viewport:          vp,
-		textInput:         ti,
-		ready:             false,
-		history:           []string{},
-		historyIndex:      0,
-		historyFile:       "/tmp/.prodcli_app_history",
-		currentMode:       ModeNormal,
-		content:           initialContent,
-		spinner:           s,
-		spinnerActive:     false,
-		currentDir:        currentDir,
-		autoScrollEnabled: true,
+		agent:              agent,
+		viewport:           vp,
+		textInput:          ti,
+		ready:              false,
+		history:            []string{},
+		historyIndex:       0,
+		historyFile:        "/tmp/.prodcli_app_history",
+		currentMode:        ModeNormal,
+		content:            initialContent,
+		spinner:            s,
+		spinnerActive:      false,
+		currentDir:         currentDir,
+		autoScrollEnabled:  true,
+		showSlashCommands:  false,
+		slashCommandCursor: 0,
 	}
+
+	// Load slash commands from agent
+	if agent != nil {
+		agentCommands := agent.GetAvailableSlashCommands()
+		m.availableCommands = make([]SlashCommand, len(agentCommands))
+		for i, cmd := range agentCommands {
+			m.availableCommands[i] = SlashCommand{
+				Command:     cmd.Name,
+				Description: cmd.Description,
+			}
+		}
+	}
+
 	m.loadHistory()
 	return m
 }
@@ -225,6 +260,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selection.LastAction = "Copy failed: " + msg.Error
 		}
 		return m, nil
+	case ClearScreenMsg:
+		return m.handleClearScreen()
+	case QuitMsg:
+		m.quitting = true
+		m.saveHistoryOnExit()
+		return m, tea.Quit
+	case SearchMsg:
+		m.setMode(ModeSearch)
+		m.textInput.SetValue("")
+		m.textInput.Placeholder = "Search..."
+		return m, nil
 	case tea.PasteMsg:
 		if !m.isMode(ModeSelect) {
 			var cmd tea.Cmd
@@ -274,6 +320,7 @@ func (m Model) View() (string, *tea.Cursor) {
 
 	var promptText string
 	var promptPrefix string
+	var slashCommandMenu string
 
 	if m.isMode(ModeConfirmation) && m.confirmationPrompt != nil {
 		promptPrefix = confirmationPromptStyle.Render(m.confirmationPrompt.Message + " (y/n)")
@@ -294,8 +341,34 @@ func (m Model) View() (string, *tea.Cursor) {
 		}
 		selectText += "Use ↑/↓ to navigate, Enter to select"
 		promptPrefix = confirmationPromptStyle.Render(selectText)
+	} else if m.isMode(ModeSearch) {
+		searchInfo := "🔍 Search"
+		if m.searchQuery != "" && len(m.searchMatches) > 0 {
+			searchInfo = fmt.Sprintf("🔍 Search: %d/%d matches (Ctrl+N: next, Ctrl+P: prev, Esc: exit)",
+				m.currentMatchIndex+1, len(m.searchMatches))
+		} else if m.searchQuery != "" {
+			searchInfo = "🔍 Search: No matches (Esc: exit)"
+		}
+		promptPrefix = confirmationPromptStyle.Render(searchInfo)
 	} else {
 		promptPrefix = promptStyle.Render("❯")
+	}
+
+	// Build slash command menu if visible
+	if m.showSlashCommands && m.isMode(ModeNormal) {
+		filtered := m.getFilteredSlashCommands()
+		if len(filtered) > 0 {
+			var menuText strings.Builder
+			for i, cmd := range filtered {
+				if i == m.slashCommandCursor {
+					menuText.WriteString(fmt.Sprintf("❯ %s - %s\n", cmd.Command, cmd.Description))
+				} else {
+					menuText.WriteString(fmt.Sprintf("  %s - %s\n", cmd.Command, cmd.Description))
+				}
+			}
+			menuText.WriteString("Use ↑/↓ to navigate, Tab/Enter to select, Esc to cancel")
+			slashCommandMenu = confirmationPromptStyle.Render(menuText.String())
+		}
 	}
 
 	var inputWithCursor string
@@ -354,6 +427,11 @@ func (m Model) View() (string, *tea.Cursor) {
 			views = append(views, spinnerView)
 		}
 
+		// Add slash command menu if visible
+		if slashCommandMenu != "" {
+			views = append(views, slashCommandMenu)
+		}
+
 		views = append(views, promptView, statusBarView)
 
 		var cursor *tea.Cursor
@@ -400,6 +478,11 @@ func (m Model) View() (string, *tea.Cursor) {
 		views = append(views, spinnerView)
 	}
 
+	// Add slash command menu if visible
+	if slashCommandMenu != "" {
+		views = append(views, slashCommandMenu)
+	}
+
 	views = append(views, promptView, statusBarView)
 
 	var cursor *tea.Cursor
@@ -438,12 +521,39 @@ func (m Model) renderViewportContent() string {
 		return ""
 	}
 
-	if !m.selection.Active {
+	// If no special rendering needed, return plain content
+	if !m.selection.Active && len(m.searchMatches) == 0 {
 		return strings.Join(m.content, "\n")
 	}
 
 	lines := make([]string, len(m.content))
 	copy(lines, m.content)
+
+	// Handle search highlighting (simplified - just highlight all matches)
+	if len(m.searchMatches) > 0 {
+		// Group matches by line
+		matchesByLine := make(map[int][]SearchMatch)
+		for matchIdx, match := range m.searchMatches {
+			match.StartCol = match.StartCol // Keep match data
+			matchesByLine[match.LineIndex] = append(matchesByLine[match.LineIndex], m.searchMatches[matchIdx])
+		}
+
+		// Apply highlighting to each line with matches
+		for lineIdx, lineMatches := range matchesByLine {
+			if lineIdx >= len(lines) {
+				continue
+			}
+
+			cleanLine := stripANSI(lines[lineIdx])
+			lines[lineIdx] = m.highlightSearchMatches(cleanLine, lineMatches, lineIdx)
+		}
+
+		if !m.selection.Active {
+			return strings.Join(lines, "\n")
+		}
+	}
+
+	// Handle selection rendering
 
 	startY, endY := m.selection.StartY, m.selection.EndY
 	startX, endX := m.selection.StartX, m.selection.EndX
@@ -489,4 +599,66 @@ func (m Model) renderViewportContent() string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+func (m Model) highlightSearchMatches(cleanLine string, matches []SearchMatch, lineIdx int) string {
+	runes := []rune(cleanLine)
+	if len(runes) == 0 {
+		return cleanLine
+	}
+
+	var result strings.Builder
+	lastEnd := 0
+
+	for _, match := range matches {
+		if match.StartCol < 0 || match.StartCol >= len(runes) {
+			continue
+		}
+
+		endCol := match.EndCol
+		if endCol > len(runes) {
+			endCol = len(runes)
+		}
+
+		// Add text before match
+		if match.StartCol > lastEnd {
+			result.WriteString(string(runes[lastEnd:match.StartCol]))
+		}
+
+		// Add highlighted match
+		matchText := string(runes[match.StartCol:endCol])
+
+		// Check if this is the current match
+		isCurrentMatch := false
+		for idx, sm := range m.searchMatches {
+			if sm.LineIndex == lineIdx && sm.StartCol == match.StartCol && idx == m.currentMatchIndex {
+				isCurrentMatch = true
+				break
+			}
+		}
+
+		if isCurrentMatch {
+			// Current match - use bright purple/magenta highlight
+			result.WriteString(lipgloss.NewStyle().
+				Background(secondaryColor).
+				Foreground(backgroundColor).
+				Bold(true).
+				Render(matchText))
+		} else {
+			// Other matches - use muted purple
+			result.WriteString(lipgloss.NewStyle().
+				Background(lipgloss.Color("#9333EA")).
+				Foreground(backgroundColor).
+				Render(matchText))
+		}
+
+		lastEnd = endCol
+	}
+
+	// Add remaining text after last match
+	if lastEnd < len(runes) {
+		result.WriteString(string(runes[lastEnd:]))
+	}
+
+	return result.String()
 }
