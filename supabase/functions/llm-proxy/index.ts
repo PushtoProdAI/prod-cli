@@ -153,7 +153,7 @@ serve(async (req) => {
       }
       const cost = tokensUsed * (costs[modelUsed] || 0.0005 / 1000)
 
-      await supabase
+      const { error: insertError } = await supabase
         .from('llm_usage_logs')
         .insert({
           user_id: userId,
@@ -164,6 +164,10 @@ serve(async (req) => {
           response_time_ms: responseTime,
           success: openaiResponse.ok
         })
+      
+      if (insertError) {
+        console.warn('Failed to insert usage log:', insertError)
+      }
     } catch (error) {
       console.warn('Failed to log usage:', error)
     }
