@@ -197,6 +197,23 @@ func (w *TeaWriter) SendPlan(plan agent.DeployPlan, dryRun bool) {
 	w.send(planMessage)
 }
 
+func (w *TeaWriter) SendError(summary string, remediations []agent.Remediation) {
+	tuiRemediations := make([]RemediationItem, len(remediations))
+	for i, r := range remediations {
+		tuiRemediations[i] = RemediationItem{
+			Description: r.Description,
+			CliCommand:  r.CliCommand,
+		}
+	}
+
+	errorMessage := ErrorDisplayMessage{
+		Summary:      summary,
+		Remediations: tuiRemediations,
+	}
+
+	w.send(errorMessage)
+}
+
 // PromptSelection implements AuthInteractor interface
 func (w *TeaWriter) PromptSelection(message string, options []string) (int, error) {
 	w.SendSelect(message, options)

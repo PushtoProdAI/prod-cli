@@ -32,6 +32,7 @@ type TUIWriter interface {
 	SendTextPrompt(message string)
 	SendTextPromptWithDefault(message string, defaultValue string)
 	SendPlan(plan DeployPlan, dryRun bool)
+	SendError(summary string, remediations []Remediation)
 	StopSpinner()
 }
 
@@ -90,10 +91,10 @@ type deployResult struct {
 
 type deployError struct {
 	Summary      string
-	Remediations []remediation
+	Remediations []Remediation
 }
 
-type remediation struct {
+type Remediation struct {
 	Description string
 	CliCommand  string
 }
@@ -546,8 +547,21 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 			return a.confirmWithPrompt(ctx, "", out)
 		}
 		if result.Error.Summary != "" {
-			fmt.Fprintf(out, "❌ %s\n", result.Error.Summary)
-			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
+			if tuiWriter, ok := out.(TUIWriter); ok {
+				tuiWriter.SendError(result.Error.Summary, result.Error.Remediations)
+			} else {
+				fmt.Fprintf(out, "❌ %s\n", result.Error.Summary)
+				if len(result.Error.Remediations) > 0 {
+					fmt.Fprint(out, "Here are some suggestions to fix the issues:\n")
+					for _, r := range result.Error.Remediations {
+						fmt.Fprintf(out, " • %s\n", r.Description)
+						if r.CliCommand != "" {
+							fmt.Fprintf(out, "   Run: %s\n", r.CliCommand)
+						}
+					}
+				}
+				fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
+			}
 			return a.confirmWithPrompt(ctx, "", out)
 		}
 		// Display config diff if available
@@ -663,20 +677,25 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 	}
 
 	if result.Error.Summary != "" {
-		fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
-		fmt.Fprintf(out, "%s\n", result.Error.Summary)
-		if len(result.Error.Remediations) > 0 {
-			fmt.Fprint(out, "Here are some suggestions to fix the issues:\n")
-			for _, r := range result.Error.Remediations {
-				fmt.Fprintf(out, " • %s\n", r.Description)
-				if r.CliCommand != "" {
-					fmt.Fprintf(out, "   Run: %s\n", r.CliCommand)
+		if tuiWriter, ok := out.(TUIWriter); ok {
+			tuiWriter.SendError(result.Error.Summary, result.Error.Remediations)
+		} else {
+			fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
+			fmt.Fprintf(out, "%s\n", result.Error.Summary)
+			if len(result.Error.Remediations) > 0 {
+				fmt.Fprint(out, "Here are some suggestions to fix the issues:\n")
+				for _, r := range result.Error.Remediations {
+					fmt.Fprintf(out, " • %s\n", r.Description)
+					if r.CliCommand != "" {
+						fmt.Fprintf(out, "   Run: %s\n", r.CliCommand)
+					}
 				}
+				fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
 			}
-			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
-			// jump to the confirm state so that we give the user a chance to fix the issues and retry, without having to replan.
-			return a.confirmWithPrompt(ctx, "", out)
+		}
 
+		if len(result.Error.Remediations) > 0 {
+			return a.confirmWithPrompt(ctx, "", out)
 		}
 		if !a.interactive {
 			return nil, nil
