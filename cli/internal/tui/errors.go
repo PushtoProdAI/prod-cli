@@ -16,9 +16,12 @@ func (m Model) formatErrorDisplay(errMsg ErrorDisplayMessage) string {
 	result.WriteString(header)
 	result.WriteString("\n\n")
 
-	maxWidth := m.viewport.Width() - 10
+	maxWidth := m.viewport.Width() - 20
 	if maxWidth < 40 {
 		maxWidth = 40
+	}
+	if maxWidth > 100 {
+		maxWidth = 100
 	}
 
 	summaryBox := lipgloss.NewStyle().
@@ -33,12 +36,7 @@ func (m Model) formatErrorDisplay(errMsg ErrorDisplayMessage) string {
 	result.WriteString("\n")
 
 	if len(errMsg.Remediations) > 0 {
-		numRemediations := len(errMsg.Remediations)
-		keyRange := "1"
-		if numRemediations > 1 {
-			keyRange = fmt.Sprintf("1-%d", numRemediations)
-		}
-		headerText := fmt.Sprintf("💡 Suggested Fixes (Press %s to expand)", keyRange)
+		headerText := "💡 Suggested Fixes"
 
 		header := lipgloss.NewStyle().
 			Margin(1, 0, 0, 0).
@@ -66,15 +64,6 @@ func (m Model) formatErrorDisplay(errMsg ErrorDisplayMessage) string {
 func (m Model) formatRemediation(index int, remediation RemediationItem) string {
 	var result strings.Builder
 
-	isExpanded := m.expandedRemediations[index]
-
-	expandIcon := "▸"
-	if isExpanded {
-		expandIcon = "▾"
-	}
-
-	iconStyled := expandIconStyle.Render(expandIcon)
-
 	numberStyled := lipgloss.NewStyle().
 		Foreground(accentColor).
 		Bold(true).
@@ -85,10 +74,10 @@ func (m Model) formatRemediation(index int, remediation RemediationItem) string 
 		Bold(false).
 		Render(remediation.Description)
 
-	headerLine := fmt.Sprintf("  %s %s %s", numberStyled, iconStyled, descriptionStyled)
+	headerLine := fmt.Sprintf("  %s %s", numberStyled, descriptionStyled)
 
 	var content string
-	if isExpanded && remediation.CliCommand != "" {
+	if remediation.CliCommand != "" {
 		commandBlock := m.formatCodeBlock(remediation.CliCommand)
 		content = headerLine + "\n" + commandBlock
 	} else {

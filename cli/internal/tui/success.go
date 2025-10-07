@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss/v2"
@@ -19,9 +18,12 @@ func (m Model) formatSuccessDisplay(msg SuccessDisplayMessage) string {
 	result.WriteString(header)
 	result.WriteString("\n\n")
 
-	maxWidth := m.viewport.Width() - 10
+	maxWidth := m.viewport.Width() - 20
 	if maxWidth < 40 {
 		maxWidth = 40
+	}
+	if maxWidth > 100 {
+		maxWidth = 100
 	}
 
 	var contentLines []string
@@ -55,12 +57,10 @@ func (m Model) formatSuccessDisplay(msg SuccessDisplayMessage) string {
 			Bold(true).
 			Render("🔗 URL: ")
 
-		// Create clickable hyperlink using OSC 8 escape codes
-		clickableUrl := fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", msg.Url, msg.Url)
 		urlValue := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#60A5FA")).
 			Underline(true).
-			Render(clickableUrl)
+			Render(msg.Url)
 		contentLines = append(contentLines, styledUrl+urlValue)
 	}
 
