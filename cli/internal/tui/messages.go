@@ -133,6 +133,20 @@ func (c ClipboardCopyMsg) String() string {
 	return "Failed to copy: " + c.Error
 }
 
+type ErrorDisplayMessage struct {
+	Summary      string
+	Remediations []RemediationItem
+}
+
+type RemediationItem struct {
+	Description string
+	CliCommand  string
+}
+
+func (e ErrorDisplayMessage) String() string {
+	return "Error Display"
+}
+
 var _ tea.Msg = UIMessage{}
 var _ tea.Msg = ConfirmationPrompt{}
 var _ tea.Msg = SpinnerStartMsg{}
@@ -143,3 +157,4 @@ var _ tea.Msg = SelectPrompt{}
 var _ tea.Msg = TextPrompt{}
 var _ tea.Msg = PlanDisplayMessage{}
 var _ tea.Msg = ClipboardCopyMsg{}
+var _ tea.Msg = ErrorDisplayMessage{}

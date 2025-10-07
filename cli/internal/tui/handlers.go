@@ -222,6 +222,41 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			// Fall through to default behavior
 		default:
+			// Check for number keys to toggle remediations
+			if keyPress, ok := msg.(tea.KeyPressMsg); ok {
+				if m.currentError != nil && keyPress.Code >= '1' && keyPress.Code <= '9' {
+					index := int(keyPress.Code - '1')
+					if index < len(m.currentError.Remediations) {
+						m.expandedRemediations[index] = !m.expandedRemediations[index]
+
+						// Remove old error display
+						if m.errorStartLine >= 0 && m.errorEndLine > m.errorStartLine {
+							m.content = append(m.content[:m.errorStartLine], m.content[m.errorEndLine:]...)
+						}
+
+						// Re-render the error display at the same position
+						m.errorStartLine = len(m.content)
+						errorContent := m.formatErrorDisplay(*m.currentError)
+
+						var newLines []string
+						for _, line := range strings.Split(errorContent, "\n") {
+							if line != "" {
+								newLines = append(newLines, line)
+							}
+						}
+
+						m.content = append(m.content, newLines...)
+						m.errorEndLine = len(m.content)
+
+						viewportContent := m.renderViewportContent()
+						m.viewport.SetContent(viewportContent)
+						m.viewport.GotoBottom()
+
+						return m, nil
+					}
+				}
+			}
+
 			// Handle special keys based on current mode
 			if !m.isMode(ModeNormal) {
 				return m.handleSpecialModeKeys(msg)
@@ -376,6 +411,35 @@ func (m Model) handlePlanDisplayMessage(msg PlanDisplayMessage) (tea.Model, tea.
 	m.viewport.SetContent(viewportContent)
 
 	// If auto-scroll is enabled, scroll to bottom immediately
+	if m.autoScrollEnabled {
+		m.viewport.GotoBottom()
+	}
+
+	return m, nil
+}
+
+func (m Model) handleErrorDisplayMessage(msg ErrorDisplayMessage) (tea.Model, tea.Cmd) {
+	msgCopy := msg
+	m.currentError = &msgCopy
+	m.errorStartLine = len(m.content)
+
+	errorContent := m.formatErrorDisplay(msg)
+
+	for _, line := range strings.Split(errorContent, "\n") {
+		if line != "" {
+			m.content = append(m.content, line)
+		}
+	}
+
+	m.errorEndLine = len(m.content)
+
+	if len(m.content) > maxHistoryLength {
+		m.content = m.content[len(m.content)-maxHistoryLength:]
+	}
+
+	viewportContent := m.renderViewportContent()
+	m.viewport.SetContent(viewportContent)
+
 	if m.autoScrollEnabled {
 		m.viewport.GotoBottom()
 	}

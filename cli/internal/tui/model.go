@@ -68,8 +68,12 @@ type Model struct {
 	lastContentLen      int
 	autoScrollEnabled   bool
 
-	selection    SelectionState
-	mousePressed bool
+	selection            SelectionState
+	mousePressed         bool
+	expandedRemediations map[int]bool
+	currentError         *ErrorDisplayMessage
+	errorStartLine       int
+	errorEndLine         int
 }
 
 func (m *Model) setMode(mode UIMode) {
@@ -122,19 +126,20 @@ func NewModel(agent *agent.Agent) Model {
 	s.Style = lipgloss.NewStyle().Foreground(primaryColor)
 
 	m := Model{
-		agent:             agent,
-		viewport:          vp,
-		textInput:         ti,
-		ready:             false,
-		history:           []string{},
-		historyIndex:      0,
-		historyFile:       "/tmp/.prodcli_app_history",
-		currentMode:       ModeNormal,
-		content:           initialContent,
-		spinner:           s,
-		spinnerActive:     false,
-		currentDir:        currentDir,
-		autoScrollEnabled: true,
+		agent:                agent,
+		viewport:             vp,
+		textInput:            ti,
+		ready:                false,
+		history:              []string{},
+		historyIndex:         0,
+		historyFile:          "/tmp/.prodcli_app_history",
+		currentMode:          ModeNormal,
+		content:              initialContent,
+		spinner:              s,
+		spinnerActive:        false,
+		currentDir:           currentDir,
+		autoScrollEnabled:    true,
+		expandedRemediations: make(map[int]bool),
 	}
 	m.loadHistory()
 	return m
@@ -225,6 +230,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selection.LastAction = "Copy failed: " + msg.Error
 		}
 		return m, nil
+	case ErrorDisplayMessage:
+		return m.handleErrorDisplayMessage(msg)
 	case tea.PasteMsg:
 		if !m.isMode(ModeSelect) {
 			var cmd tea.Cmd
