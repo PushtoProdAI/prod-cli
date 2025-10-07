@@ -451,10 +451,20 @@ func (m Model) handleUIMessage(msg UIMessage) (tea.Model, tea.Cmd) {
 
 // handlePlanDisplayMessage processes plan display messages and renders them as a table
 func (m Model) handlePlanDisplayMessage(msg PlanDisplayMessage) (tea.Model, tea.Cmd) {
-	// Split summary in case it has embedded newlines
-	summaryLines := strings.Split(m.styleLogMessage(msg.Summary), "\n")
-	m.content = append(m.content, summaryLines...)
-	m.content = append(m.content, "")
+	// Display summary as an info box
+	if msg.Summary != "" {
+		summaryBox := m.formatInfoBox(InfoBoxMessage{
+			Title:   "Deployment Plan",
+			Content: msg.Summary,
+			Icon:    "📋",
+		})
+		for _, line := range strings.Split(summaryBox, "\n") {
+			if line != "" {
+				m.content = append(m.content, line)
+			}
+		}
+		m.content = append(m.content, "")
+	}
 
 	tableContent := m.formatPlanAsTable(msg)
 
@@ -654,6 +664,29 @@ func (m Model) handleSuccessDisplayMessage(msg SuccessDisplayMessage) (tea.Model
 	successContent := m.formatSuccessDisplay(msg)
 
 	for _, line := range strings.Split(successContent, "\n") {
+		if line != "" {
+			m.content = append(m.content, line)
+		}
+	}
+
+	if len(m.content) > maxHistoryLength {
+		m.content = m.content[len(m.content)-maxHistoryLength:]
+	}
+
+	viewportContent := m.renderViewportContent()
+	m.viewport.SetContent(viewportContent)
+
+	if m.autoScrollEnabled {
+		m.viewport.GotoBottom()
+	}
+
+	return m, nil
+}
+
+func (m Model) handleInfoBoxMessage(msg InfoBoxMessage) (tea.Model, tea.Cmd) {
+	infoContent := m.formatInfoBox(msg)
+
+	for _, line := range strings.Split(infoContent, "\n") {
 		if line != "" {
 			m.content = append(m.content, line)
 		}

@@ -224,6 +224,16 @@ func (w *TeaWriter) SendSuccess(platform string, appName string, url string) {
 	w.send(successMessage)
 }
 
+func (w *TeaWriter) SendInfoBox(title string, content string, icon string) {
+	infoMessage := InfoBoxMessage{
+		Title:   title,
+		Content: content,
+		Icon:    icon,
+	}
+
+	w.send(infoMessage)
+}
+
 func (w *TeaWriter) ClearScreen() {
 	w.send(ClearScreenMsg{})
 }
