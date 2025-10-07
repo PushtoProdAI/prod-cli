@@ -213,6 +213,17 @@ func (w *TeaWriter) SendError(summary string, remediations []agent.Remediation) 
 
 	w.send(errorMessage)
 }
+func (w *TeaWriter) ClearScreen() {
+	w.send(ClearScreenMsg{})
+}
+
+func (w *TeaWriter) Quit() {
+	w.send(QuitMsg{})
+}
+
+func (w *TeaWriter) Search() {
+	w.send(SearchMsg{})
+}
 
 // PromptSelection implements AuthInteractor interface
 func (w *TeaWriter) PromptSelection(message string, options []string) (int, error) {
