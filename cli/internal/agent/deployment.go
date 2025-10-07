@@ -28,14 +28,14 @@ func (a *Activities) deploySteps(ctx context.Context, spec deployment.Deployment
 		deployable = flyio.NewFlyioQueuedDeployment(a.flyClient, &spec, a.uiWriter)
 	case Netlify:
 		// Use the Netlify deployment adapter
-		netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter)
+		netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter, a.llmClient)
 		var err error
 		deployable, err = netlifyAdapter.GenerateArtifacts(&spec, deployment.StrategyNetlify)
 		if err != nil {
 			return nil, errors.Errorf("failed to create Netlify deployment: %w", err)
 		}
 	case Vercel:
-		vercelAdapter := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter)
+		vercelAdapter := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter, a.llmClient)
 		var err error
 		deployable, err = vercelAdapter.GenerateArtifacts(&spec, deployment.StrategyVercel)
 		if err != nil {
@@ -89,7 +89,7 @@ func (a *Activities) summarizeDeploySteps(ctx context.Context, steps []string) e
 }
 
 func (a *Activities) estimateRenderCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	ra := render.NewRenderDeploymentAdapter(a.renderClient, a.uiWriter)
+	ra := render.NewRenderDeploymentAdapter(a.renderClient, a.uiWriter, a.llmClient)
 	costs, err := ra.EstimateCost(ctx, &spec, strategy)
 	if err != nil {
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
@@ -98,7 +98,7 @@ func (a *Activities) estimateRenderCosts(ctx context.Context, spec deployment.De
 }
 
 func (a *Activities) estimateFlyioCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	fa := flyio.NewFlyioDeploymentAdapter(a.flyClient, a.uiWriter)
+	fa := flyio.NewFlyioDeploymentAdapter(a.flyClient, a.uiWriter, a.llmClient)
 	costs, err := fa.EstimateCost(ctx, &spec, strategy)
 	if err != nil {
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
@@ -107,7 +107,7 @@ func (a *Activities) estimateFlyioCosts(ctx context.Context, spec deployment.Dep
 }
 
 func (a *Activities) estimateNetlifyCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	na := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter)
+	na := netlify.NewNetlifyDeploymentAdapter(netlify.NewCLINetlifyClient(), a.uiWriter, a.llmClient)
 	costs, err := na.EstimateCost(ctx, &spec, strategy)
 	if err != nil {
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
@@ -116,7 +116,7 @@ func (a *Activities) estimateNetlifyCosts(ctx context.Context, spec deployment.D
 }
 
 func (a *Activities) estimateVercelCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	va := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter)
+	va := vercel.NewVercelDeploymentAdapter(vercel.NewCLIVercelClient(), a.uiWriter, a.llmClient)
 	costs, err := va.EstimateCost(ctx, &spec, strategy)
 	if err != nil {
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)

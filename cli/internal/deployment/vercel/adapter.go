@@ -9,6 +9,7 @@ import (
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/pricing"
+	"github.com/meroxa/prod/cli/internal/llm"
 	"github.com/meroxa/prod/cli/internal/output"
 )
 
@@ -17,16 +18,18 @@ type VercelDeploymentAdapter struct {
 	client         VercelClient
 	writer         io.Writer
 	pricingService pricing.Service
+	llmClient      llm.Client
 }
 
 // NewVercelDeploymentAdapter creates a new Vercel deployment adapter
-func NewVercelDeploymentAdapter(client VercelClient, writer io.Writer) *VercelDeploymentAdapter {
+func NewVercelDeploymentAdapter(client VercelClient, writer io.Writer, llmClient llm.Client) *VercelDeploymentAdapter {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}
 	return &VercelDeploymentAdapter{
-		client: client,
-		writer: writer,
+		client:    client,
+		writer:    writer,
+		llmClient: llmClient,
 	}
 }
 
@@ -43,8 +46,8 @@ func NewVercelDeploymentAdapterWithPricing(client VercelClient, writer io.Writer
 }
 
 // NewDefaultVercelDeploymentAdapter creates a deployment adapter with the default CLI client
-func NewDefaultVercelDeploymentAdapter(writer io.Writer) *VercelDeploymentAdapter {
-	return NewVercelDeploymentAdapter(NewCLIVercelClient(), writer)
+func NewDefaultVercelDeploymentAdapter(writer io.Writer, llmClient llm.Client) *VercelDeploymentAdapter {
+	return NewVercelDeploymentAdapter(NewCLIVercelClient(), writer, llmClient)
 }
 
 // SupportedStrategies returns the deployment strategies supported by Vercel
@@ -119,7 +122,7 @@ func (v *VercelDeploymentAdapter) estimateVercelCost(ctx context.Context, cr dep
 	} else {
 		// Create pricing service with Vercel pricing provider (production)
 		pricingProvider := NewPricingProvider()
-		pricingService = pricing.NewPricingService(pricingProvider, pricing.DefaultRetries)
+		pricingService = pricing.NewPricingService(pricingProvider, pricing.DefaultRetries, v.llmClient)
 	}
 
 	for _, service := range cr.Services {
