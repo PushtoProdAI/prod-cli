@@ -157,6 +157,16 @@ func (s SuccessDisplayMessage) String() string {
 	return "Success Display"
 }
 
+type InfoBoxMessage struct {
+	Title   string
+	Content string
+	Icon    string
+}
+
+func (i InfoBoxMessage) String() string {
+	return "Info Box"
+}
+
 type ClearScreenMsg struct{}
 
 func (c ClearScreenMsg) String() string {
@@ -187,6 +197,7 @@ var _ tea.Msg = PlanDisplayMessage{}
 var _ tea.Msg = ClipboardCopyMsg{}
 var _ tea.Msg = ErrorDisplayMessage{}
 var _ tea.Msg = SuccessDisplayMessage{}
+var _ tea.Msg = InfoBoxMessage{}
 var _ tea.Msg = ClearScreenMsg{}
 var _ tea.Msg = QuitMsg{}
 var _ tea.Msg = SearchMsg{}

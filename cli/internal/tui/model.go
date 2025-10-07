@@ -269,6 +269,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleErrorDisplayMessage(msg)
 	case SuccessDisplayMessage:
 		return m.handleSuccessDisplayMessage(msg)
+	case InfoBoxMessage:
+		return m.handleInfoBoxMessage(msg)
 	case ClearScreenMsg:
 		return m.handleClearScreen()
 	case QuitMsg:
