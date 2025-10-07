@@ -213,6 +213,17 @@ func (w *TeaWriter) SendError(summary string, remediations []agent.Remediation) 
 
 	w.send(errorMessage)
 }
+
+func (w *TeaWriter) SendSuccess(platform string, appName string, url string) {
+	successMessage := SuccessDisplayMessage{
+		Platform: platform,
+		AppName:  appName,
+		Url:      url,
+	}
+
+	w.send(successMessage)
+}
+
 func (w *TeaWriter) ClearScreen() {
 	w.send(ClearScreenMsg{})
 }

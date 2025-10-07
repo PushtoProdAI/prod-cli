@@ -33,6 +33,7 @@ type TUIWriter interface {
 	SendTextPromptWithDefault(message string, defaultValue string)
 	SendPlan(plan DeployPlan, dryRun bool)
 	SendError(summary string, remediations []Remediation)
+	SendSuccess(platform string, appName string, url string)
 	StopSpinner()
 	ClearScreen()
 	Quit()
@@ -740,10 +741,17 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 		return a.plan, nil
 	}
 
-	io.WriteString(out, "Deployed!...🚀\n")
-	if result.Url != "" {
-		fmt.Fprintf(out, "You can access your deployment at: %s\n", result.Url)
-		openInBrowser(result.Url)
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendSuccess(a.DeployPlan.Platform.String(), a.DeployPlan.Spec.Name, result.Url)
+		if result.Url != "" {
+			openInBrowser(result.Url)
+		}
+	} else {
+		io.WriteString(out, "Deployed!...🚀\n")
+		if result.Url != "" {
+			fmt.Fprintf(out, "You can access your deployment at: %s\n", result.Url)
+			openInBrowser(result.Url)
+		}
 	}
 
 	// In non-interactive mode, end the state machine
