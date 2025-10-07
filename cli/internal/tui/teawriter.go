@@ -197,6 +197,18 @@ func (w *TeaWriter) SendPlan(plan agent.DeployPlan, dryRun bool) {
 	w.send(planMessage)
 }
 
+func (w *TeaWriter) ClearScreen() {
+	w.send(ClearScreenMsg{})
+}
+
+func (w *TeaWriter) Quit() {
+	w.send(QuitMsg{})
+}
+
+func (w *TeaWriter) Search() {
+	w.send(SearchMsg{})
+}
+
 // PromptSelection implements AuthInteractor interface
 func (w *TeaWriter) PromptSelection(message string, options []string) (int, error) {
 	w.SendSelect(message, options)

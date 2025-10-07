@@ -33,6 +33,9 @@ type TUIWriter interface {
 	SendTextPromptWithDefault(message string, defaultValue string)
 	SendPlan(plan DeployPlan, dryRun bool)
 	StopSpinner()
+	ClearScreen()
+	Quit()
+	Search()
 }
 
 type EnvVarWithStatus struct {
@@ -223,6 +226,20 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 		}
 	}
 
+	// Handle slash commands before auth check - they bypass the state machine
+	if strings.HasPrefix(strings.TrimSpace(input), "/") {
+		nextState, err := a.handleSlashCommand(ctx, input, output)
+		if err != nil {
+			slog.Error("Error handling slash command", "error", err)
+			return
+		}
+		// Update the state machine's current state if the command returns one
+		if nextState != nil {
+			a.sm.currentState = nextState
+		}
+		return
+	}
+
 	// handle auth before processing the input
 	if !a.internalAuth.IsAuthenticated() {
 		fmt.Fprint(output, "🔐 Before we proceed, let's get you logged in!\n")
@@ -293,6 +310,26 @@ func (a *Agent) processConsentResponse(ctx context.Context, input string, out io
 	}
 
 	// Return to plan state - this will handle authentication and continue normally
+	return a.plan, nil
+}
+
+func (a *Agent) handleSlashCommand(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return a.plan, nil
+	}
+
+	commandName := parts[0]
+
+	// Find and execute the matching command
+	for _, cmd := range a.GetAvailableSlashCommands() {
+		if cmd.Name == commandName {
+			return cmd.Handler(a, ctx, out)
+		}
+	}
+
+	// Command not found
+	fmt.Fprintf(out, "Unknown command: %s\n", commandName)
 	return a.plan, nil
 }
 
@@ -694,7 +731,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 	if !a.interactive {
 		return nil, nil
 	}
-	// In interactive mode, return to plan state for more commands
+	// In interactive mode, return to input processing state for more commands
 	return a.plan, nil
 }
 
@@ -1142,7 +1179,7 @@ func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) 
 	if !a.interactive {
 		return nil, nil
 	}
-	// In interactive mode, return to plan state for more commands
+	// In interactive mode, return to input processing state for more commands
 	return a.plan, nil
 }
 
