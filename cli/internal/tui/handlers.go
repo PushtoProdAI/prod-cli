@@ -649,3 +649,26 @@ func (m *Model) clearSearch() {
 	m.searchMatches = []SearchMatch{}
 	m.currentMatchIndex = 0
 }
+
+func (m Model) handleSuccessDisplayMessage(msg SuccessDisplayMessage) (tea.Model, tea.Cmd) {
+	successContent := m.formatSuccessDisplay(msg)
+
+	for _, line := range strings.Split(successContent, "\n") {
+		if line != "" {
+			m.content = append(m.content, line)
+		}
+	}
+
+	if len(m.content) > maxHistoryLength {
+		m.content = m.content[len(m.content)-maxHistoryLength:]
+	}
+
+	viewportContent := m.renderViewportContent()
+	m.viewport.SetContent(viewportContent)
+
+	if m.autoScrollEnabled {
+		m.viewport.GotoBottom()
+	}
+
+	return m, nil
+}

@@ -147,6 +147,16 @@ func (e ErrorDisplayMessage) String() string {
 	return "Error Display"
 }
 
+type SuccessDisplayMessage struct {
+	Platform string
+	AppName  string
+	Url      string
+}
+
+func (s SuccessDisplayMessage) String() string {
+	return "Success Display"
+}
+
 type ClearScreenMsg struct{}
 
 func (c ClearScreenMsg) String() string {
@@ -176,6 +186,7 @@ var _ tea.Msg = TextPrompt{}
 var _ tea.Msg = PlanDisplayMessage{}
 var _ tea.Msg = ClipboardCopyMsg{}
 var _ tea.Msg = ErrorDisplayMessage{}
+var _ tea.Msg = SuccessDisplayMessage{}
 var _ tea.Msg = ClearScreenMsg{}
 var _ tea.Msg = QuitMsg{}
 var _ tea.Msg = SearchMsg{}
