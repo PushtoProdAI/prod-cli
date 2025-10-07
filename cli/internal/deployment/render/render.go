@@ -10,6 +10,7 @@ import (
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/pricing"
+	"github.com/meroxa/prod/cli/internal/llm"
 	"github.com/meroxa/prod/cli/internal/output"
 )
 
@@ -62,9 +63,10 @@ type RenderDeploymentAdapter struct {
 	client          RenderClient
 	dockerGenerator *deployment.DockerGenerator
 	writer          io.Writer
+	llmClient       llm.Client
 }
 
-func NewRenderDeploymentAdapter(client RenderClient, writer io.Writer) *RenderDeploymentAdapter {
+func NewRenderDeploymentAdapter(client RenderClient, writer io.Writer, llmClient llm.Client) *RenderDeploymentAdapter {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}
@@ -72,6 +74,7 @@ func NewRenderDeploymentAdapter(client RenderClient, writer io.Writer) *RenderDe
 		client:          client,
 		dockerGenerator: deployment.NewDockerGenerator(writer, []deployment.EnvVar{}),
 		writer:          writer,
+		llmClient:       llmClient,
 	}
 }
 
@@ -153,11 +156,11 @@ func (rda *RenderDeploymentAdapter) EstimateCost(ctx context.Context, spec *depl
 		Plan: webServicePlan,
 	}
 	cr.Services = append(cr.Services, cs)
-	ce, _ := estimateCost(ctx, cr)
+	ce, _ := rda.estimateCost(ctx, cr)
 	return ce, nil
 }
 
-func estimateCost(ctx context.Context, cr deployment.CostRequest) (deployment.CostEstimate, error) {
+func (rda *RenderDeploymentAdapter) estimateCost(ctx context.Context, cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	slog.Info("Estimating costs for request", "request", cr)
 
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
@@ -165,7 +168,7 @@ func estimateCost(ctx context.Context, cr deployment.CostRequest) (deployment.Co
 
 	// Create pricing service with Render pricing provider
 	pricingProvider := NewPricingProvider()
-	pricingService := pricing.NewPricingService(pricingProvider, pricing.DefaultRetries)
+	pricingService := pricing.NewPricingService(pricingProvider, pricing.DefaultRetries, rda.llmClient)
 
 	for _, service := range cr.Services {
 		result, err := pricingService.EstimateCost(ctx, service)
