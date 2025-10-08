@@ -503,7 +503,7 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 
 	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
 	if err != nil {
-		// Send the original error
+		// Send the original error before summarizing
 		prod_error.CaptureErrorWithContext(err, map[string]any{
 			"workflow":     DeployFlyioWorkflowName,
 			"activity":     AgentIsURLLive,
@@ -512,7 +512,23 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 			"project_name": input.Spec.Name,
 			"language":     input.Spec.Language,
 		})
-		return deployResult{}, errors.Errorf("service URL %s is not live: %w", fullUrl, err)
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     DeployFlyioWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "deployment",
+				"platform":     "flyio",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
+			slog.Info("Failed to summarize error", "error", e1)
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		slog.Info("service URL is not live", "url", fullUrl, "error", err)
+		return deployResult{Error: summary}, nil
 	}
 	return deployResult{Url: fullUrl}, nil
 }
@@ -1237,7 +1253,32 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 
 	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
 	if err != nil {
-		return deployResult{}, errors.Errorf("service URL %s is not live: %w", fullUrl, err)
+		// Send the original error before summarizing
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployHerokuWorkflowName,
+			"activity":     AgentIsURLLive,
+			"component":    "deployment",
+			"platform":     "heroku",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     DeployHerokuWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "deployment",
+				"platform":     "heroku",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
+			slog.Info("Failed to summarize error", "error", e1)
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		slog.Info("service URL is not live", "url", fullUrl, "error", err)
+		return deployResult{Error: summary}, nil
 	}
 	slog.Info("Heroku deployment workflow completed successfully")
 

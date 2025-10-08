@@ -74,11 +74,15 @@ type Model struct {
 	lastContentLen      int
 	autoScrollEnabled   bool
 
-	selection          SelectionState
-	mousePressed       bool
-	showSlashCommands  bool
-	slashCommandCursor int
-	availableCommands  []SlashCommand
+	selection            SelectionState
+	mousePressed         bool
+	expandedRemediations map[int]bool
+	currentError         *ErrorDisplayMessage
+	errorStartLine       int
+	errorEndLine         int
+	showSlashCommands    bool
+	slashCommandCursor   int
+	availableCommands    []SlashCommand
 
 	// Search state
 	searchQuery       string
@@ -142,21 +146,22 @@ func NewModel(agent *agent.Agent) Model {
 	s.Style = lipgloss.NewStyle().Foreground(primaryColor)
 
 	m := Model{
-		agent:              agent,
-		viewport:           vp,
-		textInput:          ti,
-		ready:              false,
-		history:            []string{},
-		historyIndex:       0,
-		historyFile:        "/tmp/.prodcli_app_history",
-		currentMode:        ModeNormal,
-		content:            initialContent,
-		spinner:            s,
-		spinnerActive:      false,
-		currentDir:         currentDir,
-		autoScrollEnabled:  true,
-		showSlashCommands:  false,
-		slashCommandCursor: 0,
+		agent:                agent,
+		viewport:             vp,
+		textInput:            ti,
+		ready:                false,
+		history:              []string{},
+		historyIndex:         0,
+		historyFile:          "/tmp/.prodcli_app_history",
+		currentMode:          ModeNormal,
+		content:              initialContent,
+		spinner:              s,
+		spinnerActive:        false,
+		currentDir:           currentDir,
+		autoScrollEnabled:    true,
+		showSlashCommands:    false,
+		slashCommandCursor:   0,
+		expandedRemediations: make(map[int]bool),
 	}
 
 	// Load slash commands from agent
@@ -260,6 +265,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selection.LastAction = "Copy failed: " + msg.Error
 		}
 		return m, nil
+	case ErrorDisplayMessage:
+		return m.handleErrorDisplayMessage(msg)
+	case SuccessDisplayMessage:
+		return m.handleSuccessDisplayMessage(msg)
+	case InfoBoxMessage:
+		return m.handleInfoBoxMessage(msg)
 	case ClearScreenMsg:
 		return m.handleClearScreen()
 	case QuitMsg:
