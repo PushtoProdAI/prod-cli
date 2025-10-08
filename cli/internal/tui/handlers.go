@@ -258,6 +258,41 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			// Fall through to default behavior
 		default:
+			// Check for number keys to toggle remediations
+			if keyPress, ok := msg.(tea.KeyPressMsg); ok {
+				if m.currentError != nil && keyPress.Code >= '1' && keyPress.Code <= '9' {
+					index := int(keyPress.Code - '1')
+					if index < len(m.currentError.Remediations) {
+						m.expandedRemediations[index] = !m.expandedRemediations[index]
+
+						// Remove old error display
+						if m.errorStartLine >= 0 && m.errorEndLine > m.errorStartLine {
+							m.content = append(m.content[:m.errorStartLine], m.content[m.errorEndLine:]...)
+						}
+
+						// Re-render the error display at the same position
+						m.errorStartLine = len(m.content)
+						errorContent := m.formatErrorDisplay(*m.currentError)
+
+						var newLines []string
+						for _, line := range strings.Split(errorContent, "\n") {
+							if line != "" {
+								newLines = append(newLines, line)
+							}
+						}
+
+						m.content = append(m.content, newLines...)
+						m.errorEndLine = len(m.content)
+
+						viewportContent := m.renderViewportContent()
+						m.viewport.SetContent(viewportContent)
+						m.viewport.GotoBottom()
+
+						return m, nil
+					}
+				}
+			}
+
 			// Handle special keys based on current mode
 			if !m.isMode(ModeNormal) {
 				return m.handleSpecialModeKeys(msg)
@@ -416,10 +451,20 @@ func (m Model) handleUIMessage(msg UIMessage) (tea.Model, tea.Cmd) {
 
 // handlePlanDisplayMessage processes plan display messages and renders them as a table
 func (m Model) handlePlanDisplayMessage(msg PlanDisplayMessage) (tea.Model, tea.Cmd) {
-	// Split summary in case it has embedded newlines
-	summaryLines := strings.Split(m.styleLogMessage(msg.Summary), "\n")
-	m.content = append(m.content, summaryLines...)
-	m.content = append(m.content, "")
+	// Display summary as an info box
+	if msg.Summary != "" {
+		summaryBox := m.formatInfoBox(InfoBoxMessage{
+			Title:   "Deployment Plan",
+			Content: msg.Summary,
+			Icon:    "📋",
+		})
+		for _, line := range strings.Split(summaryBox, "\n") {
+			if line != "" {
+				m.content = append(m.content, line)
+			}
+		}
+		m.content = append(m.content, "")
+	}
 
 	tableContent := m.formatPlanAsTable(msg)
 
@@ -438,6 +483,35 @@ func (m Model) handlePlanDisplayMessage(msg PlanDisplayMessage) (tea.Model, tea.
 	m.viewport.SetContent(viewportContent)
 
 	// If auto-scroll is enabled, scroll to bottom immediately
+	if m.autoScrollEnabled {
+		m.viewport.GotoBottom()
+	}
+
+	return m, nil
+}
+
+func (m Model) handleErrorDisplayMessage(msg ErrorDisplayMessage) (tea.Model, tea.Cmd) {
+	msgCopy := msg
+	m.currentError = &msgCopy
+	m.errorStartLine = len(m.content)
+
+	errorContent := m.formatErrorDisplay(msg)
+
+	for _, line := range strings.Split(errorContent, "\n") {
+		if line != "" {
+			m.content = append(m.content, line)
+		}
+	}
+
+	m.errorEndLine = len(m.content)
+
+	if len(m.content) > maxHistoryLength {
+		m.content = m.content[len(m.content)-maxHistoryLength:]
+	}
+
+	viewportContent := m.renderViewportContent()
+	m.viewport.SetContent(viewportContent)
+
 	if m.autoScrollEnabled {
 		m.viewport.GotoBottom()
 	}
@@ -584,4 +658,50 @@ func (m *Model) clearSearch() {
 	m.searchQuery = ""
 	m.searchMatches = []SearchMatch{}
 	m.currentMatchIndex = 0
+}
+
+func (m Model) handleSuccessDisplayMessage(msg SuccessDisplayMessage) (tea.Model, tea.Cmd) {
+	successContent := m.formatSuccessDisplay(msg)
+
+	for _, line := range strings.Split(successContent, "\n") {
+		if line != "" {
+			m.content = append(m.content, line)
+		}
+	}
+
+	if len(m.content) > maxHistoryLength {
+		m.content = m.content[len(m.content)-maxHistoryLength:]
+	}
+
+	viewportContent := m.renderViewportContent()
+	m.viewport.SetContent(viewportContent)
+
+	if m.autoScrollEnabled {
+		m.viewport.GotoBottom()
+	}
+
+	return m, nil
+}
+
+func (m Model) handleInfoBoxMessage(msg InfoBoxMessage) (tea.Model, tea.Cmd) {
+	infoContent := m.formatInfoBox(msg)
+
+	for _, line := range strings.Split(infoContent, "\n") {
+		if line != "" {
+			m.content = append(m.content, line)
+		}
+	}
+
+	if len(m.content) > maxHistoryLength {
+		m.content = m.content[len(m.content)-maxHistoryLength:]
+	}
+
+	viewportContent := m.renderViewportContent()
+	m.viewport.SetContent(viewportContent)
+
+	if m.autoScrollEnabled {
+		m.viewport.GotoBottom()
+	}
+
+	return m, nil
 }

@@ -47,17 +47,16 @@ func (a *Activities) summarizeError(ctx context.Context, error string, input Dep
 
 	deployError := deployError{
 		Summary:      summary.Summary,
-		Remediations: make([]remediation, len(summary.Remediations)),
+		Remediations: make([]Remediation, len(summary.Remediations)),
 	}
 
 	for i, r := range summary.Remediations {
-		deployError.Remediations[i] = remediation{
+		deployError.Remediations[i] = Remediation{
 			Description: r.Description,
 			CliCommand:  r.CliCommand,
 		}
 	}
 
-	a.uiWriter.SendStatusComplete("summarizing", "✅ Errors summarized")
 	slog.Info("Error summary", "summary", deployError.Summary)
 	slog.Info("Remediations", "remediations", deployError.Remediations)
 

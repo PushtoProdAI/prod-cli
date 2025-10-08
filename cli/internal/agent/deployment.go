@@ -79,12 +79,30 @@ func (a *Activities) deploySteps(ctx context.Context, spec deployment.Deployment
 func (a *Activities) summarizeDeploySteps(ctx context.Context, steps []string) error {
 	a.uiWriter.SendStatus("summarizing", "Summarizing deployment steps")
 
+	var summaryText string
 	summary, err := a.llmClient.SummarizeSteps(ctx, steps)
 	if err != nil {
-		return errors.Errorf("failed to summarize deploy steps: %w", err)
+		slog.Warn("Failed to get LLM summary, using fallback", "error", err)
+		summaryText = "We will execute the following deployment steps:\n\n"
+		for i, step := range steps {
+			summaryText += fmt.Sprintf("%d. %s\n", i+1, step)
+		}
+	} else {
+		summaryText = summary.Summary
 	}
-	a.uiWriter.SendStatusComplete("summarizing", "✅ Steps summarized")
-	a.uiWriter.SendStatus("summary", fmt.Sprintf("%s\n-----", summary.Summary))
+	a.uiWriter.SendStatusComplete("summarizing", "")
+
+	type infoBoxSender interface {
+		SendInfoBox(title string, content string, icon string)
+	}
+
+	if tuiWriter, ok := a.uiWriter.(infoBoxSender); ok {
+		slog.Info("Sending info box for deployment steps", "hasContent", summaryText != "")
+		tuiWriter.SendInfoBox("Deployment Steps", summaryText, "📋")
+	} else {
+		slog.Info("Not a TUI writer, using plain text", "writerType", fmt.Sprintf("%T", a.uiWriter))
+		fmt.Fprintf(a.uiWriter, "%s\n", summaryText)
+	}
 	return nil
 }
 
