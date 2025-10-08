@@ -318,6 +318,7 @@ func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 
 	// Construct relative paths (now that we're in the source directory)
 	deployPath := s.publishDir
+	log.Println("Using publish directory:", deployPath)
 	functionsPath := s.discoverFunctionsDir()
 
 	// Deploy using CLI client
@@ -534,6 +535,41 @@ func (s *SetEnvironmentVariablesStep) Rollback(ctx context.Context, client Netli
 		}
 	}
 
+	return nil
+}
+
+// InitializeGitRepoStep initializes a git repository for the project
+type InitializeGitRepoStep struct {
+	BaseStep
+	sourcePath string
+}
+
+func NewInitializeGitRepoStep(sourcePath string) *InitializeGitRepoStep {
+	return &InitializeGitRepoStep{
+		BaseStep: BaseStep{
+			ID:           "init-git",
+			Description:  "Initialize git repository",
+			Dependencies: []string{},
+		},
+		sourcePath: sourcePath,
+	}
+}
+
+func (s *InitializeGitRepoStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error) {
+	if err := deployment.InitializeGitRepo(s.sourcePath); err != nil {
+		return nil, err
+	}
+
+	if err := deployment.ConfigureGitUser(s.sourcePath); err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"initialized": true,
+	}, nil
+}
+
+func (s *InitializeGitRepoStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) error {
 	return nil
 }
 
