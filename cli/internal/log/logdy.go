@@ -2,7 +2,6 @@ package log
 
 import (
 	"context"
-	"log"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -55,7 +54,7 @@ func (h *LogdyHandler) WithGroup(name string) slog.Handler {
 
 func (h *LogdyHandler) Handle(ctx context.Context, rec slog.Record) error {
 	if err := h.inner.Handle(ctx, rec); err != nil {
-		log.Printf("error writing slog inner handler: %v", err)
+		slog.Error("error writing slog inner handler", "error", err)
 	}
 
 	if !h.enabled {
@@ -66,7 +65,7 @@ func (h *LogdyHandler) Handle(ctx context.Context, rec slog.Record) error {
 	h.once.Do(func() {
 		ld := logdy.InitializeLogdy(cfg, h.mux)
 		if ld == nil {
-			log.Printf("Logdy init failed")
+			slog.Error("Logdy init failed")
 		}
 		h.logdy = ld
 	})

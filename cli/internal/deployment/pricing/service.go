@@ -3,7 +3,6 @@ package pricing
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"strings"
 
@@ -128,7 +127,7 @@ func (ps *PricingService) extractPricingForService(ctx context.Context, service 
 	// Call BAML pricing function through our LLM client
 	resp, err := ps.llmClient.FetchPricing(ctx, s, content)
 	if err != nil {
-		log.Println(err)
+		slog.Error("BAML pricing extraction failed", "error", err)
 		return nil, errors.Errorf("BAML pricing extraction failed: %w", err)
 	}
 
