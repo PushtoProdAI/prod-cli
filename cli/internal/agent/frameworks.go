@@ -346,7 +346,7 @@ func (h *SvelteKitHandler) GetConfigFilenames() []string {
 func (h *SvelteKitHandler) PatchPackageJSON(origPackageJson []byte, platform Platform) ([]byte, bool, error) {
 	// For platforms that need Svelte adapters
 	switch platform {
-	case Render, FlyIO:
+	case Render, FlyIO, Heroku:
 		updatedPackageJson, err := patchPackageJSON(origPackageJson, "@sveltejs/adapter-node", "^5.2.0")
 		if err != nil {
 			return nil, false, err
@@ -387,7 +387,7 @@ func (h *SvelteKitHandler) HandleConfig(projectPath string, platform Platform) (
 	// Determine which adapter to use based on platform
 	var newAdapter string
 	switch platform {
-	case Render, FlyIO:
+	case Render, FlyIO, Heroku:
 		newAdapter = "@sveltejs/adapter-node"
 	case Netlify:
 		newAdapter = "@sveltejs/adapter-netlify"
