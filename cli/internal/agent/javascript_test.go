@@ -575,6 +575,14 @@ func TestPatchPackageJSONForRemixPlatforms(t *testing.T) {
 			notExpectedDeps: []string{"@netlify/remix-adapter", "@vercel/remix"},
 		},
 		{
+			name:            "Remix project for Heroku platform",
+			platform:        Heroku,
+			framework:       "Remix",
+			wantChanged:     true,
+			expectedDeps:    []string{"@remix-run/serve"},
+			notExpectedDeps: []string{"@netlify/remix-adapter", "@vercel/remix"},
+		},
+		{
 			name:            "Remix project for Vercel platform",
 			platform:        Vercel,
 			framework:       "Remix",
