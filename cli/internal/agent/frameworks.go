@@ -135,7 +135,7 @@ func (h *RemixHandler) GetConfigFilenames() []string {
 
 func (h *RemixHandler) PatchPackageJSON(origPackageJson []byte, platform Platform) ([]byte, bool, error) {
 	switch platform {
-	case Render, FlyIO:
+	case Render, FlyIO, Heroku:
 		// For Node.js platforms, ensure @remix-run/serve is available
 		updatedPackageJson, err := patchPackageJSONForRemix(origPackageJson, "@remix-run/serve", "^2.0.0")
 		if err != nil {
@@ -522,7 +522,7 @@ func (h *NuxtHandler) HandlePlatformSpecificFiles(projectPath string, platform P
 func (h *NuxtHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
 	// Apply platform-specific deployment configuration for Nuxt
 	switch plan.Platform {
-	case Render, FlyIO:
+	case Render, FlyIO, Heroku:
 		plan.Spec.StartCommand = "node .output/server/index.mjs"
 		plan.CollectedEnvVars = append(plan.CollectedEnvVars, deployment.EnvVar{Name: "NITRO_PRESET", Value: "node-server"})
 	case Netlify:
@@ -544,7 +544,7 @@ func patchRemixViteConfigForNetlify(config []byte) []byte {
 	}
 
 	// Add import for netlifyPlugin if not present
-	if !strings.Contains(configStr, `import { netlifyPlugin } from "@netlify/remix-adapter/plugin"`) {
+	if !strings.Contains(configStr, `import { netlifyPlugin } from "@netlify/rem-ixadapter/plugin"`) {
 		// Find existing imports and add the netlify import
 		importRegex := regexp.MustCompile(`(import\s+.*from\s+["'].*["'];?\s*\n)`)
 		matches := importRegex.FindAllStringIndex(configStr, -1)
