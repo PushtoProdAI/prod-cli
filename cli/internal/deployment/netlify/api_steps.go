@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 
@@ -318,6 +318,7 @@ func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 
 	// Construct relative paths (now that we're in the source directory)
 	deployPath := s.publishDir
+	slog.Info("Using publish directory", "path", deployPath)
 	functionsPath := s.discoverFunctionsDir()
 
 	// Deploy using CLI client
@@ -363,7 +364,7 @@ func (s *DeployNetlifySiteStep) discoverFunctionsDir() string {
 		if _, err := os.Stat(dir); err == nil {
 			// Log when we discover a functions directory that wasn't detected during step generation
 			if s.functionsDir == "" {
-				log.Printf("Discovered functions directory during deployment: %s", dir)
+				slog.Info("Discovered functions directory during deployment", "dir", dir)
 			}
 			return dir
 		}
@@ -422,7 +423,7 @@ func (s *LinkNetlifySiteStep) Execute(ctx context.Context, client NetlifyClient,
 	// Remove .netlify directory to fix intermittent issues with env vars
 	err = os.RemoveAll(".netlify")
 	if err != nil {
-		log.Printf("Warning: failed to remove .netlify directory: %v", err)
+		slog.Warn("Failed to remove .netlify directory", "error", err)
 	}
 
 	err = client.LinkSite(siteID)
@@ -441,13 +442,13 @@ func (s *LinkNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClient
 	// Remove .netlify directory to unlink
 	originalDir, err := os.Getwd()
 	if err != nil {
-		log.Printf("Warning: failed to get current directory during rollback: %v", err)
+		slog.Warn("Failed to get current directory during rollback", "error", err)
 		return nil
 	}
 
 	if s.sourcePath != "." && s.sourcePath != "" {
 		if err := os.Chdir(s.sourcePath); err != nil {
-			log.Printf("Warning: failed to change to source directory during rollback: %v", err)
+			slog.Warn("Failed to change to source directory during rollback", "error", err)
 			return nil
 		}
 		defer os.Chdir(originalDir)
@@ -455,7 +456,7 @@ func (s *LinkNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClient
 
 	err = os.RemoveAll(".netlify")
 	if err != nil {
-		log.Printf("Warning: failed to remove .netlify directory during rollback: %v", err)
+		slog.Warn("Failed to remove .netlify directory during rollback", "error", err)
 	}
 
 	return nil
@@ -534,6 +535,41 @@ func (s *SetEnvironmentVariablesStep) Rollback(ctx context.Context, client Netli
 		}
 	}
 
+	return nil
+}
+
+// InitializeGitRepoStep initializes a git repository for the project
+type InitializeGitRepoStep struct {
+	BaseStep
+	sourcePath string
+}
+
+func NewInitializeGitRepoStep(sourcePath string) *InitializeGitRepoStep {
+	return &InitializeGitRepoStep{
+		BaseStep: BaseStep{
+			ID:           "init-git",
+			Description:  "Initialize git repository",
+			Dependencies: []string{},
+		},
+		sourcePath: sourcePath,
+	}
+}
+
+func (s *InitializeGitRepoStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error) {
+	if err := deployment.InitializeGitRepo(s.sourcePath); err != nil {
+		return nil, err
+	}
+
+	if err := deployment.ConfigureGitUser(s.sourcePath); err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"initialized": true,
+	}, nil
+}
+
+func (s *InitializeGitRepoStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) error {
 	return nil
 }
 
