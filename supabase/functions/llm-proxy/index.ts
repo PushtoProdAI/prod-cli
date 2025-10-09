@@ -14,26 +14,6 @@ interface ChatCompletionRequest {
   stream?: boolean
 }
 
-const rateLimitStore = new Map<string, { count: number; resetTime: number }>()
-
-function checkRateLimit(userId: string, limit: number = 60, windowMs: number = 60000): boolean {
-  const now = Date.now()
-  const key = userId || 'anonymous'
-  const userLimit = rateLimitStore.get(key)
-
-  if (!userLimit || now > userLimit.resetTime) {
-    rateLimitStore.set(key, { count: 1, resetTime: now + windowMs })
-    return true
-  }
-
-  if (userLimit.count >= limit) {
-    return false
-  }
-
-  userLimit.count++
-  return true
-}
-
 serve(async (req) => {
   const startTime = Date.now()
 
@@ -102,16 +82,6 @@ serve(async (req) => {
         console.error(`[${new Date().toISOString()}] DEBUG: Token validation failed:`, error)
         console.warn('Failed to get user from token:', error)
       }
-    }
-
-    if (!checkRateLimit(userId, 60, 60000)) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Rate limit exceeded. Please try again later.',
-          retry_after: 60
-        }),
-        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
     }
 
     const chatConfig: ChatCompletionRequest = {
