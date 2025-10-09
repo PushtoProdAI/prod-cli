@@ -172,9 +172,11 @@ func (c *CLINetlifyClient) DeploySite(siteID string, path string, functionsPath 
 	args := []string{"deploy", "--prod", "--json"}
 
 	// Add directory to deploy
-	if path != "" {
-		args = append(args, "--dir", path)
-	}
+	// Nathan Stehr: Commenting this out to always deploy from current directory. I don't like commenting code out,
+	// but doing this for now until we've done more testing of different frameworks and setups.
+	//if path != "" {
+	//	args = append(args, "--dir", path)
+	//}
 
 	// Add functions directory if specified
 	if functionsPath != "" {

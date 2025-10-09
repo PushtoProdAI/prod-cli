@@ -355,7 +355,7 @@ func (h *SvelteKitHandler) GetConfigFilenames() []string {
 func (h *SvelteKitHandler) PatchPackageJSON(origPackageJson []byte, platform Platform) ([]byte, bool, error) {
 	// For platforms that need Svelte adapters
 	switch platform {
-	case Render, FlyIO:
+	case Render, FlyIO, Heroku:
 		updatedPackageJson, err := patchPackageJSON(origPackageJson, "@sveltejs/adapter-node", "^5.2.0")
 		if err != nil {
 			return nil, false, err
@@ -396,7 +396,7 @@ func (h *SvelteKitHandler) HandleConfig(projectPath string, platform Platform) (
 	// Determine which adapter to use based on platform
 	var newAdapter string
 	switch platform {
-	case Render, FlyIO:
+	case Render, FlyIO, Heroku:
 		newAdapter = "@sveltejs/adapter-node"
 	case Netlify:
 		newAdapter = "@sveltejs/adapter-netlify"
@@ -531,7 +531,7 @@ func (h *NuxtHandler) HandlePlatformSpecificFiles(projectPath string, platform P
 func (h *NuxtHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
 	// Apply platform-specific deployment configuration for Nuxt
 	switch plan.Platform {
-	case Render, FlyIO:
+	case Render, FlyIO, Heroku:
 		plan.Spec.StartCommand = "node .output/server/index.mjs"
 		plan.CollectedEnvVars = append(plan.CollectedEnvVars, deployment.EnvVar{Name: "NITRO_PRESET", Value: "node-server"})
 	case Netlify:
@@ -553,7 +553,7 @@ func patchRemixViteConfigForNetlify(config []byte) []byte {
 	}
 
 	// Add import for netlifyPlugin if not present
-	if !strings.Contains(configStr, `import { netlifyPlugin } from "@netlify/remix-adapter/plugin"`) {
+	if !strings.Contains(configStr, `import { netlifyPlugin } from "@netlify/rem-ixadapter/plugin"`) {
 		// Find existing imports and add the netlify import
 		importRegex := regexp.MustCompile(`(import\s+.*from\s+["'].*["'];?\s*\n)`)
 		matches := importRegex.FindAllStringIndex(configStr, -1)
