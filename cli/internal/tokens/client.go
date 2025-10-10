@@ -195,6 +195,50 @@ func (c *Client) GetPackages(ctx context.Context) ([]TokenPackage, error) {
 	return result.Packages, nil
 }
 
+// RefundTokens refunds tokens from a failed operation
+func (c *Client) RefundTokens(ctx context.Context, transactionID string, reason string) (*RefundResult, error) {
+	reqBody := map[string]interface{}{
+		"transaction_id": transactionID,
+		"reason":         reason,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, errors.WrapPrefix(err, "failed to marshal request", 0)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/refund", bytes.NewReader(jsonData))
+	if err != nil {
+		return nil, errors.WrapPrefix(err, "failed to create request", 0)
+	}
+
+	// Add auth header
+	token, err := c.getToken()
+	if err != nil {
+		return nil, errors.WrapPrefix(err, "failed to get auth token", 0)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, errors.WrapPrefix(err, "failed to execute request", 0)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.WrapPrefix(err, "failed to read response", 0)
+	}
+
+	var result RefundResult
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, errors.WrapPrefix(err, "failed to unmarshal response", 0)
+	}
+
+	return &result, nil
+}
+
 // EstimateCost calculates the token cost for an operation based on rules
 // This is client-side estimation - actual cost is enforced server-side
 func EstimateCost(operation string, metadata Metadata) int {

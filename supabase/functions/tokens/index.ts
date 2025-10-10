@@ -229,6 +229,105 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Route: POST /tokens/refund - Refund tokens from failed operation
+    if (req.method === 'POST' && pathname.endsWith('/tokens/refund')) {
+      let requestBody: { transaction_id: string; reason: string }
+      try {
+        requestBody = await req.json()
+      } catch {
+        return new Response(
+          JSON.stringify({ error: 'Invalid JSON' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Validate request
+      if (!requestBody.transaction_id) {
+        return new Response(
+          JSON.stringify({ error: 'Transaction ID is required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      try {
+        // First, verify the transaction belongs to this user (SECURITY CHECK)
+        const { data: txnData, error: txnError } = await supabase
+          .from('token_transactions')
+          .select('user_id, tokens_consumed, operation')
+          .eq('id', requestBody.transaction_id)
+          .single()
+
+        if (txnError || !txnData) {
+          return new Response(
+            JSON.stringify({ success: false, error_message: 'Transaction not found' }),
+            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // SECURITY: Verify transaction belongs to authenticated user
+        if (txnData.user_id !== user.id) {
+          return new Response(
+            JSON.stringify({ success: false, error_message: 'Unauthorized: cannot refund another user\'s transaction' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Create service role client to call refund function
+        const serviceClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+        )
+
+        // Call database function to refund tokens (with service role)
+        const { data, error } = await serviceClient.rpc('refund_tokens', {
+          p_original_transaction_id: requestBody.transaction_id,
+          p_refund_reason: requestBody.reason || 'Deployment failed'
+        })
+
+        if (error) {
+          console.error('Error refunding tokens:', error)
+          captureException(new Error(String(error)), {
+            function: 'tokens',
+            operation: 'refund',
+            user_id: user.id,
+            transaction_id: requestBody.transaction_id
+          })
+          return new Response(
+            JSON.stringify({ error: 'Failed to refund tokens' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Data comes back as array with single row
+        const result = Array.isArray(data) && data.length > 0 ? data[0] : data
+
+        // If refund failed (already refunded, etc.), return error
+        if (!result.success) {
+          return new Response(
+            JSON.stringify(result),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        return new Response(
+          JSON.stringify(result),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      } catch (error) {
+        console.error('Error in POST /tokens/refund:', error)
+        captureException(error instanceof Error ? error : new Error(String(error)), {
+          function: 'tokens',
+          operation: 'refund_error',
+          user_id: user.id,
+          transaction_id: requestBody.transaction_id
+        })
+        return new Response(
+          JSON.stringify({ error: 'Internal server error' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
+
     // Route: GET /tokens/packages - Get available token packages for purchase
     if (req.method === 'GET' && pathname.endsWith('/tokens/packages')) {
       try {

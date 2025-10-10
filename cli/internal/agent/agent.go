@@ -15,6 +15,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/auth"
+	"github.com/meroxa/prod/cli/internal/config"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/heroku"
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
@@ -22,6 +23,7 @@ import (
 	prod_error "github.com/meroxa/prod/cli/internal/error"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/settings"
+	"github.com/meroxa/prod/cli/internal/tokens"
 )
 
 type TUIWriter interface {
@@ -59,6 +61,9 @@ type Agent struct {
 	inConsentFlow        bool
 	originalInput        string
 	nextStateAfterAuth   stateFn // State to transition to after successful PaaS authentication
+	tokenManager         *tokens.Manager
+	tokenTransaction     *tokens.ConsumeResult // Track transaction for potential refund
+	purchaseSession      *tokens.PurchaseSession
 }
 
 type agentContextKey string
@@ -66,12 +71,28 @@ type agentContextKey string
 const agentAuthSession agentContextKey = "AuthSession"
 
 func NewAgent(wfClient *client.Client, internalAuth *auth.SupabaseAuth, errorTrackingEnabled bool) *Agent {
+	// Initialize token manager
+	tokenManager := tokens.NewManager(
+		func() (string, error) {
+			session, err := internalAuth.GetSession()
+			if err != nil {
+				return "", err
+			}
+			if session == nil {
+				return "", fmt.Errorf("no active session")
+			}
+			return session.AccessToken, nil
+		},
+		config.GetSupabaseURL(),
+	)
+
 	a := &Agent{
 		wfClient:             wfClient,
 		interactive:          true, // Default to interactive
 		envVars:              make([]EnvVarWithStatus, 0),
 		internalAuth:         internalAuth,
 		errorTrackingEnabled: errorTrackingEnabled,
+		tokenManager:         tokenManager,
 	}
 	sm := deploySM{currentState: a.plan}
 	a.sm = sm
@@ -156,6 +177,12 @@ func (a *Agent) SetInteractive(interactive bool) {
 
 func (a *Agent) IsErrorTrackingEnabled() bool {
 	return a.errorTrackingEnabled
+}
+
+// GetTokenClient returns the token client for this agent.
+// Returns nil if the user is not authenticated.
+func (a *Agent) GetTokenClient() *tokens.Client {
+	return a.tokenManager.Client()
 }
 
 // Helper methods for TUI operations - direct TUI calls
@@ -246,14 +273,46 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 
 	// handle auth before processing the input
 	if !a.internalAuth.IsAuthenticated() {
+		// Store the original input to replay after authentication
+		if input != "" {
+			a.originalInput = input
+		}
+
 		fmt.Fprint(output, "🔐 Before we proceed, let's get you logged in!\n")
 		authenticated := a.authenticateCLI(ctx)
 		if !authenticated {
 			fmt.Fprint(output, "❌ Authentication failed. Please try again.\n")
+			a.originalInput = "" // Clear stored input on failure
 			// don't proceed to the next state if auth failed
 			return
 		}
+
+		// Authentication successful - get session and show token balance
+		session, err := a.internalAuth.GetSession()
+		if err != nil {
+			slog.Error("Failed to get session", "error", err)
+		}
+
+		// Show token balance after successful login
+		if session != nil {
+			a.tokenManager.SetUIOutput(a.UIOutput)
+			a.tokenManager.ShowBalanceAfterLogin(ctx, output)
+		}
+
+		// If we have original input, process it now with a fresh context
+		if a.originalInput != "" {
+			originalInput := a.originalInput
+			a.originalInput = "" // Clear it
+			// Create a fresh context since the original one may have been cancelled during auth
+			freshCtx := context.Background()
+			a.sm.next(WithCtxSession(freshCtx, session), originalInput, output)
+			return
+		}
+
+		// No original input, just return to plan state for new input
+		return
 	}
+
 	session, err := a.internalAuth.GetSession()
 	if err != nil {
 		slog.Error("Failed to get session", "error", err)
@@ -356,6 +415,11 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 			"component": "agent",
 			"operation": "get_workflow_result",
 		})
+	}
+
+	// Handle special non-deployment intent: token purchase
+	if plan.Summary == "purchase_tokens" {
+		return a.handleTokenPurchase(ctx, input, out)
 	}
 
 	// Check if dry-run was inferred from the prompt and merge with existing flag
@@ -785,6 +849,51 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 	// make sure if we have collected any other env vars along the way they are captured
 	DeployPlanWithEnvVars.CollectedEnvVars = append(DeployPlanWithEnvVars.CollectedEnvVars, collectedEnvVars...)
 
+	// Calculate and consume tokens before deployment
+	metadata := tokens.Metadata{
+		"platform":       DeployPlanWithEnvVars.Platform.String(),
+		"language":       DeployPlanWithEnvVars.Spec.Language,
+		"services_count": len(DeployPlanWithEnvVars.Spec.ServiceRequirements),
+	}
+
+	// Show estimated cost
+	operation := tokens.OperationDeploy
+	if a.dryRun {
+		operation = tokens.OperationDryRun
+	}
+
+	// Check if token client is available (user must be authenticated)
+	if a.tokenManager.Client() == nil {
+		fmt.Fprintf(out, "\n❌ Deployment blocked: You must be authenticated to deploy.\n")
+		fmt.Fprintf(out, "   Please log in first.\n\n")
+		return a.plan, nil
+	}
+
+	estimatedCost := tokens.ShowEstimatedCost(operation, metadata, out)
+
+	// Check and consume tokens
+	tokenResult, err := tokens.CheckAndConsumeTokens(ctx, a.tokenManager.Client(), estimatedCost, operation, metadata, out)
+	if err != nil {
+		// Token check failed - block deployment
+		fmt.Fprintf(out, "\n❌ Deployment blocked: %v\n\n", err)
+
+		// Show purchase options if insufficient tokens
+		if strings.Contains(err.Error(), "Insufficient tokens") {
+			tokens.SuggestPurchaseOptions(ctx, a.tokenManager.Client(), out)
+		}
+
+		// Return to plan state
+		return a.plan, nil
+	}
+
+	// Store transaction for potential refund (defensive: should never be nil after successful check)
+	if tokenResult == nil {
+		slog.Error("Token consumption succeeded but returned nil result - this should not happen")
+		fmt.Fprintf(out, "\n❌ Internal error: token consumption returned invalid result\n\n")
+		return a.plan, nil
+	}
+	a.tokenTransaction = tokenResult
+
 	wf, err := Workflows{}.Deploy(ctx, a.wfClient, DeployPlanWithEnvVars)
 	if err != nil {
 		slog.Info("Workflow execution result", "error", err)
@@ -816,11 +925,18 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 			"language":     a.DeployPlan.Spec.Language,
 		})
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
+
+		// Handle token refund for failed deployment
+		tokens.RefundOnFailure(ctx, a.tokenManager.Client(), a.tokenTransaction, true, fmt.Sprintf("Workflow execution error: %v", err), out)
+
 		fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
 		return a.plan, nil
 	}
 
 	if result.Error.Summary != "" {
+		// Handle token refund for failed deployment
+		tokens.RefundOnFailure(ctx, a.tokenManager.Client(), a.tokenTransaction, true, result.Error.Summary, out)
+
 		if tuiWriter, ok := out.(TUIWriter); ok {
 			tuiWriter.SendError(result.Error.Summary, result.Error.Remediations)
 		} else {
@@ -1328,7 +1444,7 @@ func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) 
 }
 
 func (a *Agent) authenticateCLI(ctx context.Context) bool {
-	err := a.internalAuth.LoginWithSupabaseFunction(ctx)
+	err := a.internalAuth.LoginWithBrowser(ctx)
 	if err != nil {
 		slog.Error("Failed to authenticate CLI", "error", err)
 		prod_error.CaptureErrorWithContext(err, map[string]any{
@@ -1360,4 +1476,56 @@ func openInBrowser(url string) error {
 	}
 
 	return exec.Command(cmd, args...).Start()
+}
+
+// handleTokenPurchase handles the token purchase flow
+func (a *Agent) handleTokenPurchase(ctx context.Context, _ string, out io.Writer) (stateFn, error) {
+	// Set UI output for TUI updates
+	a.tokenManager.SetUIOutput(a.UIOutput)
+
+	// Start purchase session (displays packages)
+	session, err := a.tokenManager.StartPurchaseFlow(ctx, out)
+	if err != nil {
+		return a.plan, nil
+	}
+
+	// Store session for next state
+	a.purchaseSession = session
+
+	// Prompt user to select a package
+	a.sendSelect(out, "Which package would you like to purchase?", session.GetPackageOptions())
+
+	return a.waitForPackageSelection, nil
+}
+
+// waitForPackageSelection waits for the user to select a token package
+func (a *Agent) waitForPackageSelection(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	return a.processPackageSelection(ctx, input, out)
+}
+
+// processPackageSelection processes the user's package selection
+func (a *Agent) processPackageSelection(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	if a.purchaseSession == nil {
+		fmt.Fprintf(out, "❌ Purchase session expired. Please try again.\n")
+		return a.plan, nil
+	}
+
+	// Process selection
+	selectedPackage, err := a.purchaseSession.ProcessSelection(input)
+	if err != nil {
+		fmt.Fprintf(out, "Invalid selection. Please try again.\n")
+		return a.handleTokenPurchase(ctx, input, out)
+	}
+
+	// Create checkout and open browser
+	_, err = a.purchaseSession.CreateCheckout(selectedPackage.ID.String())
+	if err != nil {
+		fmt.Fprintf(out, "❌ Failed to create checkout session: %v\n", err)
+		return a.plan, nil
+	}
+
+	// Clear session
+	a.purchaseSession = nil
+
+	return a.plan, nil
 }

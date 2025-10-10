@@ -34,9 +34,9 @@ func (c *LoginCommand) Execute(ctx context.Context) error {
 		}
 	}
 
-	// Perform browser-based login using Supabase function
+	// Perform browser-based login using static assets
 	fmt.Println("🚀 Starting authentication...")
-	if err := authClient.LoginWithSupabaseFunction(ctx); err != nil {
+	if err := authClient.LoginWithBrowser(ctx); err != nil {
 		return errors.Errorf("authentication failed: %w", err)
 	}
 

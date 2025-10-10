@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/v2/spinner"
 	"github.com/charmbracelet/bubbles/v2/textinput"
@@ -73,6 +75,8 @@ type Model struct {
 	currentDir          string
 	lastContentLen      int
 	autoScrollEnabled   bool
+	tokenBalance        int
+	lastTokenFetch      time.Time
 
 	selection            SelectionState
 	mousePressed         bool
@@ -191,7 +195,51 @@ func (m *Model) SetProgram(program *tea.Program) {
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	return tea.Batch(
+		m.fetchTokenBalance(),
+		m.scheduleTokenRefresh(),
+	)
+}
+
+// fetchTokenBalance returns a command that fetches the current token balance
+func (m Model) fetchTokenBalance() tea.Cmd {
+	if m.agent == nil {
+		return nil
+	}
+
+	return func() tea.Msg {
+		// Add timeout to prevent TUI from hanging if Supabase is slow/down
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Get token client from agent
+		tokenClient := m.agent.GetTokenClient()
+		if tokenClient == nil {
+			return TokenBalanceMsg{
+				FetchError: fmt.Errorf("token client not initialized"),
+			}
+		}
+
+		// Fetch summary
+		summary, err := tokenClient.GetSummary(ctx)
+		if err != nil {
+			return TokenBalanceMsg{
+				FetchError: err,
+			}
+		}
+
+		return TokenBalanceMsg{
+			Balance: summary.AvailableTokens,
+		}
+	}
+}
+
+// scheduleTokenRefresh returns a command that triggers token refresh after 30 seconds.
+// The refresh cycle continues indefinitely via the TokenRefreshTickMsg handler.
+func (m Model) scheduleTokenRefresh() tea.Cmd {
+	return tea.Tick(30*time.Second, func(t time.Time) tea.Msg {
+		return TokenRefreshTickMsg{}
+	})
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -282,6 +330,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textInput.SetValue("")
 		m.textInput.Placeholder = "Search..."
 		return m, nil
+	case TokenBalanceMsg:
+		if msg.FetchError == nil {
+			m.tokenBalance = msg.Balance
+			m.lastTokenFetch = time.Now()
+		}
+		return m, nil
+	case TokenRefreshTickMsg:
+		// Refresh token balance and schedule next refresh
+		return m, tea.Batch(
+			m.fetchTokenBalance(),
+			m.scheduleTokenRefresh(),
+		)
 	case tea.PasteMsg:
 		if !m.isMode(ModeSelect) {
 			var cmd tea.Cmd

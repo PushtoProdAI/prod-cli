@@ -281,6 +281,13 @@ func (w *TeaWriter) IsTeaWriter() bool {
 	return true
 }
 
+// UpdateTokenBalance sends the current token balance directly to the TUI status bar
+func (w *TeaWriter) UpdateTokenBalance(balance int) {
+	w.send(TokenBalanceMsg{
+		Balance: balance,
+	})
+}
+
 // Ensure TeaWriter implements StatusWriter interface
 var (
 	_ output.StatusWriter = (*TeaWriter)(nil)

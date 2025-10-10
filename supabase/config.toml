@@ -421,3 +421,21 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/llm-proxy/deno.json"
 entrypoint = "./functions/llm-proxy/index.ts"
+
+[functions.stripe-checkout]
+enabled = true
+verify_jwt = true  # Requires user authentication
+import_map = "./functions/stripe-checkout/deno.json"
+entrypoint = "./functions/stripe-checkout/index.ts"
+
+[functions.stripe-webhook]
+enabled = true
+verify_jwt = false  # Webhooks are called by Stripe, not users - verified via signature
+import_map = "./functions/stripe-webhook/deno.json"
+entrypoint = "./functions/stripe-webhook/index.ts"
+
+[functions.tokens]
+enabled = true
+verify_jwt = true  # Requires user authentication
+import_map = "./functions/tokens/deno.json"
+entrypoint = "./functions/tokens/index.ts"

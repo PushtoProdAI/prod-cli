@@ -81,6 +81,12 @@ func (m Model) formatCurrentDir() string {
 		}
 	}
 
+	// Add token balance
+	var tokenPart string
+	if m.tokenBalance > 0 {
+		tokenPart = fmt.Sprintf(" • 💎 %d tokens", m.tokenBalance)
+	}
+
 	// Add selection status if active
 	if m.selection.Active && len(m.selection.Content) > 0 {
 		selectionInfo := fmt.Sprintf("📋 Selected: %d lines", len(m.selection.Content))
@@ -88,10 +94,10 @@ func (m Model) formatCurrentDir() string {
 			selectionInfo += " • " + m.selection.LastAction
 		}
 		selectionInfo += " • Ctrl+C to copy • Esc to clear"
-		return dirPart + " • " + selectionInfo
+		return dirPart + tokenPart + " • " + selectionInfo
 	}
 
-	return dirPart
+	return dirPart + tokenPart
 }
 
 // updateCurrentDir updates the current directory (for future use)

@@ -95,6 +95,12 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 	switch strings.ToLower(intent.Action) {
 	case "deploy":
 		action = Deploy
+	case "purchase":
+		// Token purchase intent - return a special plan to signal purchase flow
+		return DeployPlan{
+			Action:  UnknownAction, // Use UnknownAction to skip normal deploy flow
+			Summary: "purchase_tokens",
+		}, nil
 	default:
 		action = UnknownAction
 	}

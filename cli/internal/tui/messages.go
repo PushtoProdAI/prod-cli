@@ -1,6 +1,10 @@
 package tui
 
-import tea "github.com/charmbracelet/bubbletea/v2"
+import (
+	"fmt"
+
+	tea "github.com/charmbracelet/bubbletea/v2"
+)
 
 // AuthOption represents an authentication option
 // This is defined here to avoid import cycles, but matches agent.AuthOption
@@ -185,6 +189,28 @@ func (s SearchMsg) String() string {
 	return "Search"
 }
 
+// TokenBalanceMsg represents updated token balance information.
+// If FetchError is non-nil, the balance field should be ignored.
+type TokenBalanceMsg struct {
+	Balance    int   // Available tokens
+	FetchError error // Error encountered during fetch, nil on success
+}
+
+func (t TokenBalanceMsg) String() string {
+	if t.FetchError != nil {
+		return "Token fetch error"
+	}
+	return fmt.Sprintf("%d tokens", t.Balance)
+}
+
+// TokenRefreshTickMsg triggers periodic token balance refresh.
+// Sent every 30 seconds to keep the token display up-to-date.
+type TokenRefreshTickMsg struct{}
+
+func (t TokenRefreshTickMsg) String() string {
+	return "Token refresh tick"
+}
+
 var _ tea.Msg = UIMessage{}
 var _ tea.Msg = ConfirmationPrompt{}
 var _ tea.Msg = SpinnerStartMsg{}
@@ -201,3 +227,5 @@ var _ tea.Msg = InfoBoxMessage{}
 var _ tea.Msg = ClearScreenMsg{}
 var _ tea.Msg = QuitMsg{}
 var _ tea.Msg = SearchMsg{}
+var _ tea.Msg = TokenBalanceMsg{}
+var _ tea.Msg = TokenRefreshTickMsg{}

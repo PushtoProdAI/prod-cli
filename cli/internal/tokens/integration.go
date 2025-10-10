@@ -24,10 +24,8 @@ func CheckAndConsumeTokens(
 	// Get current balance
 	balance, err := getCurrentBalance(ctx, client)
 	if err != nil {
-		// If we can't get balance, log warning but don't block deployment
-		fmt.Fprintf(out, "⚠️  Warning: Could not check token balance: %v\n", err)
-		fmt.Fprintf(out, "   Proceeding with deployment...\n")
-		return nil, nil
+		// Cannot verify token balance - block deployment for safety
+		return nil, errors.WrapPrefix(err, "failed to check token balance", 0)
 	}
 
 	// Show usage warnings
@@ -100,13 +98,29 @@ func RefundOnFailure(
 
 	fmt.Fprintf(out, "🔄 Refunding tokens due to deployment failure...\n")
 
-	// Note: Refund requires service role key, so it would need to be called via Edge Function
-	// For now, we'll log it and handle refunds via admin tool or support
-	fmt.Fprintf(out, "   Transaction ID: %s\n", consumeResult.TransactionID.String())
-	fmt.Fprintf(out, "   Reason: %s\n", reason)
-	fmt.Fprintf(out, "   Please contact support for a refund if needed.\n")
+	// Call refund Edge Function
+	result, err := client.RefundTokens(ctx, consumeResult.TransactionID.String(), reason)
+	if err != nil {
+		// Log error but don't fail - user can contact support
+		fmt.Fprintf(out, "   ⚠️  Automatic refund failed: %v\n", err)
+		fmt.Fprintf(out, "   Transaction ID: %s\n", consumeResult.TransactionID.String())
+		fmt.Fprintf(out, "   Please contact support for a manual refund.\n")
+		return
+	}
 
-	// TODO: Implement refund Edge Function for automatic refunds
+	if !result.Success {
+		errorMsg := "Unknown error"
+		if result.ErrorMessage != nil {
+			errorMsg = *result.ErrorMessage
+		}
+		fmt.Fprintf(out, "   ⚠️  Refund failed: %s\n", errorMsg)
+		fmt.Fprintf(out, "   Transaction ID: %s\n", consumeResult.TransactionID.String())
+		fmt.Fprintf(out, "   Please contact support for a manual refund.\n")
+		return
+	}
+
+	// Success!
+	fmt.Fprintf(out, "   ✅ Refunded %d token%s\n", result.TokensRefunded, pluralize(result.TokensRefunded))
 }
 
 // getCurrentBalance is a helper to get balance with proper error handling
