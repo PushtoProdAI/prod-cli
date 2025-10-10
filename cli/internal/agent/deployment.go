@@ -199,3 +199,106 @@ func (a *Activities) determineBuildOutput(ctx context.Context, candidate analyze
 	}
 	return output.Path, nil
 }
+
+type ExistingProjectInfo struct {
+	Exists    bool
+	Platform  Platform
+	ProjectID string
+	Name      string
+	DeployURL string
+	IsUpdate  bool
+}
+
+func (a *Activities) checkExistingProject(ctx context.Context, platform Platform, projectName string, sourcePath string) (ExistingProjectInfo, error) {
+	result := ExistingProjectInfo{
+		Exists:   false,
+		Platform: platform,
+	}
+
+	switch platform {
+	case Render:
+		existing, err := render.DetectExistingProject(ctx, a.renderClient, projectName)
+		if err != nil {
+			return result, errors.Errorf("failed to check for existing Render project: %w", err)
+		}
+		if existing != nil {
+			a.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Render service: %s", existing.Name))
+			result.Exists = true
+			result.ProjectID = existing.ServiceID
+			result.Name = existing.Name
+			result.IsUpdate = true
+		} else {
+			a.uiWriter.SendStatus("info", "No existing Render service found - will create new deployment")
+		}
+
+	case FlyIO:
+		existing, err := flyio.DetectExistingProject(ctx, a.flyClient, projectName)
+		if err != nil {
+			return result, errors.Errorf("failed to check for existing Fly.io project: %w", err)
+		}
+		if existing != nil {
+			a.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Fly.io app: %s", existing.Name))
+			result.Exists = true
+			result.ProjectID = existing.AppID
+			result.Name = existing.Name
+			result.DeployURL = existing.Hostname
+			result.IsUpdate = true
+		} else {
+			a.uiWriter.SendStatus("info", "No existing Fly.io app found - will create new deployment")
+		}
+
+	case Netlify:
+		netlifyClient := netlify.NewCLINetlifyClient()
+		existing, err := netlify.DetectExistingProject(netlifyClient, projectName, sourcePath)
+		if err != nil {
+			return result, errors.Errorf("failed to check for existing Netlify project: %w", err)
+		}
+		if existing != nil {
+			a.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Netlify site: %s", existing.Name))
+			result.Exists = true
+			result.ProjectID = existing.SiteID
+			result.Name = existing.Name
+			result.IsUpdate = true
+		} else {
+			a.uiWriter.SendStatus("info", "No existing Netlify site found - will create new deployment")
+		}
+
+	case Vercel:
+		vercelClient := vercel.NewCLIVercelClient()
+		existing, err := vercel.DetectExistingProject(vercelClient, projectName, sourcePath)
+		if err != nil {
+			return result, errors.Errorf("failed to check for existing Vercel project: %w", err)
+		}
+		if existing != nil {
+			a.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Vercel project: %s", existing.Name))
+			result.Exists = true
+			result.ProjectID = existing.ProjectID
+			result.Name = existing.Name
+			result.IsUpdate = true
+		} else {
+			a.uiWriter.SendStatus("info", "No existing Vercel project found - will create new deployment")
+		}
+
+	case Heroku:
+		herokuClient := heroku.NewHerokuClient("", a.uiWriter)
+		existing, err := heroku.DetectExistingProject(ctx, herokuClient, projectName, sourcePath)
+		if err != nil {
+			return result, errors.Errorf("failed to check for existing Heroku project: %w", err)
+		}
+		if existing != nil {
+			a.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Heroku app: %s", existing.Name))
+			result.Exists = true
+			result.ProjectID = existing.AppID
+			result.Name = existing.Name
+			result.DeployURL = existing.WebURL
+			result.IsUpdate = true
+		} else {
+			a.uiWriter.SendStatus("info", "No existing Heroku app found - will create new deployment")
+		}
+
+	default:
+		return result, errors.Errorf("unsupported platform: %s", platform)
+	}
+
+	return result, nil
+}

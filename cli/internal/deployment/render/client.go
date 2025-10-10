@@ -344,3 +344,31 @@ func (c *HTTPRenderClient) CreateRegistryCredential(ctx context.Context, req Cre
 
 	return &registryCred, nil
 }
+
+func (c *HTTPRenderClient) ListServices(ctx context.Context, name string) ([]RenderService, error) {
+	endpoint := "/v1/services"
+	if name != "" {
+		endpoint = endpoint + "?name=" + name
+	}
+
+	resp, err := c.makeRequest(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to list services: %w", err)
+	}
+
+	// Render API returns an array of objects with "service" wrapper
+	var wrappedServices []struct {
+		Service RenderService `json:"service"`
+	}
+	if err := c.handleResponse(resp, &wrappedServices); err != nil {
+		return nil, err
+	}
+
+	// Extract the services from the wrapper
+	services := make([]RenderService, len(wrappedServices))
+	for i, wrapped := range wrappedServices {
+		services[i] = wrapped.Service
+	}
+
+	return services, nil
+}

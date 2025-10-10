@@ -198,6 +198,15 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	if session != nil {
 		token = session.AccessToken
 	}
+
+	// Check for existing project
+	existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentCheckExistingProject, input.Platform, input.Spec.Name, input.Source).Get(ctx)
+	if err != nil {
+		slog.Info("Failed to check for existing project", "error", err)
+	} else if existingProject.Exists {
+		slog.Info("Detected existing project", "name", existingProject.Name, "id", existingProject.ProjectID)
+	}
+
 	// Validate Docker availability for Render
 	if !deployment.IsDockerAvailable() {
 		summary, err := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, "not able to build docker image. cannot connect to local docker daemon", input).Get(ctx)
@@ -410,6 +419,14 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployResult, error) {
 	if w.registry == nil {
 		return deployResult{}, errors.New("workflow registry is not set")
+	}
+
+	// Check for existing project
+	existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentCheckExistingProject, input.Platform, input.Spec.Name, input.Source).Get(ctx)
+	if err != nil {
+		slog.Info("Failed to check for existing project", "error", err)
+	} else if existingProject.Exists {
+		slog.Info("Detected existing project", "name", existingProject.Name, "id", existingProject.ProjectID)
 	}
 
 	envVars := input.CollectedEnvVars
@@ -950,6 +967,14 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	slog.Info("deployNetlify workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
+	// Check for existing project
+	existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentCheckExistingProject, input.Platform, input.Spec.Name, input.Source).Get(ctx)
+	if err != nil {
+		slog.Info("Failed to check for existing project", "error", err)
+	} else if existingProject.Exists {
+		slog.Info("Detected existing project", "name", existingProject.Name, "id", existingProject.ProjectID)
+	}
+
 	// Build deployment spec from the plan
 	slog.Info("Building deployment spec")
 	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars)
@@ -1033,8 +1058,16 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 }
 
 func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deployResult, error) {
-	slog.Info("deployNetlify workflow started", "platform", input.Platform)
+	slog.Info("deployVercel workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
+
+	// Check for existing project
+	existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentCheckExistingProject, input.Platform, input.Spec.Name, input.Source).Get(ctx)
+	if err != nil {
+		slog.Info("Failed to check for existing project", "error", err)
+	} else if existingProject.Exists {
+		slog.Info("Detected existing project", "name", existingProject.Name, "id", existingProject.ProjectID)
+	}
 
 	// Build deployment spec from the plan
 	slog.Info("Building deployment spec")
@@ -1137,6 +1170,14 @@ func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deploy
 func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deployResult, error) {
 	slog.Info("deployHeroku workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
+
+	// Check for existing project
+	existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentCheckExistingProject, input.Platform, input.Spec.Name, input.Source).Get(ctx)
+	if err != nil {
+		slog.Info("Failed to check for existing project", "error", err)
+	} else if existingProject.Exists {
+		slog.Info("Detected existing project", "name", existingProject.Name, "id", existingProject.ProjectID)
+	}
 
 	// Build deployment spec from the plan
 	slog.Info("Building deployment spec")
