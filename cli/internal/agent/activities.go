@@ -10,32 +10,33 @@ import (
 )
 
 const (
-	AgentDetermineIntent         = "agent.determineIntent"
-	AgentAnalyzeProject          = "agent.analyzeProject"
-	AgentSummarizeIntent         = "agent.summarize"
-	AgentGetRenderWorkspace      = "agent.getRenderWorkspace"
-	AgentDeploySteps             = "agent.deploySteps"
-	AgentSummarizeDeploySteps    = "agent.summarizeDeploySteps"
-	AgentSummarizeError          = "agent.summarizeError"
-	AgentEstimateRenderCosts     = "agent.estimateRenderCosts"
-	AgentEstimateFlyioCosts      = "agent.estimateFlyioCosts"
-	AgentEstimateNetlifyCosts    = "agent.estimateNetlifyCosts"
-	AgentEstimateVercelCosts     = "agent.estimateVercelCosts"
-	AgentGetRenderServiceURL     = "agent.getRenderServiceURL"
-	AgentIsURLLive               = "agent.isURLLive"
-	AgentSendProjectStats        = "agent.sendProjectStats"
-	AgentGetFlyIOAppURL          = "agent.getFlyIOAppURL"
-	AgentCategorizeEnvVars       = "agent.categorizeEnvVars"
-	AgentReadEnvFiles            = "agent.readEnvFiles"
-	AgentCreateDockerRepo        = "agent.createDockerRepo"
-	AgentDetermineRootPath       = "agent.determineRootPath"
-	AgentDetermineBuildOutput    = "agent.determineBuildOutput"
-	AgentDetermineRunCommand     = "agent.determineRunCommand"
+	AgentDetermineIntent           = "agent.determineIntent"
+	AgentAnalyzeProject            = "agent.analyzeProject"
+	AgentSummarize                 = "agent.summarize"
+	AgentGetRenderWorkspace        = "agent.getRenderWorkspace"
+	AgentDeploySteps               = "agent.deploySteps"
+	AgentSummarizeDeploySteps      = "agent.summarizeDeploySteps"
+	AgentSummarizeError            = "agent.summarizeError"
+	AgentEstimateRenderCosts       = "agent.estimateRenderCosts"
+	AgentEstimateFlyioCosts        = "agent.estimateFlyioCosts"
+	AgentEstimateNetlifyCosts      = "agent.estimateNetlifyCosts"
+	AgentEstimateVercelCosts       = "agent.estimateVercelCosts"
+	AgentGetRenderServiceURL       = "agent.getRenderServiceURL"
+	AgentIsURLLive                 = "agent.isURLLive"
+	AgentSendProjectStats          = "agent.sendProjectStats"
+	AgentGetFlyIOAppURL            = "agent.getFlyIOAppURL"
+	AgentCategorizeEnvVars         = "agent.categorizeEnvVars"
+	AgentReadEnvFiles              = "agent.readEnvFiles"
+	AgentCreateDockerRepo          = "agent.createDockerRepo"
+	AgentDetermineRootPath         = "agent.determineRootPath"
+	AgentDetermineBuildOutput      = "agent.determineBuildOutput"
+	AgentDetermineRunCommand       = "agent.determineRunCommand"
 	AgentDetermineMigrationCommand = "agent.determineMigrationCommand"
-	AgentCreatePackageLock       = "agent.createPackageLock"
-	AgentUpdateJavaScriptConfig  = "agent.updateJavaScriptConfig"
-	AgentRestoreConfigFromBackup = "agent.restoreConfigFromBackup"
-	AgentPrepareDeployment       = "agent.prepareDeployment"
+	AgentCreatePackageLock         = "agent.createPackageLock"
+	AgentUpdateJavaScriptConfig    = "agent.updateJavaScriptConfig"
+	AgentRestoreConfigFromBackup   = "agent.restoreConfigFromBackup"
+	AgentPrepareDeployment         = "agent.prepareDeployment"
+	AgentCheckExistingProject      = "agent.checkExistingProject"
 )
 
 type Activities struct {
@@ -50,7 +51,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 	return []workflowext.Activity{
 		{Name: AgentDetermineIntent, ActFunc: a.determineIntent},
 		{Name: AgentAnalyzeProject, ActFunc: a.analyze},
-		{Name: AgentSummarizeIntent, ActFunc: a.summarize},
+		{Name: AgentSummarize, ActFunc: a.summarize},
 		{Name: AgentGetRenderWorkspace, ActFunc: a.getRenderWorkspace},
 		{Name: AgentSummarizeDeploySteps, ActFunc: a.summarizeDeploySteps},
 		{Name: AgentDeploySteps, ActFunc: a.deploySteps},
@@ -74,5 +75,6 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentUpdateJavaScriptConfig, ActFunc: a.updateJavaScriptConfig},
 		{Name: AgentRestoreConfigFromBackup, ActFunc: a.restoreFromBackup},
 		{Name: AgentPrepareDeployment, ActFunc: a.prepareDeployment},
+		{Name: AgentCheckExistingProject, ActFunc: a.checkExistingProject},
 	}
 }
