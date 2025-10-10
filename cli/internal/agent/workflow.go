@@ -226,6 +226,12 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["authToken"] = token
 
+	// Set update mode if existing project detected
+	if existingProject.Exists {
+		spec.IsUpdate = true
+		spec.ExistingProjectID = existingProject.ProjectID
+	}
+
 	// Generate and summarize deployment steps (for UI feedback)
 	workspaceID, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderWorkspace).Get(ctx)
 	if err != nil {
@@ -362,15 +368,47 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		return deployResult{}, nil
 	}
 
-	// Get service URL and verify it's live
+	// Get service URL
 	u, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderServiceURL, ws.ID).Get(ctx)
 	if err != nil {
 		return deployResult{}, errors.Errorf("failed to get service URL for %s: %w", ws.Name, err)
 	}
 
+	// First, check deploy status (for both fresh and updates)
+	if deployID, ok := ws.Metadata["deployId"].(string); ok && deployID != "" {
+		deployCheckOpts := ActivityOpts
+		deployCheckOpts.RetryOptions.MaxAttempts = 15
+		_, err := workflow.ExecuteActivity[any](ctx, deployCheckOpts, AgentWaitForRenderDeploy, ws.ID, deployID).Get(ctx)
+		if err != nil {
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":     DeployRenderWorkflowName,
+				"activity":     AgentWaitForRenderDeploy,
+				"component":    "deployment",
+				"platform":     "render",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+			})
+			summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+			if e1 != nil {
+				prod_error.CaptureErrorWithContext(e1, map[string]any{
+					"workflow":     DeployRenderWorkflowName,
+					"activity":     AgentSummarizeError,
+					"component":    "deployment",
+					"platform":     "render",
+					"project_name": input.Spec.Name,
+					"language":     input.Spec.Language,
+					"operation":    "summarize_original_error",
+				})
+				return deployResult{Error: deployError{Summary: err.Error()}}, nil
+			}
+			slog.Info("deployment failed", "deployId", deployID, "error", err)
+			return deployResult{Error: summary}, nil
+		}
+	}
+
+	// Then verify URL is live
 	path, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineRootPath, input.Spec.Routes).Get(ctx)
 	if err != nil {
-		// if there is an error, we will just default to /
 		slog.Info("Failed to determine root path for application", "error", err)
 		path = "/"
 	}
@@ -381,12 +419,9 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		fullUrl = u
 	}
 	liveCheckOpts := ActivityOpts
-	// I noticed some projects taking longer to online (on the PaaS side)
-	// so bumping this up a bit
 	liveCheckOpts.RetryOptions.MaxAttempts = 15
 	_, err = workflow.ExecuteActivity[string](ctx, liveCheckOpts, AgentIsURLLive, fullUrl).Get(ctx)
 	if err != nil {
-		// Send the original error before summarizing
 		prod_error.CaptureErrorWithContext(err, map[string]any{
 			"workflow":     DeployRenderWorkflowName,
 			"activity":     AgentIsURLLive,
@@ -397,7 +432,6 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		})
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
-			// Send the summarize error
 			prod_error.CaptureErrorWithContext(e1, map[string]any{
 				"workflow":     DeployRenderWorkflowName,
 				"activity":     AgentSummarizeError,
@@ -438,6 +472,12 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
 	}
 	spec.Metadata["buildContext"] = input.Source
+
+	// Set update mode if existing project detected
+	if existingProject.Exists {
+		spec.IsUpdate = true
+		spec.ExistingProjectID = existingProject.ProjectID
+	}
 
 	// Generate and summarize deployment steps
 	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, w.uiWriter)
@@ -989,6 +1029,12 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["platform"] = "netlify"
 
+	// Set update mode if existing project detected
+	if existingProject.Exists {
+		spec.IsUpdate = true
+		spec.ExistingProjectID = existingProject.ProjectID
+	}
+
 	d := netlify.NewNetlifyQueuedDeployment(&netlify.CLINetlifyClient{}, spec, w.uiWriter)
 	steps := d.GenerateAPISteps()
 	descriptions := make([]string, len(steps))
@@ -1082,6 +1128,12 @@ func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deploy
 	// Add metadata
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["platform"] = "vercel"
+
+	// Set update mode if existing project detected
+	if existingProject.Exists {
+		spec.IsUpdate = true
+		spec.ExistingProjectID = existingProject.ProjectID
+	}
 
 	d := vercel.NewVercelQueuedDeployment(vercel.NewCLIVercelClient(), spec, w.uiWriter)
 	steps := d.GenerateAPISteps()
@@ -1192,6 +1244,12 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 	// Add metadata
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["platform"] = "heroku"
+
+	// Set update mode if existing project detected
+	if existingProject.Exists {
+		spec.IsUpdate = true
+		spec.ExistingProjectID = existingProject.ProjectID
+	}
 
 	// Use default Heroku adapter
 	herokuAdapter := heroku.NewDefaultHerokuDeploymentAdapter(w.uiWriter)

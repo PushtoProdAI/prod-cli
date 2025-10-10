@@ -59,6 +59,24 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 	var steps []FlyioAPIStep
 	var serviceStepIDs []string
 	var attachmentStepIDs []string
+	appName := fqd.spec.Name
+	appStepID := "create-app"
+
+	if fqd.spec.IsUpdate {
+		// For updates, skip creating app and services (they already exist)
+		// Just deploy the new configuration to the existing app
+		steps = append(steps, &DeployFlyioConfigStep{
+			BaseStep: BaseStep{
+				ID:          "deploy-config",
+				Description: "Deploying app configuration update",
+			},
+			appName: appName,
+			config:  fqd.generateFlyConfig(),
+		})
+		return steps
+	}
+
+	// Fresh deployment flow below
 
 	// Step 1: Create backing services first (they're independent apps)
 	for i, service := range fqd.spec.Services {
@@ -71,8 +89,6 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 	}
 
 	// Step 2: Create main app
-	appName := fqd.spec.Name
-	appStepID := "create-app"
 	steps = append(steps, &CreateFlyioAppStep{
 		BaseStep: BaseStep{
 			ID:          appStepID,

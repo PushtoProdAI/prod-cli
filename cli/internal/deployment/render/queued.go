@@ -71,17 +71,30 @@ func (qd *QueuedDeployment) GenerateAPISteps(ownerID string) []RenderAPIStep {
 	var steps []RenderAPIStep
 	stepCounter := 1
 
-	// Create backing services and get their connection step IDs
-	backingServiceSteps, connectionStepIDs, nextCounter := qd.createBackingServiceSteps(ownerID, stepCounter)
-	steps = append(steps, backingServiceSteps...)
-	stepCounter = nextCounter
+	// For updates, skip creating backing services (databases already exist)
+	var connectionStepIDs []string
+	if !qd.spec.IsUpdate {
+		// Create backing services and get their connection step IDs
+		backingServiceSteps, connStepIDs, nextCounter := qd.createBackingServiceSteps(ownerID, stepCounter)
+		steps = append(steps, backingServiceSteps...)
+		connectionStepIDs = connStepIDs
+		stepCounter = nextCounter
+	}
 
-	// Configure deployment (Docker or native)
 	deploymentConfig := qd.configureDeployment(ownerID, connectionStepIDs, &steps, &stepCounter)
 
-	// Create web service step
-	webServiceStep := qd.createWebServiceStep(ownerID, qd.spec.EnvVars, connectionStepIDs, deploymentConfig, stepCounter)
-	steps = append(steps, webServiceStep)
+	if qd.spec.IsUpdate {
+		triggerDeployStep := NewTriggerDeployStep(TriggerDeployStepConfig{
+			ID:          fmt.Sprintf("step-%d", stepCounter),
+			Description: "Trigger deployment to Render",
+			ServiceID:   qd.spec.ExistingProjectID,
+			DependsOn:   []string{deploymentConfig.dockerImageStepID, deploymentConfig.registryCredStepID},
+		})
+		steps = append(steps, triggerDeployStep)
+	} else {
+		webServiceStep := qd.createWebServiceStep(ownerID, qd.spec.EnvVars, connectionStepIDs, deploymentConfig, stepCounter)
+		steps = append(steps, webServiceStep)
+	}
 
 	return steps
 }

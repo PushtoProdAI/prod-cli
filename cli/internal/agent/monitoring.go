@@ -47,6 +47,25 @@ func (a *Activities) getRenderServiceURL(ctx context.Context, serviceID string) 
 	return service.ServiceDetails.URL, nil
 }
 
+func (a *Activities) waitForRenderDeploy(ctx context.Context, serviceID, deployID string) error {
+	a.uiWriter.SendStatus("deploying", "Waiting for deployment to complete...")
+
+	deploy, err := a.renderClient.GetDeploy(ctx, serviceID, deployID)
+	if err != nil {
+		return errors.Errorf("failed to get deploy status: %w", err)
+	}
+
+	if deploy.Status == "build_failed" || deploy.Status == "update_failed" || deploy.Status == "deactivated" {
+		return errors.Errorf("deployment failed with status: %s", deploy.Status)
+	}
+
+	if deploy.Status != "live" {
+		return errors.Errorf("deployment not yet live, current status: %s", deploy.Status)
+	}
+
+	return nil
+}
+
 func (a *Activities) getFlyIOAppURL(ctx context.Context, appID string) (string, error) {
 	service, err := a.flyClient.GetApp(ctx, appID)
 	if err != nil {

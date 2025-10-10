@@ -14,14 +14,15 @@ type VercelClient interface {
 	PullProject() error
 
 	// Deployment
-	DeployProject(projectID string) (*VercelDeployment, error)
+	DeployProject(projectID string, production bool) (*VercelDeployment, error)
 	GetDeployment(deploymentID string) (*VercelDeployment, error)
+	PromoteDeployment(deploymentURL, projectName string) (string, error)
 
 	// Environment variables
 	SetEnvironmentVariables(projectID string, vars map[string]string) error
 
 	// Build settings
-	BuildProject(envVars []EnvVar) error
+	BuildProject(envVars []EnvVar, production bool) error
 }
 
 // CreateProjectRequest represents a request to create a new Vercel project

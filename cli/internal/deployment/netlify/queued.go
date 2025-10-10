@@ -36,7 +36,14 @@ func (nqd *NetlifyQueuedDeployment) Deploy(ctx context.Context) ([]deployment.Cr
 	var createdResources []deployment.CreatedResource
 	stepResults := make(map[string]interface{})
 
-	// Track executed steps for rollback
+	if nqd.spec.IsUpdate && nqd.spec.ExistingProjectID != "" {
+		stepResults["existing-site"] = deployment.CreatedResource{
+			ID:   nqd.spec.ExistingProjectID,
+			Type: "netlify_site",
+			Name: nqd.spec.Name,
+		}
+	}
+
 	var executedSteps []NetlifyAPIStep
 
 	for _, step := range steps {
@@ -88,6 +95,35 @@ func (nqd *NetlifyQueuedDeployment) Deploy(ctx context.Context) ([]deployment.Cr
 // GenerateAPISteps generates the deployment steps for Netlify
 func (nqd *NetlifyQueuedDeployment) GenerateAPISteps() []NetlifyAPIStep {
 	var steps []NetlifyAPIStep
+
+	if nqd.spec.IsUpdate {
+
+		if len(nqd.spec.EnvVars) > 0 {
+			envVars := make(map[string]string)
+			for _, env := range nqd.spec.EnvVars {
+				envVars[env.Name] = env.Value
+			}
+			envStep := NewSetEnvironmentVariablesStep("existing-site", "", nqd.getSourcePath(), envVars, nqd.writer)
+			steps = append(steps, envStep)
+		}
+
+		if nqd.spec.BuildCommand != "" {
+			buildStep := NewBuildProjectStep(nqd.spec.BuildCommand, nqd.getSourcePath(), nqd.spec.EnvVars, nqd.writer)
+			steps = append(steps, buildStep)
+		}
+
+		deployStep := NewDeployNetlifySiteStep(
+			"existing-site",
+			nqd.getBuildStepID(),
+			nqd.getPublishDir(),
+			nqd.getFunctionsDir(),
+		)
+		steps = append(steps, deployStep)
+
+		return steps
+	}
+
+	// Fresh deployment flow below
 
 	// Step 1: Initialize git repository
 	initGitStep := NewInitializeGitRepoStep(nqd.getSourcePath())
