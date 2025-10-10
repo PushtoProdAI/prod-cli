@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/go-errors/errors"
 
@@ -740,8 +741,9 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 		return nil, errors.Errorf("docker client not available. Please ensure Docker is installed and running")
 	}
 
-	// Build the registry image tag in ECR format: registry/repository:tag
-	registryImageTag := fmt.Sprintf("%s/%s:latest", strings.TrimSuffix(creds.URL, "/"), creds.Repository)
+	// Use timestamp-based tag to ensure Render pulls the new image
+	imageTag := fmt.Sprintf("%d", time.Now().Unix())
+	registryImageTag := fmt.Sprintf("%s/%s:%s", strings.TrimSuffix(creds.URL, "/"), creds.Repository, imageTag)
 
 	// Ensure we have the correct source image name with tag
 	sourceImage := buildResult.ImageName

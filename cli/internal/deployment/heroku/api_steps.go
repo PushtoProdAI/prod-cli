@@ -71,16 +71,23 @@ func (s *CreateHerokuAppStep) Execute(ctx context.Context, client *HerokuClient,
 		return nil, errors.Errorf("failed to create app: %w", err)
 	}
 
-	// Return as CreatedResource for consistency
+	// Get web URL from app or construct it
+	var webURL string
+	if app.WebURL != nil && *app.WebURL != "" {
+		webURL = *app.WebURL
+	} else {
+		webURL = fmt.Sprintf("https://%s.herokuapp.com", app.Name)
+	}
+
 	return deployment.CreatedResource{
 		ID:   app.ID,
 		Type: "heroku_app",
 		Name: app.Name,
 		Metadata: map[string]interface{}{
-			"url":     app.WebURL, // Use 'url' to match workflow expectations
+			"url":     webURL,
 			"git_url": app.GitURL,
 			"region":  app.Region.Name,
-			"app":     app, // Store full app object for later steps
+			"app":     app,
 		},
 	}, nil
 }

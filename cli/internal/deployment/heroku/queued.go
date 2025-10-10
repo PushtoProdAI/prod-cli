@@ -38,11 +38,14 @@ func NewQueuedDeployment(client *HerokuClient, spec *deployment.DeploymentSpec, 
 
 // Deploy executes the deployment using API steps
 func (qd *QueuedDeployment) Deploy(ctx context.Context) ([]deployment.CreatedResource, error) {
-	// Generate steps
 	steps := qd.GenerateAPISteps()
 
-	// Execute steps with dependency resolution
 	stepExecutor := NewStepExecutor(qd.client, qd.writer)
+
+	if qd.spec.IsUpdate {
+		stepExecutor.InjectExistingApp(qd.spec.ExistingProjectID)
+	}
+
 	return stepExecutor.ExecuteSteps(ctx, steps)
 }
 
@@ -51,46 +54,48 @@ func (qd *QueuedDeployment) GenerateAPISteps() []HerokuAPIStep {
 	var steps []HerokuAPIStep
 	stepCounter := 1
 
-	// Step 1: Create Heroku app
-	createAppStepID := fmt.Sprintf("step-%d", stepCounter)
-	steps = append(steps, NewCreateHerokuAppStep(
-		createAppStepID,
-		"Create Heroku application",
-		"", // Let Heroku auto-generate the name
-		"us",
-	))
-	stepCounter++
+	appStepID := "app"
+	var addonStepIDs []string
 
-	// Step 2: Create addons (databases, redis, etc.)
-	addonStepIDs := qd.createAddonSteps(&steps, createAppStepID, &stepCounter)
+	if !qd.spec.IsUpdate {
+		createAppStepID := fmt.Sprintf("step-%d", stepCounter)
+		steps = append(steps, NewCreateHerokuAppStep(
+			createAppStepID,
+			"Create Heroku application",
+			"",
+			"us",
+		))
+		stepCounter++
+		appStepID = createAppStepID
 
-	// Skip buildpack configuration - Heroku auto-detects buildpacks
-	// This simplifies deployment and reduces API calls
+		addonStepIDs = qd.createAddonSteps(&steps, appStepID, &stepCounter)
+	}
 
-	// Step 3: Configure environment variables
 	envStepID := ""
 	if customEnvVars := qd.filterNonDBEnvVars(); len(customEnvVars) > 0 {
 		envStepID = fmt.Sprintf("step-%d", stepCounter)
 
-		// Env vars depend on app and all addons (to get DB URLs)
-		deps := append([]string{createAppStepID}, addonStepIDs...)
+		var deps []string
+		if !qd.spec.IsUpdate {
+			deps = append([]string{appStepID}, addonStepIDs...)
+		}
 
 		steps = append(steps, NewConfigureHerokuEnvStep(
 			envStepID,
 			"Configure environment variables",
-			createAppStepID,
+			appStepID,
 			customEnvVars,
 			deps,
 		))
 		stepCounter++
 	}
 
-	// Step 4: Deploy via Git
 	deployStepID := fmt.Sprintf("step-%d", stepCounter)
 
-	// Deploy depends on app, addons, and env vars
-	deployDeps := []string{createAppStepID}
-	deployDeps = append(deployDeps, addonStepIDs...)
+	var deployDeps []string
+	if !qd.spec.IsUpdate {
+		deployDeps = append([]string{appStepID}, addonStepIDs...)
+	}
 	if envStepID != "" {
 		deployDeps = append(deployDeps, envStepID)
 	}
@@ -98,7 +103,7 @@ func (qd *QueuedDeployment) GenerateAPISteps() []HerokuAPIStep {
 	steps = append(steps, NewGitDeployStep(
 		deployStepID,
 		"Deploy application via Git push",
-		createAppStepID,
+		appStepID,
 		qd.buildContext,
 		qd.spec.StartCommand,
 		qd.spec.MigrationCommand,
@@ -106,16 +111,17 @@ func (qd *QueuedDeployment) GenerateAPISteps() []HerokuAPIStep {
 	))
 	stepCounter++
 
-	// Step 6: Scale dynos
-	scaleStepID := fmt.Sprintf("step-%d", stepCounter)
-	steps = append(steps, NewScaleHerokuDynosStep(
-		scaleStepID,
-		"Scale web dynos",
-		createAppStepID,
-		1,       // quantity
-		"basic", // size - using basic dynos
-		[]string{deployStepID},
-	))
+	if !qd.spec.IsUpdate {
+		scaleStepID := fmt.Sprintf("step-%d", stepCounter)
+		steps = append(steps, NewScaleHerokuDynosStep(
+			scaleStepID,
+			"Scale web dynos",
+			appStepID,
+			1,
+			"basic",
+			[]string{deployStepID},
+		))
+	}
 
 	return steps
 }

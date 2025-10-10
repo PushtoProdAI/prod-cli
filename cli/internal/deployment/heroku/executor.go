@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/go-errors/errors"
 
@@ -32,6 +33,38 @@ func NewStepExecutor(client *HerokuClient, writer io.Writer) *StepExecutor {
 		executedSteps:    make([]HerokuAPIStep, 0),
 		writer:           writer,
 	}
+}
+
+func (se *StepExecutor) InjectExistingApp(appName string) {
+	app, err := se.client.GetApp(context.Background(), appName)
+	if err != nil {
+		slog.Warn("Failed to get app details for existing app", "app", appName, "error", err)
+		return
+	}
+
+	// Get web URL from app or construct it
+	var webURL string
+	if app.WebURL != nil && *app.WebURL != "" {
+		webURL = *app.WebURL
+	} else {
+		webURL = fmt.Sprintf("https://%s.herokuapp.com", app.Name)
+	}
+
+	resource := deployment.CreatedResource{
+		Name: app.Name,
+		Type: "heroku-app",
+		ID:   app.ID,
+		Metadata: map[string]interface{}{
+			"url":     webURL,
+			"git_url": app.GitURL,
+			"region":  app.Region.Name,
+			"app":     app,
+		},
+	}
+
+	se.stepResults["app"] = resource
+	// IMPORTANT: Also add to createdResources so workflow can find the URL
+	se.createdResources = append(se.createdResources, resource)
 }
 
 // ExecuteSteps executes all steps in dependency order

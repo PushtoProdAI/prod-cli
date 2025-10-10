@@ -219,6 +219,24 @@ func (c *HTTPRenderClient) CreateWebService(ctx context.Context, req CreateWebSe
 	return &createdResp.Service, nil
 }
 
+func (c *HTTPRenderClient) UpdateServiceImage(ctx context.Context, serviceID string, req UpdateServiceImageRequest) error {
+	updateReq := map[string]any{
+		"imagePath": req.ImagePath,
+	}
+
+	resp, err := c.makeRequest(ctx, "PATCH", fmt.Sprintf("/v1/services/%s", serviceID), updateReq)
+	if err != nil {
+		return errors.Errorf("failed to update service image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return errors.Errorf("failed to update service image: status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
 // CreatePostgres creates a new PostgreSQL database service on Render
 // Based on: https://api-docs.render.com/reference/create-postgres
 func (c *HTTPRenderClient) CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*RenderService, error) {
@@ -345,6 +363,20 @@ func (c *HTTPRenderClient) CreateRegistryCredential(ctx context.Context, req Cre
 	return &registryCred, nil
 }
 
+func (c *HTTPRenderClient) DeleteRegistryCredential(ctx context.Context, credID string) error {
+	resp, err := c.makeRequest(ctx, "DELETE", fmt.Sprintf("/v1/registrycredentials/%s", credID), nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		return errors.Errorf("failed to delete registry credential: status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
 func (c *HTTPRenderClient) ListServices(ctx context.Context, name string) ([]RenderService, error) {
 	endpoint := "/v1/services"
 	if name != "" {
@@ -356,7 +388,6 @@ func (c *HTTPRenderClient) ListServices(ctx context.Context, name string) ([]Ren
 		return nil, errors.Errorf("failed to list services: %w", err)
 	}
 
-	// Render API returns an array of objects with "service" wrapper
 	var wrappedServices []struct {
 		Service RenderService `json:"service"`
 	}
@@ -364,11 +395,55 @@ func (c *HTTPRenderClient) ListServices(ctx context.Context, name string) ([]Ren
 		return nil, err
 	}
 
-	// Extract the services from the wrapper
 	services := make([]RenderService, len(wrappedServices))
 	for i, wrapped := range wrappedServices {
 		services[i] = wrapped.Service
 	}
 
 	return services, nil
+}
+
+func (c *HTTPRenderClient) TriggerDeploy(ctx context.Context, serviceID string) (*RenderDeploy, error) {
+	resp, err := c.makeRequest(ctx, "POST", fmt.Sprintf("/v1/services/%s/deploys", serviceID), nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to trigger deploy: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var deploy RenderDeploy
+	if err := c.handleResponse(resp, &deploy); err != nil {
+		return nil, err
+	}
+
+	return &deploy, nil
+}
+
+func (c *HTTPRenderClient) GetDeploy(ctx context.Context, serviceID, deployID string) (*RenderDeploy, error) {
+	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/services/%s/deploys/%s", serviceID, deployID), nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to get deploy: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var deploy RenderDeploy
+	if err := c.handleResponse(resp, &deploy); err != nil {
+		return nil, err
+	}
+
+	return &deploy, nil
+}
+
+func (c *HTTPRenderClient) ListDeploys(ctx context.Context, serviceID string) ([]*RenderDeploy, error) {
+	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/services/%s/deploys", serviceID), nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to list deploys: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var deploys []*RenderDeploy
+	if err := c.handleResponse(resp, &deploys); err != nil {
+		return nil, err
+	}
+
+	return deploys, nil
 }
