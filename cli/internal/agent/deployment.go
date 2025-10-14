@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
@@ -271,20 +272,49 @@ func (d *RenderProjectDetector) DetectExistingProject(ctx context.Context, proje
 		result.Name = existing.Name
 		result.IsUpdate = true
 
-		allServices, err := d.client.ListServices(ctx, "")
+		slog.Info("Detecting existing Render databases", "projectName", projectName)
+		normalizedProjectName := strings.ReplaceAll(projectName, "-", "_")
+		expectedPGServiceNamePrefix := fmt.Sprintf("%s-postgres", projectName)
+		expectedPGServiceNameUnderscores := fmt.Sprintf("%s_db", normalizedProjectName)
+		expectedPGDatabaseName := fmt.Sprintf("%s_db", projectName)
+		expectedRedisName := fmt.Sprintf("%s-redis", projectName)
+		slog.Info("Looking for databases", "expectedPGServiceNamePrefix", expectedPGServiceNamePrefix, "expectedPGServiceNameUnderscores", expectedPGServiceNameUnderscores, "expectedPGDatabaseName", expectedPGDatabaseName, "expectedRedisName", expectedRedisName)
+
+		pgList, err := d.client.ListPostgres(ctx)
 		if err != nil {
-			return result, errors.Errorf("failed to list services for database detection: %w", err)
+			slog.Error("Failed to list Render postgres", "error", err)
+		} else {
+			slog.Info("Listed Render postgres databases", "count", len(pgList))
+			for _, pg := range pgList {
+				slog.Info("Checking Render postgres", "serviceName", pg.Name, "databaseName", pg.DatabaseName, "id", pg.ID)
+				if strings.HasPrefix(pg.Name, expectedPGServiceNamePrefix) ||
+					pg.Name == expectedPGServiceNameUnderscores ||
+					pg.DatabaseName == expectedPGDatabaseName ||
+					strings.HasPrefix(pg.DatabaseName, normalizedProjectName+"_") {
+					result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
+					d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing PostgreSQL database: %s (db: %s)", pg.Name, pg.DatabaseName))
+					slog.Info("Matched existing PostgreSQL database", "serviceName", pg.Name, "databaseName", pg.DatabaseName)
+				}
+			}
 		}
 
-		for _, service := range allServices {
-			if service.Type == "pgsql" && service.Name == fmt.Sprintf("%s-postgres", projectName) {
-				result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
-				d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing PostgreSQL database: %s", service.Name))
+		redisList, err := d.client.ListRedis(ctx)
+		if err != nil {
+			slog.Error("Failed to list Render redis", "error", err)
+		} else {
+			slog.Info("Listed Render redis databases", "count", len(redisList))
+			for _, red := range redisList {
+				slog.Info("Checking Render redis", "name", red.Name, "type", red.Type, "id", red.ID)
+				if red.Name == expectedRedisName {
+					result.ExistingDatabases = append(result.ExistingDatabases, "redis")
+					d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Redis database: %s", red.Name))
+					slog.Info("Matched existing Redis database", "name", red.Name)
+				}
 			}
-			if service.Type == "redis" && service.Name == fmt.Sprintf("%s-redis", projectName) {
-				result.ExistingDatabases = append(result.ExistingDatabases, "redis")
-				d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Redis database: %s", service.Name))
-			}
+		}
+
+		if len(result.ExistingDatabases) == 0 {
+			slog.Info("No matching Render databases found")
 		}
 	} else {
 		d.uiWriter.SendStatus("info", "No existing Render service found - will create new deployment")
@@ -324,10 +354,26 @@ func (d *FlyIOProjectDetector) DetectExistingProject(ctx context.Context, projec
 		result.DeployURL = existing.Hostname
 		result.IsUpdate = true
 
-		postgresApp, err := flyio.DetectExistingProject(ctx, d.client, fmt.Sprintf("%s-postgres", projectName))
-		if err == nil && postgresApp != nil {
-			result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
-			d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing PostgreSQL app: %s", postgresApp.Name))
+		slog.Info("Detecting existing Fly.io databases", "projectName", projectName)
+		pgClusters, err := d.client.ListPostgres(ctx)
+		if err != nil {
+			slog.Error("Failed to list postgres clusters", "error", err)
+		} else {
+			slog.Info("Listed postgres clusters", "count", len(pgClusters))
+			expectedPGName := fmt.Sprintf("%s-postgres", projectName)
+			slog.Info("Looking for postgres cluster", "expectedName", expectedPGName)
+			for _, cluster := range pgClusters {
+				slog.Info("Checking postgres cluster", "name", cluster.Name, "expected", expectedPGName)
+				if cluster.Name == expectedPGName {
+					result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
+					d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing PostgreSQL cluster: %s", cluster.Name))
+					slog.Info("Matched existing postgres cluster", "name", cluster.Name)
+					break
+				}
+			}
+			if len(result.ExistingDatabases) == 0 {
+				slog.Info("No matching postgres cluster found")
+			}
 		}
 
 		redisApp, err := flyio.DetectExistingProject(ctx, d.client, fmt.Sprintf("%s-redis", projectName))

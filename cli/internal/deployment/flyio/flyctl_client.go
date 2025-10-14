@@ -304,6 +304,57 @@ func (c *FlyctlClient) DestroyApp(ctx context.Context, appID string) error {
 	return nil
 }
 
+// ListPostgres lists all managed PostgreSQL clusters
+func (c *FlyctlClient) ListPostgres(ctx context.Context) ([]FlyioPostgresCluster, error) {
+	if err := c.ensureFlyctl(ctx); err != nil {
+		return nil, err
+	}
+
+	slog.Info("Listing Fly.io apps to get organization")
+	output, err := c.executor.Execute(ctx, "flyctl", "apps", "list", "--json")
+	if err != nil {
+		return nil, errors.Errorf("failed to list apps to get organization: %w", err)
+	}
+
+	var apps []FlyioApp
+	if err := json.Unmarshal(output, &apps); err != nil {
+		return nil, errors.Errorf("failed to parse apps list: %w", err)
+	}
+
+	slog.Info("Found apps", "count", len(apps))
+	if len(apps) == 0 {
+		slog.Warn("No apps found, cannot determine organization for postgres list")
+		return []FlyioPostgresCluster{}, nil
+	}
+
+	orgSlug := apps[0].Organization.Slug
+	slog.Info("Using organization", "slug", orgSlug)
+	if orgSlug == "" {
+		slog.Warn("Organization slug is empty")
+		return []FlyioPostgresCluster{}, nil
+	}
+
+	slog.Info("Listing managed postgres clusters", "org", orgSlug)
+	pgOutput, err := c.executor.Execute(ctx, "flyctl", "mpg", "list", "-o", orgSlug, "--json")
+	if err != nil {
+		return nil, errors.Errorf("failed to list postgres clusters: %w", err)
+	}
+
+	slog.Debug("Postgres list output", "output", string(pgOutput))
+
+	var clusters []FlyioPostgresCluster
+	if err := json.Unmarshal(pgOutput, &clusters); err != nil {
+		return nil, errors.Errorf("failed to parse postgres list: %w", err)
+	}
+
+	slog.Info("Found postgres clusters", "count", len(clusters))
+	for _, cluster := range clusters {
+		slog.Info("Postgres cluster", "name", cluster.Name, "id", cluster.ID, "status", cluster.Status)
+	}
+
+	return clusters, nil
+}
+
 // CreatePostgres creates a new managed PostgreSQL cluster
 func (c *FlyctlClient) CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*FlyioPostgresCluster, error) {
 	// Check if flyctl is installed
@@ -360,7 +411,7 @@ func (c *FlyctlClient) parseMPGCreateOutput(output string) (*FlyioPostgresCluste
 		}
 		// Extract Organization: james-martinez-457
 		if strings.HasPrefix(line, "Organization:") {
-			cluster.Organization = strings.TrimSpace(strings.TrimPrefix(line, "Organization:"))
+			cluster.Organization.Slug = strings.TrimSpace(strings.TrimPrefix(line, "Organization:"))
 		}
 		// Extract Region: iad
 		if strings.HasPrefix(line, "Region:") {
