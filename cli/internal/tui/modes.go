@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/v2/textinput"
+	tea "github.com/charmbracelet/bubbletea/v2"
 )
 
 // handleEnterKey processes Enter key based on current mode
@@ -20,6 +21,8 @@ func (m Model) handleEnterKey() (tea.Model, tea.Cmd) {
 		return m.handleSelectEnter()
 	} else if m.isMode(ModeText) {
 		return m.handleTextEnter()
+	} else if m.isMode(ModeSearch) {
+		return m.handleSearchEnter()
 	} else {
 		return m.handleNormalEnter()
 	}
@@ -81,6 +84,8 @@ func (m Model) handleAPIKeyEnter() (tea.Model, tea.Cmd) {
 		m.setMode(ModeNormal)
 		m.apiKeyPrompt = nil
 		m.textInput.SetValue("")
+		// Restore normal echo mode
+		m.textInput.EchoMode = textinput.EchoNormal
 		// Process the API key response with the agent
 		if m.agent != nil {
 			go func() {
@@ -121,6 +126,20 @@ func (m Model) handleNormalEnter() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Handle slash command selection
+	if m.showSlashCommands {
+		filtered := m.getFilteredSlashCommands()
+		if len(filtered) > 0 && m.slashCommandCursor < len(filtered) {
+			// Auto-complete with selected command
+			m.textInput.SetValue(filtered[m.slashCommandCursor].Command)
+			m.textInput.CursorEnd()
+			m.showSlashCommands = false
+
+			// Execute the command
+			input = filtered[m.slashCommandCursor].Command
+		}
+	}
+
 	if input == "exit" {
 		m.quitting = true
 		m.saveHistoryOnExit()
@@ -130,6 +149,9 @@ func (m Model) handleNormalEnter() (tea.Model, tea.Cmd) {
 	// Add to history and clear input
 	m.addToHistory(input)
 	m.textInput.SetValue("")
+
+	// Hide slash commands
+	m.showSlashCommands = false
 
 	// Process input with agent
 	if m.agent != nil {
@@ -163,5 +185,24 @@ func (m Model) handleTextEnter() (tea.Model, tea.Cmd) {
 		}()
 	}
 
+	return m, nil
+}
+
+// handleSearchEnter processes Enter in search mode
+func (m Model) handleSearchEnter() (tea.Model, tea.Cmd) {
+	query := strings.TrimSpace(m.textInput.Value())
+	
+	if query == "" {
+		// Empty search, exit search mode
+		m.setMode(ModeNormal)
+		m.clearSearch()
+		m.textInput.Placeholder = ""
+		return m, nil
+	}
+	
+	// Perform search
+	m.performSearch(query)
+	
+	// Stay in search mode to allow navigation
 	return m, nil
 }

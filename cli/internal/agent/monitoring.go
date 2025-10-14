@@ -7,7 +7,6 @@ import (
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
@@ -88,7 +87,7 @@ func (a *Activities) determineRootPath(ctx context.Context, routes []analyzer.Ro
 			Line:    int64(r.Line),
 		}
 	}
-	r, err := baml_client.CategorizeRoutes(ctx, routeInputs)
+	r, err := a.llmClient.CategorizeRoutes(ctx, routeInputs)
 	if err != nil {
 		return "", errors.Errorf("failed to categorize routes: %w", err)
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/deployment/vercel"
 	prod_error "github.com/meroxa/prod/cli/internal/error"
+	"github.com/meroxa/prod/cli/internal/llm"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
 )
@@ -76,9 +77,28 @@ type SetupJavaScriptProjectResult struct {
 
 var _ workflowext.Registerer = (*Workflows)(nil)
 
+// newAgentLLMClient creates an LLM client configured for agent workflows
+func newAgentLLMClient() llm.Client {
+	return llm.New(llm.Config{
+		SessionExtractor: func(ctx context.Context) llm.SessionProvider {
+			session := CtxSession(ctx)
+			if session == nil {
+				return nil
+			}
+			return session
+		},
+	})
+}
+
 func NewWorkflows(renderClient render.RenderClient, flyClient flyio.FlyioClient, beClient *backend.Client, uiWriter output.StatusWriter) *Workflows {
 	return &Workflows{
-		Acts:         &Activities{renderClient: renderClient, flyClient: flyClient, beClient: beClient, uiWriter: uiWriter},
+		Acts: &Activities{
+			renderClient: renderClient,
+			flyClient:    flyClient,
+			beClient:     beClient,
+			uiWriter:     uiWriter,
+			llmClient:    newAgentLLMClient(),
+		},
 		renderClient: renderClient,
 		flyClient:    flyClient,
 		uiWriter:     uiWriter,
@@ -506,7 +526,7 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 
 	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
 	if err != nil {
-		// Send the original error
+		// Send the original error before summarizing
 		prod_error.CaptureErrorWithContext(err, map[string]any{
 			"workflow":     DeployFlyioWorkflowName,
 			"activity":     AgentIsURLLive,
@@ -524,7 +544,23 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 				"url":      fullUrl,
 			}).Get(ctx)
 		}
-		return deployResult{}, errors.Errorf("service URL %s is not live: %w", fullUrl, err)
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     DeployFlyioWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "deployment",
+				"platform":     "flyio",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
+			slog.Info("Failed to summarize error", "error", e1)
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		slog.Info("service URL is not live", "url", fullUrl, "error", err)
+		return deployResult{Error: summary}, nil
 	}
 
 	// Log deployment success
@@ -1324,6 +1360,15 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 
 	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
 	if err != nil {
+		// Send the original error before summarizing
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployHerokuWorkflowName,
+			"activity":     AgentIsURLLive,
+			"component":    "deployment",
+			"platform":     "heroku",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
 		// Log deployment failure
 		if operationId != "" {
 			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
@@ -1333,7 +1378,23 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 				"url":      fullUrl,
 			}).Get(ctx)
 		}
-		return deployResult{}, errors.Errorf("service URL %s is not live: %w", fullUrl, err)
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     DeployHerokuWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "deployment",
+				"platform":     "heroku",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
+			slog.Info("Failed to summarize error", "error", e1)
+			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		slog.Info("service URL is not live", "url", fullUrl, "error", err)
+		return deployResult{Error: summary}, nil
 	}
 
 	// Log deployment success

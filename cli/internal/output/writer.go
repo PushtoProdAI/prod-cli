@@ -338,6 +338,22 @@ func (p *ProxyWriter) SendStatusComplete(status, message string) {
 	p.target.SendStatusComplete(status, message)
 }
 
+// SendInfoBox forwards info box messages to the target if it supports them
+func (p *ProxyWriter) SendInfoBox(title string, content string, icon string) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	type infoBoxSender interface {
+		SendInfoBox(title string, content string, icon string)
+	}
+
+	if sender, ok := p.target.(infoBoxSender); ok {
+		sender.SendInfoBox(title, content, icon)
+	} else {
+		fmt.Fprintf(p.target, "\n%s %s\n%s\n", icon, title, content)
+	}
+}
+
 // Ensure ProxyWriter implements StatusWriter
 var _ StatusWriter = (*ProxyWriter)(nil)
 

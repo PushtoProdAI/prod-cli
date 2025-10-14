@@ -417,59 +417,20 @@ func (s *GitDeployStep) createProcfile() error {
 }
 
 func (s *GitDeployStep) prepareGitRepo() error {
-	// Check if .git directory exists
-	gitDir := filepath.Join(s.BuildContext, ".git")
-	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
-		// Initialize git repo
-		cmd := exec.Command("git", "init")
-		cmd.Dir = s.BuildContext
-		if err := cmd.Run(); err != nil {
-			return errors.Errorf("failed to initialize git: %w", err)
-		}
+	if err := deployment.InitializeGitRepo(s.BuildContext); err != nil {
+		return err
 	}
 
-	// Ensure git user config is set (local to this repo)
-	// Check if user.email is set
-	cmd := exec.Command("git", "config", "user.email")
-	cmd.Dir = s.BuildContext
-	output, err := cmd.CombinedOutput()
-	if err != nil || strings.TrimSpace(string(output)) == "" {
-		// Set a default email for Heroku deployment
-		cmd = exec.Command("git", "config", "user.email", "deploy@prod-cli.local")
-		cmd.Dir = s.BuildContext
-		if err := cmd.Run(); err != nil {
-			return errors.Errorf("failed to set git user.email: %w", err)
-		}
+	if err := deployment.ConfigureGitUser(s.BuildContext); err != nil {
+		return err
 	}
 
-	// Check if user.name is set
-	cmd = exec.Command("git", "config", "user.name")
-	cmd.Dir = s.BuildContext
-	output, err = cmd.CombinedOutput()
-	if err != nil || strings.TrimSpace(string(output)) == "" {
-		// Set a default name for Heroku deployment
-		cmd = exec.Command("git", "config", "user.name", "Prod CLI Deploy")
-		cmd.Dir = s.BuildContext
-		if err := cmd.Run(); err != nil {
-			return errors.Errorf("failed to set git user.name: %w", err)
-		}
+	if err := deployment.GitAddAll(s.BuildContext); err != nil {
+		return err
 	}
 
-	// Add and commit all files
-	cmd = exec.Command("git", "add", ".")
-	cmd.Dir = s.BuildContext
-	if err := cmd.Run(); err != nil {
-		return errors.Errorf("failed to add files: %w", err)
-	}
-
-	cmd = exec.Command("git", "commit", "-m", "Deploy to Heroku")
-	cmd.Dir = s.BuildContext
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		// Check if there's nothing to commit
-		if !strings.Contains(string(output), "nothing to commit") {
-			return errors.Errorf("failed to commit: %w", err)
-		}
+	if err := deployment.GitCommit(s.BuildContext, "Deploy to Heroku"); err != nil {
+		return err
 	}
 
 	return nil

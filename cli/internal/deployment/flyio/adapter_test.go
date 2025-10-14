@@ -39,7 +39,8 @@ func TestFlyioDeploymentAdapter_EstimateCost(t *testing.T) {
 	}
 
 	// Estimate costs
-	costEstimate, err := adapter.EstimateCost(spec, deployment.StrategyFlyio)
+	ctx := context.Background()
+	costEstimate, err := adapter.EstimateCost(ctx, spec, deployment.StrategyFlyio)
 	if err != nil {
 		t.Fatalf("Failed to estimate costs: %v", err)
 	}

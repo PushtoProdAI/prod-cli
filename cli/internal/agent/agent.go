@@ -32,7 +32,12 @@ type TUIWriter interface {
 	SendTextPrompt(message string)
 	SendTextPromptWithDefault(message string, defaultValue string)
 	SendPlan(plan DeployPlan, dryRun bool)
+	SendError(summary string, remediations []Remediation)
+	SendSuccess(platform string, appName string, url string)
 	StopSpinner()
+	ClearScreen()
+	Quit()
+	Search()
 }
 
 type EnvVarWithStatus struct {
@@ -90,10 +95,10 @@ type deployResult struct {
 
 type deployError struct {
 	Summary      string
-	Remediations []remediation
+	Remediations []Remediation
 }
 
-type remediation struct {
+type Remediation struct {
 	Description string
 	CliCommand  string
 }
@@ -223,6 +228,20 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 		}
 	}
 
+	// Handle slash commands before auth check - they bypass the state machine
+	if strings.HasPrefix(strings.TrimSpace(input), "/") {
+		nextState, err := a.handleSlashCommand(ctx, input, output)
+		if err != nil {
+			slog.Error("Error handling slash command", "error", err)
+			return
+		}
+		// Update the state machine's current state if the command returns one
+		if nextState != nil {
+			a.sm.currentState = nextState
+		}
+		return
+	}
+
 	// handle auth before processing the input
 	if !a.internalAuth.IsAuthenticated() {
 		fmt.Fprint(output, "🔐 Before we proceed, let's get you logged in!\n")
@@ -293,6 +312,26 @@ func (a *Agent) processConsentResponse(ctx context.Context, input string, out io
 	}
 
 	// Return to plan state - this will handle authentication and continue normally
+	return a.plan, nil
+}
+
+func (a *Agent) handleSlashCommand(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return a.plan, nil
+	}
+
+	commandName := parts[0]
+
+	// Find and execute the matching command
+	for _, cmd := range a.GetAvailableSlashCommands() {
+		if cmd.Name == commandName {
+			return cmd.Handler(a, ctx, out)
+		}
+	}
+
+	// Command not found
+	fmt.Fprintf(out, "Unknown command: %s\n", commandName)
 	return a.plan, nil
 }
 
@@ -546,8 +585,21 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 			return a.confirmWithPrompt(ctx, "", out)
 		}
 		if result.Error.Summary != "" {
-			fmt.Fprintf(out, "❌ %s\n", result.Error.Summary)
-			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
+			if tuiWriter, ok := out.(TUIWriter); ok {
+				tuiWriter.SendError(result.Error.Summary, result.Error.Remediations)
+			} else {
+				fmt.Fprintf(out, "❌ %s\n", result.Error.Summary)
+				if len(result.Error.Remediations) > 0 {
+					fmt.Fprint(out, "Here are some suggestions to fix the issues:\n")
+					for _, r := range result.Error.Remediations {
+						fmt.Fprintf(out, " • %s\n", r.Description)
+						if r.CliCommand != "" {
+							fmt.Fprintf(out, "   Run: %s\n", r.CliCommand)
+						}
+					}
+				}
+				fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
+			}
 			return a.confirmWithPrompt(ctx, "", out)
 		}
 		// Display config diff if available
@@ -663,20 +715,25 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 	}
 
 	if result.Error.Summary != "" {
-		fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
-		fmt.Fprintf(out, "%s\n", result.Error.Summary)
-		if len(result.Error.Remediations) > 0 {
-			fmt.Fprint(out, "Here are some suggestions to fix the issues:\n")
-			for _, r := range result.Error.Remediations {
-				fmt.Fprintf(out, " • %s\n", r.Description)
-				if r.CliCommand != "" {
-					fmt.Fprintf(out, "   Run: %s\n", r.CliCommand)
+		if tuiWriter, ok := out.(TUIWriter); ok {
+			tuiWriter.SendError(result.Error.Summary, result.Error.Remediations)
+		} else {
+			fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
+			fmt.Fprintf(out, "%s\n", result.Error.Summary)
+			if len(result.Error.Remediations) > 0 {
+				fmt.Fprint(out, "Here are some suggestions to fix the issues:\n")
+				for _, r := range result.Error.Remediations {
+					fmt.Fprintf(out, " • %s\n", r.Description)
+					if r.CliCommand != "" {
+						fmt.Fprintf(out, "   Run: %s\n", r.CliCommand)
+					}
 				}
+				fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
 			}
-			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
-			// jump to the confirm state so that we give the user a chance to fix the issues and retry, without having to replan.
-			return a.confirmWithPrompt(ctx, "", out)
+		}
 
+		if len(result.Error.Remediations) > 0 {
+			return a.confirmWithPrompt(ctx, "", out)
 		}
 		if !a.interactive {
 			return nil, nil
@@ -684,17 +741,24 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 		return a.plan, nil
 	}
 
-	io.WriteString(out, "Deployed!...🚀\n")
-	if result.Url != "" {
-		fmt.Fprintf(out, "You can access your deployment at: %s\n", result.Url)
-		openInBrowser(result.Url)
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendSuccess(a.DeployPlan.Platform.String(), a.DeployPlan.Spec.Name, result.Url)
+		if result.Url != "" {
+			openInBrowser(result.Url)
+		}
+	} else {
+		io.WriteString(out, "Deployed!...🚀\n")
+		if result.Url != "" {
+			fmt.Fprintf(out, "You can access your deployment at: %s\n", result.Url)
+			openInBrowser(result.Url)
+		}
 	}
 
 	// In non-interactive mode, end the state machine
 	if !a.interactive {
 		return nil, nil
 	}
-	// In interactive mode, return to plan state for more commands
+	// In interactive mode, return to input processing state for more commands
 	return a.plan, nil
 }
 
@@ -1142,7 +1206,7 @@ func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) 
 	if !a.interactive {
 		return nil, nil
 	}
-	// In interactive mode, return to plan state for more commands
+	// In interactive mode, return to input processing state for more commands
 	return a.plan, nil
 }
 

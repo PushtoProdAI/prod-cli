@@ -7,7 +7,6 @@ import (
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/deployment"
@@ -29,14 +28,14 @@ func (a *Activities) deploySteps(ctx context.Context, spec deployment.Deployment
 		deployable = flyio.NewFlyioQueuedDeployment(a.flyClient, &spec, a.uiWriter)
 	case Netlify:
 		// Use the Netlify deployment adapter
-		netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter)
+		netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter, a.llmClient)
 		var err error
 		deployable, err = netlifyAdapter.GenerateArtifacts(&spec, deployment.StrategyNetlify)
 		if err != nil {
 			return nil, errors.Errorf("failed to create Netlify deployment: %w", err)
 		}
 	case Vercel:
-		vercelAdapter := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter)
+		vercelAdapter := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter, a.llmClient)
 		var err error
 		deployable, err = vercelAdapter.GenerateArtifacts(&spec, deployment.StrategyVercel)
 		if err != nil {
@@ -80,45 +79,63 @@ func (a *Activities) deploySteps(ctx context.Context, spec deployment.Deployment
 func (a *Activities) summarizeDeploySteps(ctx context.Context, steps []string) error {
 	a.uiWriter.SendStatus("summarizing", "Summarizing deployment steps")
 
-	summary, err := baml_client.SummarizeSteps(ctx, steps)
+	var summaryText string
+	summary, err := a.llmClient.SummarizeSteps(ctx, steps)
 	if err != nil {
-		return errors.Errorf("failed to summarize deploy steps: %w", err)
+		slog.Warn("Failed to get LLM summary, using fallback", "error", err)
+		summaryText = "We will execute the following deployment steps:\n\n"
+		for i, step := range steps {
+			summaryText += fmt.Sprintf("%d. %s\n", i+1, step)
+		}
+	} else {
+		summaryText = summary.Summary
 	}
-	a.uiWriter.SendStatusComplete("summarizing", "✅ Steps summarized")
-	a.uiWriter.SendStatus("summary", fmt.Sprintf("%s\n-----", summary.Summary))
+	a.uiWriter.SendStatusComplete("summarizing", "")
+
+	type infoBoxSender interface {
+		SendInfoBox(title string, content string, icon string)
+	}
+
+	if tuiWriter, ok := a.uiWriter.(infoBoxSender); ok {
+		slog.Info("Sending info box for deployment steps", "hasContent", summaryText != "")
+		tuiWriter.SendInfoBox("Deployment Steps", summaryText, "📋")
+	} else {
+		slog.Info("Not a TUI writer, using plain text", "writerType", fmt.Sprintf("%T", a.uiWriter))
+		fmt.Fprintf(a.uiWriter, "%s\n", summaryText)
+	}
 	return nil
 }
 
-func (a *Activities) estimateRenderCosts(_ context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	ra := render.NewRenderDeploymentAdapter(a.renderClient, a.uiWriter)
-	costs, err := ra.EstimateCost(&spec, strategy)
+func (a *Activities) estimateRenderCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+	ra := render.NewRenderDeploymentAdapter(a.renderClient, a.uiWriter, a.llmClient)
+	costs, err := ra.EstimateCost(ctx, &spec, strategy)
 	if err != nil {
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
 	return costs, nil
 }
 
-func (a *Activities) estimateFlyioCosts(_ context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	fa := flyio.NewFlyioDeploymentAdapter(a.flyClient, a.uiWriter)
-	costs, err := fa.EstimateCost(&spec, strategy)
+func (a *Activities) estimateFlyioCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+	fa := flyio.NewFlyioDeploymentAdapter(a.flyClient, a.uiWriter, a.llmClient)
+	costs, err := fa.EstimateCost(ctx, &spec, strategy)
 	if err != nil {
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
 	return costs, nil
 }
 
-func (a *Activities) estimateNetlifyCosts(_ context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	na := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter)
-	costs, err := na.EstimateCost(&spec, strategy)
+func (a *Activities) estimateNetlifyCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+	na := netlify.NewNetlifyDeploymentAdapter(netlify.NewCLINetlifyClient(), a.uiWriter, a.llmClient)
+	costs, err := na.EstimateCost(ctx, &spec, strategy)
 	if err != nil {
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
 	return costs, nil
 }
 
-func (a *Activities) estimateVercelCosts(_ context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	va := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter)
-	costs, err := va.EstimateCost(&spec, strategy)
+func (a *Activities) estimateVercelCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+	va := vercel.NewVercelDeploymentAdapter(vercel.NewCLIVercelClient(), a.uiWriter, a.llmClient)
+	costs, err := va.EstimateCost(ctx, &spec, strategy)
 	if err != nil {
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
@@ -135,7 +152,7 @@ func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, dbList 
 		Context: envVar.Context,
 		File:    envVar.File,
 	}
-	cat, err := baml_client.DetermineEnvVarRoles(ctx, ev, dbList)
+	cat, err := a.llmClient.DetermineEnvVarRoles(ctx, ev, dbList)
 	if err != nil {
 		return deployment.EnvVar{}, errors.Errorf("failed to determine env var roles: %w", err)
 	}
@@ -176,7 +193,7 @@ func (a *Activities) determineBuildOutput(ctx context.Context, candidate analyze
 		Default:   candidate.Path,
 		Source:    candidate.Source,
 	}
-	output, err := baml_client.DetermineBuildOutput(ctx, bo)
+	output, err := a.llmClient.DetermineBuildOutput(ctx, bo)
 	if err != nil {
 		return "", errors.Errorf("failed to determine build output: %w", err)
 	}

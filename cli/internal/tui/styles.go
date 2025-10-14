@@ -1,6 +1,6 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import "github.com/charmbracelet/lipgloss/v2"
 
 var (
 	// Dark theme colors
@@ -103,4 +103,51 @@ var (
 				BorderForeground(borderColor).
 				Padding(1, 2).
 				Margin(0, 1)
+
+	// Text selection styles
+	selectionStyle = lipgloss.NewStyle().
+			Background(primaryColor).
+			Foreground(backgroundColor).
+			Bold(true)
+
+	selectionIndicatorStyle = lipgloss.NewStyle().
+				Foreground(primaryColor).
+				Bold(true)
+
+	copyFeedbackStyle = lipgloss.NewStyle().
+				Foreground(successColor).
+				Bold(true)
+
+	// Error display styles
+	errorHeaderStyle = lipgloss.NewStyle().
+				Foreground(errorColor).
+				Bold(true)
+
+	errorSummaryStyle = lipgloss.NewStyle().
+				Foreground(textColor).
+				Padding(1, 2)
+
+	errorContainerStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(errorColor).
+				Padding(1, 2).
+				Margin(0, 1)
+
+	remediationHeaderStyle = lipgloss.NewStyle().
+				Foreground(warningColor).
+				Bold(true)
+
+	remediationItemStyle = lipgloss.NewStyle().
+				Foreground(textColor).
+				Padding(0, 2)
+
+	codeBlockStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#1F2937")).
+			Foreground(lipgloss.Color("#A5F3FC")).
+			Padding(0, 1).
+			Margin(0, 2)
+
+	expandIconStyle = lipgloss.NewStyle().
+			Foreground(accentColor).
+			Bold(true)
 )

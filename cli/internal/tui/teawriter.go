@@ -4,7 +4,7 @@ import (
 	"io"
 	"sync"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/agent"
 	"github.com/meroxa/prod/cli/internal/output"
@@ -195,6 +195,55 @@ func (w *TeaWriter) SendPlan(plan agent.DeployPlan, dryRun bool) {
 	}
 
 	w.send(planMessage)
+}
+
+func (w *TeaWriter) SendError(summary string, remediations []agent.Remediation) {
+	tuiRemediations := make([]RemediationItem, len(remediations))
+	for i, r := range remediations {
+		tuiRemediations[i] = RemediationItem{
+			Description: r.Description,
+			CliCommand:  r.CliCommand,
+		}
+	}
+
+	errorMessage := ErrorDisplayMessage{
+		Summary:      summary,
+		Remediations: tuiRemediations,
+	}
+
+	w.send(errorMessage)
+}
+
+func (w *TeaWriter) SendSuccess(platform string, appName string, url string) {
+	successMessage := SuccessDisplayMessage{
+		Platform: platform,
+		AppName:  appName,
+		Url:      url,
+	}
+
+	w.send(successMessage)
+}
+
+func (w *TeaWriter) SendInfoBox(title string, content string, icon string) {
+	infoMessage := InfoBoxMessage{
+		Title:   title,
+		Content: content,
+		Icon:    icon,
+	}
+
+	w.send(infoMessage)
+}
+
+func (w *TeaWriter) ClearScreen() {
+	w.send(ClearScreenMsg{})
+}
+
+func (w *TeaWriter) Quit() {
+	w.send(QuitMsg{})
+}
+
+func (w *TeaWriter) Search() {
+	w.send(SearchMsg{})
 }
 
 // PromptSelection implements AuthInteractor interface
