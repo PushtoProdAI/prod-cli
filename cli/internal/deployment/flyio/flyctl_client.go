@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -29,6 +30,7 @@ type CommandExecutor interface {
 	Execute(ctx context.Context, name string, args ...string) ([]byte, error)
 	ExecuteWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error)
 	ExecuteInteractive(ctx context.Context, name string, args ...string) error
+	ExecuteWithStreaming(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 
 // DefaultCommandExecutor implements CommandExecutor using os/exec
@@ -72,6 +74,36 @@ func (e *DefaultCommandExecutor) ExecuteInteractive(ctx context.Context, name st
 		cmd.Env = append(os.Environ(), fmt.Sprintf("FLY_API_TOKEN=%s", token))
 	}
 	return cmd.Run()
+}
+
+func (e *DefaultCommandExecutor) ExecuteWithStreaming(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	// Flyctl respects FLY_API_TOKEN environment variable
+	if token := os.Getenv("FLY_API_TOKEN"); token != "" {
+		cmd.Env = append(os.Environ(), fmt.Sprintf("FLY_API_TOKEN=%s", token))
+	}
+
+	// Capture output while also streaming to stdout/stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+
+	err := cmd.Run()
+	if err != nil {
+		return nil, err
+	}
+
+	// Return combined output for parsing
+	combined := stdout.String()
+	if stderr.Len() > 0 {
+		combined += "\n" + stderr.String()
+	}
+
+	// Strip warning messages (same as Execute method)
+	combined, _, _ = strings.Cut(combined, "Warning")
+	combined = strings.TrimSpace(combined)
+
+	return []byte(combined), nil
 }
 
 // NewFlyctlClient creates a new flyctl-based Fly.io client
@@ -153,7 +185,8 @@ func (c *FlyctlClient) GetApp(ctx context.Context, appID string) (*FlyioApp, err
 
 	var app FlyioApp
 	for _, a := range apps {
-		if a.ID == appID {
+		// Match by ID or Name (for compatibility)
+		if a.ID == appID || a.Name == appID {
 			app = a
 			break
 		}
@@ -230,35 +263,20 @@ func (c *FlyctlClient) DeployApp(ctx context.Context, appID string, config *Flyi
 		"--yes", // Auto-confirm
 	}
 
-	// Execute from the source directory
+	// Execute from the source directory with streaming output
 	cmd := exec.CommandContext(ctx, "flyctl", args...)
 	cmd.Dir = sourceDir
 	cmd.Env = os.Environ()
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// Try to parse error from JSON output
-		var deployResp struct {
-			Error  string `json:"error"`
-			Status string `json:"status"`
-		}
-		if json.Unmarshal(output, &deployResp) == nil && deployResp.Error != "" {
-			return errors.Errorf("deployment failed: %s", deployResp.Error)
-		}
+	// Stream output to stdout/stderr so user can see progress
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
 		return errors.Errorf("deployment failed: %w", err)
 	}
 
-	// Parse deployment response to verify success
-	var deployResp struct {
-		Status string `json:"status"`
-		URL    string `json:"url"`
-	}
-	if err := json.Unmarshal(output, &deployResp); err == nil {
-		if deployResp.Status != "success" && deployResp.Status != "deployed" {
-			return errors.Errorf("deployment status: %s", deployResp.Status)
-		}
-	}
-	slog.Info("App deployed successfully", "url", deployResp.URL)
+	slog.Info("App deployed successfully")
 	return nil
 }
 
@@ -297,8 +315,9 @@ func (c *FlyctlClient) CreatePostgres(ctx context.Context, req CreatePostgresReq
 		args = append(args, "--plan", "basic")
 	}
 
-	// Execute and wait for completion (this will block until provisioned)
-	output, err := c.executor.Execute(ctx, "flyctl", args...)
+	// Execute with streaming output (this will block until provisioned)
+	// Use ExecuteWithStreaming to show progress while capturing output for parsing
+	output, err := c.executor.ExecuteWithStreaming(ctx, "flyctl", args...)
 	if err != nil {
 		return nil, errors.Errorf("failed to create PostgreSQL cluster %q in region %q: %w", req.Name, req.Region, err)
 	}
@@ -497,7 +516,8 @@ func (c *FlyctlClient) AttachPostgres(ctx context.Context, req AttachPostgresReq
 		args = append(args, "--variable-name", "DATABASE_URL")
 	}
 
-	_, err := c.executor.Execute(ctx, "flyctl", args...)
+	// Use ExecuteInteractive to show output to user
+	err := c.executor.ExecuteInteractive(ctx, "flyctl", args...)
 	if err != nil {
 		return errors.Errorf("failed to attach PostgreSQL cluster %q to app %q: %w",
 			req.ClusterID, req.AppName, err)
@@ -530,7 +550,8 @@ func (c *FlyctlClient) AttachRedis(ctx context.Context, req AttachRedisRequest) 
 	// Auto-confirm the attachment
 	args = append(args, "-y")
 
-	_, err := c.executor.Execute(ctx, "flyctl", args...)
+	// Use ExecuteInteractive to show output to user
+	err := c.executor.ExecuteInteractive(ctx, "flyctl", args...)
 	if err != nil {
 		return errors.Errorf("failed to attach Redis %q to app %q: %w", req.RedisName, req.AppName, err)
 	}

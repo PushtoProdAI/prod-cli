@@ -66,11 +66,29 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 
 	if fqd.spec.IsUpdate {
 		// For updates, skip creating app and services (they already exist)
-		// Just deploy the new configuration to the existing app
+		// Just generate Dockerfile and deploy the new configuration to the existing app
+
+		// Step 1: Generate Dockerfile (if Docker is available)
+		generateDockerfileStepID := "generate-dockerfile"
+		var deployDeps []string
+		if fqd.dockerGenerator != nil && deployment.IsDockerAvailable() {
+			steps = append(steps, &GenerateDockerfileStep{
+				BaseStep: BaseStep{
+					ID:          generateDockerfileStepID,
+					Description: "Generating Dockerfile for deployment",
+				},
+				spec:            fqd.spec,
+				dockerGenerator: fqd.dockerGenerator,
+			})
+			deployDeps = append(deployDeps, generateDockerfileStepID)
+		}
+
+		// Step 2: Deploy configuration
 		steps = append(steps, &DeployFlyioConfigStep{
 			BaseStep: BaseStep{
 				ID:          "deploy-config",
 				Description: "Deploying app configuration update",
+				DependsOn:   deployDeps,
 			},
 			appName: appName,
 			config:  fqd.generateFlyConfig(),
