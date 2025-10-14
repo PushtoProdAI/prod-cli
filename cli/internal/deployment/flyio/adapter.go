@@ -42,7 +42,7 @@ func NewFlyioDeploymentAdapterWithPricing(client FlyioClient, writer io.Writer, 
 
 // NewDefaultFlyioDeploymentAdapter creates a deployment adapter with the default client
 func NewDefaultFlyioDeploymentAdapter(writer io.Writer, llmClient llm.Client) *FlyioDeploymentAdapter {
-	return NewFlyioDeploymentAdapter(NewFlyctlClient(), writer, llmClient)
+	return NewFlyioDeploymentAdapter(NewFlyctlClient(writer), writer, llmClient)
 }
 
 // SupportedStrategies returns the deployment strategies supported by Fly.io

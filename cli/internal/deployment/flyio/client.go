@@ -46,13 +46,13 @@ func NewHTTPFlyioClient(apiToken string) *HTTPFlyioClient {
 
 // NewFlyioClient creates the default Fly.io client implementation
 // This factory method allows us to swap implementations in the future
-func NewFlyioClient() FlyioClient {
+func NewFlyioClient(writer io.Writer) FlyioClient {
 	// For now, use the flyctl implementation
 	// In the future, we can check for conditions to use different implementations:
 	// - If Fly.io API becomes more complete, switch to HTTPFlyioClient
 	// - If running in CI/CD, might use a different implementation
 	// - Could check for feature flags or environment variables
-	return NewFlyctlClient()
+	return NewFlyctlClient(writer)
 }
 
 // makeRequest makes an HTTP request with proper authentication and error handling

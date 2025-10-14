@@ -23,14 +23,16 @@ type FlyctlClient struct {
 	executor CommandExecutor
 	// workDir is the directory where we'll write temporary files like fly.toml
 	workDir string
+	// writer for streaming command output
+	writer io.Writer
 }
 
 // CommandExecutor interface allows us to mock exec.Command for testing
 type CommandExecutor interface {
 	Execute(ctx context.Context, name string, args ...string) ([]byte, error)
 	ExecuteWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error)
-	ExecuteInteractive(ctx context.Context, name string, args ...string) error
-	ExecuteWithStreaming(ctx context.Context, name string, args ...string) ([]byte, error)
+	ExecuteInteractive(ctx context.Context, writer io.Writer, name string, args ...string) error
+	ExecuteWithStreaming(ctx context.Context, writer io.Writer, name string, args ...string) ([]byte, error)
 }
 
 // DefaultCommandExecutor implements CommandExecutor using os/exec
@@ -64,11 +66,11 @@ func (e *DefaultCommandExecutor) ExecuteWithInput(ctx context.Context, input []b
 	return cmd.CombinedOutput()
 }
 
-func (e *DefaultCommandExecutor) ExecuteInteractive(ctx context.Context, name string, args ...string) error {
+func (e *DefaultCommandExecutor) ExecuteInteractive(ctx context.Context, writer io.Writer, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = writer
+	cmd.Stderr = writer
 	// Flyctl respects FLY_API_TOKEN environment variable
 	if token := os.Getenv("FLY_API_TOKEN"); token != "" {
 		cmd.Env = append(os.Environ(), fmt.Sprintf("FLY_API_TOKEN=%s", token))
@@ -76,17 +78,17 @@ func (e *DefaultCommandExecutor) ExecuteInteractive(ctx context.Context, name st
 	return cmd.Run()
 }
 
-func (e *DefaultCommandExecutor) ExecuteWithStreaming(ctx context.Context, name string, args ...string) ([]byte, error) {
+func (e *DefaultCommandExecutor) ExecuteWithStreaming(ctx context.Context, writer io.Writer, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	// Flyctl respects FLY_API_TOKEN environment variable
 	if token := os.Getenv("FLY_API_TOKEN"); token != "" {
 		cmd.Env = append(os.Environ(), fmt.Sprintf("FLY_API_TOKEN=%s", token))
 	}
 
-	// Capture output while also streaming to stdout/stderr
+	// Capture output while also streaming to writer
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
-	cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	cmd.Stdout = io.MultiWriter(writer, &stdout)
+	cmd.Stderr = io.MultiWriter(writer, &stderr)
 
 	err := cmd.Run()
 	if err != nil {
@@ -107,18 +109,26 @@ func (e *DefaultCommandExecutor) ExecuteWithStreaming(ctx context.Context, name 
 }
 
 // NewFlyctlClient creates a new flyctl-based Fly.io client
-func NewFlyctlClient() *FlyctlClient {
+func NewFlyctlClient(writer io.Writer) *FlyctlClient {
+	if writer == nil {
+		writer = os.Stdout
+	}
 	return &FlyctlClient{
 		executor: &DefaultCommandExecutor{},
 		workDir:  os.TempDir(),
+		writer:   writer,
 	}
 }
 
 // NewFlyctlClientWithExecutor creates a new client with a custom executor (for testing)
-func NewFlyctlClientWithExecutor(executor CommandExecutor) *FlyctlClient {
+func NewFlyctlClientWithExecutor(executor CommandExecutor, writer io.Writer) *FlyctlClient {
+	if writer == nil {
+		writer = os.Stdout
+	}
 	return &FlyctlClient{
 		executor: executor,
 		workDir:  os.TempDir(),
+		writer:   writer,
 	}
 }
 
@@ -268,9 +278,9 @@ func (c *FlyctlClient) DeployApp(ctx context.Context, appID string, config *Flyi
 	cmd.Dir = sourceDir
 	cmd.Env = os.Environ()
 
-	// Stream output to stdout/stderr so user can see progress
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// Stream output to writer so user can see progress
+	cmd.Stdout = c.writer
+	cmd.Stderr = c.writer
 
 	if err := cmd.Run(); err != nil {
 		return errors.Errorf("deployment failed: %w", err)
@@ -317,7 +327,7 @@ func (c *FlyctlClient) CreatePostgres(ctx context.Context, req CreatePostgresReq
 
 	// Execute with streaming output (this will block until provisioned)
 	// Use ExecuteWithStreaming to show progress while capturing output for parsing
-	output, err := c.executor.ExecuteWithStreaming(ctx, "flyctl", args...)
+	output, err := c.executor.ExecuteWithStreaming(ctx, c.writer, "flyctl", args...)
 	if err != nil {
 		return nil, errors.Errorf("failed to create PostgreSQL cluster %q in region %q: %w", req.Name, req.Region, err)
 	}
@@ -517,7 +527,7 @@ func (c *FlyctlClient) AttachPostgres(ctx context.Context, req AttachPostgresReq
 	}
 
 	// Use ExecuteInteractive to show output to user
-	err := c.executor.ExecuteInteractive(ctx, "flyctl", args...)
+	err := c.executor.ExecuteInteractive(ctx, c.writer, "flyctl", args...)
 	if err != nil {
 		return errors.Errorf("failed to attach PostgreSQL cluster %q to app %q: %w",
 			req.ClusterID, req.AppName, err)
@@ -551,7 +561,7 @@ func (c *FlyctlClient) AttachRedis(ctx context.Context, req AttachRedisRequest) 
 	args = append(args, "-y")
 
 	// Use ExecuteInteractive to show output to user
-	err := c.executor.ExecuteInteractive(ctx, "flyctl", args...)
+	err := c.executor.ExecuteInteractive(ctx, c.writer, "flyctl", args...)
 	if err != nil {
 		return errors.Errorf("failed to attach Redis %q to app %q: %w", req.RedisName, req.AppName, err)
 	}

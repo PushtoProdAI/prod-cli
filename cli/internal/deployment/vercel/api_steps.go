@@ -331,10 +331,12 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client VercelClient, ste
 
 	// Check if package.json exists
 	if _, err := os.Stat("package.json"); err == nil {
-		// Try npm install first
+		// Try npm install first with streaming output
 		installCmd := exec.CommandContext(buildCtx, "npm", "install")
 		installCmd.Env = env
-		installOutput, installErr := installCmd.CombinedOutput()
+		installCmd.Stdout = s.writer
+		installCmd.Stderr = s.writer
+		installErr := installCmd.Run()
 
 		if installErr != nil {
 			// Check if it was a timeout
@@ -346,16 +348,16 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client VercelClient, ste
 			fmt.Fprintf(s.writer, "  📦 npm install failed, trying yarn install...\n")
 			yarnCmd := exec.CommandContext(buildCtx, "yarn", "install")
 			yarnCmd.Env = env
-			yarnOutput, yarnErr := yarnCmd.CombinedOutput()
+			yarnCmd.Stdout = s.writer
+			yarnCmd.Stderr = s.writer
+			yarnErr := yarnCmd.Run()
 
 			if yarnErr != nil {
 				// Check if yarn also timed out
 				if buildCtx.Err() == context.DeadlineExceeded {
 					return nil, errors.Errorf("yarn install timed out after %v", defaultBuildTimeout)
 				}
-				// Both failed, show both outputs
-				fmt.Fprintf(s.writer, "  ❌ npm install failed:\n%s\n", string(installOutput))
-				fmt.Fprintf(s.writer, "  ❌ yarn install failed:\n%s\n", string(yarnOutput))
+				fmt.Fprintf(s.writer, "  ❌ Dependency installation failed\n")
 				return nil, errors.Errorf("failed to install dependencies: npm error: %w, yarn error: %w", installErr, yarnErr)
 			} else {
 				fmt.Fprintf(s.writer, "  ✅ Dependencies installed with yarn\n")
