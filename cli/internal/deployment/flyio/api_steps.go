@@ -61,7 +61,27 @@ func (d *DeployFlyioConfigStep) Execute(ctx context.Context, client FlyioClient,
 		return nil, err
 	}
 
-	return nil, nil
+	// Fetch the app information to get the URL
+	app, err := client.GetApp(ctx, d.appName)
+	if err != nil {
+		// Don't fail the deployment if we can't fetch app info, just log it
+		return deployment.CreatedResource{
+			ID:   d.appName,
+			Type: "app",
+			Name: d.appName,
+		}, nil
+	}
+
+	return deployment.CreatedResource{
+		ID:   app.ID,
+		Type: "app",
+		Name: app.Name,
+		Metadata: map[string]interface{}{
+			"url":      app.Hostname,
+			"app_url":  app.AppURL,
+			"hostname": app.Hostname,
+		},
+	}, nil
 }
 
 func (d *DeployFlyioConfigStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) error {
