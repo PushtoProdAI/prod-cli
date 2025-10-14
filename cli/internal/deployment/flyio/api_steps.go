@@ -2,6 +2,9 @@ package flyio
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -256,4 +259,110 @@ func (s *AttachRedisStep) Rollback(ctx context.Context, client FlyioClient, step
 	// Detaching would require removing the Redis connection
 	// For now, we'll log that detachment is not implemented
 	return errors.Errorf("redis detachment not implemented")
+}
+
+// GenerateDockerfileStep generates a Dockerfile for the deployment
+type GenerateDockerfileStep struct {
+	BaseStep
+	spec            *deployment.DeploymentSpec
+	dockerGenerator *deployment.DockerGenerator
+}
+
+func (g *GenerateDockerfileStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) (interface{}, error) {
+	// Get the build context from metadata
+	buildContext := "."
+	if bc, ok := g.spec.Metadata["buildContext"].(string); ok {
+		buildContext = bc
+	}
+
+	// Determine the internal port (same logic as generateFlyConfig)
+	internalPort := g.determineInternalPort()
+
+	// Create a new docker generator with the PORT env var
+	envVars := make([]deployment.EnvVar, len(g.spec.EnvVars))
+	copy(envVars, g.spec.EnvVars)
+
+	// Add or update PORT env var
+	hasPort := false
+	for i := range envVars {
+		if envVars[i].Name == "PORT" {
+			envVars[i].Value = fmt.Sprintf("%d", internalPort)
+			hasPort = true
+			break
+		}
+	}
+	if !hasPort {
+		envVars = append(envVars, deployment.EnvVar{
+			Name:  "PORT",
+			Value: fmt.Sprintf("%d", internalPort),
+		})
+	}
+
+	dockerGen := deployment.NewDockerGenerator(nil, envVars)
+	defer dockerGen.Close()
+
+	// Generate Dockerfile artifacts
+	artifacts, err := dockerGen.GenerateDockerfile(g.spec)
+	if err != nil {
+		return nil, errors.Errorf("failed to generate Dockerfile: %w", err)
+	}
+
+	// Write Dockerfile to build context
+	dockerfilePath := filepath.Join(buildContext, "Dockerfile")
+	if err := os.WriteFile(dockerfilePath, []byte(artifacts.Dockerfile), 0644); err != nil {
+		return nil, errors.Errorf("failed to write Dockerfile: %w", err)
+	}
+
+	// Write .dockerignore if provided
+	if artifacts.DockerIgnore != "" {
+		dockerignorePath := filepath.Join(buildContext, ".dockerignore")
+		if err := os.WriteFile(dockerignorePath, []byte(artifacts.DockerIgnore), 0644); err != nil {
+			return nil, errors.Errorf("failed to write .dockerignore: %w", err)
+		}
+	}
+
+	// Write additional files to build context
+	for filename, content := range artifacts.AdditionalFiles {
+		filePath := filepath.Join(buildContext, filename)
+		if err := os.WriteFile(filePath, []byte(content), 0755); err != nil {
+			return nil, errors.Errorf("failed to write additional file %s: %w", filename, err)
+		}
+	}
+
+	return map[string]interface{}{
+		"dockerfile_path": dockerfilePath,
+		"build_context":   buildContext,
+	}, nil
+}
+
+// determineInternalPort determines the internal port for the application
+func (g *GenerateDockerfileStep) determineInternalPort() int {
+	// First check if PORT is already defined in env vars
+	for _, ev := range g.spec.EnvVars {
+		if ev.Name == "PORT" && ev.Value != "" {
+			var portInt int
+			if _, err := fmt.Sscanf(ev.Value, "%d", &portInt); err == nil && portInt > 0 {
+				return portInt
+			}
+		}
+	}
+
+	// Fall back to language default
+	config := GetLanguageConfig(g.spec.Language)
+	return config.InternalPort
+}
+
+func (g *GenerateDockerfileStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) error {
+	// Get the result from this step
+	if result, ok := stepResults[g.GetID()]; ok {
+		if resultMap, ok := result.(map[string]interface{}); ok {
+			if dockerfilePath, ok := resultMap["dockerfile_path"].(string); ok {
+				// Clean up generated Dockerfile
+				if err := os.Remove(dockerfilePath); err != nil {
+					fmt.Printf("Warning: failed to remove generated Dockerfile: %v\n", err)
+				}
+			}
+		}
+	}
+	return nil
 }

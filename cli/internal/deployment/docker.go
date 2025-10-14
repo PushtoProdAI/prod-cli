@@ -176,6 +176,9 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 
 	slog.Info("Using base image", "language", spec.Language, "baseImage", baseImage)
 
+	// Determine port from env vars or use default
+	port := dg.determinePort()
+
 	// Prepare template data
 	templateData := struct {
 		Name             string
@@ -193,7 +196,7 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 		Language:         spec.Language,
 		BuildCommand:     spec.BuildCommand,
 		StartCommand:     spec.StartCommand,
-		Port:             8080, // Default port, could be configurable
+		Port:             port,
 		BaseImage:        baseImage,
 		HasStartupScript: strings.ToLower(spec.Language) == "python",
 		OutputDir:        spec.OutputDir,
@@ -897,6 +900,21 @@ func (dg *DockerGenerator) prepareBuildArgs() map[string]*string {
 // stringPtr returns a pointer to a string
 func stringPtr(s string) *string {
 	return &s
+}
+
+// determinePort determines the port from environment variables or returns default
+func (dg *DockerGenerator) determinePort() int {
+	// Check if PORT is defined in env vars
+	for _, ev := range dg.envVars {
+		if ev.Name == "PORT" && ev.Value != "" {
+			var port int
+			if _, err := fmt.Sscanf(ev.Value, "%d", &port); err == nil && port > 0 {
+				return port
+			}
+		}
+	}
+	// Default port
+	return 8080
 }
 
 // generateDockerIgnore returns the appropriate dockerignore content for the language

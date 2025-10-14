@@ -480,7 +480,8 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 	}
 
 	// Generate and summarize deployment steps
-	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, w.uiWriter)
+	dockerGen := deployment.NewDockerGenerator(w.uiWriter, spec.EnvVars)
+	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, dockerGen, w.uiWriter)
 	steps := d.GenerateAPISteps()
 	descriptions := make([]string, len(steps))
 	for i, step := range steps {
@@ -691,7 +692,8 @@ func (w *Workflows) dryRunDeployFly(ctx workflow.Context, input DeployPlan) (Dry
 	spec.Metadata["buildContext"] = input.Source
 
 	// Generate deployment steps
-	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, w.uiWriter)
+	dockerGen := deployment.NewDockerGenerator(w.uiWriter, spec.EnvVars)
+	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, dockerGen, w.uiWriter)
 	steps := d.GenerateAPISteps()
 
 	dryRunSteps := make([]DryRunStep, len(steps))

@@ -62,7 +62,6 @@ type FlyioConfig struct {
 
 // BuildConfig for Fly.io app build configuration
 type BuildConfig struct {
-	Builder    string `json:"builder,omitempty"`
 	BuildCmd   string `json:"build_cmd,omitempty"`
 	StartCmd   string `json:"start_cmd,omitempty"`
 	Dockerfile string `json:"dockerfile,omitempty"`
