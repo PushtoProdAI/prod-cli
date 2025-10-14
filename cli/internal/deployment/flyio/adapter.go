@@ -9,6 +9,7 @@ import (
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/pricing"
+	"github.com/meroxa/prod/cli/internal/llm"
 )
 
 // FlyioDeploymentAdapter implements the DeploymentAdapter interface for Fly.io
@@ -16,13 +17,15 @@ type FlyioDeploymentAdapter struct {
 	client         FlyioClient
 	writer         io.Writer
 	pricingService pricing.Service
+	llmClient      llm.Client
 }
 
 // NewFlyioDeploymentAdapter creates a new Fly.io deployment adapter
-func NewFlyioDeploymentAdapter(client FlyioClient, writer io.Writer) *FlyioDeploymentAdapter {
+func NewFlyioDeploymentAdapter(client FlyioClient, writer io.Writer, llmClient llm.Client) *FlyioDeploymentAdapter {
 	return &FlyioDeploymentAdapter{
-		client: client,
-		writer: writer,
+		client:    client,
+		writer:    writer,
+		llmClient: llmClient,
 	}
 }
 
@@ -36,8 +39,8 @@ func NewFlyioDeploymentAdapterWithPricing(client FlyioClient, writer io.Writer, 
 }
 
 // NewDefaultFlyioDeploymentAdapter creates a deployment adapter with the default client
-func NewDefaultFlyioDeploymentAdapter(writer io.Writer) *FlyioDeploymentAdapter {
-	return NewFlyioDeploymentAdapter(NewFlyioClient(), writer)
+func NewDefaultFlyioDeploymentAdapter(writer io.Writer, llmClient llm.Client) *FlyioDeploymentAdapter {
+	return NewFlyioDeploymentAdapter(NewFlyioClient(), writer, llmClient)
 }
 
 // SupportedStrategies returns the deployment strategies supported by Fly.io
@@ -75,7 +78,7 @@ func (fda *FlyioDeploymentAdapter) GenerateArtifactsWithSource(spec *deployment.
 }
 
 // EstimateCost estimates the cost of deployment on Fly.io
-func (fda *FlyioDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+func (fda *FlyioDeploymentAdapter) EstimateCost(ctx context.Context, spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
 	slog.Info("Estimating costs for spec", "spec", spec, "strategy", strategy)
 
 	// Build cost request from deployment spec
@@ -108,14 +111,13 @@ func (fda *FlyioDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec,
 	}
 	cr.Services = append(cr.Services, cs)
 
-	ce, err := fda.estimateFlyioCost(cr)
+	ce, err := fda.estimateFlyioCost(ctx, cr)
 	return ce, err
 }
 
-func (fda *FlyioDeploymentAdapter) estimateFlyioCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
+func (fda *FlyioDeploymentAdapter) estimateFlyioCost(ctx context.Context, cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	slog.Info("Estimating Fly.io costs for request", "request", cr)
 
-	ctx := context.Background()
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 
@@ -126,7 +128,7 @@ func (fda *FlyioDeploymentAdapter) estimateFlyioCost(cr deployment.CostRequest) 
 	} else {
 		// Create pricing service with Flyio pricing provider (production)
 		pricingProvider := NewPricingProvider()
-		pricingService = pricing.NewPricingService(pricingProvider, pricing.DefaultRetries)
+		pricingService = pricing.NewPricingService(pricingProvider, pricing.DefaultRetries, fda.llmClient)
 	}
 
 	for _, service := range cr.Services {

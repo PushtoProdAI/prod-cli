@@ -9,29 +9,32 @@ import (
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/pricing"
+	"github.com/meroxa/prod/cli/internal/llm"
 	"github.com/meroxa/prod/cli/internal/output"
 )
 
 // NetlifyDeploymentAdapter implements the DeploymentAdapter interface for Netlify
 type NetlifyDeploymentAdapter struct {
-	client NetlifyClient
-	writer io.Writer
+	client    NetlifyClient
+	writer    io.Writer
+	llmClient llm.Client
 }
 
 // NewNetlifyDeploymentAdapter creates a new Netlify deployment adapter
-func NewNetlifyDeploymentAdapter(client NetlifyClient, writer io.Writer) *NetlifyDeploymentAdapter {
+func NewNetlifyDeploymentAdapter(client NetlifyClient, writer io.Writer, llmClient llm.Client) *NetlifyDeploymentAdapter {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}
 	return &NetlifyDeploymentAdapter{
-		client: client,
-		writer: writer,
+		client:    client,
+		writer:    writer,
+		llmClient: llmClient,
 	}
 }
 
 // NewDefaultNetlifyDeploymentAdapter creates a deployment adapter with the default CLI client
-func NewDefaultNetlifyDeploymentAdapter(writer io.Writer) *NetlifyDeploymentAdapter {
-	return NewNetlifyDeploymentAdapter(NewCLINetlifyClient(), writer)
+func NewDefaultNetlifyDeploymentAdapter(writer io.Writer, llmClient llm.Client) *NetlifyDeploymentAdapter {
+	return NewNetlifyDeploymentAdapter(NewCLINetlifyClient(), writer, llmClient)
 }
 
 // SupportedStrategies returns the deployment strategies supported by Netlify
@@ -58,7 +61,7 @@ func (n *NetlifyDeploymentAdapter) GenerateArtifacts(spec *deployment.Deployment
 }
 
 // EstimateCost estimates the cost of deployment on Netlify
-func (n *NetlifyDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+func (n *NetlifyDeploymentAdapter) EstimateCost(ctx context.Context, spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
 	slog.Info("Estimating costs for Netlify deployment", "name", spec.Name)
 
 	// Build cost request from deployment spec
@@ -89,20 +92,19 @@ func (n *NetlifyDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec,
 	}
 	cr.Services = append(cr.Services, cs)
 
-	ce, err := estimateNetlifyCost(cr)
+	ce, err := n.estimateNetlifyCost(ctx, cr)
 	return ce, err
 }
 
-func estimateNetlifyCost(cr deployment.CostRequest) (deployment.CostEstimate, error) {
+func (n *NetlifyDeploymentAdapter) estimateNetlifyCost(ctx context.Context, cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	slog.Info("Estimating Netlify costs", "serviceCount", len(cr.Services))
 
-	ctx := context.Background()
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 
 	// Create pricing service with Netlify pricing provider
 	pricingProvider := NewPricingProvider()
-	pricingService := pricing.NewPricingService(pricingProvider, 3)
+	pricingService := pricing.NewPricingService(pricingProvider, 3, n.llmClient)
 
 	for _, service := range cr.Services {
 		result, err := pricingService.EstimateCost(ctx, service)

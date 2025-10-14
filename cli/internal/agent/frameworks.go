@@ -135,9 +135,9 @@ func (h *RemixHandler) GetConfigFilenames() []string {
 
 func (h *RemixHandler) PatchPackageJSON(origPackageJson []byte, platform Platform) ([]byte, bool, error) {
 	switch platform {
-	case Render, FlyIO:
-		// For Node.js platforms, ensure @remix-run/serve is available
-		updatedPackageJson, err := patchPackageJSONForRemix(origPackageJson, "@remix-run/serve", "^2.0.0")
+	case Render, FlyIO, Heroku:
+		// For Node.js platforms, ensure @remix-run/serve is available as a dependency (not devDependency)
+		updatedPackageJson, err := patchPackageJSONForRemixServe(origPackageJson, "@remix-run/serve", "^2.0.0")
 		if err != nil {
 			return nil, false, err
 		}
@@ -330,6 +330,15 @@ func (h *RemixHandler) RestoreConfigFromBackup(ctx context.Context, plan DeployP
 	return parseDiffString(diff), nil
 }
 
+func (h *RemixHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
+	// Apply platform-specific deployment configuration for Remix
+	switch plan.Platform {
+	case Render, FlyIO, Heroku:
+		plan.Spec.StartCommand = "npx remix-serve ./build/server/index.js"
+	}
+	return plan
+}
+
 // SvelteKitHandler handles SvelteKit-specific operations
 type SvelteKitHandler struct {
 	BaseFrameworkHandler
@@ -346,7 +355,7 @@ func (h *SvelteKitHandler) GetConfigFilenames() []string {
 func (h *SvelteKitHandler) PatchPackageJSON(origPackageJson []byte, platform Platform) ([]byte, bool, error) {
 	// For platforms that need Svelte adapters
 	switch platform {
-	case Render, FlyIO:
+	case Render, FlyIO, Heroku:
 		updatedPackageJson, err := patchPackageJSON(origPackageJson, "@sveltejs/adapter-node", "^5.2.0")
 		if err != nil {
 			return nil, false, err
@@ -387,7 +396,7 @@ func (h *SvelteKitHandler) HandleConfig(projectPath string, platform Platform) (
 	// Determine which adapter to use based on platform
 	var newAdapter string
 	switch platform {
-	case Render, FlyIO:
+	case Render, FlyIO, Heroku:
 		newAdapter = "@sveltejs/adapter-node"
 	case Netlify:
 		newAdapter = "@sveltejs/adapter-netlify"
@@ -522,7 +531,7 @@ func (h *NuxtHandler) HandlePlatformSpecificFiles(projectPath string, platform P
 func (h *NuxtHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
 	// Apply platform-specific deployment configuration for Nuxt
 	switch plan.Platform {
-	case Render, FlyIO:
+	case Render, FlyIO, Heroku:
 		plan.Spec.StartCommand = "node .output/server/index.mjs"
 		plan.CollectedEnvVars = append(plan.CollectedEnvVars, deployment.EnvVar{Name: "NITRO_PRESET", Value: "node-server"})
 	case Netlify:
@@ -544,7 +553,7 @@ func patchRemixViteConfigForNetlify(config []byte) []byte {
 	}
 
 	// Add import for netlifyPlugin if not present
-	if !strings.Contains(configStr, `import { netlifyPlugin } from "@netlify/remix-adapter/plugin"`) {
+	if !strings.Contains(configStr, `import { netlifyPlugin } from "@netlify/rem-ixadapter/plugin"`) {
 		// Find existing imports and add the netlify import
 		importRegex := regexp.MustCompile(`(import\s+.*from\s+["'].*["'];?\s*\n)`)
 		matches := importRegex.FindAllStringIndex(configStr, -1)
@@ -815,7 +824,7 @@ func removeVercelPresetFromRemixConfig(config []byte) []byte {
 	return []byte(configStr)
 }
 
-// patchPackageJSONForRemix adds Remix adapter to package.json
+// patchPackageJSONForRemix adds Remix adapter to package.json (as devDependency)
 func patchPackageJSONForRemix(packageJsonBytes []byte, adapter, version string) ([]byte, error) {
 	var pkg map[string]any
 	if err := json.Unmarshal(packageJsonBytes, &pkg); err != nil {
@@ -831,6 +840,40 @@ func patchPackageJSONForRemix(packageJsonBytes []byte, adapter, version string) 
 
 	// Add the new adapter to devDependencies
 	devDeps[adapter] = version
+
+	// Use custom encoder to prevent HTML escaping
+	buffer := &bytes.Buffer{}
+	encoder := json.NewEncoder(buffer)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(pkg); err != nil {
+		return nil, errors.Errorf("failed to encode updated package.json: %w", err)
+	}
+
+	return buffer.Bytes(), nil
+}
+
+// patchPackageJSONForRemixServe adds @remix-run/serve to package.json dependencies (not devDependencies)
+func patchPackageJSONForRemixServe(packageJsonBytes []byte, adapter, version string) ([]byte, error) {
+	var pkg map[string]any
+	if err := json.Unmarshal(packageJsonBytes, &pkg); err != nil {
+		return nil, errors.Errorf("failed to parse package.json: %w", err)
+	}
+
+	// Ensure dependencies exists
+	deps, ok := pkg["dependencies"].(map[string]any)
+	if !ok {
+		deps = map[string]any{}
+		pkg["dependencies"] = deps
+	}
+
+	// Add @remix-run/serve to dependencies
+	deps[adapter] = version
+
+	// Also remove it from devDependencies if it exists there
+	if devDeps, ok := pkg["devDependencies"].(map[string]any); ok {
+		delete(devDeps, adapter)
+	}
 
 	// Use custom encoder to prevent HTML escaping
 	buffer := &bytes.Buffer{}

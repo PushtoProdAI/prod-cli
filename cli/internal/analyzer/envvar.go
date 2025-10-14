@@ -2,7 +2,7 @@ package analyzer
 
 import (
 	"io/fs"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -129,7 +129,7 @@ func scanFileForCandidates(path string, re *regexp.Regexp, minContextLines, maxC
 
 		context := strings.Join(lines[contextBefore:contextAfter], "\n")
 
-		log.Printf("Name: %s, File: %s, Line: %d", varName, path, lineNum)
+		slog.Debug("Found environment variable candidate", "name", varName, "file", path, "line", lineNum)
 
 		candidates = append(candidates, EnvVarCandidate{
 			VarName: varName,

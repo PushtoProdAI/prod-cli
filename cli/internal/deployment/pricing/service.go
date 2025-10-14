@@ -7,10 +7,9 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-
-	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/llm"
 )
 
 const (
@@ -32,18 +31,20 @@ type Service interface {
 
 // PricingService handles common pricing extraction logic
 type PricingService struct {
-	provider PricingProvider
-	retries  int
+	provider  PricingProvider
+	retries   int
+	llmClient llm.Client
 }
 
-// NewPricingService creates a new pricing service with the given pricing provider
-func NewPricingService(provider PricingProvider, retries int) *PricingService {
+// NewPricingService creates a new pricing service with the given pricing provider and LLM client
+func NewPricingService(provider PricingProvider, retries int, client llm.Client) *PricingService {
 	if retries <= 0 {
 		retries = 3 // default retries
 	}
 	return &PricingService{
-		provider: provider,
-		retries:  retries,
+		provider:  provider,
+		retries:   retries,
+		llmClient: client,
 	}
 }
 
@@ -123,9 +124,10 @@ func (ps *PricingService) extractPricingForService(ctx context.Context, service 
 
 	slog.Info("Fetching pricing for service", "service", s)
 
-	// Call BAML pricing function
-	resp, err := baml_client.FetchPricing(ctx, s, content)
+	// Call BAML pricing function through our LLM client
+	resp, err := ps.llmClient.FetchPricing(ctx, s, content)
 	if err != nil {
+		slog.Error("BAML pricing extraction failed", "error", err)
 		return nil, errors.Errorf("BAML pricing extraction failed: %w", err)
 	}
 

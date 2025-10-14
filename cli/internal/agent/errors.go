@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client"
 	"github.com/meroxa/prod/cli/baml_client/types"
 )
 
@@ -32,7 +31,7 @@ func (a *Activities) summarizeError(ctx context.Context, error string, input Dep
 	var violations []string
 	// handling this internally for now, but we could also bubble this up to the workflow
 	for {
-		s, err := baml_client.SummarizeDeployError(ctx, error, intent, spec, runtime.GOOS, violations)
+		s, err := a.llmClient.SummarizeDeployError(ctx, error, intent, spec, runtime.GOOS, violations)
 		if err != nil {
 			return deployError{}, errors.Errorf("failed to summarize error: %w", err)
 		}
@@ -48,17 +47,16 @@ func (a *Activities) summarizeError(ctx context.Context, error string, input Dep
 
 	deployError := deployError{
 		Summary:      summary.Summary,
-		Remediations: make([]remediation, len(summary.Remediations)),
+		Remediations: make([]Remediation, len(summary.Remediations)),
 	}
 
 	for i, r := range summary.Remediations {
-		deployError.Remediations[i] = remediation{
+		deployError.Remediations[i] = Remediation{
 			Description: r.Description,
 			CliCommand:  r.CliCommand,
 		}
 	}
 
-	a.uiWriter.SendStatusComplete("summarizing", "✅ Errors summarized")
 	slog.Info("Error summary", "summary", deployError.Summary)
 	slog.Info("Remediations", "remediations", deployError.Remediations)
 
