@@ -13,17 +13,19 @@ import (
 // FlyioQueuedDeployment handles step-by-step deployments to Fly.io
 // This deployment strategy creates resources one at a time with progress tracking
 type FlyioQueuedDeployment struct {
-	client FlyioClient
-	spec   *deployment.DeploymentSpec
-	writer io.Writer
+	client          FlyioClient
+	spec            *deployment.DeploymentSpec
+	dockerGenerator *deployment.DockerGenerator
+	writer          io.Writer
 }
 
 // NewFlyioQueuedDeployment creates a new queued deployment for Fly.io
-func NewFlyioQueuedDeployment(client FlyioClient, spec *deployment.DeploymentSpec, writer io.Writer) *FlyioQueuedDeployment {
+func NewFlyioQueuedDeployment(client FlyioClient, spec *deployment.DeploymentSpec, dockerGenerator *deployment.DockerGenerator, writer io.Writer) *FlyioQueuedDeployment {
 	return &FlyioQueuedDeployment{
-		client: client,
-		spec:   spec,
-		writer: writer,
+		client:          client,
+		spec:            spec,
+		dockerGenerator: dockerGenerator,
+		writer:          writer,
 	}
 }
 
@@ -122,9 +124,26 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 		}
 	}
 
-	// Step 4: Deploy app configuration (after attachments are complete)
+	// Step 4: Generate Dockerfile (after app creation, before deployment)
+	generateDockerfileStepID := "generate-dockerfile"
+	if fqd.dockerGenerator != nil && deployment.IsDockerAvailable() {
+		steps = append(steps, &GenerateDockerfileStep{
+			BaseStep: BaseStep{
+				ID:          generateDockerfileStepID,
+				Description: "Generating Dockerfile for deployment",
+				DependsOn:   []string{appStepID},
+			},
+			spec:            fqd.spec,
+			dockerGenerator: fqd.dockerGenerator,
+		})
+	}
+
+	// Step 5: Deploy app configuration (after Dockerfile generation and attachments are complete)
 	deployDeps := []string{appStepID}
 	deployDeps = append(deployDeps, attachmentStepIDs...)
+	if fqd.dockerGenerator != nil && deployment.IsDockerAvailable() {
+		deployDeps = append(deployDeps, generateDockerfileStepID)
+	}
 
 	steps = append(steps, &DeployFlyioConfigStep{
 		BaseStep: BaseStep{
@@ -220,6 +239,13 @@ func (fqd *FlyioQueuedDeployment) generateFlyConfig() *FlyioConfig {
 		}
 	}
 
+	// Determine the internal port
+	internalPort := fqd.determineInternalPort()
+
+	// Always set PORT environment variable to match internal_port
+	// This ensures the app knows which port to listen on
+	envVars["PORT"] = fmt.Sprintf("%d", internalPort)
+
 	config := &FlyioConfig{
 		AppName:        fqd.spec.Name,
 		ReleaseCommand: fqd.spec.MigrationCommand,
@@ -231,18 +257,18 @@ func (fqd *FlyioQueuedDeployment) generateFlyConfig() *FlyioConfig {
 		config.SourcePath = sourcePath
 	}
 
-	// Add build configuration based on language
+	// Add build configuration - use Dockerfile if Docker is available
 	config.BuildConfig = &BuildConfig{
-		Builder:  fqd.getBuilderForLanguage(fqd.spec.Language),
-		BuildCmd: fqd.spec.BuildCommand,
-		StartCmd: fqd.spec.StartCommand,
+		Dockerfile: "Dockerfile",
+		BuildCmd:   fqd.spec.BuildCommand,
+		StartCmd:   fqd.spec.StartCommand,
 	}
 
 	// Add service configuration
 	config.Services = []ServiceConfig{
 		{
 			Protocol:     "tcp",
-			InternalPort: fqd.getInternalPortForLanguage(fqd.spec.Language),
+			InternalPort: internalPort,
 			Ports: []Port{
 				{Port: 80, Handlers: []string{"http"}},
 				{Port: 443, Handlers: []string{"tls", "http"}},
@@ -252,10 +278,21 @@ func (fqd *FlyioQueuedDeployment) generateFlyConfig() *FlyioConfig {
 	return config
 }
 
-// getBuilderForLanguage returns the appropriate Fly.io builder for the given language
-func (fqd *FlyioQueuedDeployment) getBuilderForLanguage(language string) string {
-	config := GetLanguageConfig(language)
-	return config.Builder
+// determineInternalPort determines the internal port for the application
+// Priority: 1) PORT env var from spec, 2) language default, 3) 8080 fallback
+func (fqd *FlyioQueuedDeployment) determineInternalPort() int {
+	// First check if PORT is already defined in env vars
+	for _, ev := range fqd.spec.EnvVars {
+		if ev.Name == "PORT" && ev.Value != "" {
+			var portInt int
+			if _, err := fmt.Sscanf(ev.Value, "%d", &portInt); err == nil && portInt > 0 {
+				return portInt
+			}
+		}
+	}
+
+	// Fall back to language default
+	return fqd.getInternalPortForLanguage(fqd.spec.Language)
 }
 
 // getInternalPortForLanguage returns the default internal port for the given language

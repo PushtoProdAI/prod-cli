@@ -25,7 +25,8 @@ func (a *Activities) deploySteps(ctx context.Context, spec deployment.Deployment
 		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
 		deployable = render.NewQueuedDeployment(a.renderClient, &spec, dockerGen, true, a.uiWriter)
 	case FlyIO:
-		deployable = flyio.NewFlyioQueuedDeployment(a.flyClient, &spec, a.uiWriter)
+		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
+		deployable = flyio.NewFlyioQueuedDeployment(a.flyClient, &spec, dockerGen, a.uiWriter)
 	case Netlify:
 		// Use the Netlify deployment adapter
 		netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter, a.llmClient)

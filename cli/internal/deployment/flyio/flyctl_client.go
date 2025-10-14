@@ -653,8 +653,6 @@ func (c *FlyctlClient) generateFlyToml(config *FlyioConfig) (string, error) {
 		builder.WriteString("[build]\n")
 		if config.BuildConfig.Dockerfile != "" {
 			builder.WriteString("  dockerfile = \"Dockerfile\"\n")
-		} else if config.BuildConfig.Builder != "" {
-			builder.WriteString(fmt.Sprintf("  builder = \"%s\"\n", config.BuildConfig.Builder))
 		}
 		if config.BuildConfig.BuildCmd != "" {
 			builder.WriteString(fmt.Sprintf("  build_cmd = \"%s\"\n", config.BuildConfig.BuildCmd))
