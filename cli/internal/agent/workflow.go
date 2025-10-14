@@ -230,6 +230,7 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	if existingProject.Exists {
 		spec.IsUpdate = true
 		spec.ExistingProjectID = existingProject.ProjectID
+		spec.ExistingDatabases = existingProject.ExistingDatabases
 	}
 
 	// Generate and summarize deployment steps (for UI feedback)
@@ -477,6 +478,7 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 	if existingProject.Exists {
 		spec.IsUpdate = true
 		spec.ExistingProjectID = existingProject.ProjectID
+		spec.ExistingDatabases = existingProject.ExistingDatabases
 	}
 
 	// Generate and summarize deployment steps
@@ -1035,6 +1037,7 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	if existingProject.Exists {
 		spec.IsUpdate = true
 		spec.ExistingProjectID = existingProject.ProjectID
+		spec.ExistingDatabases = existingProject.ExistingDatabases
 	}
 
 	d := netlify.NewNetlifyQueuedDeployment(&netlify.CLINetlifyClient{}, spec, w.uiWriter)
@@ -1135,6 +1138,7 @@ func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deploy
 	if existingProject.Exists {
 		spec.IsUpdate = true
 		spec.ExistingProjectID = existingProject.ProjectID
+		spec.ExistingDatabases = existingProject.ExistingDatabases
 	}
 
 	d := vercel.NewVercelQueuedDeployment(vercel.NewCLIVercelClient(), spec, w.uiWriter)
@@ -1251,6 +1255,7 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 	if existingProject.Exists {
 		spec.IsUpdate = true
 		spec.ExistingProjectID = existingProject.ProjectID
+		spec.ExistingDatabases = existingProject.ExistingDatabases
 	}
 
 	// Use default Heroku adapter

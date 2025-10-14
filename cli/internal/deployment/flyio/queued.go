@@ -65,12 +65,38 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 	appStepID := "create-app"
 
 	if fqd.spec.IsUpdate {
-		// For updates, skip creating app and services (they already exist)
-		// Just generate Dockerfile and deploy the new configuration to the existing app
+		// For updates, create missing services and deploy the new configuration
 
-		// Step 1: Generate Dockerfile (if Docker is available)
+		// Step 1: Create only missing backing services
+		for i, service := range fqd.spec.Services {
+			exists := false
+			for _, existingDB := range fqd.spec.ExistingDatabases {
+				if existingDB == service.Provider {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				stepID := fmt.Sprintf("create-service-%d", i)
+				step := fqd.createServiceStep(service, stepID)
+				if step != nil {
+					steps = append(steps, step)
+					serviceStepIDs = append(serviceStepIDs, stepID)
+
+					attachStepID := fmt.Sprintf("attach-service-%d", i)
+					attachStep := fqd.createAttachmentStep(service, attachStepID, stepID, appName, "")
+					if attachStep != nil {
+						steps = append(steps, attachStep)
+						attachmentStepIDs = append(attachmentStepIDs, attachStepID)
+					}
+				}
+			}
+		}
+
+		// Step 2: Generate Dockerfile (if Docker is available)
 		generateDockerfileStepID := "generate-dockerfile"
 		var deployDeps []string
+		deployDeps = append(deployDeps, attachmentStepIDs...)
 		if fqd.dockerGenerator != nil && deployment.IsDockerAvailable() {
 			steps = append(steps, &GenerateDockerfileStep{
 				BaseStep: BaseStep{
@@ -83,7 +109,7 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 			deployDeps = append(deployDeps, generateDockerfileStepID)
 		}
 
-		// Step 2: Deploy configuration
+		// Step 3: Deploy configuration
 		steps = append(steps, &DeployFlyioConfigStep{
 			BaseStep: BaseStep{
 				ID:          "deploy-config",
