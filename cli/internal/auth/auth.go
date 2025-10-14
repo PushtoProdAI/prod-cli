@@ -1,11 +1,11 @@
 package auth
 
 import (
-	"github.com/go-errors/errors"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/go-errors/errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -64,7 +64,20 @@ func (sa *SupabaseAuth) IsAuthenticated() bool {
 		return false
 	}
 
+	// Check file-based expiry
 	if session.ExpiresAt.Before(time.Now()) {
+		return false
+	}
+
+	// Also validate the JWT token itself to ensure it hasn't expired
+	jwtExpiry, err := extractExpiryFromJWT(session.AccessToken)
+	if err != nil {
+		// If we can't parse the JWT, consider it invalid
+		return false
+	}
+
+	// Add a small buffer (5 minutes) to account for clock skew
+	if jwtExpiry.Before(time.Now().Add(5 * time.Minute)) {
 		return false
 	}
 
@@ -82,9 +95,19 @@ func (sa *SupabaseAuth) GetSession() (*Session, error) {
 		return nil, nil
 	}
 
+	// Check file-based expiry first
 	if session.ExpiresAt.Before(time.Now()) {
-		// TODO: Implement refresh token logic
-		return nil, errors.Errorf("session expired")
+		return nil, errors.Errorf("session expired (file timestamp)")
+	}
+
+	// Validate the JWT token itself
+	jwtExpiry, err := extractExpiryFromJWT(session.AccessToken)
+	if err != nil {
+		return nil, errors.Errorf("failed to validate JWT token: %w", err)
+	}
+
+	if jwtExpiry.Before(time.Now()) {
+		return nil, errors.Errorf("session expired (JWT token)")
 	}
 
 	return session, nil
@@ -225,24 +248,34 @@ func (sa *SupabaseAuth) LoginWithSupabaseFunction(ctx context.Context) error {
 	return nil
 }
 
-// extractEmailFromJWT extracts the email from a JWT access token
-func extractEmailFromJWT(accessToken string) (string, error) {
+// extractJWTClaims extracts and parses the claims from a JWT access token
+func extractJWTClaims(accessToken string) (map[string]interface{}, error) {
 	// JWT tokens have 3 parts separated by dots: header.payload.signature
 	parts := strings.Split(accessToken, ".")
 	if len(parts) != 3 {
-		return "", errors.Errorf("invalid JWT token format")
+		return nil, errors.Errorf("invalid JWT token format")
 	}
 
 	// Decode the payload (second part)
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return "", errors.Errorf("failed to decode JWT payload: %w", err)
+		return nil, errors.Errorf("failed to decode JWT payload: %w", err)
 	}
 
 	// Parse the JSON payload
 	var claims map[string]interface{}
 	if err := json.Unmarshal(payload, &claims); err != nil {
-		return "", errors.Errorf("failed to parse JWT payload: %w", err)
+		return nil, errors.Errorf("failed to parse JWT payload: %w", err)
+	}
+
+	return claims, nil
+}
+
+// extractEmailFromJWT extracts the email from a JWT access token
+func extractEmailFromJWT(accessToken string) (string, error) {
+	claims, err := extractJWTClaims(accessToken)
+	if err != nil {
+		return "", err
 	}
 
 	// Extract the email field
@@ -254,6 +287,22 @@ func extractEmailFromJWT(accessToken string) (string, error) {
 	return email, nil
 }
 
+// extractExpiryFromJWT extracts the expiry time from a JWT access token
+func extractExpiryFromJWT(accessToken string) (time.Time, error) {
+	claims, err := extractJWTClaims(accessToken)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	// Extract the exp field (Unix timestamp in seconds)
+	exp, ok := claims["exp"].(float64)
+	if !ok {
+		return time.Time{}, errors.Errorf("exp field not found in JWT token")
+	}
+
+	return time.Unix(int64(exp), 0), nil
+}
+
 // LoginWithToken authenticates using a token from the Supabase function
 func (sa *SupabaseAuth) LoginWithToken(ctx context.Context, token string) error {
 	// Parse the token (it's base64 encoded JSON from our function)
@@ -262,8 +311,14 @@ func (sa *SupabaseAuth) LoginWithToken(ctx context.Context, token string) error 
 		return errors.Errorf("invalid token: %w", err)
 	}
 
+	// Extract and validate expiry directly from JWT
+	jwtExpiry, err := extractExpiryFromJWT(tokenData.AccessToken)
+	if err != nil {
+		return errors.Errorf("failed to extract expiry from JWT: %w", err)
+	}
+
 	// Check if token is expired
-	if time.Now().Unix()*1000 > tokenData.ExpiresAt {
+	if jwtExpiry.Before(time.Now()) {
 		return errors.Errorf("token expired, please re-authenticate")
 	}
 
@@ -275,11 +330,11 @@ func (sa *SupabaseAuth) LoginWithToken(ctx context.Context, token string) error 
 		email = "" // Set empty email as fallback
 	}
 
-	// Create session from token data
+	// Create session from token data, using JWT expiry as source of truth
 	session := &Session{
 		AccessToken:  tokenData.AccessToken,
 		RefreshToken: "", // CLI tokens don't have refresh tokens
-		ExpiresAt:    time.Unix(tokenData.ExpiresAt/1000, 0),
+		ExpiresAt:    jwtExpiry,
 		User: &User{
 			ID:    tokenData.UserID,
 			Email: email,
