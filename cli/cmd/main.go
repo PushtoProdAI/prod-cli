@@ -63,7 +63,7 @@ func main() {
 	apiKey := os.Getenv("RENDER_API_KEY")
 	// Create HTTP client for real API calls
 	renderClient := render.NewHTTPRenderClient(apiKey, statusWriter)
-	flyClient := flyio.NewFlyioClient()
+	flyClient := flyio.NewFlyioClient(statusWriter)
 	beClient := be.NewClient()
 	provider, err := workflowext.InitWorkflows(ctx, cfg, mux, agent.NewWorkflows(renderClient, flyClient, beClient, statusWriter))
 	if err != nil {
