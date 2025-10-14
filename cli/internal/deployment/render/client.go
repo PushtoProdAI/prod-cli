@@ -403,6 +403,48 @@ func (c *HTTPRenderClient) ListServices(ctx context.Context, name string) ([]Ren
 	return services, nil
 }
 
+func (c *HTTPRenderClient) ListPostgres(ctx context.Context) ([]RenderPostgres, error) {
+	resp, err := c.makeRequest(ctx, "GET", "/v1/postgres", nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to list postgres: %w", err)
+	}
+
+	var wrappedPostgres []struct {
+		Postgres RenderPostgres `json:"postgres"`
+	}
+	if err := c.handleResponse(resp, &wrappedPostgres); err != nil {
+		return nil, err
+	}
+
+	postgres := make([]RenderPostgres, len(wrappedPostgres))
+	for i, wrapped := range wrappedPostgres {
+		postgres[i] = wrapped.Postgres
+	}
+
+	return postgres, nil
+}
+
+func (c *HTTPRenderClient) ListRedis(ctx context.Context) ([]RenderService, error) {
+	resp, err := c.makeRequest(ctx, "GET", "/v1/redis", nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to list redis: %w", err)
+	}
+
+	var wrappedRedis []struct {
+		Redis RenderService `json:"redis"`
+	}
+	if err := c.handleResponse(resp, &wrappedRedis); err != nil {
+		return nil, err
+	}
+
+	redis := make([]RenderService, len(wrappedRedis))
+	for i, wrapped := range wrappedRedis {
+		redis[i] = wrapped.Redis
+	}
+
+	return redis, nil
+}
+
 func (c *HTTPRenderClient) TriggerDeploy(ctx context.Context, serviceID string) (*RenderDeploy, error) {
 	resp, err := c.makeRequest(ctx, "POST", fmt.Sprintf("/v1/services/%s/deploys", serviceID), nil)
 	if err != nil {

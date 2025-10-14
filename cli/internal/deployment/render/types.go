@@ -211,6 +211,8 @@ type RenderClient interface {
 	GetWebService(ctx context.Context, serviceID string) (*RenderWebService, error)
 	GetPostgres(ctx context.Context, serviceID string) (*RenderPostgres, error)
 	ListServices(ctx context.Context, name string) ([]RenderService, error)
+	ListPostgres(ctx context.Context) ([]RenderPostgres, error)
+	ListRedis(ctx context.Context) ([]RenderService, error)
 
 	// Connection Info
 	GetPostgresConnectionInfo(ctx context.Context, serviceID string) (*PostgresConnectionInfo, error)
