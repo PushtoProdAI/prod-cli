@@ -65,6 +65,7 @@ type DeploymentSpec struct {
 	IsStatic          bool
 	IsUpdate          bool
 	ExistingProjectID string
+	ExistingDatabases []string
 }
 
 type CostService struct {

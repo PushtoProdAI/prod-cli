@@ -69,6 +69,9 @@ func (qd *QueuedDeployment) GenerateAPISteps() []HerokuAPIStep {
 		appStepID = createAppStepID
 
 		addonStepIDs = qd.createAddonSteps(&steps, appStepID, &stepCounter)
+	} else {
+		appStepID = qd.spec.ExistingProjectID
+		addonStepIDs = qd.createMissingAddonSteps(&steps, appStepID, &stepCounter)
 	}
 
 	envStepID := ""
@@ -166,6 +169,67 @@ func (qd *QueuedDeployment) createAddonSteps(steps *[]HerokuAPIStep, appStepID s
 			plan,
 			nil,                 // no config
 			[]string{appStepID}, // depends on app creation
+		))
+
+		addonStepIDs = append(addonStepIDs, stepID)
+		*counter++
+	}
+
+	return addonStepIDs
+}
+
+// createMissingAddonSteps creates addon steps only for services that don't already exist
+func (qd *QueuedDeployment) createMissingAddonSteps(steps *[]HerokuAPIStep, appStepID string, counter *int) []string {
+	var addonStepIDs []string
+
+	for _, service := range qd.spec.Services {
+		// Skip if this addon already exists
+		exists := false
+		for _, existingDB := range qd.spec.ExistingDatabases {
+			if existingDB == service.Provider {
+				exists = true
+				break
+			}
+		}
+		if exists {
+			continue
+		}
+
+		stepID := fmt.Sprintf("step-%d", *counter)
+
+		var plan string
+		var description string
+
+		switch service.Provider {
+		case "postgresql":
+			plan = "heroku-postgresql:essential-0"
+			description = "Create PostgreSQL database"
+
+		case "redis":
+			plan = "heroku-redis:mini"
+			description = "Create Redis instance"
+
+		case "mysql":
+			plan = "jawsdb:kitefin"
+			description = "Create MySQL database (JawsDB)"
+
+		case "mongodb":
+			plan = "ormongo:2g"
+			description = "Create MongoDB database (ObjectRocket)"
+
+		default:
+			// Skip unsupported services
+			continue
+		}
+
+		*steps = append(*steps, NewCreateHerokuAddonStep(
+			stepID,
+			description,
+			appStepID,
+			service.Provider,
+			plan,
+			nil,
+			[]string{},
 		))
 
 		addonStepIDs = append(addonStepIDs, stepID)

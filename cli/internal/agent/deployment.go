@@ -203,12 +203,13 @@ func (a *Activities) determineBuildOutput(ctx context.Context, candidate analyze
 }
 
 type ExistingProjectInfo struct {
-	Exists    bool
-	Platform  Platform
-	ProjectID string
-	Name      string
-	DeployURL string
-	IsUpdate  bool
+	Exists            bool
+	Platform          Platform
+	ProjectID         string
+	Name              string
+	DeployURL         string
+	IsUpdate          bool
+	ExistingDatabases []string
 }
 
 type ProjectDetector interface {
@@ -254,8 +255,9 @@ func NewRenderProjectDetector(client render.RenderClient, uiWriter output.Status
 
 func (d *RenderProjectDetector) DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
 	result := ExistingProjectInfo{
-		Exists:   false,
-		Platform: Render,
+		Exists:            false,
+		Platform:          Render,
+		ExistingDatabases: []string{},
 	}
 
 	existing, err := render.DetectExistingProject(ctx, d.client, projectName)
@@ -268,6 +270,22 @@ func (d *RenderProjectDetector) DetectExistingProject(ctx context.Context, proje
 		result.ProjectID = existing.ServiceID
 		result.Name = existing.Name
 		result.IsUpdate = true
+
+		allServices, err := d.client.ListServices(ctx, "")
+		if err != nil {
+			return result, errors.Errorf("failed to list services for database detection: %w", err)
+		}
+
+		for _, service := range allServices {
+			if service.Type == "pgsql" && service.Name == fmt.Sprintf("%s-postgres", projectName) {
+				result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
+				d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing PostgreSQL database: %s", service.Name))
+			}
+			if service.Type == "redis" && service.Name == fmt.Sprintf("%s-redis", projectName) {
+				result.ExistingDatabases = append(result.ExistingDatabases, "redis")
+				d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Redis database: %s", service.Name))
+			}
+		}
 	} else {
 		d.uiWriter.SendStatus("info", "No existing Render service found - will create new deployment")
 	}
@@ -289,8 +307,9 @@ func NewFlyIOProjectDetector(client flyio.FlyioClient, uiWriter output.StatusWri
 
 func (d *FlyIOProjectDetector) DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
 	result := ExistingProjectInfo{
-		Exists:   false,
-		Platform: FlyIO,
+		Exists:            false,
+		Platform:          FlyIO,
+		ExistingDatabases: []string{},
 	}
 
 	existing, err := flyio.DetectExistingProject(ctx, d.client, projectName)
@@ -304,6 +323,18 @@ func (d *FlyIOProjectDetector) DetectExistingProject(ctx context.Context, projec
 		result.Name = existing.Name
 		result.DeployURL = existing.Hostname
 		result.IsUpdate = true
+
+		postgresApp, err := flyio.DetectExistingProject(ctx, d.client, fmt.Sprintf("%s-postgres", projectName))
+		if err == nil && postgresApp != nil {
+			result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
+			d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing PostgreSQL app: %s", postgresApp.Name))
+		}
+
+		redisApp, err := flyio.DetectExistingProject(ctx, d.client, fmt.Sprintf("%s-redis", projectName))
+		if err == nil && redisApp != nil {
+			result.ExistingDatabases = append(result.ExistingDatabases, "redis")
+			d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Redis app: %s", redisApp.Name))
+		}
 	} else {
 		d.uiWriter.SendStatus("info", "No existing Fly.io app found - will create new deployment")
 	}
@@ -323,8 +354,9 @@ func NewNetlifyProjectDetector(uiWriter output.StatusWriter) *NetlifyProjectDete
 
 func (d *NetlifyProjectDetector) DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
 	result := ExistingProjectInfo{
-		Exists:   false,
-		Platform: Netlify,
+		Exists:            false,
+		Platform:          Netlify,
+		ExistingDatabases: []string{},
 	}
 
 	netlifyClient := netlify.NewCLINetlifyClient()
@@ -357,8 +389,9 @@ func NewVercelProjectDetector(uiWriter output.StatusWriter) *VercelProjectDetect
 
 func (d *VercelProjectDetector) DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
 	result := ExistingProjectInfo{
-		Exists:   false,
-		Platform: Vercel,
+		Exists:            false,
+		Platform:          Vercel,
+		ExistingDatabases: []string{},
 	}
 
 	vercelClient := vercel.NewCLIVercelClient()
@@ -391,8 +424,9 @@ func NewHerokuProjectDetector(uiWriter output.StatusWriter) *HerokuProjectDetect
 
 func (d *HerokuProjectDetector) DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
 	result := ExistingProjectInfo{
-		Exists:   false,
-		Platform: Heroku,
+		Exists:            false,
+		Platform:          Heroku,
+		ExistingDatabases: []string{},
 	}
 
 	herokuClient := heroku.NewHerokuClient("", d.uiWriter)
@@ -407,9 +441,27 @@ func (d *HerokuProjectDetector) DetectExistingProject(ctx context.Context, proje
 		result.Name = existing.Name
 		result.DeployURL = existing.WebURL
 		result.IsUpdate = true
+
+		addons, err := herokuClient.ListAddons(ctx, existing.AppID)
+		if err == nil {
+			for _, addon := range addons {
+				planName := addon.Plan.Name
+				if contains(planName, "heroku-postgresql") {
+					result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
+					d.uiWriter.SendStatus("info", "✅ Found existing PostgreSQL addon")
+				} else if contains(planName, "heroku-redis") {
+					result.ExistingDatabases = append(result.ExistingDatabases, "redis")
+					d.uiWriter.SendStatus("info", "✅ Found existing Redis addon")
+				}
+			}
+		}
 	} else {
 		d.uiWriter.SendStatus("info", "No existing Heroku app found - will create new deployment")
 	}
 
 	return result, nil
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && s[:len(substr)] == substr
 }

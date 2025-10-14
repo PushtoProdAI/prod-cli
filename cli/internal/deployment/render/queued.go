@@ -71,11 +71,14 @@ func (qd *QueuedDeployment) GenerateAPISteps(ownerID string) []RenderAPIStep {
 	var steps []RenderAPIStep
 	stepCounter := 1
 
-	// For updates, skip creating backing services (databases already exist)
 	var connectionStepIDs []string
-	if !qd.spec.IsUpdate {
-		// Create backing services and get their connection step IDs
+	if !qd.spec.IsUpdate || len(qd.spec.ExistingDatabases) == 0 {
 		backingServiceSteps, connStepIDs, nextCounter := qd.createBackingServiceSteps(ownerID, stepCounter)
+		steps = append(steps, backingServiceSteps...)
+		connectionStepIDs = connStepIDs
+		stepCounter = nextCounter
+	} else if qd.spec.IsUpdate && len(qd.spec.ExistingDatabases) > 0 {
+		backingServiceSteps, connStepIDs, nextCounter := qd.createMissingBackingServiceSteps(ownerID, stepCounter)
 		steps = append(steps, backingServiceSteps...)
 		connectionStepIDs = connStepIDs
 		stepCounter = nextCounter
@@ -114,6 +117,50 @@ func (qd *QueuedDeployment) createBackingServiceSteps(ownerID string, startCount
 	serviceCount := make(map[string]int)
 
 	for provider := range qd.spec.ServiceCounts() {
+		serviceCount[provider]++
+
+		// Create the service
+		createStepID := fmt.Sprintf("step-%d", stepCounter)
+		serviceStep := qd.createServiceStep(provider, createStepID, ownerID, serviceCount[provider])
+		if serviceStep == nil {
+			continue // Skip unsupported service types
+		}
+
+		steps = append(steps, serviceStep)
+		stepCounter++
+
+		// Create connection info retrieval step
+		connectionStepID := fmt.Sprintf("step-%d", stepCounter)
+		connectionStep := qd.createConnectionInfoStep(provider, connectionStepID, createStepID)
+
+		steps = append(steps, connectionStep)
+		connectionStepIDs = append(connectionStepIDs, connectionStepID)
+		stepCounter++
+	}
+
+	return steps, connectionStepIDs, stepCounter
+}
+
+// createMissingBackingServiceSteps creates only the database services that don't already exist
+func (qd *QueuedDeployment) createMissingBackingServiceSteps(ownerID string, startCounter int) ([]RenderAPIStep, []string, int) {
+	var steps []RenderAPIStep
+	var connectionStepIDs []string
+	stepCounter := startCounter
+	serviceCount := make(map[string]int)
+
+	for provider := range qd.spec.ServiceCounts() {
+		// Skip if this database already exists
+		exists := false
+		for _, existingDB := range qd.spec.ExistingDatabases {
+			if existingDB == provider {
+				exists = true
+				break
+			}
+		}
+		if exists {
+			continue
+		}
+
 		serviceCount[provider]++
 
 		// Create the service
