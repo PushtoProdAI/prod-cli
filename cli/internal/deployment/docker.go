@@ -949,5 +949,13 @@ Thumbs.db
 .gitlab-ci.yml
 .travis.yml
 .circleci
+
+# Platform-specific build outputs
+.vercel
+.netlify
+.render
+.fly
+.railway
+.heroku
 `
 }
