@@ -58,6 +58,7 @@ type Agent struct {
 	errorTrackingEnabled bool
 	inConsentFlow        bool
 	originalInput        string
+	nextStateAfterAuth   stateFn // State to transition to after successful authentication
 }
 
 type agentContextKey string
@@ -405,7 +406,10 @@ func (a *Agent) processConfirmationResponse(ctx context.Context, input string, o
 
 	if input == "y" || input == "yes" {
 		fmt.Fprintf(out, "Proceeding with deployment...\n")
-		return a.detectExisting(ctx, input, out)
+		// Set next state after auth to be detectExisting
+		a.nextStateAfterAuth = a.detectExisting
+		// Check authentication before detection (reusing existing checkAuthentication)
+		return a.checkAuthentication(ctx, input, out)
 	}
 
 	if input == "n" || input == "no" {
@@ -423,6 +427,9 @@ func (a *Agent) confirm(ctx context.Context, input string, out io.Writer) (state
 }
 
 func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	// Clear nextStateAfterAuth since we're now in detection
+	a.nextStateAfterAuth = nil
+
 	fmt.Fprintf(out, "🔍 Checking for existing resources...\n")
 
 	wf, err := Workflows{}.DetectExisting(ctx, a.wfClient, *a.DeployPlan)
@@ -467,6 +474,10 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 
 		needsToCreate := []string{}
 		for _, service := range a.DeployPlan.Spec.ServiceRequirements {
+			// Skip framework types - they're not actual resources to create
+			if service.Type == "framework" {
+				continue
+			}
 			found := false
 			for _, existingDB := range result.ExistingDatabases {
 				if existingDB == service.Provider {
@@ -488,10 +499,21 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 	} else {
 		summaryText = "📦 New Deployment:\n\n"
 		summaryText += fmt.Sprintf("• Application: %s (new)\n", a.DeployPlan.Spec.Name)
-		if len(a.DeployPlan.Spec.ServiceRequirements) > 0 {
+
+		// Count non-framework services
+		databases := []string{}
+		for _, service := range a.DeployPlan.Spec.ServiceRequirements {
+			// Skip framework types - they're not actual resources to create
+			if service.Type == "framework" {
+				continue
+			}
+			databases = append(databases, service.Provider)
+		}
+
+		if len(databases) > 0 {
 			summaryText += "\n• Databases (new):\n"
-			for _, service := range a.DeployPlan.Spec.ServiceRequirements {
-				summaryText += fmt.Sprintf("  - %s\n", service.Provider)
+			for _, db := range databases {
+				summaryText += fmt.Sprintf("  - %s\n", db)
 			}
 		}
 	}
@@ -993,7 +1015,7 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 	if !authenticated {
 		fmt.Fprintf(out, "🔐 Authentication required for %s deployment\n\n", a.DeployPlan.Platform)
 
-		// Store the render auth for use in authentication states
+		// Store the auth provider for use in authentication states
 		a.auth = authProvider
 
 		// In non-interactive mode, if we are not authenticated exit state machine
@@ -1010,7 +1032,12 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 		return a.waitForAuthSelection, nil
 	}
 
-	// Already authenticated, proceed with deployment
+	// Already authenticated, proceed to next state (detection or deployment)
+	if a.nextStateAfterAuth != nil {
+		nextState := a.nextStateAfterAuth
+		a.nextStateAfterAuth = nil // Clear it after use
+		return nextState(ctx, input, out)
+	}
 	return a.executeDeployment(ctx, input, out)
 }
 
@@ -1089,7 +1116,10 @@ func (a *Agent) waitForAPIKey(ctx context.Context, input string, out io.Writer) 
 	fmt.Fprint(out, "✅ API key validated successfully!\n")
 	fmt.Fprint(out, "💡 API key will only be available for this session.\n")
 
-	// Continue with deployment
+	// Continue to next state (detection or deployment)
+	if a.nextStateAfterAuth != nil {
+		return a.nextStateAfterAuth(ctx, input, out)
+	}
 	return a.executeDeployment(ctx, input, out)
 }
 
@@ -1112,7 +1142,10 @@ func (a *Agent) performOAuthLogin(ctx context.Context, input string, out io.Writ
 
 	fmt.Fprint(out, "✅ Authentication successful!\n")
 
-	// Continue with deployment
+	// Continue to next state (detection or deployment)
+	if a.nextStateAfterAuth != nil {
+		return a.nextStateAfterAuth(ctx, input, out)
+	}
 	return a.executeDeployment(ctx, input, out)
 }
 

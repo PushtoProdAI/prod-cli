@@ -368,23 +368,6 @@ func NewCreateRegistryCredentialStep(config CreateRegistryCredentialStepConfig) 
 }
 
 func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error) {
-	existingCreds, err := client.ListRegistryCredentials(ctx, s.OwnerID)
-	if err != nil {
-		return nil, errors.Errorf("failed to list existing registry credentials: %w", err)
-	}
-
-	for _, cred := range existingCreds {
-		if cred.Name == s.Name {
-			if s.isCredentialExpired(cred) {
-				if err := client.DeleteRegistryCredential(ctx, cred.ID); err != nil {
-					return nil, errors.Errorf("failed to delete expired credential: %w", err)
-				}
-				break
-			}
-			return cred, nil
-		}
-	}
-
 	dockerGenerator := deployment.NewDockerGenerator(output.NewNoOpWriter(), []deployment.EnvVar{})
 	defer dockerGenerator.Close()
 
@@ -393,12 +376,35 @@ func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client Rende
 		return nil, errors.Errorf("failed to get pull credentials: %w", err)
 	}
 
+	existingCreds, err := client.ListRegistryCredentials(ctx, s.OwnerID)
+	if err != nil {
+		return nil, errors.Errorf("failed to list existing registry credentials: %w", err)
+	}
+
+	for _, cred := range existingCreds {
+		if cred.Name == s.Name {
+			if s.isCredentialExpired(cred) {
+				slog.Info("Found expired credential, updating it", "name", s.Name, "credID", cred.ID)
+				updatedCred, err := client.UpdateRegistryCredential(ctx, cred.ID, UpdateRegistryCredentialRequest{
+					Username:  pullCreds.AccountID,
+					AuthToken: pullCreds.Token,
+				})
+				if err != nil {
+					return nil, errors.Errorf("failed to update registry credential: %w", err)
+				}
+				return updatedCred, nil
+			}
+			slog.Info("Found existing valid credential, reusing it", "name", s.Name)
+			return cred, nil
+		}
+	}
+
 	registryCred, err := client.CreateRegistryCredential(ctx, CreateRegistryCredentialRequest{
 		Name:      s.Name,
 		Username:  pullCreds.AccountID,
 		AuthToken: pullCreds.Token,
-		Registry:  "AWS_ECR",
 		OwnerID:   s.OwnerID,
+		Registry:  "AWS_ECR",
 	})
 	if err != nil {
 		return nil, errors.Errorf("failed to create registry credential: %w", err)
