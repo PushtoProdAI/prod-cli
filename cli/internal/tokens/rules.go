@@ -119,48 +119,35 @@ func (re *RulesEngine) evaluateCondition(condition string, metadata Metadata) (b
 // getDefaultRules returns the default token cost rules
 // NOTE: These are the source of truth for pricing. In the future, we could
 // load rules from the database for dynamic pricing via an admin UI.
+//
+// Pricing Strategy: 1 token = 1 standard deployment
+// This ensures predictable, transparent pricing for users
 func getDefaultRules() map[string]*TokenRule {
 	return map[string]*TokenRule{
 		OperationDeploy: {
-			Operation: OperationDeploy,
-			BaseCost:  1.0,
-			Multipliers: []CostMultiplier{
-				{
-					Condition:   `{{ gt .services_count 3 }}`,
-					Factor:      1.5,
-					Description: "Multi-service deployment",
-				},
-				{
-					Condition:   `{{ eq .llm_model "gpt-4" }}`,
-					Factor:      1.3,
-					Description: "Premium LLM model (GPT-4)",
-				},
-				{
-					Condition:   `{{ eq .llm_model "claude-3-opus" }}`,
-					Factor:      1.3,
-					Description: "Premium LLM model (Claude Opus)",
-				},
-			},
-			Priority: 100,
-			Active:   true,
+			Operation:   OperationDeploy,
+			BaseCost:    1.0,
+			Multipliers: []CostMultiplier{}, // No multipliers - flat 1 token per deploy
+			Priority:    100,
+			Active:      true,
 		},
 		OperationDryRun: {
 			Operation:   OperationDryRun,
-			BaseCost:    0.5,
+			BaseCost:    0.0, // Free dry runs for planning
 			Multipliers: []CostMultiplier{},
 			Priority:    90,
 			Active:      true,
 		},
 		OperationRollback: {
 			Operation:   OperationRollback,
-			BaseCost:    0.25,
+			BaseCost:    1.0, // Same as deploy - full orchestration required
 			Multipliers: []CostMultiplier{},
 			Priority:    80,
 			Active:      true,
 		},
 		OperationStatus: {
 			Operation:   OperationStatus,
-			BaseCost:    0.1,
+			BaseCost:    0.0, // Free status checks
 			Multipliers: []CostMultiplier{},
 			Priority:    70,
 			Active:      true,
