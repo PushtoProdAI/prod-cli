@@ -518,11 +518,7 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 		}
 	}
 
-	type infoBoxSender interface {
-		SendInfoBox(title string, content string, icon string)
-	}
-
-	if tuiWriter, ok := out.(infoBoxSender); ok {
+	if tuiWriter, ok := out.(output.InfoBoxWriter); ok {
 		tuiWriter.SendInfoBox("Deployment Plan", summaryText, "📋")
 	} else {
 		fmt.Fprintf(out, "\n%s\n", summaryText)
