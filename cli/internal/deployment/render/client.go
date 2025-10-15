@@ -335,7 +335,8 @@ func (c *HTTPRenderClient) DeployBlueprint(ctx context.Context, blueprint *Rende
 // ListRegistryCredentials lists all registry credentials for a given owner
 // Based on: https://api-docs.render.com/reference/list-registry-credentials
 func (c *HTTPRenderClient) ListRegistryCredentials(ctx context.Context, ownerID string) ([]*RegistryCredential, error) {
-	resp, err := c.makeRequest(ctx, "GET", "/v1/registrycredentials", nil)
+	endpoint := fmt.Sprintf("/v1/registrycredentials?ownerId=%s", ownerID)
+	resp, err := c.makeRequest(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return nil, errors.Errorf("failed to list registry credentials: %w", err)
 	}
@@ -363,15 +364,50 @@ func (c *HTTPRenderClient) CreateRegistryCredential(ctx context.Context, req Cre
 	return &registryCred, nil
 }
 
-func (c *HTTPRenderClient) DeleteRegistryCredential(ctx context.Context, credID string) error {
-	resp, err := c.makeRequest(ctx, "DELETE", fmt.Sprintf("/v1/registrycredentials/%s", credID), nil)
+func (c *HTTPRenderClient) UpdateRegistryCredential(ctx context.Context, credID string, req UpdateRegistryCredentialRequest) (*RegistryCredential, error) {
+	endpoint := fmt.Sprintf("/v1/registrycredentials/%s", credID)
+	resp, err := c.makeRequest(ctx, "PATCH", endpoint, req)
 	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var registryCred RegistryCredential
+	if err := c.handleResponse(resp, &registryCred); err != nil {
+		return nil, err
+	}
+
+	return &registryCred, nil
+}
+
+func (c *HTTPRenderClient) DeleteRegistryCredential(ctx context.Context, credID string) error {
+	endpoint := fmt.Sprintf("/v1/registrycredentials/%s", credID)
+	slog.Info("Deleting registry credential", "credID", credID, "endpoint", endpoint)
+
+	resp, err := c.makeRequest(ctx, "DELETE", endpoint, nil)
+	if err != nil {
+		slog.Error("Failed to make delete request", "error", err)
 		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return errors.Errorf("failed to delete registry credential: status %d", resp.StatusCode)
+	// Read response body for error details
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		slog.Warn("Failed to read response body", "error", readErr)
+	}
+
+	slog.Info("Delete registry credential response", "status", resp.StatusCode, "body", string(body))
+
+	// Accept 200 OK, 204 No Content, or 404 Not Found (already deleted)
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
+		slog.Error("Failed to delete registry credential", "status", resp.StatusCode, "body", string(body))
+		return errors.Errorf("failed to delete registry credential: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	// Log if credential was already gone
+	if resp.StatusCode == http.StatusNotFound {
+		slog.Info("Registry credential already deleted or not found", "credID", credID)
 	}
 
 	return nil

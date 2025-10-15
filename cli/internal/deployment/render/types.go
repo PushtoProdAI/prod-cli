@@ -78,6 +78,11 @@ type RegistryCredential struct {
 	UpdatedAt   string `json:"updatedAt"`
 }
 
+type UpdateRegistryCredentialRequest struct {
+	Username  string `json:"username"`
+	AuthToken string `json:"authToken"`
+}
+
 type UpdateServiceImageRequest struct {
 	ImagePath string `json:"imagePath"`
 }
@@ -224,6 +229,7 @@ type RenderClient interface {
 	// Registry Credentials
 	ListRegistryCredentials(ctx context.Context, ownerID string) ([]*RegistryCredential, error)
 	CreateRegistryCredential(ctx context.Context, req CreateRegistryCredentialRequest) (*RegistryCredential, error)
+	UpdateRegistryCredential(ctx context.Context, credID string, req UpdateRegistryCredentialRequest) (*RegistryCredential, error)
 	DeleteRegistryCredential(ctx context.Context, credID string) error
 
 	// Deploys
