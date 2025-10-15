@@ -9,7 +9,7 @@ import (
 type SlashCommand struct {
 	Name        string
 	Description string
-	Handler     func(*Agent, context.Context, io.Writer) (stateFn, error)
+	Handler     func(context.Context, io.Writer) (stateFn, error)
 }
 
 // GetAvailableSlashCommands returns all available slash commands
@@ -18,22 +18,28 @@ func (a *Agent) GetAvailableSlashCommands() []SlashCommand {
 		{
 			Name:        "/clear",
 			Description: "Clear the screen",
-			Handler:     (*Agent).handleClearCommand,
+			Handler:     a.handleClearCommand,
 		},
+		{
+			Name:        "/login",
+			Description: "Login to Prod CLI",
+			Handler:     a.handleLoginCommand,
+		},
+
 		{
 			Name:        "/logout",
 			Description: "Logout from Prod CLI",
-			Handler:     (*Agent).handleLogoutCommand,
+			Handler:     a.handleLogoutCommand,
 		},
 		{
 			Name:        "/quit",
 			Description: "Exit the application",
-			Handler:     (*Agent).handleQuitCommand,
+			Handler:     a.handleQuitCommand,
 		},
 		{
 			Name:        "/search",
 			Description: "Search through the output buffer",
-			Handler:     (*Agent).handleSearchCommand,
+			Handler:     a.handleSearchCommand,
 		},
 	}
 }
@@ -67,4 +73,9 @@ func (a *Agent) handleSearchCommand(ctx context.Context, out io.Writer) (stateFn
 		tuiWriter.Search()
 	}
 	return a.plan, nil
+}
+
+func (a *Agent) handleLoginCommand(ctx context.Context, out io.Writer) (stateFn, error) {
+	a.authenticateCLI(ctx)
+	return a.sm.currentState, nil
 }

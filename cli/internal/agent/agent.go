@@ -58,7 +58,7 @@ type Agent struct {
 	errorTrackingEnabled bool
 	inConsentFlow        bool
 	originalInput        string
-	nextStateAfterAuth   stateFn // State to transition to after successful authentication
+	nextStateAfterAuth   stateFn // State to transition to after successful PaaS authentication
 }
 
 type agentContextKey string
@@ -328,7 +328,7 @@ func (a *Agent) handleSlashCommand(ctx context.Context, input string, out io.Wri
 	// Find and execute the matching command
 	for _, cmd := range a.GetAvailableSlashCommands() {
 		if cmd.Name == commandName {
-			return cmd.Handler(a, ctx, out)
+			return cmd.Handler(ctx, out)
 		}
 	}
 
