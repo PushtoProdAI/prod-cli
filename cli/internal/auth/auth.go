@@ -5,12 +5,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/go-errors/errors"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/go-errors/errors"
 
 	"github.com/meroxa/prod/cli/internal/config"
 )
@@ -142,17 +143,12 @@ func (sa *SupabaseAuth) LoginWithSupabaseFunction(ctx context.Context) error {
 	// Generate a random state parameter for security
 	state := fmt.Sprintf("cli_auth_%d", time.Now().UnixNano())
 
-	// Start a local server to receive the callback
-	server := &http.Server{
-		Addr: ":8081", // Use different port to avoid conflicts
-	}
-
 	// Channel to receive the token
 	tokenChan := make(chan string, 1)
 	errorChan := make(chan error, 1)
 
 	// Set up the callback handler
-	http.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
+	callback := func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(sa.out, "🔍 Callback received: %s\n", r.URL.String())
 
 		// Extract token from URL parameters
@@ -197,7 +193,16 @@ func (sa *SupabaseAuth) LoginWithSupabaseFunction(ctx context.Context) error {
 
 		// Send token to channel
 		tokenChan <- token
-	})
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/callback", callback)
+
+	// Start a local server to receive the callback
+	server := &http.Server{
+		Addr:    ":8081", // Use different port to avoid conflicts
+		Handler: mux,
+	}
 
 	// Start the server in a goroutine
 	go func() {
