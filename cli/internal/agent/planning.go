@@ -63,12 +63,12 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		})
 	}
 
-	summary, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarizeIntent, intent, spec.Name, spec.Language).Get(ctx)
+	summary, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarize, intent, spec.Name, spec.Language).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to summarize intent", "error", err)
 		prod_error.CaptureErrorWithContext(err, map[string]any{
 			"workflow":     PlanDeployWorkflowName,
-			"activity":     AgentSummarizeIntent,
+			"activity":     AgentSummarize,
 			"component":    "workflow",
 			"platform":     intent.Platform,
 			"project_name": spec.Name,

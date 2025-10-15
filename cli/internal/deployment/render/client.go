@@ -219,6 +219,24 @@ func (c *HTTPRenderClient) CreateWebService(ctx context.Context, req CreateWebSe
 	return &createdResp.Service, nil
 }
 
+func (c *HTTPRenderClient) UpdateServiceImage(ctx context.Context, serviceID string, req UpdateServiceImageRequest) error {
+	updateReq := map[string]any{
+		"imagePath": req.ImagePath,
+	}
+
+	resp, err := c.makeRequest(ctx, "PATCH", fmt.Sprintf("/v1/services/%s", serviceID), updateReq)
+	if err != nil {
+		return errors.Errorf("failed to update service image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return errors.Errorf("failed to update service image: status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
 // CreatePostgres creates a new PostgreSQL database service on Render
 // Based on: https://api-docs.render.com/reference/create-postgres
 func (c *HTTPRenderClient) CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*RenderService, error) {
@@ -317,7 +335,8 @@ func (c *HTTPRenderClient) DeployBlueprint(ctx context.Context, blueprint *Rende
 // ListRegistryCredentials lists all registry credentials for a given owner
 // Based on: https://api-docs.render.com/reference/list-registry-credentials
 func (c *HTTPRenderClient) ListRegistryCredentials(ctx context.Context, ownerID string) ([]*RegistryCredential, error) {
-	resp, err := c.makeRequest(ctx, "GET", "/v1/registrycredentials", nil)
+	endpoint := fmt.Sprintf("/v1/registrycredentials?ownerId=%s", ownerID)
+	resp, err := c.makeRequest(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return nil, errors.Errorf("failed to list registry credentials: %w", err)
 	}
@@ -343,4 +362,166 @@ func (c *HTTPRenderClient) CreateRegistryCredential(ctx context.Context, req Cre
 	}
 
 	return &registryCred, nil
+}
+
+func (c *HTTPRenderClient) UpdateRegistryCredential(ctx context.Context, credID string, req UpdateRegistryCredentialRequest) (*RegistryCredential, error) {
+	endpoint := fmt.Sprintf("/v1/registrycredentials/%s", credID)
+	resp, err := c.makeRequest(ctx, "PATCH", endpoint, req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var registryCred RegistryCredential
+	if err := c.handleResponse(resp, &registryCred); err != nil {
+		return nil, err
+	}
+
+	return &registryCred, nil
+}
+
+func (c *HTTPRenderClient) DeleteRegistryCredential(ctx context.Context, credID string) error {
+	endpoint := fmt.Sprintf("/v1/registrycredentials/%s", credID)
+	slog.Info("Deleting registry credential", "credID", credID, "endpoint", endpoint)
+
+	resp, err := c.makeRequest(ctx, "DELETE", endpoint, nil)
+	if err != nil {
+		slog.Error("Failed to make delete request", "error", err)
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Read response body for error details
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		slog.Warn("Failed to read response body", "error", readErr)
+	}
+
+	slog.Info("Delete registry credential response", "status", resp.StatusCode, "body", string(body))
+
+	// Accept 200 OK, 204 No Content, or 404 Not Found (already deleted)
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
+		slog.Error("Failed to delete registry credential", "status", resp.StatusCode, "body", string(body))
+		return errors.Errorf("failed to delete registry credential: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	// Log if credential was already gone
+	if resp.StatusCode == http.StatusNotFound {
+		slog.Info("Registry credential already deleted or not found", "credID", credID)
+	}
+
+	return nil
+}
+
+func (c *HTTPRenderClient) ListServices(ctx context.Context, name string) ([]RenderService, error) {
+	endpoint := "/v1/services"
+	if name != "" {
+		endpoint = endpoint + "?name=" + name
+	}
+
+	resp, err := c.makeRequest(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to list services: %w", err)
+	}
+
+	var wrappedServices []struct {
+		Service RenderService `json:"service"`
+	}
+	if err := c.handleResponse(resp, &wrappedServices); err != nil {
+		return nil, err
+	}
+
+	services := make([]RenderService, len(wrappedServices))
+	for i, wrapped := range wrappedServices {
+		services[i] = wrapped.Service
+	}
+
+	return services, nil
+}
+
+func (c *HTTPRenderClient) ListPostgres(ctx context.Context) ([]RenderPostgres, error) {
+	resp, err := c.makeRequest(ctx, "GET", "/v1/postgres", nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to list postgres: %w", err)
+	}
+
+	var wrappedPostgres []struct {
+		Postgres RenderPostgres `json:"postgres"`
+	}
+	if err := c.handleResponse(resp, &wrappedPostgres); err != nil {
+		return nil, err
+	}
+
+	postgres := make([]RenderPostgres, len(wrappedPostgres))
+	for i, wrapped := range wrappedPostgres {
+		postgres[i] = wrapped.Postgres
+	}
+
+	return postgres, nil
+}
+
+func (c *HTTPRenderClient) ListRedis(ctx context.Context) ([]RenderService, error) {
+	resp, err := c.makeRequest(ctx, "GET", "/v1/redis", nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to list redis: %w", err)
+	}
+
+	var wrappedRedis []struct {
+		Redis RenderService `json:"redis"`
+	}
+	if err := c.handleResponse(resp, &wrappedRedis); err != nil {
+		return nil, err
+	}
+
+	redis := make([]RenderService, len(wrappedRedis))
+	for i, wrapped := range wrappedRedis {
+		redis[i] = wrapped.Redis
+	}
+
+	return redis, nil
+}
+
+func (c *HTTPRenderClient) TriggerDeploy(ctx context.Context, serviceID string) (*RenderDeploy, error) {
+	resp, err := c.makeRequest(ctx, "POST", fmt.Sprintf("/v1/services/%s/deploys", serviceID), nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to trigger deploy: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var deploy RenderDeploy
+	if err := c.handleResponse(resp, &deploy); err != nil {
+		return nil, err
+	}
+
+	return &deploy, nil
+}
+
+func (c *HTTPRenderClient) GetDeploy(ctx context.Context, serviceID, deployID string) (*RenderDeploy, error) {
+	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/services/%s/deploys/%s", serviceID, deployID), nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to get deploy: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var deploy RenderDeploy
+	if err := c.handleResponse(resp, &deploy); err != nil {
+		return nil, err
+	}
+
+	return &deploy, nil
+}
+
+func (c *HTTPRenderClient) ListDeploys(ctx context.Context, serviceID string) ([]*RenderDeploy, error) {
+	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/services/%s/deploys", serviceID), nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to list deploys: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var deploys []*RenderDeploy
+	if err := c.handleResponse(resp, &deploys); err != nil {
+		return nil, err
+	}
+
+	return deploys, nil
 }

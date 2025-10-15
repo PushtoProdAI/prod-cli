@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -22,13 +23,16 @@ type FlyctlClient struct {
 	executor CommandExecutor
 	// workDir is the directory where we'll write temporary files like fly.toml
 	workDir string
+	// writer for streaming command output
+	writer io.Writer
 }
 
 // CommandExecutor interface allows us to mock exec.Command for testing
 type CommandExecutor interface {
 	Execute(ctx context.Context, name string, args ...string) ([]byte, error)
 	ExecuteWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error)
-	ExecuteInteractive(ctx context.Context, name string, args ...string) error
+	ExecuteInteractive(ctx context.Context, writer io.Writer, name string, args ...string) error
+	ExecuteWithStreaming(ctx context.Context, writer io.Writer, name string, args ...string) ([]byte, error)
 }
 
 // DefaultCommandExecutor implements CommandExecutor using os/exec
@@ -62,11 +66,11 @@ func (e *DefaultCommandExecutor) ExecuteWithInput(ctx context.Context, input []b
 	return cmd.CombinedOutput()
 }
 
-func (e *DefaultCommandExecutor) ExecuteInteractive(ctx context.Context, name string, args ...string) error {
+func (e *DefaultCommandExecutor) ExecuteInteractive(ctx context.Context, writer io.Writer, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = writer
+	cmd.Stderr = writer
 	// Flyctl respects FLY_API_TOKEN environment variable
 	if token := os.Getenv("FLY_API_TOKEN"); token != "" {
 		cmd.Env = append(os.Environ(), fmt.Sprintf("FLY_API_TOKEN=%s", token))
@@ -74,19 +78,57 @@ func (e *DefaultCommandExecutor) ExecuteInteractive(ctx context.Context, name st
 	return cmd.Run()
 }
 
+func (e *DefaultCommandExecutor) ExecuteWithStreaming(ctx context.Context, writer io.Writer, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	// Flyctl respects FLY_API_TOKEN environment variable
+	if token := os.Getenv("FLY_API_TOKEN"); token != "" {
+		cmd.Env = append(os.Environ(), fmt.Sprintf("FLY_API_TOKEN=%s", token))
+	}
+
+	// Capture output while also streaming to writer
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = io.MultiWriter(writer, &stdout)
+	cmd.Stderr = io.MultiWriter(writer, &stderr)
+
+	err := cmd.Run()
+	if err != nil {
+		return nil, err
+	}
+
+	// Return combined output for parsing
+	combined := stdout.String()
+	if stderr.Len() > 0 {
+		combined += "\n" + stderr.String()
+	}
+
+	// Strip warning messages (same as Execute method)
+	combined, _, _ = strings.Cut(combined, "Warning")
+	combined = strings.TrimSpace(combined)
+
+	return []byte(combined), nil
+}
+
 // NewFlyctlClient creates a new flyctl-based Fly.io client
-func NewFlyctlClient() *FlyctlClient {
+func NewFlyctlClient(writer io.Writer) *FlyctlClient {
+	if writer == nil {
+		writer = os.Stdout
+	}
 	return &FlyctlClient{
 		executor: &DefaultCommandExecutor{},
 		workDir:  os.TempDir(),
+		writer:   writer,
 	}
 }
 
 // NewFlyctlClientWithExecutor creates a new client with a custom executor (for testing)
-func NewFlyctlClientWithExecutor(executor CommandExecutor) *FlyctlClient {
+func NewFlyctlClientWithExecutor(executor CommandExecutor, writer io.Writer) *FlyctlClient {
+	if writer == nil {
+		writer = os.Stdout
+	}
 	return &FlyctlClient{
 		executor: executor,
 		workDir:  os.TempDir(),
+		writer:   writer,
 	}
 }
 
@@ -153,7 +195,8 @@ func (c *FlyctlClient) GetApp(ctx context.Context, appID string) (*FlyioApp, err
 
 	var app FlyioApp
 	for _, a := range apps {
-		if a.ID == appID {
+		// Match by ID or Name (for compatibility)
+		if a.ID == appID || a.Name == appID {
 			app = a
 			break
 		}
@@ -230,35 +273,20 @@ func (c *FlyctlClient) DeployApp(ctx context.Context, appID string, config *Flyi
 		"--yes", // Auto-confirm
 	}
 
-	// Execute from the source directory
+	// Execute from the source directory with streaming output
 	cmd := exec.CommandContext(ctx, "flyctl", args...)
 	cmd.Dir = sourceDir
 	cmd.Env = os.Environ()
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// Try to parse error from JSON output
-		var deployResp struct {
-			Error  string `json:"error"`
-			Status string `json:"status"`
-		}
-		if json.Unmarshal(output, &deployResp) == nil && deployResp.Error != "" {
-			return errors.Errorf("deployment failed: %s", deployResp.Error)
-		}
+	// Stream output to writer so user can see progress
+	cmd.Stdout = c.writer
+	cmd.Stderr = c.writer
+
+	if err := cmd.Run(); err != nil {
 		return errors.Errorf("deployment failed: %w", err)
 	}
 
-	// Parse deployment response to verify success
-	var deployResp struct {
-		Status string `json:"status"`
-		URL    string `json:"url"`
-	}
-	if err := json.Unmarshal(output, &deployResp); err == nil {
-		if deployResp.Status != "success" && deployResp.Status != "deployed" {
-			return errors.Errorf("deployment status: %s", deployResp.Status)
-		}
-	}
-	slog.Info("App deployed successfully", "url", deployResp.URL)
+	slog.Info("App deployed successfully")
 	return nil
 }
 
@@ -274,6 +302,57 @@ func (c *FlyctlClient) DestroyApp(ctx context.Context, appID string) error {
 		return errors.Errorf("failed to destroy Fly.io app %q: %w", appID, err)
 	}
 	return nil
+}
+
+// ListPostgres lists all managed PostgreSQL clusters
+func (c *FlyctlClient) ListPostgres(ctx context.Context) ([]FlyioPostgresCluster, error) {
+	if err := c.ensureFlyctl(ctx); err != nil {
+		return nil, err
+	}
+
+	slog.Info("Listing Fly.io apps to get organization")
+	output, err := c.executor.Execute(ctx, "flyctl", "apps", "list", "--json")
+	if err != nil {
+		return nil, errors.Errorf("failed to list apps to get organization: %w", err)
+	}
+
+	var apps []FlyioApp
+	if err := json.Unmarshal(output, &apps); err != nil {
+		return nil, errors.Errorf("failed to parse apps list: %w", err)
+	}
+
+	slog.Info("Found apps", "count", len(apps))
+	if len(apps) == 0 {
+		slog.Warn("No apps found, cannot determine organization for postgres list")
+		return []FlyioPostgresCluster{}, nil
+	}
+
+	orgSlug := apps[0].Organization.Slug
+	slog.Info("Using organization", "slug", orgSlug)
+	if orgSlug == "" {
+		slog.Warn("Organization slug is empty")
+		return []FlyioPostgresCluster{}, nil
+	}
+
+	slog.Info("Listing managed postgres clusters", "org", orgSlug)
+	pgOutput, err := c.executor.Execute(ctx, "flyctl", "mpg", "list", "-o", orgSlug, "--json")
+	if err != nil {
+		return nil, errors.Errorf("failed to list postgres clusters: %w", err)
+	}
+
+	slog.Debug("Postgres list output", "output", string(pgOutput))
+
+	var clusters []FlyioPostgresCluster
+	if err := json.Unmarshal(pgOutput, &clusters); err != nil {
+		return nil, errors.Errorf("failed to parse postgres list: %w", err)
+	}
+
+	slog.Info("Found postgres clusters", "count", len(clusters))
+	for _, cluster := range clusters {
+		slog.Info("Postgres cluster", "name", cluster.Name, "id", cluster.ID, "status", cluster.Status)
+	}
+
+	return clusters, nil
 }
 
 // CreatePostgres creates a new managed PostgreSQL cluster
@@ -297,8 +376,9 @@ func (c *FlyctlClient) CreatePostgres(ctx context.Context, req CreatePostgresReq
 		args = append(args, "--plan", "basic")
 	}
 
-	// Execute and wait for completion (this will block until provisioned)
-	output, err := c.executor.Execute(ctx, "flyctl", args...)
+	// Execute with streaming output (this will block until provisioned)
+	// Use ExecuteWithStreaming to show progress while capturing output for parsing
+	output, err := c.executor.ExecuteWithStreaming(ctx, c.writer, "flyctl", args...)
 	if err != nil {
 		return nil, errors.Errorf("failed to create PostgreSQL cluster %q in region %q: %w", req.Name, req.Region, err)
 	}
@@ -331,7 +411,7 @@ func (c *FlyctlClient) parseMPGCreateOutput(output string) (*FlyioPostgresCluste
 		}
 		// Extract Organization: james-martinez-457
 		if strings.HasPrefix(line, "Organization:") {
-			cluster.Organization = strings.TrimSpace(strings.TrimPrefix(line, "Organization:"))
+			cluster.Organization.Slug = strings.TrimSpace(strings.TrimPrefix(line, "Organization:"))
 		}
 		// Extract Region: iad
 		if strings.HasPrefix(line, "Region:") {
@@ -497,7 +577,8 @@ func (c *FlyctlClient) AttachPostgres(ctx context.Context, req AttachPostgresReq
 		args = append(args, "--variable-name", "DATABASE_URL")
 	}
 
-	_, err := c.executor.Execute(ctx, "flyctl", args...)
+	// Use ExecuteInteractive to show output to user
+	err := c.executor.ExecuteInteractive(ctx, c.writer, "flyctl", args...)
 	if err != nil {
 		return errors.Errorf("failed to attach PostgreSQL cluster %q to app %q: %w",
 			req.ClusterID, req.AppName, err)
@@ -530,7 +611,8 @@ func (c *FlyctlClient) AttachRedis(ctx context.Context, req AttachRedisRequest) 
 	// Auto-confirm the attachment
 	args = append(args, "-y")
 
-	_, err := c.executor.Execute(ctx, "flyctl", args...)
+	// Use ExecuteInteractive to show output to user
+	err := c.executor.ExecuteInteractive(ctx, c.writer, "flyctl", args...)
 	if err != nil {
 		return errors.Errorf("failed to attach Redis %q to app %q: %w", req.RedisName, req.AppName, err)
 	}
@@ -653,8 +735,6 @@ func (c *FlyctlClient) generateFlyToml(config *FlyioConfig) (string, error) {
 		builder.WriteString("[build]\n")
 		if config.BuildConfig.Dockerfile != "" {
 			builder.WriteString("  dockerfile = \"Dockerfile\"\n")
-		} else if config.BuildConfig.Builder != "" {
-			builder.WriteString(fmt.Sprintf("  builder = \"%s\"\n", config.BuildConfig.Builder))
 		}
 		if config.BuildConfig.BuildCmd != "" {
 			builder.WriteString(fmt.Sprintf("  build_cmd = \"%s\"\n", config.BuildConfig.BuildCmd))

@@ -10,7 +10,7 @@ import (
 func TestWorkflows_DryRunDeploy_FlyIO(t *testing.T) {
 	// Create a new workflows instance
 	workflows := &Workflows{
-		flyClient: flyio.NewFlyioClient(),
+		flyClient: flyio.NewFlyioClient(output.NewNoOpWriter()),
 		uiWriter:  output.NewNoOpWriter(),
 	}
 
@@ -35,7 +35,7 @@ func TestWorkflows_DryRunDeploy_FlyIO(t *testing.T) {
 func TestWorkflows_Deploy_FlyIO(t *testing.T) {
 	// Create a new workflows instance
 	workflows := &Workflows{
-		flyClient: flyio.NewFlyioClient(),
+		flyClient: flyio.NewFlyioClient(output.NewNoOpWriter()),
 		uiWriter:  output.NewNoOpWriter(),
 	}
 
@@ -58,7 +58,7 @@ func TestWorkflows_Deploy_FlyIO(t *testing.T) {
 func TestWorkflows_WorkflowRegistration(t *testing.T) {
 	// Create a new workflows instance
 	workflows := &Workflows{
-		flyClient: flyio.NewFlyioClient(),
+		flyClient: flyio.NewFlyioClient(output.NewNoOpWriter()),
 		uiWriter:  output.NewNoOpWriter(),
 	}
 

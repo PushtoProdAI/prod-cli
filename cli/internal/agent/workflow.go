@@ -31,6 +31,7 @@ const (
 	DryRunDeployWorkflowName           = "agent.dryRun.render"
 	DeployFlyioWorkflowName            = "agent.deploy.flyio"
 	CategorizeEnvVarsWorkflowName      = "agent.categorizeEnvVars"
+	DetectExistingWorkflowName         = "agent.detectExisting"
 	DryRunRenderWorkflowName           = "agent.dryrun.render"
 	DryRunFlyioWorkflowName            = "agent.dryrun.flyio"
 	DeployNetlifyWorkflowName          = "agent.deploy.netlify"
@@ -135,6 +136,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: DryRunDeployWorkflowName, WorkflowFunc: w.dryRunDeployRender},
 		{Name: DeployFlyioWorkflowName, WorkflowFunc: w.deployFly},
 		{Name: CategorizeEnvVarsWorkflowName, WorkflowFunc: w.categorizeEnvVars},
+		{Name: DetectExistingWorkflowName, WorkflowFunc: w.detectExistingWorkflow},
 		{Name: DryRunRenderWorkflowName, WorkflowFunc: w.dryRunDeployRender},
 		{Name: DryRunFlyioWorkflowName, WorkflowFunc: w.dryRunDeployFly},
 		{Name: DeployNetlifyWorkflowName, WorkflowFunc: w.deployNetlify},
@@ -183,6 +185,10 @@ func (Workflows) CategorizeEnvVars(ctx context.Context, c *client.Client, input 
 	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", CategorizeEnvVarsWorkflowName, time.Now().Unix())}, CategorizeEnvVarsWorkflowName, input)
 }
 
+func (Workflows) DetectExisting(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
+	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DetectExistingWorkflowName, time.Now().Unix())}, DetectExistingWorkflowName, input)
+}
+
 func (Workflows) SetupJavaScriptProject(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
 	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{
 		InstanceID: fmt.Sprintf("%s.%d", SetupJavaScriptProjectWorkflowName, time.Now().Unix()),
@@ -198,6 +204,13 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	if session != nil {
 		token = session.AccessToken
 	}
+
+	// Use existing project info from DeployPlan
+	existingProject := input.ExistingProjectInfo
+	if existingProject.Exists {
+		slog.Info("Using existing project from detection", "name", existingProject.Name, "id", existingProject.ProjectID, "databases", existingProject.ExistingDatabases)
+	}
+
 	// Validate Docker availability for Render
 	if !deployment.IsDockerAvailable() {
 		summary, err := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, "not able to build docker image. cannot connect to local docker daemon", input).Get(ctx)
@@ -216,6 +229,13 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	}
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["authToken"] = token
+
+	// Set update mode if existing project detected
+	if existingProject.Exists {
+		spec.IsUpdate = true
+		spec.ExistingProjectID = existingProject.ProjectID
+		spec.ExistingDatabases = existingProject.ExistingDatabases
+	}
 
 	// Generate and summarize deployment steps (for UI feedback)
 	workspaceID, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderWorkspace).Get(ctx)
@@ -353,15 +373,47 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		return deployResult{}, nil
 	}
 
-	// Get service URL and verify it's live
+	// Get service URL
 	u, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderServiceURL, ws.ID).Get(ctx)
 	if err != nil {
 		return deployResult{}, errors.Errorf("failed to get service URL for %s: %w", ws.Name, err)
 	}
 
+	// First, check deploy status (for both fresh and updates)
+	if deployID, ok := ws.Metadata["deployId"].(string); ok && deployID != "" {
+		deployCheckOpts := ActivityOpts
+		deployCheckOpts.RetryOptions.MaxAttempts = 15
+		_, err := workflow.ExecuteActivity[any](ctx, deployCheckOpts, AgentWaitForRenderDeploy, ws.ID, deployID).Get(ctx)
+		if err != nil {
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":     DeployRenderWorkflowName,
+				"activity":     AgentWaitForRenderDeploy,
+				"component":    "deployment",
+				"platform":     "render",
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+			})
+			summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+			if e1 != nil {
+				prod_error.CaptureErrorWithContext(e1, map[string]any{
+					"workflow":     DeployRenderWorkflowName,
+					"activity":     AgentSummarizeError,
+					"component":    "deployment",
+					"platform":     "render",
+					"project_name": input.Spec.Name,
+					"language":     input.Spec.Language,
+					"operation":    "summarize_original_error",
+				})
+				return deployResult{Error: deployError{Summary: err.Error()}}, nil
+			}
+			slog.Info("deployment failed", "deployId", deployID, "error", err)
+			return deployResult{Error: summary}, nil
+		}
+	}
+
+	// Then verify URL is live
 	path, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineRootPath, input.Spec.Routes).Get(ctx)
 	if err != nil {
-		// if there is an error, we will just default to /
 		slog.Info("Failed to determine root path for application", "error", err)
 		path = "/"
 	}
@@ -372,12 +424,9 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		fullUrl = u
 	}
 	liveCheckOpts := ActivityOpts
-	// I noticed some projects taking longer to online (on the PaaS side)
-	// so bumping this up a bit
 	liveCheckOpts.RetryOptions.MaxAttempts = 15
 	_, err = workflow.ExecuteActivity[string](ctx, liveCheckOpts, AgentIsURLLive, fullUrl).Get(ctx)
 	if err != nil {
-		// Send the original error before summarizing
 		prod_error.CaptureErrorWithContext(err, map[string]any{
 			"workflow":     DeployRenderWorkflowName,
 			"activity":     AgentIsURLLive,
@@ -388,7 +437,6 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		})
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if e1 != nil {
-			// Send the summarize error
 			prod_error.CaptureErrorWithContext(e1, map[string]any{
 				"workflow":     DeployRenderWorkflowName,
 				"activity":     AgentSummarizeError,
@@ -410,6 +458,12 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployResult, error) {
 	if w.registry == nil {
 		return deployResult{}, errors.New("workflow registry is not set")
+	}
+
+	// Use existing project info from DeployPlan
+	existingProject := input.ExistingProjectInfo
+	if existingProject.Exists {
+		slog.Info("Using existing project from detection", "name", existingProject.Name, "id", existingProject.ProjectID, "databases", existingProject.ExistingDatabases)
 	}
 
 	// Log deployment start
@@ -437,8 +491,16 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 	}
 	spec.Metadata["buildContext"] = input.Source
 
+	// Set update mode if existing project detected
+	if existingProject.Exists {
+		spec.IsUpdate = true
+		spec.ExistingProjectID = existingProject.ProjectID
+		spec.ExistingDatabases = existingProject.ExistingDatabases
+	}
+
 	// Generate and summarize deployment steps
-	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, w.uiWriter)
+	dockerGen := deployment.NewDockerGenerator(w.uiWriter, spec.EnvVars)
+	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, dockerGen, w.uiWriter)
 	steps := d.GenerateAPISteps()
 	descriptions := make([]string, len(steps))
 	for i, step := range steps {
@@ -677,7 +739,8 @@ func (w *Workflows) dryRunDeployFly(ctx workflow.Context, input DeployPlan) (Dry
 	spec.Metadata["buildContext"] = input.Source
 
 	// Generate deployment steps
-	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, w.uiWriter)
+	dockerGen := deployment.NewDockerGenerator(w.uiWriter, spec.EnvVars)
+	d := flyio.NewFlyioQueuedDeployment(w.flyClient, spec, dockerGen, w.uiWriter)
 	steps := d.GenerateAPISteps()
 
 	dryRunSteps := make([]DryRunStep, len(steps))
@@ -709,6 +772,24 @@ func (w *Workflows) dryRunDeployFly(ctx workflow.Context, input DeployPlan) (Dry
 		ConflictChecks:   conflictChecks,
 		ValidationErrors: validationErrors,
 	}, nil
+}
+
+func (w *Workflows) detectExistingWorkflow(ctx workflow.Context, deployPlan DeployPlan) (ExistingProjectInfo, error) {
+	workflow.Logger(ctx).Info("starting detectExisting workflow", "platform", deployPlan.Platform, "project", deployPlan.Spec.Name)
+
+	existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentCheckExistingProject, deployPlan.Platform, deployPlan.Spec.Name, deployPlan.Source).Get(ctx)
+	if err != nil {
+		workflow.Logger(ctx).Error("Failed to check for existing project", "error", err)
+		return ExistingProjectInfo{}, err
+	}
+
+	if existingProject.Exists {
+		workflow.Logger(ctx).Info("Detected existing project", "name", existingProject.Name, "id", existingProject.ProjectID, "databases", existingProject.ExistingDatabases)
+	} else {
+		workflow.Logger(ctx).Info("No existing project found")
+	}
+
+	return existingProject, nil
 }
 
 func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPlan) ([]deployment.EnvVar, error) {
@@ -993,6 +1074,12 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	slog.Info("deployNetlify workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
+	// Use existing project info from DeployPlan
+	existingProject := input.ExistingProjectInfo
+	if existingProject.Exists {
+		slog.Info("Using existing project from detection", "name", existingProject.Name, "id", existingProject.ProjectID, "databases", existingProject.ExistingDatabases)
+	}
+
 	// Log deployment start
 	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "netlify", input.Spec, input.Source).Get(ctx)
 	if err != nil {
@@ -1013,6 +1100,13 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	// Add metadata
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["platform"] = "netlify"
+
+	// Set update mode if existing project detected
+	if existingProject.Exists {
+		spec.IsUpdate = true
+		spec.ExistingProjectID = existingProject.ProjectID
+		spec.ExistingDatabases = existingProject.ExistingDatabases
+	}
 
 	d := netlify.NewNetlifyQueuedDeployment(&netlify.CLINetlifyClient{}, spec, w.uiWriter)
 	steps := d.GenerateAPISteps()
@@ -1103,6 +1197,12 @@ func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deploy
 	slog.Info("deployVercel workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
+	// Use existing project info from DeployPlan
+	existingProject := input.ExistingProjectInfo
+	if existingProject.Exists {
+		slog.Info("Using existing project from detection", "name", existingProject.Name, "id", existingProject.ProjectID, "databases", existingProject.ExistingDatabases)
+	}
+
 	// Log deployment start
 	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "vercel", input.Spec, input.Source).Get(ctx)
 	if err != nil {
@@ -1123,6 +1223,13 @@ func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deploy
 	// Add metadata
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["platform"] = "vercel"
+
+	// Set update mode if existing project detected
+	if existingProject.Exists {
+		spec.IsUpdate = true
+		spec.ExistingProjectID = existingProject.ProjectID
+		spec.ExistingDatabases = existingProject.ExistingDatabases
+	}
 
 	d := vercel.NewVercelQueuedDeployment(vercel.NewCLIVercelClient(), spec, w.uiWriter)
 	steps := d.GenerateAPISteps()
@@ -1238,6 +1345,12 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 	slog.Info("deployHeroku workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
+	// Use existing project info from DeployPlan
+	existingProject := input.ExistingProjectInfo
+	if existingProject.Exists {
+		slog.Info("Using existing project from detection", "name", existingProject.Name, "id", existingProject.ProjectID, "databases", existingProject.ExistingDatabases)
+	}
+
 	// Log deployment start
 	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "heroku", input.Spec, input.Source).Get(ctx)
 	if err != nil {
@@ -1258,6 +1371,13 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 	// Add metadata
 	spec.Metadata["buildContext"] = input.Source
 	spec.Metadata["platform"] = "heroku"
+
+	// Set update mode if existing project detected
+	if existingProject.Exists {
+		spec.IsUpdate = true
+		spec.ExistingProjectID = existingProject.ProjectID
+		spec.ExistingDatabases = existingProject.ExistingDatabases
+	}
 
 	// Use default Heroku adapter
 	herokuAdapter := heroku.NewDefaultHerokuDeploymentAdapter(w.uiWriter)

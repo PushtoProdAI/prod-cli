@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
@@ -15,6 +16,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	"github.com/meroxa/prod/cli/internal/deployment/vercel"
+	"github.com/meroxa/prod/cli/internal/output"
 )
 
 func (a *Activities) deploySteps(ctx context.Context, spec deployment.DeploymentSpec, platform Platform) ([]deployment.CreatedResource, error) {
@@ -25,7 +27,8 @@ func (a *Activities) deploySteps(ctx context.Context, spec deployment.Deployment
 		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
 		deployable = render.NewQueuedDeployment(a.renderClient, &spec, dockerGen, true, a.uiWriter)
 	case FlyIO:
-		deployable = flyio.NewFlyioQueuedDeployment(a.flyClient, &spec, a.uiWriter)
+		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
+		deployable = flyio.NewFlyioQueuedDeployment(a.flyClient, &spec, dockerGen, a.uiWriter)
 	case Netlify:
 		// Use the Netlify deployment adapter
 		netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter, a.llmClient)
@@ -83,20 +86,18 @@ func (a *Activities) summarizeDeploySteps(ctx context.Context, steps []string) e
 	summary, err := a.llmClient.SummarizeSteps(ctx, steps)
 	if err != nil {
 		slog.Warn("Failed to get LLM summary, using fallback", "error", err)
-		summaryText = "We will execute the following deployment steps:\n\n"
+		summaryText = "📋 Deployment Steps\n\n"
+		summaryText += "The following steps will be executed:\n\n"
 		for i, step := range steps {
 			summaryText += fmt.Sprintf("%d. %s\n", i+1, step)
 		}
+		summaryText += "\nNote: Existing resources will be detected and reused automatically.\n"
 	} else {
 		summaryText = summary.Summary
 	}
 	a.uiWriter.SendStatusComplete("summarizing", "")
 
-	type infoBoxSender interface {
-		SendInfoBox(title string, content string, icon string)
-	}
-
-	if tuiWriter, ok := a.uiWriter.(infoBoxSender); ok {
+	if tuiWriter, ok := a.uiWriter.(output.InfoBoxWriter); ok {
 		slog.Info("Sending info box for deployment steps", "hasContent", summaryText != "")
 		tuiWriter.SendInfoBox("Deployment Steps", summaryText, "📋")
 	} else {
@@ -198,4 +199,292 @@ func (a *Activities) determineBuildOutput(ctx context.Context, candidate analyze
 		return "", errors.Errorf("failed to determine build output: %w", err)
 	}
 	return output.Path, nil
+}
+
+type ExistingProjectInfo struct {
+	Exists            bool
+	Platform          Platform
+	ProjectID         string
+	Name              string
+	DeployURL         string
+	IsUpdate          bool
+	ExistingDatabases []string
+}
+
+type ProjectDetector interface {
+	DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error)
+}
+
+func (a *Activities) getProjectDetector(platform Platform) (ProjectDetector, error) {
+	switch platform {
+	case Render:
+		return NewRenderProjectDetector(a.renderClient, a.uiWriter), nil
+	case FlyIO:
+		return NewFlyIOProjectDetector(a.flyClient, a.uiWriter), nil
+	case Netlify:
+		return NewNetlifyProjectDetector(a.uiWriter), nil
+	case Vercel:
+		return NewVercelProjectDetector(a.uiWriter), nil
+	case Heroku:
+		return NewHerokuProjectDetector(a.uiWriter), nil
+	default:
+		return nil, errors.Errorf("unsupported platform: %s", platform)
+	}
+}
+
+func (a *Activities) checkExistingProject(ctx context.Context, platform Platform, projectName string, sourcePath string) (ExistingProjectInfo, error) {
+	detector, err := a.getProjectDetector(platform)
+	if err != nil {
+		return ExistingProjectInfo{Exists: false, Platform: platform}, err
+	}
+	return detector.DetectExistingProject(ctx, projectName, sourcePath)
+}
+
+type RenderProjectDetector struct {
+	client   render.RenderClient
+	uiWriter output.StatusWriter
+}
+
+func NewRenderProjectDetector(client render.RenderClient, uiWriter output.StatusWriter) *RenderProjectDetector {
+	return &RenderProjectDetector{
+		client:   client,
+		uiWriter: uiWriter,
+	}
+}
+
+func (d *RenderProjectDetector) DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
+	result := ExistingProjectInfo{
+		Exists:            false,
+		Platform:          Render,
+		ExistingDatabases: []string{},
+	}
+
+	existing, err := render.DetectExistingProject(ctx, d.client, projectName)
+	if err != nil {
+		return result, errors.Errorf("failed to check for existing Render project: %w", err)
+	}
+	if existing != nil {
+		result.Exists = true
+		result.ProjectID = existing.ServiceID
+		result.Name = existing.Name
+		result.IsUpdate = true
+
+		slog.Info("Detecting existing Render databases", "projectName", projectName)
+		normalizedProjectName := strings.ReplaceAll(projectName, "-", "_")
+		expectedPGServiceNamePrefix := fmt.Sprintf("%s-postgres", projectName)
+		expectedPGServiceNameUnderscores := fmt.Sprintf("%s_db", normalizedProjectName)
+		expectedPGDatabaseName := fmt.Sprintf("%s_db", projectName)
+		expectedRedisName := fmt.Sprintf("%s-redis", projectName)
+		slog.Info("Looking for databases", "expectedPGServiceNamePrefix", expectedPGServiceNamePrefix, "expectedPGServiceNameUnderscores", expectedPGServiceNameUnderscores, "expectedPGDatabaseName", expectedPGDatabaseName, "expectedRedisName", expectedRedisName)
+
+		pgList, err := d.client.ListPostgres(ctx)
+		if err != nil {
+			slog.Error("Failed to list Render postgres", "error", err)
+		} else {
+			slog.Info("Listed Render postgres databases", "count", len(pgList))
+			for _, pg := range pgList {
+				slog.Info("Checking Render postgres", "serviceName", pg.Name, "databaseName", pg.DatabaseName, "id", pg.ID)
+				if strings.HasPrefix(pg.Name, expectedPGServiceNamePrefix) ||
+					pg.Name == expectedPGServiceNameUnderscores ||
+					pg.DatabaseName == expectedPGDatabaseName ||
+					strings.HasPrefix(pg.DatabaseName, normalizedProjectName+"_") {
+					result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
+					slog.Info("Matched existing PostgreSQL database", "serviceName", pg.Name, "databaseName", pg.DatabaseName)
+				}
+			}
+		}
+
+		redisList, err := d.client.ListRedis(ctx)
+		if err != nil {
+			slog.Error("Failed to list Render redis", "error", err)
+		} else {
+			slog.Info("Listed Render redis databases", "count", len(redisList))
+			for _, red := range redisList {
+				slog.Info("Checking Render redis", "name", red.Name, "type", red.Type, "id", red.ID)
+				if red.Name == expectedRedisName {
+					result.ExistingDatabases = append(result.ExistingDatabases, "redis")
+					slog.Info("Matched existing Redis database", "name", red.Name)
+				}
+			}
+		}
+
+		if len(result.ExistingDatabases) == 0 {
+			slog.Info("No matching Render databases found")
+		}
+	}
+
+	return result, nil
+}
+
+type FlyIOProjectDetector struct {
+	client   flyio.FlyioClient
+	uiWriter output.StatusWriter
+}
+
+func NewFlyIOProjectDetector(client flyio.FlyioClient, uiWriter output.StatusWriter) *FlyIOProjectDetector {
+	return &FlyIOProjectDetector{
+		client:   client,
+		uiWriter: uiWriter,
+	}
+}
+
+func (d *FlyIOProjectDetector) DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
+	result := ExistingProjectInfo{
+		Exists:            false,
+		Platform:          FlyIO,
+		ExistingDatabases: []string{},
+	}
+
+	existing, err := flyio.DetectExistingProject(ctx, d.client, projectName)
+	if err != nil {
+		return result, errors.Errorf("failed to check for existing Fly.io project: %w", err)
+	}
+	if existing != nil {
+		result.Exists = true
+		result.ProjectID = existing.AppID
+		result.Name = existing.Name
+		result.DeployURL = existing.Hostname
+		result.IsUpdate = true
+
+		slog.Info("Detecting existing Fly.io databases", "projectName", projectName)
+		pgClusters, err := d.client.ListPostgres(ctx)
+		if err != nil {
+			slog.Error("Failed to list postgres clusters", "error", err)
+		} else {
+			slog.Info("Listed postgres clusters", "count", len(pgClusters))
+			expectedPGName := fmt.Sprintf("%s-postgres", projectName)
+			slog.Info("Looking for postgres cluster", "expectedName", expectedPGName)
+			for _, cluster := range pgClusters {
+				slog.Info("Checking postgres cluster", "name", cluster.Name, "expected", expectedPGName)
+				if cluster.Name == expectedPGName {
+					result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
+					slog.Info("Matched existing postgres cluster", "name", cluster.Name)
+					break
+				}
+			}
+			if len(result.ExistingDatabases) == 0 {
+				slog.Info("No matching postgres cluster found")
+			}
+		}
+
+		redisApp, err := flyio.DetectExistingProject(ctx, d.client, fmt.Sprintf("%s-redis", projectName))
+		if err == nil && redisApp != nil {
+			result.ExistingDatabases = append(result.ExistingDatabases, "redis")
+		}
+	}
+
+	return result, nil
+}
+
+type NetlifyProjectDetector struct {
+	uiWriter output.StatusWriter
+}
+
+func NewNetlifyProjectDetector(uiWriter output.StatusWriter) *NetlifyProjectDetector {
+	return &NetlifyProjectDetector{
+		uiWriter: uiWriter,
+	}
+}
+
+func (d *NetlifyProjectDetector) DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
+	result := ExistingProjectInfo{
+		Exists:            false,
+		Platform:          Netlify,
+		ExistingDatabases: []string{},
+	}
+
+	netlifyClient := netlify.NewCLINetlifyClient()
+	existing, err := netlify.DetectExistingProject(netlifyClient, projectName, sourcePath)
+	if err != nil {
+		return result, errors.Errorf("failed to check for existing Netlify project: %w", err)
+	}
+	if existing != nil {
+		result.Exists = true
+		result.ProjectID = existing.SiteID
+		result.Name = existing.Name
+		result.IsUpdate = true
+	}
+
+	return result, nil
+}
+
+type VercelProjectDetector struct {
+	uiWriter output.StatusWriter
+}
+
+func NewVercelProjectDetector(uiWriter output.StatusWriter) *VercelProjectDetector {
+	return &VercelProjectDetector{
+		uiWriter: uiWriter,
+	}
+}
+
+func (d *VercelProjectDetector) DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
+	result := ExistingProjectInfo{
+		Exists:            false,
+		Platform:          Vercel,
+		ExistingDatabases: []string{},
+	}
+
+	vercelClient := vercel.NewCLIVercelClient()
+	existing, err := vercel.DetectExistingProject(vercelClient, projectName, sourcePath)
+	if err != nil {
+		return result, errors.Errorf("failed to check for existing Vercel project: %w", err)
+	}
+	if existing != nil {
+		result.Exists = true
+		result.ProjectID = existing.ProjectID
+		result.Name = existing.Name
+		result.IsUpdate = true
+	}
+
+	return result, nil
+}
+
+type HerokuProjectDetector struct {
+	uiWriter output.StatusWriter
+}
+
+func NewHerokuProjectDetector(uiWriter output.StatusWriter) *HerokuProjectDetector {
+	return &HerokuProjectDetector{
+		uiWriter: uiWriter,
+	}
+}
+
+func (d *HerokuProjectDetector) DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
+	result := ExistingProjectInfo{
+		Exists:            false,
+		Platform:          Heroku,
+		ExistingDatabases: []string{},
+	}
+
+	herokuClient := heroku.NewHerokuClient("", d.uiWriter)
+	existing, err := heroku.DetectExistingProject(ctx, herokuClient, projectName, sourcePath)
+	if err != nil {
+		return result, errors.Errorf("failed to check for existing Heroku project: %w", err)
+	}
+	if existing != nil {
+		result.Exists = true
+		result.ProjectID = existing.AppID
+		result.Name = existing.Name
+		result.DeployURL = existing.WebURL
+		result.IsUpdate = true
+
+		addons, err := herokuClient.ListAddons(ctx, existing.AppID)
+		if err == nil {
+			for _, addon := range addons {
+				planName := addon.Plan.Name
+				if contains(planName, "heroku-postgresql") {
+					result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
+				} else if contains(planName, "heroku-redis") {
+					result.ExistingDatabases = append(result.ExistingDatabases, "redis")
+				}
+			}
+		}
+	}
+
+	return result, nil
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && s[:len(substr)] == substr
 }

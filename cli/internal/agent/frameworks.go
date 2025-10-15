@@ -100,6 +100,10 @@ func (b *BaseFrameworkHandler) createBackup(projectPath, filename string, conten
 		return errors.Errorf("failed to create .prod directory: %w", err)
 	}
 
+	if err := ensureInGitignore(projectPath, ".prod"); err != nil {
+		return errors.Errorf("failed to update .gitignore: %w", err)
+	}
+
 	timestamp := time.Now().Format("20060102-150405")
 	backupPath := filepath.Join(prodDir, fmt.Sprintf("%s.%s.bak", filename, timestamp))
 	return os.WriteFile(backupPath, content, 0644)

@@ -134,7 +134,7 @@ func (c *CLIVercelClient) PullProject() error {
 }
 
 // BuildProject builds the project locally with environment variables
-func (c *CLIVercelClient) BuildProject(envVars []EnvVar) error {
+func (c *CLIVercelClient) BuildProject(envVars []EnvVar, production bool) error {
 	if err := c.ensureVercelCLI(); err != nil {
 		return err
 	}
@@ -149,7 +149,15 @@ func (c *CLIVercelClient) BuildProject(envVars []EnvVar) error {
 	ctx, cancel := context.WithTimeout(context.Background(), buildTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "vercel", "build")
+	args := []string{"build"}
+	if production {
+		args = append(args, "--prod")
+		slog.Info("Building for production")
+	} else {
+		slog.Info("Building for preview")
+	}
+
+	cmd := exec.CommandContext(ctx, "vercel", args...)
 	cmd.Env = env
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -164,13 +172,19 @@ func (c *CLIVercelClient) BuildProject(envVars []EnvVar) error {
 }
 
 // DeployProject deploys a project to Vercel using CLI
-func (c *CLIVercelClient) DeployProject(projectID string) (*VercelDeployment, error) {
+func (c *CLIVercelClient) DeployProject(projectID string, production bool) (*VercelDeployment, error) {
 	if err := c.ensureVercelCLI(); err != nil {
 		return nil, err
 	}
 
-	// Build deploy command - using prebuilt archive as specified
+	// Build deploy command - using prebuilt archive
 	args := []string{"deploy", "--prebuilt", "--archive=tgz"}
+	if production {
+		args = append(args, "--prod")
+		slog.Info("Deploying to production")
+	} else {
+		slog.Info("Deploying to preview")
+	}
 
 	// Run deployment with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), deployTimeout)
@@ -185,10 +199,25 @@ func (c *CLIVercelClient) DeployProject(projectID string) (*VercelDeployment, er
 		return nil, errors.Errorf("deployment failed: %w\nOutput: %s", err, string(output))
 	}
 
-	// Get the latest production URL using vercel projects command
-	deployURL, err := c.getLatestProductionURL(projectID)
+	// After deployment, get the production URL from aliases
+	deployURL, err := c.getProductionURLFromAliases(projectID)
 	if err != nil {
-		return nil, errors.Errorf("failed to get deployment URL: %w", err)
+		slog.Warn("Failed to get production URL from aliases, falling back to parsing deploy output", "error", err)
+		// Fallback: parse from deploy output
+		lines := strings.Split(string(output), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.Contains(line, "vercel.app") && strings.Contains(line, "https://") {
+				if idx := strings.Index(line, "https://"); idx >= 0 {
+					urlPart := line[idx:]
+					deployURL = strings.Fields(urlPart)[0]
+					break
+				}
+			}
+		}
+		if deployURL == "" {
+			return nil, errors.Errorf("could not find deployment URL in output: %s", string(output))
+		}
 	}
 
 	// Extract deployment ID from URL (format: https://<id>-<team>.vercel.app)
@@ -214,8 +243,164 @@ func (c *CLIVercelClient) DeployProject(projectID string) (*VercelDeployment, er
 	return deployment, nil
 }
 
-// getLatestProductionURL retrieves the latest production URL for a project using vercel projects command
+// PromoteDeployment promotes a deployment to production and returns the production URL
+func (c *CLIVercelClient) PromoteDeployment(deploymentURL, projectName string) (string, error) {
+	if err := c.ensureVercelCLI(); err != nil {
+		return "", err
+	}
+
+	// Run vercel promote with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "vercel", "promote", deploymentURL, "--yes")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", errors.Errorf("promote timed out after 30s")
+		}
+		return "", errors.Errorf("promote failed: %w\nOutput: %s", err, string(output))
+	}
+
+	slog.Info("Vercel promote output", "output", string(output))
+
+	// Parse the production URL from the promote output
+	// The promote command output contains the production URLs
+	lines := strings.Split(string(output), "\n")
+	var productionURLs []string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Look for URLs in the output
+		if strings.Contains(line, "https://") && strings.Contains(line, ".vercel.app") {
+			// Extract URL from the line
+			if idx := strings.Index(line, "https://"); idx >= 0 {
+				urlPart := line[idx:]
+				url := strings.Fields(urlPart)[0]
+				// Skip the deployment-specific preview URL
+				if url != deploymentURL {
+					productionURLs = append(productionURLs, url)
+				}
+			}
+		}
+	}
+
+	// Return the first non-deployment URL found
+	if len(productionURLs) > 0 {
+		slog.Info("Found production URL from promote output", "url", productionURLs[0])
+		return productionURLs[0], nil
+	}
+
+	// Fallback: try to get from aliases
+	slog.Info("No production URL in promote output, trying aliases")
+	productionURL, err := c.getLatestProductionURL(projectName)
+	if err != nil {
+		slog.Warn("Failed to get production URL, falling back to deployment URL", "error", err, "project", projectName)
+		return deploymentURL, nil
+	}
+
+	slog.Info("Production URL fetched successfully", "url", productionURL, "project", projectName)
+	return productionURL, nil
+}
+
+// getProductionURLFromAliases gets the production URL by reading the first alias
+func (c *CLIVercelClient) getProductionURLFromAliases(projectName string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "vercel", "alias", "ls")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", errors.Errorf("failed to list aliases: %w\nOutput: %s", err, string(output))
+	}
+
+	// Parse the first alias for this project
+	// Format: source    url    age
+	// We want the URL field (second field)
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		if line == "" || strings.HasPrefix(line, "Vercel CLI") || strings.Contains(line, "Alias") || strings.HasPrefix(line, "source") {
+			continue
+		}
+
+		// Check if line contains the project name
+		if strings.Contains(strings.ToLower(line), strings.ToLower(projectName)) {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				alias := fields[1]
+				if strings.HasSuffix(alias, ".vercel.app") {
+					return "https://" + alias, nil
+				}
+			}
+		}
+	}
+
+	return "", errors.Errorf("no alias found for project %s", projectName)
+}
+
+// getLatestProductionURL retrieves the latest production URL for a project
 func (c *CLIVercelClient) getLatestProductionURL(projectName string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Use vercel alias ls to get the production domain aliases
+	cmd := exec.CommandContext(ctx, "vercel", "alias", "ls")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		slog.Warn("Failed to get aliases with vercel alias ls", "error", err, "output", string(output))
+	} else {
+		slog.Info("Vercel alias ls output", "output", string(output))
+
+		// Parse aliases to find the production domain for this project
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "Vercel CLI") || strings.Contains(line, "Alias") || strings.Contains(line, "---") {
+				continue
+			}
+
+			// Look for lines containing the project name
+			if !strings.Contains(line, projectName) {
+				continue
+			}
+
+			// Format: alias     deployment     created
+			fields := strings.Fields(line)
+			if len(fields) > 0 {
+				alias := fields[0]
+				// Check if it's a vercel.app domain
+				if strings.HasSuffix(alias, ".vercel.app") {
+					// Prefer non-deployment-specific URLs (without hash suffixes)
+					// Deployment URLs have format: project-hash-team.vercel.app
+					// Production URLs have format: project.vercel.app or project-name.vercel.app
+					parts := strings.Split(alias, ".")
+					if len(parts) > 0 {
+						subdomain := parts[0]
+						// Count hyphens - deployment URLs typically have multiple hyphens
+						hyphenCount := strings.Count(subdomain, "-")
+						// If it has fewer hyphens and contains the project name, it's likely the production URL
+						if hyphenCount <= 2 && strings.Contains(subdomain, projectName) {
+							productionURL := "https://" + alias
+							slog.Info("Found production alias", "url", productionURL, "subdomain", subdomain, "hyphens", hyphenCount)
+							return productionURL, nil
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback: construct the standard production URL
+	// Vercel's default production URL is https://<project-name>.vercel.app
+	productionURL := fmt.Sprintf("https://%s.vercel.app", projectName)
+	slog.Info("Using constructed production URL", "url", productionURL)
+	return productionURL, nil
+}
+
+// getProductionURLFromProjects retrieves the production URL using vercel projects command
+func (c *CLIVercelClient) getProductionURLFromProjects(projectName string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -244,7 +429,6 @@ func (c *CLIVercelClient) getLatestProductionURL(projectName string) (string, er
 		// Check if this line starts with our project name
 		if strings.HasPrefix(line, projectName) {
 			// Find the URL by looking for https:// in the line
-			// Use a more robust approach by splitting on multiple spaces
 			parts := strings.Split(line, "  ")
 			for _, part := range parts {
 				part = strings.TrimSpace(part)
@@ -266,7 +450,7 @@ func (c *CLIVercelClient) getLatestProductionURL(projectName string) (string, er
 		}
 	}
 
-	return "", errors.Errorf("could not find production URL for project %s in output: %s", projectName, string(output))
+	return "", errors.Errorf("could not find production URL for project %s", projectName)
 }
 
 // GetDeployment retrieves deployment information

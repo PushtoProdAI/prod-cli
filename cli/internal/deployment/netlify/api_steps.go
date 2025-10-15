@@ -163,22 +163,24 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, st
 
 	// Check if package.json exists
 	if _, err := os.Stat("package.json"); err == nil {
-		// Try npm install first
+		// Try npm install first with streaming output
 		installCmd := exec.CommandContext(buildCtx, "npm", "install")
 		installCmd.Env = env
-		installOutput, installErr := installCmd.CombinedOutput()
+		installCmd.Stdout = s.writer
+		installCmd.Stderr = s.writer
+		installErr := installCmd.Run()
 
 		if installErr != nil {
 			// If npm install fails, try yarn install
 			fmt.Fprintf(s.writer, "  📦 npm install failed, trying yarn install...\n")
 			yarnCmd := exec.CommandContext(buildCtx, "yarn", "install")
 			yarnCmd.Env = env
-			yarnOutput, yarnErr := yarnCmd.CombinedOutput()
+			yarnCmd.Stdout = s.writer
+			yarnCmd.Stderr = s.writer
+			yarnErr := yarnCmd.Run()
 
 			if yarnErr != nil {
-				// Both failed, show both outputs
-				fmt.Fprintf(s.writer, "  ❌ npm install failed:\n%s\n", string(installOutput))
-				fmt.Fprintf(s.writer, "  ❌ yarn install failed:\n%s\n", string(yarnOutput))
+				fmt.Fprintf(s.writer, "  ❌ Dependency installation failed\n")
 				return nil, errors.Errorf("failed to install dependencies: npm error: %w, yarn error: %w", installErr, yarnErr)
 			} else {
 				fmt.Fprintf(s.writer, "  ✅ Dependencies installed with yarn\n")
@@ -194,9 +196,10 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, st
 	fmt.Fprintf(s.writer, "  📦 Running Netlify build...\n")
 	cmd := exec.CommandContext(buildCtx, "netlify", "build")
 	cmd.Env = env
+	cmd.Stdout = s.writer
+	cmd.Stderr = s.writer
 
-	// Capture output
-	output, err := cmd.CombinedOutput()
+	err = cmd.Run()
 
 	if err != nil {
 		// Check if it was a timeout
@@ -211,33 +214,24 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, st
 			// Use shell to handle complex commands properly
 			shellCmd := exec.CommandContext(buildCtx, "sh", "-c", s.buildCommand)
 			shellCmd.Env = env
+			shellCmd.Stdout = s.writer
+			shellCmd.Stderr = s.writer
 
-			buildOutput, buildErr := shellCmd.CombinedOutput()
-
-			// Write output to writer
-			if len(buildOutput) > 0 {
-				fmt.Fprintf(s.writer, "  Build output:\n%s\n", string(buildOutput))
-			}
+			buildErr := shellCmd.Run()
 
 			if buildErr != nil {
 				if buildCtx.Err() == context.DeadlineExceeded {
 					return nil, errors.Errorf("build timed out after %v", defaultBuildTimeout)
 				}
-				return nil, errors.Errorf("build failed: %w\nOutput: %s", buildErr, string(buildOutput))
+				return nil, errors.Errorf("build failed: %w", buildErr)
 			}
 		} else {
 			// No custom build command, netlify build failed
-			fmt.Fprintf(s.writer, "  Build output:\n%s\n", string(output))
 			return nil, errors.Errorf("netlify build failed: %w", err)
 		}
 	} else {
-		// Netlify build succeeded, show output
-		if len(output) > 0 {
-			fmt.Fprintf(s.writer, "  Build output:\n%s\n", string(output))
-		}
+		fmt.Fprintf(s.writer, "  ✅ Build completed successfully\n")
 	}
-
-	fmt.Fprintf(s.writer, "  ✅ Build completed successfully\n")
 
 	// Return build configuration for the deploy step
 	return map[string]interface{}{

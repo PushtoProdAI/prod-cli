@@ -145,3 +145,7 @@ func (m *MockFlyioClient) GetAppLogs(ctx context.Context, appID string) ([]LogEn
 func (m *MockFlyioClient) GetAppMetrics(ctx context.Context, appID string) (*AppMetrics, error) {
 	return &AppMetrics{}, nil
 }
+
+func (m *MockFlyioClient) ListPostgres(ctx context.Context) ([]FlyioPostgresCluster, error) {
+	return []FlyioPostgresCluster{}, nil
+}

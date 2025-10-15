@@ -53,16 +53,19 @@ type Service struct {
 }
 
 type DeploymentSpec struct {
-	Name             string
-	Language         string
-	Services         []Service
-	Metadata         map[string]any
-	BuildCommand     string
-	StartCommand     string
-	MigrationCommand string
-	EnvVars          []EnvVar
-	OutputDir        string
-	IsStatic         bool
+	Name              string
+	Language          string
+	Services          []Service
+	Metadata          map[string]any
+	BuildCommand      string
+	StartCommand      string
+	MigrationCommand  string
+	EnvVars           []EnvVar
+	OutputDir         string
+	IsStatic          bool
+	IsUpdate          bool
+	ExistingProjectID string
+	ExistingDatabases []string
 }
 
 type CostService struct {

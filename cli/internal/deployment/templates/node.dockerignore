@@ -26,6 +26,14 @@ out
 .parcel-cache
 .webpack
 
+# Platform-specific build outputs
+.vercel
+.netlify
+.render
+.fly
+.railway
+.heroku
+
 # Development files
 .env.local
 .env.development.local

@@ -14,18 +14,20 @@ import (
 
 // FlyioDeploymentAdapter implements the DeploymentAdapter interface for Fly.io
 type FlyioDeploymentAdapter struct {
-	client         FlyioClient
-	writer         io.Writer
-	pricingService pricing.Service
-	llmClient      llm.Client
+	client          FlyioClient
+	writer          io.Writer
+	pricingService  pricing.Service
+	llmClient       llm.Client
+	dockerGenerator *deployment.DockerGenerator
 }
 
 // NewFlyioDeploymentAdapter creates a new Fly.io deployment adapter
 func NewFlyioDeploymentAdapter(client FlyioClient, writer io.Writer, llmClient llm.Client) *FlyioDeploymentAdapter {
 	return &FlyioDeploymentAdapter{
-		client:    client,
-		writer:    writer,
-		llmClient: llmClient,
+		client:          client,
+		writer:          writer,
+		llmClient:       llmClient,
+		dockerGenerator: deployment.NewDockerGenerator(writer, []deployment.EnvVar{}),
 	}
 }
 
@@ -40,7 +42,7 @@ func NewFlyioDeploymentAdapterWithPricing(client FlyioClient, writer io.Writer, 
 
 // NewDefaultFlyioDeploymentAdapter creates a deployment adapter with the default client
 func NewDefaultFlyioDeploymentAdapter(writer io.Writer, llmClient llm.Client) *FlyioDeploymentAdapter {
-	return NewFlyioDeploymentAdapter(NewFlyioClient(), writer, llmClient)
+	return NewFlyioDeploymentAdapter(NewFlyctlClient(writer), writer, llmClient)
 }
 
 // SupportedStrategies returns the deployment strategies supported by Fly.io
@@ -58,7 +60,7 @@ func (fda *FlyioDeploymentAdapter) GenerateArtifacts(spec *deployment.Deployment
 	if strategy != deployment.StrategyFlyio {
 		return nil, errors.Errorf("unsupported deployment strategy for Fly.io: %s (only %s is supported)", strategy, deployment.StrategyFlyio)
 	}
-	return NewFlyioQueuedDeployment(fda.client, spec, fda.writer), nil
+	return NewFlyioQueuedDeployment(fda.client, spec, fda.dockerGenerator, fda.writer), nil
 }
 
 // GenerateArtifactsWithSource generates deployment artifacts with source path
@@ -74,7 +76,7 @@ func (fda *FlyioDeploymentAdapter) GenerateArtifactsWithSource(spec *deployment.
 	}
 	spec.Metadata["buildContext"] = sourcePath
 
-	return NewFlyioQueuedDeployment(fda.client, spec, fda.writer), nil
+	return NewFlyioQueuedDeployment(fda.client, spec, fda.dockerGenerator, fda.writer), nil
 }
 
 // EstimateCost estimates the cost of deployment on Fly.io

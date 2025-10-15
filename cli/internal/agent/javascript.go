@@ -184,6 +184,11 @@ func (a *Activities) updateJavaScriptConfig(_ context.Context, plan DeployPlan) 
 				return JavaScriptConfigResult{}, errors.Errorf("failed to create .prod directory: %w", err)
 			}
 
+			if err := ensureInGitignore(projectPath, ".prod"); err != nil {
+				a.uiWriter.SendStatusComplete("configuring", "❌ Failed to update .gitignore")
+				return JavaScriptConfigResult{}, errors.Errorf("failed to update .gitignore: %w", err)
+			}
+
 			// Create backup for package.json
 			packageJsonBackupPath := filepath.Join(prodDir, fmt.Sprintf("package.json.%s.bak", time.Now().Format("20060102-150405")))
 			if err := os.WriteFile(packageJsonBackupPath, origPackageJson, 0644); err != nil {

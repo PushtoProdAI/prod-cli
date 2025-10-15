@@ -278,9 +278,10 @@ type BuildProjectStep struct {
 	sourcePath       string
 	envVars          []deployment.EnvVar
 	writer           io.Writer
+	production       bool
 }
 
-func NewBuildProjectStep(buildCommand, migrationCommand, sourcePath string, envVars []deployment.EnvVar, writer io.Writer) *BuildProjectStep {
+func NewBuildProjectStep(buildCommand, migrationCommand, sourcePath string, envVars []deployment.EnvVar, writer io.Writer, production bool) *BuildProjectStep {
 	return &BuildProjectStep{
 		BaseStep: BaseStep{
 			ID:           "build-project",
@@ -292,6 +293,7 @@ func NewBuildProjectStep(buildCommand, migrationCommand, sourcePath string, envV
 		sourcePath:       sourcePath,
 		envVars:          envVars,
 		writer:           writer,
+		production:       production,
 	}
 }
 
@@ -329,10 +331,12 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client VercelClient, ste
 
 	// Check if package.json exists
 	if _, err := os.Stat("package.json"); err == nil {
-		// Try npm install first
+		// Try npm install first with streaming output
 		installCmd := exec.CommandContext(buildCtx, "npm", "install")
 		installCmd.Env = env
-		installOutput, installErr := installCmd.CombinedOutput()
+		installCmd.Stdout = s.writer
+		installCmd.Stderr = s.writer
+		installErr := installCmd.Run()
 
 		if installErr != nil {
 			// Check if it was a timeout
@@ -344,16 +348,16 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client VercelClient, ste
 			fmt.Fprintf(s.writer, "  📦 npm install failed, trying yarn install...\n")
 			yarnCmd := exec.CommandContext(buildCtx, "yarn", "install")
 			yarnCmd.Env = env
-			yarnOutput, yarnErr := yarnCmd.CombinedOutput()
+			yarnCmd.Stdout = s.writer
+			yarnCmd.Stderr = s.writer
+			yarnErr := yarnCmd.Run()
 
 			if yarnErr != nil {
 				// Check if yarn also timed out
 				if buildCtx.Err() == context.DeadlineExceeded {
 					return nil, errors.Errorf("yarn install timed out after %v", defaultBuildTimeout)
 				}
-				// Both failed, show both outputs
-				fmt.Fprintf(s.writer, "  ❌ npm install failed:\n%s\n", string(installOutput))
-				fmt.Fprintf(s.writer, "  ❌ yarn install failed:\n%s\n", string(yarnOutput))
+				fmt.Fprintf(s.writer, "  ❌ Dependency installation failed\n")
 				return nil, errors.Errorf("failed to install dependencies: npm error: %w, yarn error: %w", installErr, yarnErr)
 			} else {
 				fmt.Fprintf(s.writer, "  ✅ Dependencies installed with yarn\n")
@@ -380,7 +384,7 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client VercelClient, ste
 
 	// Use Vercel build
 	fmt.Fprintf(s.writer, "  🏗️  Running Vercel build...\n")
-	if err := client.BuildProject(vercelEnvVars); err != nil {
+	if err := client.BuildProject(vercelEnvVars, s.production); err != nil {
 		return nil, errors.Errorf("build failed: %w", err)
 	}
 
@@ -415,12 +419,13 @@ func (s *BuildProjectStep) Rollback(ctx context.Context, client VercelClient, st
 // DeployVercelProjectStep deploys the project
 type DeployVercelProjectStep struct {
 	BaseStep
-	projectDependency string
-	buildDependency   string
-	sourcePath        string
+	projectDependency  string
+	buildDependency    string
+	sourcePath         string
+	deployToProduction bool
 }
 
-func NewDeployVercelProjectStep(projectDependency, buildDependency, sourcePath string) *DeployVercelProjectStep {
+func NewDeployVercelProjectStep(projectDependency, buildDependency, sourcePath string, deployToProduction bool) *DeployVercelProjectStep {
 	dependencies := []string{projectDependency}
 	if buildDependency != "" {
 		dependencies = append(dependencies, buildDependency)
@@ -432,9 +437,10 @@ func NewDeployVercelProjectStep(projectDependency, buildDependency, sourcePath s
 			Description:  "Deploy project to Vercel",
 			Dependencies: dependencies,
 		},
-		projectDependency: projectDependency,
-		buildDependency:   buildDependency,
-		sourcePath:        sourcePath,
+		projectDependency:  projectDependency,
+		buildDependency:    buildDependency,
+		sourcePath:         sourcePath,
+		deployToProduction: deployToProduction,
 	}
 }
 
@@ -463,7 +469,7 @@ func (s *DeployVercelProjectStep) Execute(ctx context.Context, client VercelClie
 		defer os.Chdir(originalDir)
 	}
 
-	deploy, err := client.DeployProject(resource.Name)
+	deploy, err := client.DeployProject(resource.Name, s.deployToProduction)
 	if err != nil {
 		return nil, errors.Errorf("failed to deploy project: %w", err)
 	}
@@ -483,5 +489,74 @@ func (s *DeployVercelProjectStep) Execute(ctx context.Context, client VercelClie
 
 func (s *DeployVercelProjectStep) Rollback(ctx context.Context, client VercelClient, stepResults map[string]any) error {
 	// Vercel deployments are immutable - no rollback needed
+	return nil
+}
+
+type PromoteDeploymentStep struct {
+	BaseStep
+	deploymentDependency string
+	projectDependency    string
+}
+
+func NewPromoteDeploymentStep(deploymentDependency, projectDependency string) *PromoteDeploymentStep {
+	return &PromoteDeploymentStep{
+		BaseStep: BaseStep{
+			ID:           "promote-deployment",
+			Description:  "Promote deployment to production",
+			Dependencies: []string{deploymentDependency, projectDependency},
+		},
+		deploymentDependency: deploymentDependency,
+		projectDependency:    projectDependency,
+	}
+}
+
+func (s *PromoteDeploymentStep) Execute(ctx context.Context, client VercelClient, stepResults map[string]any) (any, error) {
+	deploymentResult, ok := stepResults[s.deploymentDependency]
+	if !ok {
+		return nil, errors.Errorf("deployment dependency %s not found in results", s.deploymentDependency)
+	}
+
+	resource, ok := deploymentResult.(deployment.CreatedResource)
+	if !ok {
+		return nil, errors.Errorf("deployment dependency result is not a CreatedResource")
+	}
+
+	deploymentURL, ok := resource.Metadata["url"].(string)
+	if !ok || deploymentURL == "" {
+		return nil, errors.Errorf("deployment URL not found in metadata")
+	}
+
+	// Get project name from project dependency
+	projectResult, ok := stepResults[s.projectDependency]
+	if !ok {
+		return nil, errors.Errorf("project dependency %s not found in results", s.projectDependency)
+	}
+
+	projectResource, ok := projectResult.(deployment.CreatedResource)
+	if !ok {
+		return nil, errors.Errorf("project dependency result is not a CreatedResource")
+	}
+
+	productionURL, err := client.PromoteDeployment(deploymentURL, projectResource.Name)
+	if err != nil {
+		return nil, errors.Errorf("failed to promote deployment: %w", err)
+	}
+
+	// Return the production URL as a CreatedResource so it gets used for health checks
+	return deployment.CreatedResource{
+		ID:   resource.ID,
+		Type: "vercel_deployment",
+		Name: resource.Name,
+		Metadata: map[string]any{
+			"url":        productionURL,
+			"project_id": resource.Metadata["project_id"],
+			"ready":      true,
+			"created_at": resource.Metadata["created_at"],
+			"promoted":   true,
+		},
+	}, nil
+}
+
+func (s *PromoteDeploymentStep) Rollback(ctx context.Context, client VercelClient, stepResults map[string]any) error {
 	return nil
 }
