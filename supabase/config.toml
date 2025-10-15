@@ -410,9 +410,14 @@ entrypoint = "./functions/cli-auth/index.ts"
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/cli-auth/*.html" ]
 
+[functions.deployment-logger]
+enabled = true
+verify_jwt = true
+import_map = "./functions/deployment-logger/deno.json"
+entrypoint = "./functions/deployment-logger/index.ts"
+
 [functions.llm-proxy]
 enabled = true
 verify_jwt = true
 import_map = "./functions/llm-proxy/deno.json"
 entrypoint = "./functions/llm-proxy/index.ts"
-
