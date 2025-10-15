@@ -34,6 +34,17 @@ func (vqd *VercelQueuedDeployment) Deploy(ctx context.Context) ([]deployment.Cre
 	var createdResources []deployment.CreatedResource
 	stepResults := make(map[string]any)
 
+	// For updates, inject existing project info
+	if vqd.spec.IsUpdate && vqd.spec.ExistingProjectID != "" {
+		existingProject := deployment.CreatedResource{
+			ID:   vqd.spec.ExistingProjectID,
+			Type: "vercel_project",
+			Name: vqd.spec.Name,
+		}
+		stepResults["existing-project"] = existingProject
+		createdResources = append(createdResources, existingProject)
+	}
+
 	// Track executed steps for rollback
 	var executedSteps []VercelAPIStep
 
@@ -64,7 +75,18 @@ func (vqd *VercelQueuedDeployment) Deploy(ctx context.Context) ([]deployment.Cre
 
 		// Convert result to CreatedResource if applicable
 		if resource, ok := result.(deployment.CreatedResource); ok {
-			createdResources = append(createdResources, resource)
+			// For promote-deployment step, replace the previous deployment resource
+			if step.GetID() == "promote-deployment" {
+				// Find and replace the deployment resource
+				for i, cr := range createdResources {
+					if cr.Type == "vercel_deployment" {
+						createdResources[i] = resource
+						break
+					}
+				}
+			} else {
+				createdResources = append(createdResources, resource)
+			}
 		}
 
 		fmt.Fprintf(vqd.writer, "✅ Completed: %s\n", step.GetDescription())
@@ -87,39 +109,43 @@ func (vqd *VercelQueuedDeployment) Deploy(ctx context.Context) ([]deployment.Cre
 func (vqd *VercelQueuedDeployment) GenerateAPISteps() []VercelAPIStep {
 	var steps []VercelAPIStep
 
-	// Step 1: Create project
-	createProjectStep := NewCreateVercelProjectStep(vqd.spec.Name, "", nil)
-	steps = append(steps, createProjectStep)
+	projectStepID := "existing-project"
 
-	// Step 2: Link CLI to project
-	linkStep := NewLinkVercelProjectStep("create-project", vqd.getSourcePath(), vqd.writer)
-	steps = append(steps, linkStep)
+	if vqd.spec.IsUpdate {
+		// For updates, .vercel directory already exists with project config
+		// No need to create or link project
+	} else {
+		createProjectStep := NewCreateVercelProjectStep(vqd.spec.Name, "", nil)
+		steps = append(steps, createProjectStep)
 
-	// Step 3: Set all environment variables after linking
+		linkStep := NewLinkVercelProjectStep("create-project", vqd.getSourcePath(), vqd.writer)
+		steps = append(steps, linkStep)
+		projectStepID = "create-project" // Use create-project for downstream steps since it has the CreatedResource
+	}
+
 	if len(vqd.spec.EnvVars) > 0 {
 		envVars := make(map[string]string)
 		for _, env := range vqd.spec.EnvVars {
 			envVars[env.Name] = env.Value
 		}
-		envStep := NewSetEnvironmentVariablesStep("create-project", "link-project", vqd.getSourcePath(), envVars, vqd.writer)
+		envStep := NewSetEnvironmentVariablesStep(projectStepID, "link-project", vqd.getSourcePath(), envVars, vqd.writer)
 		steps = append(steps, envStep)
 	}
 
-	// Step 4: Pull project configuration from Vercel
 	pullStep := NewPullProjectStep("link-project", vqd.getSourcePath(), vqd.writer)
 	steps = append(steps, pullStep)
 
-	// Step 5: Build project (required for --prebuilt deployment)
 	if vqd.spec.BuildCommand != "" {
-		buildStep := NewBuildProjectStep(vqd.spec.BuildCommand, vqd.spec.MigrationCommand, vqd.getSourcePath(), vqd.spec.EnvVars, vqd.writer)
+		buildStep := NewBuildProjectStep(vqd.spec.BuildCommand, vqd.spec.MigrationCommand, vqd.getSourcePath(), vqd.spec.EnvVars, vqd.writer, true)
 		steps = append(steps, buildStep)
 	}
 
-	// Step 5: Deploy the project
+	// Always deploy to production
 	deployStep := NewDeployVercelProjectStep(
-		"create-project",
+		projectStepID,
 		vqd.getBuildStepID(),
 		vqd.getSourcePath(),
+		true, // Always deploy to production
 	)
 	steps = append(steps, deployStep)
 

@@ -47,3 +47,11 @@ docs/
 .github
 .gitlab-ci.yml
 .travis.yml
+
+# Platform-specific build outputs
+.vercel
+.netlify
+.render
+.fly
+.railway
+.heroku

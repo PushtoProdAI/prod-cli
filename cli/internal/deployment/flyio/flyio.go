@@ -43,62 +43,40 @@ const (
 // Language-specific configuration
 var languageConfig = map[string]LanguageConfig{
 	"python": {
-		Builder:      "paketobuildpacks/builder:base",
 		InternalPort: 8000,
-		BuildArgs:    []string{},
 	},
 	"node": {
-		Builder:      "paketobuildpacks/builder:base",
 		InternalPort: 3000,
-		BuildArgs:    []string{},
 	},
 	"nodejs": {
-		Builder:      "paketobuildpacks/builder:base",
 		InternalPort: 3000,
-		BuildArgs:    []string{},
 	},
 	"javascript": {
-		Builder:      "paketobuildpacks/builder:base",
 		InternalPort: 3000,
-		BuildArgs:    []string{},
 	},
 	"go": {
-		Builder:      "paketobuildpacks/builder:base",
 		InternalPort: 8080,
-		BuildArgs:    []string{},
 	},
 	"golang": {
-		Builder:      "paketobuildpacks/builder:base",
 		InternalPort: 8080,
-		BuildArgs:    []string{},
 	},
 	"ruby": {
-		Builder:      "paketobuildpacks/builder:base",
 		InternalPort: 3000,
-		BuildArgs:    []string{},
 	},
 	"php": {
-		Builder:      "paketobuildpacks/builder:base",
 		InternalPort: 8000,
-		BuildArgs:    []string{},
 	},
 	"rust": {
-		Builder:      "paketobuildpacks/builder:base",
 		InternalPort: 8080,
-		BuildArgs:    []string{},
 	},
 	"java": {
-		Builder:      "paketobuildpacks/builder:base",
 		InternalPort: 8080,
-		BuildArgs:    []string{},
 	},
 }
 
 // LanguageConfig holds language-specific deployment configuration
 type LanguageConfig struct {
-	Builder      string
 	InternalPort int
-	BuildArgs    []string
 }
 
 // GetLanguageConfig returns configuration for a specific language
@@ -108,9 +86,7 @@ func GetLanguageConfig(language string) LanguageConfig {
 	}
 	// Return default configuration for unknown languages
 	return LanguageConfig{
-		Builder:      "paketobuildpacks/builder:base",
 		InternalPort: defaultHTTPPort,
-		BuildArgs:    []string{},
 	}
 }
 

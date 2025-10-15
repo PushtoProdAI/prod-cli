@@ -86,21 +86,24 @@ func (se *StepExecutor) ExecuteStep(ctx context.Context, step RenderAPIStep) err
 		return err
 	}
 
-	// Store the result for future steps to use
 	se.stepResults[step.GetID()] = result
 
-	// Track executed step for rollback
 	se.executedSteps = append(se.executedSteps, step)
 
-	// Track created resources for rollback (if the result is a resource)
 	if result != nil {
 		switch res := result.(type) {
 		case *RenderService:
-			se.createdResources = append(se.createdResources, deployment.CreatedResource{
+			cr := deployment.CreatedResource{
 				ID:   res.ID,
 				Type: res.Type,
 				Name: res.Name,
-			})
+			}
+
+			if extra, ok := se.stepResults["trigger_deploy_extra"].(map[string]any); ok {
+				cr.Metadata = extra
+			}
+
+			se.createdResources = append(se.createdResources, cr)
 		}
 	}
 	return nil

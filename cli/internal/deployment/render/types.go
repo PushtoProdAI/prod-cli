@@ -78,6 +78,15 @@ type RegistryCredential struct {
 	UpdatedAt   string `json:"updatedAt"`
 }
 
+type UpdateRegistryCredentialRequest struct {
+	Username  string `json:"username"`
+	AuthToken string `json:"authToken"`
+}
+
+type UpdateServiceImageRequest struct {
+	ImagePath string `json:"imagePath"`
+}
+
 type WebServiceDetails struct {
 	Runtime                    string
 	Plan                       string
@@ -135,6 +144,20 @@ type RenderWebService struct {
 	ServiceDetails ServiceDetails `json:"serviceDetails"`
 }
 
+type RenderDeploy struct {
+	ID        string `json:"id"`
+	Commit    Commit `json:"commit"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
+}
+
+type Commit struct {
+	ID        string `json:"id"`
+	Message   string `json:"message"`
+	CreatedAt string `json:"createdAt"`
+}
+
 type RenderPostgres struct {
 	RenderService
 	Status       string `json:"status"`
@@ -187,10 +210,14 @@ type RenderClient interface {
 
 	// Services
 	CreateWebService(ctx context.Context, req CreateWebServiceRequest) (*RenderService, error)
+	UpdateServiceImage(ctx context.Context, serviceID string, req UpdateServiceImageRequest) error
 	CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*RenderService, error)
 	CreateRedis(ctx context.Context, req CreateRedisRequest) (*RenderService, error)
 	GetWebService(ctx context.Context, serviceID string) (*RenderWebService, error)
 	GetPostgres(ctx context.Context, serviceID string) (*RenderPostgres, error)
+	ListServices(ctx context.Context, name string) ([]RenderService, error)
+	ListPostgres(ctx context.Context) ([]RenderPostgres, error)
+	ListRedis(ctx context.Context) ([]RenderService, error)
 
 	// Connection Info
 	GetPostgresConnectionInfo(ctx context.Context, serviceID string) (*PostgresConnectionInfo, error)
@@ -202,4 +229,11 @@ type RenderClient interface {
 	// Registry Credentials
 	ListRegistryCredentials(ctx context.Context, ownerID string) ([]*RegistryCredential, error)
 	CreateRegistryCredential(ctx context.Context, req CreateRegistryCredentialRequest) (*RegistryCredential, error)
+	UpdateRegistryCredential(ctx context.Context, credID string, req UpdateRegistryCredentialRequest) (*RegistryCredential, error)
+	DeleteRegistryCredential(ctx context.Context, credID string) error
+
+	// Deploys
+	TriggerDeploy(ctx context.Context, serviceID string) (*RenderDeploy, error)
+	GetDeploy(ctx context.Context, serviceID, deployID string) (*RenderDeploy, error)
+	ListDeploys(ctx context.Context, serviceID string) ([]*RenderDeploy, error)
 }

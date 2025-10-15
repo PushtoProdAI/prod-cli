@@ -15,6 +15,7 @@ type FlyioClient interface {
 
 	// Databases
 	CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*FlyioPostgresCluster, error)
+	ListPostgres(ctx context.Context) ([]FlyioPostgresCluster, error)
 	CreateRedis(ctx context.Context, req CreateRedisRequest) (*FlyioRedis, error)
 	GetPostgresConnectionInfo(ctx context.Context, appID string) (*PostgresConnectionInfo, error)
 	GetRedisConnectionInfo(ctx context.Context, appID string) (*RedisConnectionInfo, error)
@@ -31,14 +32,20 @@ type FlyioClient interface {
 
 // FlyioApp represents a Fly.io application
 type FlyioApp struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-	Region    string `json:"region"`
-	CreatedAt int64  `json:"created_at"` // Unix timestamp in milliseconds
-	UpdatedAt int64  `json:"updated_at"` // Unix timestamp in milliseconds
-	Hostname  string `json:"Hostname"`
-	AppURL    string `json:"AppURL"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Status       string            `json:"status"`
+	Region       string            `json:"region"`
+	CreatedAt    int64             `json:"created_at"` // Unix timestamp in milliseconds
+	UpdatedAt    int64             `json:"updated_at"` // Unix timestamp in milliseconds
+	Hostname     string            `json:"Hostname"`
+	AppURL       string            `json:"AppURL"`
+	Organization FlyioOrganization `json:"Organization"`
+}
+
+// FlyioOrganization represents organization info
+type FlyioOrganization struct {
+	Slug string `json:"Slug"`
 }
 
 // CreateAppRequest for creating a new Fly.io app
@@ -62,7 +69,6 @@ type FlyioConfig struct {
 
 // BuildConfig for Fly.io app build configuration
 type BuildConfig struct {
-	Builder    string `json:"builder,omitempty"`
 	BuildCmd   string `json:"build_cmd,omitempty"`
 	StartCmd   string `json:"start_cmd,omitempty"`
 	Dockerfile string `json:"dockerfile,omitempty"`
@@ -98,14 +104,15 @@ type FlyioPostgres struct {
 
 // FlyioPostgresCluster represents a Fly.io Managed Postgres cluster
 type FlyioPostgresCluster struct {
-	ID               string `json:"id"`   // Cluster ID like "q49ypo4wg5qr17ln"
-	Name             string `json:"name"` // User-friendly name
-	Organization     string `json:"organization"`
-	Region           string `json:"region"`
-	Plan             string `json:"plan"`      // "basic", "production", etc.
-	DiskSize         string `json:"disk_size"` // "10GB"
-	PostGIS          bool   `json:"postgis"`
-	ConnectionString string `json:"connection_string"` // Full connection string
+	ID               string            `json:"id"`   // Cluster ID like "q49ypo4wg5qr17ln"
+	Name             string            `json:"name"` // User-friendly name
+	Organization     FlyioOrganization `json:"organization"`
+	Region           string            `json:"region"`
+	Status           string            `json:"status"`    // "ready", "provisioning", etc.
+	Plan             string            `json:"plan"`      // "basic", "production", etc.
+	DiskSize         string            `json:"disk_size"` // "10GB"
+	PostGIS          bool              `json:"postgis"`
+	ConnectionString string            `json:"connection_string"` // Full connection string
 }
 
 // CreatePostgresRequest for creating a PostgreSQL database/cluster

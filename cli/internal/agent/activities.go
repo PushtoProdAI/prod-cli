@@ -12,7 +12,7 @@ import (
 const (
 	AgentDetermineIntent           = "agent.determineIntent"
 	AgentAnalyzeProject            = "agent.analyzeProject"
-	AgentSummarizeIntent           = "agent.summarize"
+	AgentSummarize                 = "agent.summarize"
 	AgentGetRenderWorkspace        = "agent.getRenderWorkspace"
 	AgentDeploySteps               = "agent.deploySteps"
 	AgentSummarizeDeploySteps      = "agent.summarizeDeploySteps"
@@ -22,6 +22,7 @@ const (
 	AgentEstimateNetlifyCosts      = "agent.estimateNetlifyCosts"
 	AgentEstimateVercelCosts       = "agent.estimateVercelCosts"
 	AgentGetRenderServiceURL       = "agent.getRenderServiceURL"
+	AgentWaitForRenderDeploy       = "agent.waitForRenderDeploy"
 	AgentIsURLLive                 = "agent.isURLLive"
 	AgentSendProjectStats          = "agent.sendProjectStats"
 	AgentGetFlyIOAppURL            = "agent.getFlyIOAppURL"
@@ -36,6 +37,9 @@ const (
 	AgentUpdateJavaScriptConfig    = "agent.updateJavaScriptConfig"
 	AgentRestoreConfigFromBackup   = "agent.restoreConfigFromBackup"
 	AgentPrepareDeployment         = "agent.prepareDeployment"
+	AgentCheckExistingProject      = "agent.checkExistingProject"
+	AgentDetectProject             = "agent.detectProject"
+	AgentBuildDetectionSummary     = "agent.buildDetectionSummary"
 	AgentLogDeploymentStart        = "agent.logDeploymentStart"
 	AgentUpdateDeploymentStatus    = "agent.updateDeploymentStatus"
 )
@@ -52,7 +56,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 	return []workflowext.Activity{
 		{Name: AgentDetermineIntent, ActFunc: a.determineIntent},
 		{Name: AgentAnalyzeProject, ActFunc: a.analyze},
-		{Name: AgentSummarizeIntent, ActFunc: a.summarize},
+		{Name: AgentSummarize, ActFunc: a.summarize},
 		{Name: AgentGetRenderWorkspace, ActFunc: a.getRenderWorkspace},
 		{Name: AgentSummarizeDeploySteps, ActFunc: a.summarizeDeploySteps},
 		{Name: AgentDeploySteps, ActFunc: a.deploySteps},
@@ -62,6 +66,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentEstimateNetlifyCosts, ActFunc: a.estimateNetlifyCosts},
 		{Name: AgentEstimateVercelCosts, ActFunc: a.estimateVercelCosts},
 		{Name: AgentGetRenderServiceURL, ActFunc: a.getRenderServiceURL},
+		{Name: AgentWaitForRenderDeploy, ActFunc: a.waitForRenderDeploy},
 		{Name: AgentIsURLLive, ActFunc: a.isURLLive},
 		{Name: AgentSendProjectStats, ActFunc: a.sendProjectStats},
 		{Name: AgentGetFlyIOAppURL, ActFunc: a.getFlyIOAppURL},
@@ -76,6 +81,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentUpdateJavaScriptConfig, ActFunc: a.updateJavaScriptConfig},
 		{Name: AgentRestoreConfigFromBackup, ActFunc: a.restoreFromBackup},
 		{Name: AgentPrepareDeployment, ActFunc: a.prepareDeployment},
+		{Name: AgentCheckExistingProject, ActFunc: a.checkExistingProject},
 		{Name: AgentLogDeploymentStart, ActFunc: a.logDeploymentStart},
 		{Name: AgentUpdateDeploymentStatus, ActFunc: a.updateDeploymentStatus},
 	}
