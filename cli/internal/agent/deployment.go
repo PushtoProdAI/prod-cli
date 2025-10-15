@@ -97,11 +97,7 @@ func (a *Activities) summarizeDeploySteps(ctx context.Context, steps []string) e
 	}
 	a.uiWriter.SendStatusComplete("summarizing", "")
 
-	type infoBoxSender interface {
-		SendInfoBox(title string, content string, icon string)
-	}
-
-	if tuiWriter, ok := a.uiWriter.(infoBoxSender); ok {
+	if tuiWriter, ok := a.uiWriter.(output.InfoBoxWriter); ok {
 		slog.Info("Sending info box for deployment steps", "hasContent", summaryText != "")
 		tuiWriter.SendInfoBox("Deployment Steps", summaryText, "📋")
 	} else {

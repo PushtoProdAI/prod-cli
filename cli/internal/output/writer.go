@@ -143,6 +143,11 @@ type StatusWriter interface {
 	SendStatusComplete(status, message string)
 }
 
+// InfoBoxWriter defines the interface for sending info box messages
+type InfoBoxWriter interface {
+	SendInfoBox(title string, content string, icon string)
+}
+
 // NoOpWriter implements Writer but discards all output
 type NoOpWriter struct{}
 
@@ -343,11 +348,7 @@ func (p *ProxyWriter) SendInfoBox(title string, content string, icon string) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	type infoBoxSender interface {
-		SendInfoBox(title string, content string, icon string)
-	}
-
-	if sender, ok := p.target.(infoBoxSender); ok {
+	if sender, ok := p.target.(InfoBoxWriter); ok {
 		sender.SendInfoBox(title, content, icon)
 	} else {
 		fmt.Fprintf(p.target, "\n%s %s\n%s\n", icon, title, content)
