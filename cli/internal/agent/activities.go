@@ -40,6 +40,8 @@ const (
 	AgentCheckExistingProject      = "agent.checkExistingProject"
 	AgentDetectProject             = "agent.detectProject"
 	AgentBuildDetectionSummary     = "agent.buildDetectionSummary"
+	AgentLogDeploymentStart        = "agent.logDeploymentStart"
+	AgentUpdateDeploymentStatus    = "agent.updateDeploymentStatus"
 )
 
 type Activities struct {
@@ -80,5 +82,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentRestoreConfigFromBackup, ActFunc: a.restoreFromBackup},
 		{Name: AgentPrepareDeployment, ActFunc: a.prepareDeployment},
 		{Name: AgentCheckExistingProject, ActFunc: a.checkExistingProject},
+		{Name: AgentLogDeploymentStart, ActFunc: a.logDeploymentStart},
+		{Name: AgentUpdateDeploymentStatus, ActFunc: a.updateDeploymentStatus},
 	}
 }

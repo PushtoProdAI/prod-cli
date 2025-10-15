@@ -76,6 +76,109 @@ func (c *Client) RecordRequestedStack(ctx context.Context, authToken string, pla
 	return nil
 }
 
+// LogDeploymentOperation logs a deployment operation to the audit system
+func (c *Client) LogDeploymentOperation(ctx context.Context, authToken string, operation map[string]any) (string, error) {
+	payload := map[string]any{
+		"action": "log_deployment",
+		"data":   operation,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return "", errors.Errorf("failed to marshal deployment operation data: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/deployment-logger", getBaseURL())
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", errors.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", errors.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", errors.Errorf("deployment logger request failed with status: %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Success bool   `json:"success"`
+		Data    string `json:"data"`
+		Error   string `json:"error,omitempty"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", errors.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.Success {
+		return "", errors.Errorf("deployment logger returned error: %s", result.Error)
+	}
+
+	return result.Data, nil
+}
+
+// UpdateDeploymentOperation updates a deployment operation status
+func (c *Client) UpdateDeploymentOperation(ctx context.Context, authToken string, operationId string, status string, metadata map[string]any) error {
+	payload := map[string]any{
+		"action": "update_deployment",
+		"data": map[string]any{
+			"operation_id": operationId,
+			"status":       status,
+			"metadata":     metadata,
+		},
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return errors.Errorf("failed to marshal deployment update data: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/deployment-logger", getBaseURL())
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return errors.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return errors.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return errors.Errorf("deployment logger update request failed with status: %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error,omitempty"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return errors.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.Success {
+		return errors.Errorf("deployment logger update returned error: %s", result.Error)
+	}
+
+	return nil
+}
+
 // GetPushRegistryCredentials fetches temporary Docker registry credentials for pushing images. These are scoped to JUST being able to push to registries for the specified tenant
 func (c *Client) GetPushRegistryCredentials(ctx context.Context, authToken string, projectName string) (*RegistryCredentials, error) {
 	// Prepare request payload

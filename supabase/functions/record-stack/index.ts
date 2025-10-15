@@ -24,6 +24,8 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
+  console.log('record-stack function called', { method: req.method, url: req.url })
+  
   try {
     // Handle CORS preflight requests
     if (req.method === 'OPTIONS') {
@@ -36,14 +38,33 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
- 
+
+    // Extract access token from custom CLI token or use Authorization header directly
+    let accessToken = req.headers.get('authorization')?.replace('Bearer ', '')
+    console.log('Authentication token present:', !!accessToken)
+    
+    // If the token looks like a custom CLI token (base64 JSON), extract the access_token
+    if (accessToken && !accessToken.includes('.')) {
+      try {
+        const tokenData = JSON.parse(atob(accessToken))
+        if (tokenData.access_token) {
+          accessToken = tokenData.access_token
+          console.log('Extracted access token from custom CLI token')
+        }
+      } catch (error) {
+        console.log('Token is not a custom CLI token, using as-is')
+      }
+    }
+
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY"),
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     {
       global: {
-        headers: { Authorization: req.headers.get('Authorization')! },
-      },
+        headers: {
+          Authorization: accessToken ? `Bearer ${accessToken}` : undefined
+        }
+      }
     }
   )
 
@@ -55,7 +76,9 @@ Deno.serve(async (req) => {
     const serviceType = url.searchParams.get('service_type')
     const serviceProvider = url.searchParams.get('service_provider')
 
+
     try {
+
       const { data, error } = await supabase.rpc('get_stack_usage_stats', {
         p_platform: platform?.toLowerCase() || null,
         p_language: language?.toLowerCase() || null,
@@ -102,7 +125,13 @@ Deno.serve(async (req) => {
   let usageData: UsageData
   try {
     usageData = await req.json()
-  } catch {
+    console.log('Received usage data:', { 
+      platform: usageData.platform, 
+      language: usageData.language,
+      serviceRequirementsCount: usageData.serviceRequirements?.length || 0
+    })
+  } catch (error) {
+    console.error('Failed to parse JSON:', error)
     return new Response(
       JSON.stringify({ error: 'Invalid JSON' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -110,6 +139,10 @@ Deno.serve(async (req) => {
   }
 
   if (!usageData.language || !usageData.platform) {
+    console.error('Missing required fields:', { 
+      hasLanguage: !!usageData.language, 
+      hasPlatform: !!usageData.platform 
+    })
     return new Response(
       JSON.stringify({ error: 'Language and platform are required' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -121,13 +154,31 @@ Deno.serve(async (req) => {
     ? usageData.serviceRequirements
     : [{ type: 'none', provider: 'none' }] // Default service for basic usage of just a web app
 
+  console.log('Processing services:', servicesToProcess.map(s => ({ type: s.type, provider: s.provider })))
+
   for (const service of servicesToProcess) {
+    console.log('Updating usage stats for service:', { 
+      platform: usageData.platform, 
+      language: usageData.language, 
+      serviceType: service.type, 
+      serviceProvider: service.provider 
+    })
+    
     const { error } = await updateUsageStats(
       supabase,
       usageData.platform,
       usageData.language,
       service
     )
+    
+    if (error) {
+      console.error('Failed to update usage stats for service:', { 
+        service, 
+        error: String(error) 
+      })
+    } else {
+      console.log('Successfully updated usage stats for service:', service)
+    }
     
     if (error) {
       console.error('Error updating usage stats:', error)
@@ -146,6 +197,7 @@ Deno.serve(async (req) => {
     }
   }
 
+  console.log('Successfully processed all services for usage stats')
   return new Response(
     JSON.stringify({
       success: true,
@@ -176,11 +228,13 @@ async function updateUsageStats(
   language: string,
   service: ServiceRequirement
 ): Promise<{ error: unknown | null }> {
+  
   const { error } = await supabase.rpc('increment_requested_stack_usage', {
     p_platform: platform.toLowerCase(),
     p_language: language.toLowerCase(),
     p_service_type: service.type.toLowerCase(),
     p_service_provider: service.provider.toLowerCase()
   })
+  
   return { error }
 }
