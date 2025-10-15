@@ -31,6 +31,7 @@ const (
 	DryRunDeployWorkflowName           = "agent.dryRun.render"
 	DeployFlyioWorkflowName            = "agent.deploy.flyio"
 	CategorizeEnvVarsWorkflowName      = "agent.categorizeEnvVars"
+	DetectExistingWorkflowName         = "agent.detectExisting"
 	DryRunRenderWorkflowName           = "agent.dryrun.render"
 	DryRunFlyioWorkflowName            = "agent.dryrun.flyio"
 	DeployNetlifyWorkflowName          = "agent.deploy.netlify"
@@ -135,6 +136,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: DryRunDeployWorkflowName, WorkflowFunc: w.dryRunDeployRender},
 		{Name: DeployFlyioWorkflowName, WorkflowFunc: w.deployFly},
 		{Name: CategorizeEnvVarsWorkflowName, WorkflowFunc: w.categorizeEnvVars},
+		{Name: DetectExistingWorkflowName, WorkflowFunc: w.detectExistingWorkflow},
 		{Name: DryRunRenderWorkflowName, WorkflowFunc: w.dryRunDeployRender},
 		{Name: DryRunFlyioWorkflowName, WorkflowFunc: w.dryRunDeployFly},
 		{Name: DeployNetlifyWorkflowName, WorkflowFunc: w.deployNetlify},
@@ -183,6 +185,10 @@ func (Workflows) CategorizeEnvVars(ctx context.Context, c *client.Client, input 
 	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", CategorizeEnvVarsWorkflowName, time.Now().Unix())}, CategorizeEnvVarsWorkflowName, input)
 }
 
+func (Workflows) DetectExisting(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
+	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DetectExistingWorkflowName, time.Now().Unix())}, DetectExistingWorkflowName, input)
+}
+
 func (Workflows) SetupJavaScriptProject(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
 	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{
 		InstanceID: fmt.Sprintf("%s.%d", SetupJavaScriptProjectWorkflowName, time.Now().Unix()),
@@ -199,12 +205,10 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		token = session.AccessToken
 	}
 
-	// Check for existing project
-	existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentCheckExistingProject, input.Platform, input.Spec.Name, input.Source).Get(ctx)
-	if err != nil {
-		slog.Info("Failed to check for existing project", "error", err)
-	} else if existingProject.Exists {
-		slog.Info("Detected existing project", "name", existingProject.Name, "id", existingProject.ProjectID)
+	// Use existing project info from DeployPlan
+	existingProject := input.ExistingProjectInfo
+	if existingProject.Exists {
+		slog.Info("Using existing project from detection", "name", existingProject.Name, "id", existingProject.ProjectID, "databases", existingProject.ExistingDatabases)
 	}
 
 	// Validate Docker availability for Render
@@ -456,12 +460,10 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 		return deployResult{}, errors.New("workflow registry is not set")
 	}
 
-	// Check for existing project
-	existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentCheckExistingProject, input.Platform, input.Spec.Name, input.Source).Get(ctx)
-	if err != nil {
-		slog.Info("Failed to check for existing project", "error", err)
-	} else if existingProject.Exists {
-		slog.Info("Detected existing project", "name", existingProject.Name, "id", existingProject.ProjectID)
+	// Use existing project info from DeployPlan
+	existingProject := input.ExistingProjectInfo
+	if existingProject.Exists {
+		slog.Info("Using existing project from detection", "name", existingProject.Name, "id", existingProject.ProjectID, "databases", existingProject.ExistingDatabases)
 	}
 
 	envVars := input.CollectedEnvVars
@@ -727,6 +729,24 @@ func (w *Workflows) dryRunDeployFly(ctx workflow.Context, input DeployPlan) (Dry
 		ConflictChecks:   conflictChecks,
 		ValidationErrors: validationErrors,
 	}, nil
+}
+
+func (w *Workflows) detectExistingWorkflow(ctx workflow.Context, deployPlan DeployPlan) (ExistingProjectInfo, error) {
+	workflow.Logger(ctx).Info("starting detectExisting workflow", "platform", deployPlan.Platform, "project", deployPlan.Spec.Name)
+
+	existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentCheckExistingProject, deployPlan.Platform, deployPlan.Spec.Name, deployPlan.Source).Get(ctx)
+	if err != nil {
+		workflow.Logger(ctx).Error("Failed to check for existing project", "error", err)
+		return ExistingProjectInfo{}, err
+	}
+
+	if existingProject.Exists {
+		workflow.Logger(ctx).Info("Detected existing project", "name", existingProject.Name, "id", existingProject.ProjectID, "databases", existingProject.ExistingDatabases)
+	} else {
+		workflow.Logger(ctx).Info("No existing project found")
+	}
+
+	return existingProject, nil
 }
 
 func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPlan) ([]deployment.EnvVar, error) {
@@ -1011,12 +1031,10 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	slog.Info("deployNetlify workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
-	// Check for existing project
-	existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentCheckExistingProject, input.Platform, input.Spec.Name, input.Source).Get(ctx)
-	if err != nil {
-		slog.Info("Failed to check for existing project", "error", err)
-	} else if existingProject.Exists {
-		slog.Info("Detected existing project", "name", existingProject.Name, "id", existingProject.ProjectID)
+	// Use existing project info from DeployPlan
+	existingProject := input.ExistingProjectInfo
+	if existingProject.Exists {
+		slog.Info("Using existing project from detection", "name", existingProject.Name, "id", existingProject.ProjectID, "databases", existingProject.ExistingDatabases)
 	}
 
 	// Build deployment spec from the plan
@@ -1112,12 +1130,10 @@ func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deploy
 	slog.Info("deployVercel workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
-	// Check for existing project
-	existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentCheckExistingProject, input.Platform, input.Spec.Name, input.Source).Get(ctx)
-	if err != nil {
-		slog.Info("Failed to check for existing project", "error", err)
-	} else if existingProject.Exists {
-		slog.Info("Detected existing project", "name", existingProject.Name, "id", existingProject.ProjectID)
+	// Use existing project info from DeployPlan
+	existingProject := input.ExistingProjectInfo
+	if existingProject.Exists {
+		slog.Info("Using existing project from detection", "name", existingProject.Name, "id", existingProject.ProjectID, "databases", existingProject.ExistingDatabases)
 	}
 
 	// Build deployment spec from the plan
@@ -1229,12 +1245,10 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 	slog.Info("deployHeroku workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
-	// Check for existing project
-	existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentCheckExistingProject, input.Platform, input.Spec.Name, input.Source).Get(ctx)
-	if err != nil {
-		slog.Info("Failed to check for existing project", "error", err)
-	} else if existingProject.Exists {
-		slog.Info("Detected existing project", "name", existingProject.Name, "id", existingProject.ProjectID)
+	// Use existing project info from DeployPlan
+	existingProject := input.ExistingProjectInfo
+	if existingProject.Exists {
+		slog.Info("Using existing project from detection", "name", existingProject.Name, "id", existingProject.ProjectID, "databases", existingProject.ExistingDatabases)
 	}
 
 	// Build deployment spec from the plan

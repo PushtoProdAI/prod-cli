@@ -78,14 +78,15 @@ func NewAgent(wfClient *client.Client, internalAuth *auth.SupabaseAuth, errorTra
 }
 
 type DeployPlan struct {
-	Action           Action
-	Platform         Platform
-	Source           string
-	Spec             analyzer.ProjectSpec
-	Summary          string
-	DryRunFromPrompt bool
-	CollectedEnvVars []deployment.EnvVar
-	Pricing          deployment.CostEstimate
+	Action              Action
+	Platform            Platform
+	Source              string
+	Spec                analyzer.ProjectSpec
+	Summary             string
+	DryRunFromPrompt    bool
+	CollectedEnvVars    []deployment.EnvVar
+	Pricing             deployment.CostEstimate
+	ExistingProjectInfo ExistingProjectInfo
 }
 
 type deployResult struct {
@@ -404,7 +405,7 @@ func (a *Agent) processConfirmationResponse(ctx context.Context, input string, o
 
 	if input == "y" || input == "yes" {
 		fmt.Fprintf(out, "Proceeding with deployment...\n")
-		return a.categorizeEnvironmentVariables(ctx, input, out)
+		return a.detectExisting(ctx, input, out)
 	}
 
 	if input == "n" || input == "no" {
@@ -419,6 +420,93 @@ func (a *Agent) processConfirmationResponse(ctx context.Context, input string, o
 
 func (a *Agent) confirm(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	return a.deploy, nil
+}
+
+func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	fmt.Fprintf(out, "🔍 Checking for existing resources...\n")
+
+	wf, err := Workflows{}.DetectExisting(ctx, a.wfClient, *a.DeployPlan)
+	if err != nil {
+		fmt.Fprintf(out, "❌ Error detecting existing resources: %v\n", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     "detect_existing",
+			"component":    "agent",
+			"operation":    "workflow_execution",
+			"platform":     a.DeployPlan.Platform,
+			"project_name": a.DeployPlan.Spec.Name,
+		})
+		return a.plan, nil
+	}
+
+	result, err := client.GetWorkflowResult[ExistingProjectInfo](ctx, a.wfClient, wf, 2*time.Minute)
+	if err != nil {
+		fmt.Fprintf(out, "❌ Error getting detection results: %v\n", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     "detect_existing",
+			"component":    "agent",
+			"operation":    "get_workflow_result",
+			"platform":     a.DeployPlan.Platform,
+			"project_name": a.DeployPlan.Spec.Name,
+		})
+		return a.plan, nil
+	}
+
+	a.DeployPlan.ExistingProjectInfo = result
+
+	var summaryText string
+	if result.Exists {
+		summaryText = "🔍 Existing Resources Found:\n\n"
+		summaryText += fmt.Sprintf("• Application: %s (will be updated)\n", result.Name)
+
+		if len(result.ExistingDatabases) > 0 {
+			summaryText += "\n• Databases (will be reused):\n"
+			for _, db := range result.ExistingDatabases {
+				summaryText += fmt.Sprintf("  - %s\n", db)
+			}
+		}
+
+		needsToCreate := []string{}
+		for _, service := range a.DeployPlan.Spec.ServiceRequirements {
+			found := false
+			for _, existingDB := range result.ExistingDatabases {
+				if existingDB == service.Provider {
+					found = true
+					break
+				}
+			}
+			if !found {
+				needsToCreate = append(needsToCreate, service.Provider)
+			}
+		}
+
+		if len(needsToCreate) > 0 {
+			summaryText += "\n📦 New Resources to Create:\n"
+			for _, service := range needsToCreate {
+				summaryText += fmt.Sprintf("• %s database\n", service)
+			}
+		}
+	} else {
+		summaryText = "📦 New Deployment:\n\n"
+		summaryText += fmt.Sprintf("• Application: %s (new)\n", a.DeployPlan.Spec.Name)
+		if len(a.DeployPlan.Spec.ServiceRequirements) > 0 {
+			summaryText += "\n• Databases (new):\n"
+			for _, service := range a.DeployPlan.Spec.ServiceRequirements {
+				summaryText += fmt.Sprintf("  - %s\n", service.Provider)
+			}
+		}
+	}
+
+	type infoBoxSender interface {
+		SendInfoBox(title string, content string, icon string)
+	}
+
+	if tuiWriter, ok := out.(infoBoxSender); ok {
+		tuiWriter.SendInfoBox("Deployment Plan", summaryText, "📋")
+	} else {
+		fmt.Fprintf(out, "\n%s\n", summaryText)
+	}
+
+	return a.categorizeEnvironmentVariables(ctx, input, out)
 }
 
 func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string, out io.Writer) (stateFn, error) {

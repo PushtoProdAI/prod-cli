@@ -38,6 +38,8 @@ const (
 	AgentRestoreConfigFromBackup   = "agent.restoreConfigFromBackup"
 	AgentPrepareDeployment         = "agent.prepareDeployment"
 	AgentCheckExistingProject      = "agent.checkExistingProject"
+	AgentDetectProject             = "agent.detectProject"
+	AgentBuildDetectionSummary     = "agent.buildDetectionSummary"
 )
 
 type Activities struct {

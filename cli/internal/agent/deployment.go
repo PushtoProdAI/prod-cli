@@ -86,10 +86,12 @@ func (a *Activities) summarizeDeploySteps(ctx context.Context, steps []string) e
 	summary, err := a.llmClient.SummarizeSteps(ctx, steps)
 	if err != nil {
 		slog.Warn("Failed to get LLM summary, using fallback", "error", err)
-		summaryText = "We will execute the following deployment steps:\n\n"
+		summaryText = "📋 Deployment Steps\n\n"
+		summaryText += "The following steps will be executed:\n\n"
 		for i, step := range steps {
 			summaryText += fmt.Sprintf("%d. %s\n", i+1, step)
 		}
+		summaryText += "\nNote: Existing resources will be detected and reused automatically.\n"
 	} else {
 		summaryText = summary.Summary
 	}
@@ -266,7 +268,6 @@ func (d *RenderProjectDetector) DetectExistingProject(ctx context.Context, proje
 		return result, errors.Errorf("failed to check for existing Render project: %w", err)
 	}
 	if existing != nil {
-		d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Render service: %s", existing.Name))
 		result.Exists = true
 		result.ProjectID = existing.ServiceID
 		result.Name = existing.Name
@@ -292,7 +293,6 @@ func (d *RenderProjectDetector) DetectExistingProject(ctx context.Context, proje
 					pg.DatabaseName == expectedPGDatabaseName ||
 					strings.HasPrefix(pg.DatabaseName, normalizedProjectName+"_") {
 					result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
-					d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing PostgreSQL database: %s (db: %s)", pg.Name, pg.DatabaseName))
 					slog.Info("Matched existing PostgreSQL database", "serviceName", pg.Name, "databaseName", pg.DatabaseName)
 				}
 			}
@@ -307,7 +307,6 @@ func (d *RenderProjectDetector) DetectExistingProject(ctx context.Context, proje
 				slog.Info("Checking Render redis", "name", red.Name, "type", red.Type, "id", red.ID)
 				if red.Name == expectedRedisName {
 					result.ExistingDatabases = append(result.ExistingDatabases, "redis")
-					d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Redis database: %s", red.Name))
 					slog.Info("Matched existing Redis database", "name", red.Name)
 				}
 			}
@@ -316,8 +315,6 @@ func (d *RenderProjectDetector) DetectExistingProject(ctx context.Context, proje
 		if len(result.ExistingDatabases) == 0 {
 			slog.Info("No matching Render databases found")
 		}
-	} else {
-		d.uiWriter.SendStatus("info", "No existing Render service found - will create new deployment")
 	}
 
 	return result, nil
@@ -347,7 +344,6 @@ func (d *FlyIOProjectDetector) DetectExistingProject(ctx context.Context, projec
 		return result, errors.Errorf("failed to check for existing Fly.io project: %w", err)
 	}
 	if existing != nil {
-		d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Fly.io app: %s", existing.Name))
 		result.Exists = true
 		result.ProjectID = existing.AppID
 		result.Name = existing.Name
@@ -366,7 +362,6 @@ func (d *FlyIOProjectDetector) DetectExistingProject(ctx context.Context, projec
 				slog.Info("Checking postgres cluster", "name", cluster.Name, "expected", expectedPGName)
 				if cluster.Name == expectedPGName {
 					result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
-					d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing PostgreSQL cluster: %s", cluster.Name))
 					slog.Info("Matched existing postgres cluster", "name", cluster.Name)
 					break
 				}
@@ -379,10 +374,7 @@ func (d *FlyIOProjectDetector) DetectExistingProject(ctx context.Context, projec
 		redisApp, err := flyio.DetectExistingProject(ctx, d.client, fmt.Sprintf("%s-redis", projectName))
 		if err == nil && redisApp != nil {
 			result.ExistingDatabases = append(result.ExistingDatabases, "redis")
-			d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Redis app: %s", redisApp.Name))
 		}
-	} else {
-		d.uiWriter.SendStatus("info", "No existing Fly.io app found - will create new deployment")
 	}
 
 	return result, nil
@@ -411,13 +403,10 @@ func (d *NetlifyProjectDetector) DetectExistingProject(ctx context.Context, proj
 		return result, errors.Errorf("failed to check for existing Netlify project: %w", err)
 	}
 	if existing != nil {
-		d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Netlify site: %s", existing.Name))
 		result.Exists = true
 		result.ProjectID = existing.SiteID
 		result.Name = existing.Name
 		result.IsUpdate = true
-	} else {
-		d.uiWriter.SendStatus("info", "No existing Netlify site found - will create new deployment")
 	}
 
 	return result, nil
@@ -446,13 +435,10 @@ func (d *VercelProjectDetector) DetectExistingProject(ctx context.Context, proje
 		return result, errors.Errorf("failed to check for existing Vercel project: %w", err)
 	}
 	if existing != nil {
-		d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Vercel project: %s", existing.Name))
 		result.Exists = true
 		result.ProjectID = existing.ProjectID
 		result.Name = existing.Name
 		result.IsUpdate = true
-	} else {
-		d.uiWriter.SendStatus("info", "No existing Vercel project found - will create new deployment")
 	}
 
 	return result, nil
@@ -481,7 +467,6 @@ func (d *HerokuProjectDetector) DetectExistingProject(ctx context.Context, proje
 		return result, errors.Errorf("failed to check for existing Heroku project: %w", err)
 	}
 	if existing != nil {
-		d.uiWriter.SendStatus("info", fmt.Sprintf("✅ Found existing Heroku app: %s", existing.Name))
 		result.Exists = true
 		result.ProjectID = existing.AppID
 		result.Name = existing.Name
@@ -494,15 +479,11 @@ func (d *HerokuProjectDetector) DetectExistingProject(ctx context.Context, proje
 				planName := addon.Plan.Name
 				if contains(planName, "heroku-postgresql") {
 					result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
-					d.uiWriter.SendStatus("info", "✅ Found existing PostgreSQL addon")
 				} else if contains(planName, "heroku-redis") {
 					result.ExistingDatabases = append(result.ExistingDatabases, "redis")
-					d.uiWriter.SendStatus("info", "✅ Found existing Redis addon")
 				}
 			}
 		}
-	} else {
-		d.uiWriter.SendStatus("info", "No existing Heroku app found - will create new deployment")
 	}
 
 	return result, nil
