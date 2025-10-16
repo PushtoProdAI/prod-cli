@@ -619,6 +619,9 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 			EnvSpecificDetails: envSpecificDetails,
 		}
 
+		if s.PreDeployCommand != "" {
+			serviceDetails.PreDeployCommand = s.PreDeployCommand
+		}
 		req.ServiceDetails = serviceDetails
 
 		// Don't set build/start/pre-deploy commands for Docker deployments
@@ -626,7 +629,6 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		// Native deployment - set build, start, and pre-deploy commands
 		req.BuildCommand = s.BuildCommand
 		req.StartCommand = s.StartCommand
-		req.PreDeployCommand = s.PreDeployCommand
 	}
 	webService, err := client.CreateWebService(ctx, req)
 	if err != nil {
