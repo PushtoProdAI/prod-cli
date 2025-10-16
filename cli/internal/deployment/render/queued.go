@@ -88,10 +88,13 @@ func (qd *QueuedDeployment) GenerateAPISteps(ownerID string) []RenderAPIStep {
 
 	if qd.spec.IsUpdate {
 		triggerDeployStep := NewTriggerDeployStep(TriggerDeployStepConfig{
-			ID:          fmt.Sprintf("step-%d", stepCounter),
-			Description: "Trigger deployment to Render",
-			ServiceID:   qd.spec.ExistingProjectID,
-			DependsOn:   []string{deploymentConfig.dockerImageStepID, deploymentConfig.registryCredStepID},
+			ID:                 fmt.Sprintf("step-%d", stepCounter),
+			Description:        "Trigger deployment to Render",
+			ServiceID:          qd.spec.ExistingProjectID,
+			DockerImageStepID:  deploymentConfig.dockerImageStepID,
+			RegistryCredStepID: deploymentConfig.registryCredStepID,
+			OwnerID:            ownerID,
+			DependsOn:          []string{deploymentConfig.dockerImageStepID, deploymentConfig.registryCredStepID},
 		})
 		steps = append(steps, triggerDeployStep)
 	} else {

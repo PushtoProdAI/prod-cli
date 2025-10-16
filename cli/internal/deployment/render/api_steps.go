@@ -648,15 +648,21 @@ func (s *CreateWebServiceStep) Rollback(ctx context.Context, client RenderClient
 }
 
 type TriggerDeployStepConfig struct {
-	ID          string
-	Description string
-	ServiceID   string
-	DependsOn   []string
+	ID                 string
+	Description        string
+	ServiceID          string
+	DockerImageStepID  string
+	RegistryCredStepID string
+	OwnerID            string
+	DependsOn          []string
 }
 
 type TriggerDeployStep struct {
 	BaseStep
-	ServiceID string `json:"serviceId"`
+	ServiceID          string `json:"serviceId"`
+	DockerImageStepID  string `json:"dockerImageStepId"`
+	RegistryCredStepID string `json:"registryCredStepId"`
+	OwnerID            string `json:"ownerId"`
 }
 
 func NewTriggerDeployStep(config TriggerDeployStepConfig) *TriggerDeployStep {
@@ -666,23 +672,50 @@ func NewTriggerDeployStep(config TriggerDeployStepConfig) *TriggerDeployStep {
 			Description: config.Description,
 			DependsOn:   config.DependsOn,
 		},
-		ServiceID: config.ServiceID,
+		ServiceID:          config.ServiceID,
+		DockerImageStepID:  config.DockerImageStepID,
+		RegistryCredStepID: config.RegistryCredStepID,
+		OwnerID:            config.OwnerID,
 	}
 }
 
 func (s *TriggerDeployStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error) {
-	dockerImageResult, exists := stepResults[s.DependsOn[0]]
-	if exists {
-		if dockerResult, ok := dockerImageResult.(map[string]any); ok {
-			if imagePath, ok := dockerResult["pushedImageURL"].(string); ok {
-				updateReq := UpdateServiceImageRequest{
-					ImagePath: imagePath,
-				}
-				err := client.UpdateServiceImage(ctx, s.ServiceID, updateReq)
-				if err != nil {
-					return nil, errors.Errorf("failed to update service image: %w", err)
-				}
-			}
+	if s.DockerImageStepID != "" && s.RegistryCredStepID != "" {
+		dockerImageResult, exists := stepResults[s.DockerImageStepID]
+		if !exists {
+			return nil, errors.Errorf("docker image step result not found")
+		}
+
+		registryCredResult, exists := stepResults[s.RegistryCredStepID]
+		if !exists {
+			return nil, errors.Errorf("registry credential step result not found")
+		}
+
+		registryCred, ok := registryCredResult.(*RegistryCredential)
+		if !ok {
+			return nil, errors.Errorf("invalid registry credential result type")
+		}
+
+		dockerResult, ok := dockerImageResult.(map[string]any)
+		if !ok {
+			return nil, errors.Errorf("invalid docker image result type")
+		}
+
+		imagePath, ok := dockerResult["pushedImageURL"].(string)
+		if !ok {
+			return nil, errors.Errorf("pushedImageURL not found in docker result")
+		}
+
+		updateReq := UpdateServiceImageRequest{
+			Image: &ImageDetails{
+				OwnerID:              s.OwnerID,
+				RegistryCredentialID: registryCred.ID,
+				ImagePath:            imagePath,
+			},
+		}
+		err := client.UpdateServiceImage(ctx, s.ServiceID, updateReq)
+		if err != nil {
+			return nil, errors.Errorf("failed to update service image: %w", err)
 		}
 	}
 
