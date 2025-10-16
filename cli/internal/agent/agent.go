@@ -474,8 +474,8 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 
 		needsToCreate := []string{}
 		for _, service := range a.DeployPlan.Spec.ServiceRequirements {
-			// Skip framework types - they're not actual resources to create
-			if service.Type == "framework" {
+			// Only include actual infrastructure resources (database, cache)
+			if service.Type != "database" && service.Type != "cache" {
 				continue
 			}
 			found := false
@@ -500,11 +500,11 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 		summaryText = "📦 New Deployment:\n\n"
 		summaryText += fmt.Sprintf("• Application: %s (new)\n", a.DeployPlan.Spec.Name)
 
-		// Count non-framework services
+		// Count only actual infrastructure resources (database, cache)
 		databases := []string{}
 		for _, service := range a.DeployPlan.Spec.ServiceRequirements {
-			// Skip framework types - they're not actual resources to create
-			if service.Type == "framework" {
+			// Only include actual infrastructure resources
+			if service.Type != "database" && service.Type != "cache" {
 				continue
 			}
 			databases = append(databases, service.Provider)
