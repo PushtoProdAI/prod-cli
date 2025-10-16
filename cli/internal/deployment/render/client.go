@@ -221,7 +221,7 @@ func (c *HTTPRenderClient) CreateWebService(ctx context.Context, req CreateWebSe
 
 func (c *HTTPRenderClient) UpdateServiceImage(ctx context.Context, serviceID string, req UpdateServiceImageRequest) error {
 	updateReq := map[string]any{
-		"imagePath": req.ImagePath,
+		"image": req.Image,
 	}
 
 	resp, err := c.makeRequest(ctx, "PATCH", fmt.Sprintf("/v1/services/%s", serviceID), updateReq)

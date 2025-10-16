@@ -84,7 +84,7 @@ type UpdateRegistryCredentialRequest struct {
 }
 
 type UpdateServiceImageRequest struct {
-	ImagePath string `json:"imagePath"`
+	Image *ImageDetails `json:"image"`
 }
 
 type WebServiceDetails struct {
