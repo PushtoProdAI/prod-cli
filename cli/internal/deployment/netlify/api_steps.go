@@ -13,36 +13,9 @@ import (
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
-// NetlifyAPIStep represents a single deployment step (matching Fly.io's interface pattern)
-type NetlifyAPIStep interface {
-	Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error)
-	Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) error
-	GetID() string
-	GetDescription() string
-	GetDependencies() []string
-}
+type NetlifyAPIStep = deployment.Step[NetlifyClient]
 
-// BaseStep provides common functionality for all steps
-type BaseStep struct {
-	ID           string
-	Description  string
-	Dependencies []string
-}
-
-func (b *BaseStep) GetID() string {
-	return b.ID
-}
-
-func (b *BaseStep) GetDescription() string {
-	return b.Description
-}
-
-func (b *BaseStep) GetDependencies() []string {
-	if b.Dependencies == nil {
-		return []string{}
-	}
-	return b.Dependencies
-}
+type BaseStep = deployment.BaseStep
 
 // CreateNetlifySiteStep creates a new Netlify site
 type CreateNetlifySiteStep struct {
@@ -56,14 +29,14 @@ func NewCreateNetlifySiteStep(siteName string, envVars map[string]string) *Creat
 		BaseStep: BaseStep{
 			ID:           "create-site",
 			Description:  fmt.Sprintf("Create Netlify site: %s", siteName),
-			Dependencies: []string{},
+			DependsOn: []string{},
 		},
 		siteName: siteName,
 		envVars:  envVars,
 	}
 }
 
-func (s *CreateNetlifySiteStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *CreateNetlifySiteStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]any) (any, error) {
 	// Validate site name format
 	if s.siteName != "" {
 		// Netlify site names must be lowercase, alphanumeric with hyphens
@@ -88,7 +61,7 @@ func (s *CreateNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 		ID:   site.ID,
 		Type: "netlify_site",
 		Name: site.Name,
-		Metadata: map[string]interface{}{
+		Metadata: map[string]any{
 			"url":        site.URL,
 			"admin_url":  site.AdminURL,
 			"created_at": site.CreatedAt,
@@ -96,7 +69,7 @@ func (s *CreateNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 	}, nil
 }
 
-func (s *CreateNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) error {
+func (s *CreateNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]any) error {
 	// Get the site ID from step results
 	if siteResult, ok := stepResults[s.GetID()]; ok {
 		if resource, ok := siteResult.(deployment.CreatedResource); ok {
@@ -120,7 +93,7 @@ func NewBuildProjectStep(buildCommand, sourcePath string, envVars []deployment.E
 		BaseStep: BaseStep{
 			ID:           "build-project",
 			Description:  fmt.Sprintf("Build project: %s", buildCommand),
-			Dependencies: []string{},
+			DependsOn: []string{},
 		},
 		buildCommand: buildCommand,
 		sourcePath:   sourcePath,
@@ -129,7 +102,7 @@ func NewBuildProjectStep(buildCommand, sourcePath string, envVars []deployment.E
 	}
 }
 
-func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]any) (any, error) {
 	// Check if source path exists
 	if _, err := os.Stat(s.sourcePath); err != nil {
 		return nil, errors.Errorf("source path does not exist: %s", s.sourcePath)
@@ -234,7 +207,7 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, st
 	}
 
 	// Return build configuration for the deploy step
-	return map[string]interface{}{
+	return map[string]any{
 		"build_command": s.buildCommand,
 		"source_path":   s.sourcePath,
 		"env_vars":      s.envVars,
@@ -242,7 +215,7 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client NetlifyClient, st
 	}, nil
 }
 
-func (s *BuildProjectStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) error {
+func (s *BuildProjectStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]any) error {
 	// No rollback needed for build validation
 	return nil
 }
@@ -265,7 +238,7 @@ func NewDeployNetlifySiteStep(siteStepID, buildStepID, publishDir, functionsDir 
 		BaseStep: BaseStep{
 			ID:           "deploy-site",
 			Description:  "Deploy to Netlify",
-			Dependencies: deps,
+			DependsOn: deps,
 		},
 		siteStepID:   siteStepID,
 		buildStepID:  buildStepID,
@@ -274,7 +247,7 @@ func NewDeployNetlifySiteStep(siteStepID, buildStepID, publishDir, functionsDir 
 	}
 }
 
-func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]any) (any, error) {
 	// Get site ID from create step
 	siteID := ""
 	if siteResult, ok := stepResults[s.siteStepID]; ok {
@@ -290,7 +263,7 @@ func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 	// Get build configuration
 	sourcePath := "."
 	if buildResult, ok := stepResults[s.buildStepID]; ok {
-		if config, ok := buildResult.(map[string]interface{}); ok {
+		if config, ok := buildResult.(map[string]any); ok {
 			if path, ok := config["source_path"].(string); ok {
 				sourcePath = path
 			}
@@ -326,7 +299,7 @@ func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 		ID:   deploy.ID,
 		Type: "netlify_deployment",
 		Name: deploy.Name,
-		Metadata: map[string]interface{}{
+		Metadata: map[string]any{
 			"url":        deploy.URL,
 			"deploy_url": deploy.DeployURL,
 			"site_id":    deploy.SiteID,
@@ -335,7 +308,7 @@ func (s *DeployNetlifySiteStep) Execute(ctx context.Context, client NetlifyClien
 	}, nil
 }
 
-func (s *DeployNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) error {
+func (s *DeployNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]any) error {
 	// Netlify deployments can be rolled back through the UI or API
 	// For now, we'll just log that rollback would require a previous deploy ID
 	return errors.Errorf("deployment rollback not implemented - use Netlify UI to rollback")
@@ -381,7 +354,7 @@ func NewLinkNetlifySiteStep(siteStepID string, sourcePath string, writer io.Writ
 		BaseStep: BaseStep{
 			ID:           "link-site",
 			Description:  "Link CLI to Netlify site",
-			Dependencies: []string{siteStepID},
+			DependsOn: []string{siteStepID},
 		},
 		siteStepID: siteStepID,
 		sourcePath: sourcePath,
@@ -389,7 +362,7 @@ func NewLinkNetlifySiteStep(siteStepID string, sourcePath string, writer io.Writ
 	}
 }
 
-func (s *LinkNetlifySiteStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *LinkNetlifySiteStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]any) (any, error) {
 	// Get site ID from create step
 	siteID := ""
 	if siteResult, ok := stepResults[s.siteStepID]; ok {
@@ -426,13 +399,13 @@ func (s *LinkNetlifySiteStep) Execute(ctx context.Context, client NetlifyClient,
 	}
 
 	// Return success indicator
-	return map[string]interface{}{
+	return map[string]any{
 		"site_id": siteID,
 		"linked":  true,
 	}, nil
 }
 
-func (s *LinkNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) error {
+func (s *LinkNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]any) error {
 	// Remove .netlify directory to unlink
 	originalDir, err := os.Getwd()
 	if err != nil {
@@ -470,7 +443,7 @@ func NewSetEnvironmentVariablesStep(siteStepID string, linkStepID string, source
 		BaseStep: BaseStep{
 			ID:           "set-env-vars",
 			Description:  fmt.Sprintf("Set %d environment variables", len(envVars)),
-			Dependencies: []string{siteStepID, linkStepID},
+			DependsOn: []string{siteStepID, linkStepID},
 		},
 		siteStepID: siteStepID,
 		envVars:    envVars,
@@ -479,7 +452,7 @@ func NewSetEnvironmentVariablesStep(siteStepID string, linkStepID string, source
 	}
 }
 
-func (s *SetEnvironmentVariablesStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *SetEnvironmentVariablesStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]any) (any, error) {
 	// Get site ID from create step
 	siteID := ""
 	if siteResult, ok := stepResults[s.siteStepID]; ok {
@@ -499,13 +472,13 @@ func (s *SetEnvironmentVariablesStep) Execute(ctx context.Context, client Netlif
 	}
 
 	// Return success indicator
-	return map[string]interface{}{
+	return map[string]any{
 		"site_id":  siteID,
 		"env_vars": s.envVars,
 	}, nil
 }
 
-func (s *SetEnvironmentVariablesStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) error {
+func (s *SetEnvironmentVariablesStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]any) error {
 	// Get site ID from previous step
 	siteID := ""
 	if siteResult, ok := stepResults[s.siteStepID]; ok {
@@ -543,13 +516,13 @@ func NewInitializeGitRepoStep(sourcePath string) *InitializeGitRepoStep {
 		BaseStep: BaseStep{
 			ID:           "init-git",
 			Description:  "Initialize git repository",
-			Dependencies: []string{},
+			DependsOn: []string{},
 		},
 		sourcePath: sourcePath,
 	}
 }
 
-func (s *InitializeGitRepoStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *InitializeGitRepoStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]any) (any, error) {
 	if err := deployment.InitializeGitRepo(s.sourcePath); err != nil {
 		return nil, err
 	}
@@ -558,12 +531,12 @@ func (s *InitializeGitRepoStep) Execute(ctx context.Context, client NetlifyClien
 		return nil, err
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"initialized": true,
 	}, nil
 }
 
-func (s *InitializeGitRepoStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) error {
+func (s *InitializeGitRepoStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]any) error {
 	return nil
 }
 
@@ -580,7 +553,7 @@ func NewUpdateBuildSettingsStep(siteStepID, buildCommand, publishDir string) *Up
 		BaseStep: BaseStep{
 			ID:           "update-build-settings",
 			Description:  "Update build settings",
-			Dependencies: []string{siteStepID},
+			DependsOn: []string{siteStepID},
 		},
 		siteStepID:   siteStepID,
 		buildCommand: buildCommand,
@@ -588,7 +561,7 @@ func NewUpdateBuildSettingsStep(siteStepID, buildCommand, publishDir string) *Up
 	}
 }
 
-func (s *UpdateBuildSettingsStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *UpdateBuildSettingsStep) Execute(ctx context.Context, client NetlifyClient, stepResults map[string]any) (any, error) {
 	// Get site ID from create step
 	siteID := ""
 	if siteResult, ok := stepResults[s.siteStepID]; ok {
@@ -612,14 +585,14 @@ func (s *UpdateBuildSettingsStep) Execute(ctx context.Context, client NetlifyCli
 		fmt.Printf("Warning: could not update build settings: %v\n", err)
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"site_id":       siteID,
 		"build_command": s.buildCommand,
 		"publish_dir":   s.publishDir,
 	}, nil
 }
 
-func (s *UpdateBuildSettingsStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]interface{}) error {
+func (s *UpdateBuildSettingsStep) Rollback(ctx context.Context, client NetlifyClient, stepResults map[string]any) error {
 	// Build settings rollback would require storing previous settings
 	return nil
 }

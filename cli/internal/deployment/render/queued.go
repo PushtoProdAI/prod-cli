@@ -62,9 +62,8 @@ func (qd *QueuedDeployment) Deploy(ctx context.Context) ([]deployment.CreatedRes
 	// Generate steps with the owner ID
 	steps := qd.GenerateAPISteps(ownerID)
 
-	// Execute steps with dependency resolution
 	stepExecutor := NewStepExecutor(qd.client, qd.writer)
-	return stepExecutor.ExecuteSteps(ctx, steps, qd.writer)
+	return stepExecutor.ExecuteSteps(ctx, steps)
 }
 
 func (qd *QueuedDeployment) GenerateAPISteps(ownerID string) []RenderAPIStep {

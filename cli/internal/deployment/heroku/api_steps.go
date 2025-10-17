@@ -17,33 +17,9 @@ import (
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
-// HerokuAPIStep interface for all deployment steps
-type HerokuAPIStep interface {
-	Execute(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) (interface{}, error)
-	Rollback(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) error
-	GetID() string
-	GetDescription() string
-	GetDependencies() []string
-}
+type HerokuAPIStep = deployment.Step[*HerokuClient]
 
-// BaseStep provides common functionality for all steps
-type BaseStep struct {
-	ID          string   `json:"id"`
-	Description string   `json:"description"`
-	DependsOn   []string `json:"dependsOn,omitempty"`
-}
-
-func (b *BaseStep) GetID() string {
-	return b.ID
-}
-
-func (b *BaseStep) GetDescription() string {
-	return b.Description
-}
-
-func (b *BaseStep) GetDependencies() []string {
-	return b.DependsOn
-}
+type BaseStep = deployment.BaseStep
 
 // CreateHerokuAppStep creates a new Heroku app
 type CreateHerokuAppStep struct {
@@ -64,7 +40,7 @@ func NewCreateHerokuAppStep(id, description string, appName, region string) *Cre
 	}
 }
 
-func (s *CreateHerokuAppStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *CreateHerokuAppStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]any) (any, error) {
 	// Create the app (empty name will auto-generate)
 	app, err := client.CreateApp(ctx, s.AppName, s.Region)
 	if err != nil {
@@ -92,7 +68,7 @@ func (s *CreateHerokuAppStep) Execute(ctx context.Context, client *HerokuClient,
 	}, nil
 }
 
-func (s *CreateHerokuAppStep) Rollback(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) error {
+func (s *CreateHerokuAppStep) Rollback(ctx context.Context, client *HerokuClient, stepResults map[string]any) error {
 	if appResult, ok := stepResults[s.GetID()]; ok {
 		if resource, ok := appResult.(deployment.CreatedResource); ok {
 			_, err := client.DeleteApp(ctx, resource.Name)
@@ -125,7 +101,7 @@ func NewCreateHerokuAddonStep(id, description, appID, provider, plan string, con
 	}
 }
 
-func (s *CreateHerokuAddonStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *CreateHerokuAddonStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]any) (any, error) {
 	// Resolve app name from dependencies
 	appName := s.resolveAppName(stepResults)
 	if appName == "" {
@@ -216,7 +192,7 @@ func (s *CreateHerokuAddonStep) waitForAddonReady(ctx context.Context, client *H
 	return errors.Errorf("addon did not provision within %d attempts", maxRetries)
 }
 
-func (s *CreateHerokuAddonStep) resolveAppName(stepResults map[string]interface{}) string {
+func (s *CreateHerokuAddonStep) resolveAppName(stepResults map[string]any) string {
 	if appResult, ok := stepResults[s.AppID]; ok {
 		if resource, ok := appResult.(deployment.CreatedResource); ok {
 			return resource.Name
@@ -225,7 +201,7 @@ func (s *CreateHerokuAddonStep) resolveAppName(stepResults map[string]interface{
 	return ""
 }
 
-func (s *CreateHerokuAddonStep) Rollback(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) error {
+func (s *CreateHerokuAddonStep) Rollback(ctx context.Context, client *HerokuClient, stepResults map[string]any) error {
 	if addonResult, ok := stepResults[s.GetID()]; ok {
 		if resource, ok := addonResult.(deployment.CreatedResource); ok {
 			// Skip rollback for external services
@@ -261,7 +237,7 @@ func NewConfigureHerokuEnvStep(id, description, appID string, envVars map[string
 	}
 }
 
-func (s *ConfigureHerokuEnvStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *ConfigureHerokuEnvStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]any) (any, error) {
 	appName := s.resolveAppName(stepResults, s.AppID)
 	if appName == "" {
 		return nil, errors.Errorf("could not resolve app name")
@@ -282,7 +258,7 @@ func (s *ConfigureHerokuEnvStep) Execute(ctx context.Context, client *HerokuClie
 	return nil, nil
 }
 
-func (s *ConfigureHerokuEnvStep) resolveAppName(stepResults map[string]interface{}, appID string) string {
+func (s *ConfigureHerokuEnvStep) resolveAppName(stepResults map[string]any, appID string) string {
 	if appResult, ok := stepResults[appID]; ok {
 		if resource, ok := appResult.(deployment.CreatedResource); ok {
 			return resource.Name
@@ -291,7 +267,7 @@ func (s *ConfigureHerokuEnvStep) resolveAppName(stepResults map[string]interface
 	return ""
 }
 
-func (s *ConfigureHerokuEnvStep) Rollback(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) error {
+func (s *ConfigureHerokuEnvStep) Rollback(ctx context.Context, client *HerokuClient, stepResults map[string]any) error {
 	// Environment variable rollback would require storing previous values
 	// For now, we'll skip this
 	return nil
@@ -316,7 +292,7 @@ func NewSetHerokuBuildpacksStep(id, description, appID string, buildpacks []stri
 	}
 }
 
-func (s *SetHerokuBuildpacksStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *SetHerokuBuildpacksStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]any) (any, error) {
 	appName := s.resolveAppName(stepResults, s.AppID)
 	if appName == "" {
 		return nil, errors.Errorf("could not resolve app name")
@@ -334,7 +310,7 @@ func (s *SetHerokuBuildpacksStep) Execute(ctx context.Context, client *HerokuCli
 	return nil, nil
 }
 
-func (s *SetHerokuBuildpacksStep) resolveAppName(stepResults map[string]interface{}, appID string) string {
+func (s *SetHerokuBuildpacksStep) resolveAppName(stepResults map[string]any, appID string) string {
 	if appResult, ok := stepResults[appID]; ok {
 		if resource, ok := appResult.(deployment.CreatedResource); ok {
 			return resource.Name
@@ -343,7 +319,7 @@ func (s *SetHerokuBuildpacksStep) resolveAppName(stepResults map[string]interfac
 	return ""
 }
 
-func (s *SetHerokuBuildpacksStep) Rollback(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) error {
+func (s *SetHerokuBuildpacksStep) Rollback(ctx context.Context, client *HerokuClient, stepResults map[string]any) error {
 	// Buildpack rollback would require storing previous buildpacks
 	return nil
 }
@@ -371,7 +347,7 @@ func NewGitDeployStep(id, description, appID, buildContext, startCommand, migrat
 	}
 }
 
-func (s *GitDeployStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *GitDeployStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]any) (any, error) {
 	// Get app details from step results
 	var app *heroku.App
 	if appResult, ok := stepResults[s.AppID]; ok {
@@ -581,7 +557,7 @@ func (s *GitDeployStep) reportError(writer io.Writer, output string) {
 	}
 }
 
-func (s *GitDeployStep) Rollback(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) error {
+func (s *GitDeployStep) Rollback(ctx context.Context, client *HerokuClient, stepResults map[string]any) error {
 	// Git deployment rollback would require reverting to a previous release
 	// Heroku supports this via releases API, but we'll skip for now
 	return nil
@@ -608,7 +584,7 @@ func NewScaleHerokuDynosStep(id, description, appID string, quantity int, size s
 	}
 }
 
-func (s *ScaleHerokuDynosStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *ScaleHerokuDynosStep) Execute(ctx context.Context, client *HerokuClient, stepResults map[string]any) (any, error) {
 	appName := s.resolveAppName(stepResults, s.AppID)
 	if appName == "" {
 		return nil, errors.Errorf("could not resolve app name")
@@ -624,7 +600,7 @@ func (s *ScaleHerokuDynosStep) Execute(ctx context.Context, client *HerokuClient
 	return nil, nil
 }
 
-func (s *ScaleHerokuDynosStep) resolveAppName(stepResults map[string]interface{}, appID string) string {
+func (s *ScaleHerokuDynosStep) resolveAppName(stepResults map[string]any, appID string) string {
 	if appResult, ok := stepResults[appID]; ok {
 		if resource, ok := appResult.(deployment.CreatedResource); ok {
 			return resource.Name
@@ -633,7 +609,7 @@ func (s *ScaleHerokuDynosStep) resolveAppName(stepResults map[string]interface{}
 	return ""
 }
 
-func (s *ScaleHerokuDynosStep) Rollback(ctx context.Context, client *HerokuClient, stepResults map[string]interface{}) error {
+func (s *ScaleHerokuDynosStep) Rollback(ctx context.Context, client *HerokuClient, stepResults map[string]any) error {
 	// Scaling rollback would scale down to 0
 	appName := s.resolveAppName(stepResults, s.AppID)
 	if appName != "" {

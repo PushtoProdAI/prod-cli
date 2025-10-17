@@ -230,8 +230,13 @@ func (c *HTTPRenderClient) UpdateServiceImage(ctx context.Context, serviceID str
 	}
 	defer resp.Body.Close()
 
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		slog.Warn("Failed to read response body", "error", readErr)
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		return errors.Errorf("failed to update service image: status %d", resp.StatusCode)
+		return errors.Errorf("failed to update service image: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	return nil
