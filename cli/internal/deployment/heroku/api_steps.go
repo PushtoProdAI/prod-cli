@@ -221,19 +221,21 @@ func (s *CreateHerokuAddonStep) Rollback(ctx context.Context, client *HerokuClie
 // ConfigureHerokuEnvStep sets environment variables
 type ConfigureHerokuEnvStep struct {
 	BaseStep
-	AppID   string            `json:"appId"`
-	EnvVars map[string]string `json:"envVars"`
+	AppID      string            `json:"appId"`
+	EnvVars    map[string]string `json:"envVars"`
+	DBMappings map[string]string `json:"dbMappings,omitempty"` // Maps custom var names to Heroku defaults
 }
 
-func NewConfigureHerokuEnvStep(id, description, appID string, envVars map[string]string, deps []string) *ConfigureHerokuEnvStep {
+func NewConfigureHerokuEnvStep(id, description, appID string, envVars, dbMappings map[string]string, deps []string) *ConfigureHerokuEnvStep {
 	return &ConfigureHerokuEnvStep{
 		BaseStep: BaseStep{
 			ID:          id,
 			Description: description,
 			DependsOn:   deps,
 		},
-		AppID:   appID,
-		EnvVars: envVars,
+		AppID:      appID,
+		EnvVars:    envVars,
+		DBMappings: dbMappings,
 	}
 }
 
@@ -248,6 +250,22 @@ func (s *ConfigureHerokuEnvStep) Execute(ctx context.Context, client *HerokuClie
 	for k, v := range s.EnvVars {
 		value := v
 		configVars[k] = &value
+	}
+
+	// Handle database URL mappings
+	// Fetch current config vars to get addon-provided URLs
+	if len(s.DBMappings) > 0 {
+		currentVars, err := client.GetConfigVars(ctx, appName)
+		if err != nil {
+			return nil, errors.Errorf("failed to get config vars for DB mappings: %w", err)
+		}
+
+		// Map custom DB var names to their Heroku default values
+		for customName, herokuDefaultName := range s.DBMappings {
+			if defaultValue, ok := currentVars[herokuDefaultName]; ok && defaultValue != nil {
+				configVars[customName] = defaultValue
+			}
+		}
 	}
 
 	_, err := client.UpdateConfigVars(ctx, appName, configVars)
