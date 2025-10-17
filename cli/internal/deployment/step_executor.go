@@ -9,7 +9,16 @@ import (
 	"github.com/meroxa/prod/cli/internal/output"
 )
 
-type Step[C any] interface {
+// Client is a type constraint for deployment provider clients.
+// It accepts any type, providing maximum flexibility for different client implementations:
+// - Interface types (FlyioClient, RenderClient, NetlifyClient, VercelClient)
+// - Pointer types (*HerokuClient)
+//
+// The StepExecutor doesn't call client methods directly; it acts as a coordinator,
+// passing the client to provider-specific Step implementations where actual API calls occur.
+type Client any
+
+type Step[C Client] interface {
 	Execute(ctx context.Context, client C, stepResults map[string]any) (any, error)
 	Rollback(ctx context.Context, client C, stepResults map[string]any) error
 	GetID() string
@@ -38,7 +47,7 @@ func (b *BaseStep) GetDependencies() []string {
 	return b.DependsOn
 }
 
-type StepExecutor[C any] struct {
+type StepExecutor[C Client] struct {
 	client           C
 	stepResults      map[string]any
 	createdResources []CreatedResource
@@ -46,7 +55,7 @@ type StepExecutor[C any] struct {
 	writer           io.Writer
 }
 
-func NewStepExecutor[C any](client C, writer io.Writer) *StepExecutor[C] {
+func NewStepExecutor[C Client](client C, writer io.Writer) *StepExecutor[C] {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}
