@@ -3,6 +3,8 @@ package flyio
 import (
 	"context"
 	"time"
+
+	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
 // FlyioClient interface for all Fly.io API operations
@@ -201,30 +203,6 @@ type NetworkMetrics struct {
 	BytesOut int64 `json:"bytes_out"`
 }
 
-// FlyioAPIStep interface for all deployment steps
-type FlyioAPIStep interface {
-	Execute(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) (interface{}, error)
-	Rollback(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) error
-	GetID() string
-	GetDescription() string
-	GetDependencies() []string
-}
+type FlyioAPIStep = deployment.Step[FlyioClient]
 
-// BaseStep provides common functionality for all steps
-type BaseStep struct {
-	ID          string   `json:"id"`
-	Description string   `json:"description"`
-	DependsOn   []string `json:"dependsOn,omitempty"`
-}
-
-func (b *BaseStep) GetID() string {
-	return b.ID
-}
-
-func (b *BaseStep) GetDescription() string {
-	return b.Description
-}
-
-func (b *BaseStep) GetDependencies() []string {
-	return b.DependsOn
-}
+type BaseStep = deployment.BaseStep

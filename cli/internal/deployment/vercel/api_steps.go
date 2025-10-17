@@ -16,36 +16,9 @@ import (
 // Default timeout for build operations
 const defaultBuildTimeout = 15 * time.Minute
 
-// VercelAPIStep represents a single deployment step
-type VercelAPIStep interface {
-	Execute(ctx context.Context, client VercelClient, stepResults map[string]any) (any, error)
-	Rollback(ctx context.Context, client VercelClient, stepResults map[string]any) error
-	GetID() string
-	GetDescription() string
-	GetDependencies() []string
-}
+type VercelAPIStep = deployment.Step[VercelClient]
 
-// BaseStep provides common functionality for all steps
-type BaseStep struct {
-	ID           string
-	Description  string
-	Dependencies []string
-}
-
-func (b *BaseStep) GetID() string {
-	return b.ID
-}
-
-func (b *BaseStep) GetDescription() string {
-	return b.Description
-}
-
-func (b *BaseStep) GetDependencies() []string {
-	if b.Dependencies == nil {
-		return []string{}
-	}
-	return b.Dependencies
-}
+type BaseStep = deployment.BaseStep
 
 // CreateVercelProjectStep creates a new Vercel project
 type CreateVercelProjectStep struct {
@@ -60,7 +33,7 @@ func NewCreateVercelProjectStep(projectName, framework string, envVars map[strin
 		BaseStep: BaseStep{
 			ID:           "create-project",
 			Description:  fmt.Sprintf("Create Vercel project: %s", projectName),
-			Dependencies: []string{},
+			DependsOn: []string{},
 		},
 		projectName: projectName,
 		framework:   framework,
@@ -113,7 +86,7 @@ func NewLinkVercelProjectStep(projectDependency, sourcePath string, writer io.Wr
 		BaseStep: BaseStep{
 			ID:           "link-project",
 			Description:  "Link directory to Vercel project",
-			Dependencies: []string{projectDependency},
+			DependsOn: []string{projectDependency},
 		},
 		projectDependency: projectDependency,
 		sourcePath:        sourcePath,
@@ -172,7 +145,7 @@ func NewPullProjectStep(linkDependency, sourcePath string, writer io.Writer) *Pu
 		BaseStep: BaseStep{
 			ID:           "pull-project",
 			Description:  "Pull project configuration from Vercel",
-			Dependencies: []string{linkDependency},
+			DependsOn: []string{linkDependency},
 		},
 		linkDependency: linkDependency,
 		sourcePath:     sourcePath,
@@ -222,7 +195,7 @@ func NewSetEnvironmentVariablesStep(projectDependency, linkDependency, sourcePat
 		BaseStep: BaseStep{
 			ID:           "set-env-vars",
 			Description:  fmt.Sprintf("Set %d environment variables", len(envVars)),
-			Dependencies: []string{projectDependency, linkDependency},
+			DependsOn: []string{projectDependency, linkDependency},
 		},
 		projectDependency: projectDependency,
 		linkDependency:    linkDependency,
@@ -286,7 +259,7 @@ func NewBuildProjectStep(buildCommand, migrationCommand, sourcePath string, envV
 		BaseStep: BaseStep{
 			ID:           "build-project",
 			Description:  fmt.Sprintf("Build project: %s", buildCommand),
-			Dependencies: []string{},
+			DependsOn: []string{},
 		},
 		buildCommand:     buildCommand,
 		migrationCommand: migrationCommand,
@@ -435,7 +408,7 @@ func NewDeployVercelProjectStep(projectDependency, buildDependency, sourcePath s
 		BaseStep: BaseStep{
 			ID:           "deploy-project",
 			Description:  "Deploy project to Vercel",
-			Dependencies: dependencies,
+			DependsOn: dependencies,
 		},
 		projectDependency:  projectDependency,
 		buildDependency:    buildDependency,
@@ -503,7 +476,7 @@ func NewPromoteDeploymentStep(deploymentDependency, projectDependency string) *P
 		BaseStep: BaseStep{
 			ID:           "promote-deployment",
 			Description:  "Promote deployment to production",
-			Dependencies: []string{deploymentDependency, projectDependency},
+			DependsOn: []string{deploymentDependency, projectDependency},
 		},
 		deploymentDependency: deploymentDependency,
 		projectDependency:    projectDependency,

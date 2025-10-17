@@ -633,14 +633,24 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		return nil, errors.Errorf("failed to create web service: %w", err)
 	}
 
+	metadata := make(map[string]any)
+
 	deploys, err := client.ListDeploys(ctx, webService.ID)
 	if err == nil && len(deploys) > 0 {
-		stepResults["trigger_deploy_extra"] = map[string]any{
-			"deployId": deploys[0].ID,
-		}
+		metadata["deployId"] = deploys[0].ID
 	}
 
-	return webService, nil
+	fullWebService, err := client.GetWebService(ctx, webService.ID)
+	if err == nil && fullWebService != nil {
+		metadata["url"] = fullWebService.ServiceDetails.URL
+	}
+
+	return deployment.CreatedResource{
+		ID:       webService.ID,
+		Type:     "web_service",
+		Name:     webService.Name,
+		Metadata: metadata,
+	}, nil
 }
 
 func (s *CreateWebServiceStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error {
@@ -729,20 +739,20 @@ func (s *TriggerDeployStep) Execute(ctx context.Context, client RenderClient, st
 		return nil, errors.Errorf("failed to get web service details: %w", err)
 	}
 
-	service := &RenderService{
-		ID:   webService.ID,
-		Name: webService.Name,
-		Type: "web_service",
+	metadata := map[string]any{
+		"deployId": deploy.ID,
 	}
 
-	se := stepResults["trigger_deploy_extra"]
-	if se == nil {
-		stepResults["trigger_deploy_extra"] = map[string]any{
-			"deployId": deploy.ID,
-		}
+	if webService != nil {
+		metadata["url"] = webService.ServiceDetails.URL
 	}
 
-	return service, nil
+	return deployment.CreatedResource{
+		ID:       webService.ID,
+		Type:     "web_service",
+		Name:     webService.Name,
+		Metadata: metadata,
+	}, nil
 }
 
 func (s *TriggerDeployStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error {

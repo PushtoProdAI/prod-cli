@@ -43,7 +43,7 @@ func (qd *QueuedDeployment) Deploy(ctx context.Context) ([]deployment.CreatedRes
 	stepExecutor := NewStepExecutor(qd.client, qd.writer)
 
 	if qd.spec.IsUpdate {
-		stepExecutor.InjectExistingApp(qd.spec.ExistingProjectID)
+		InjectExistingApp(stepExecutor, qd.client, qd.spec.ExistingProjectID)
 	}
 
 	return stepExecutor.ExecuteSteps(ctx, steps)
