@@ -123,6 +123,10 @@ var (
 				Foreground(errorColor).
 				Bold(true)
 
+	warningHeaderStyle = lipgloss.NewStyle().
+				Foreground(warningColor).
+				Bold(true)
+
 	errorSummaryStyle = lipgloss.NewStyle().
 				Foreground(textColor).
 				Padding(1, 2)

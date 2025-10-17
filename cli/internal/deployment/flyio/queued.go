@@ -344,3 +344,15 @@ func (fqd *FlyioQueuedDeployment) getInternalPortForLanguage(language string) in
 	config := GetLanguageConfig(language)
 	return config.InternalPort
 }
+
+func (fqd *FlyioQueuedDeployment) GetCurrentDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	return nil, errors.Errorf("rollback not yet implemented for Fly.io")
+}
+
+func (fqd *FlyioQueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	return nil, errors.Errorf("rollback not yet implemented for Fly.io")
+}
+
+func (fqd *FlyioQueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
+	return errors.Errorf("rollback not yet implemented for Fly.io")
+}

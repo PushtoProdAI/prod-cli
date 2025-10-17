@@ -352,3 +352,15 @@ func (qd *QueuedDeployment) getNativeDeploymentConfig() (buildCommand, startComm
 
 	return buildCommand, startCommand, env
 }
+
+func (qd *QueuedDeployment) GetCurrentDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	return nil, errors.Errorf("rollback not yet implemented for Render")
+}
+
+func (qd *QueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	return nil, errors.Errorf("rollback not yet implemented for Render")
+}
+
+func (qd *QueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
+	return errors.Errorf("rollback not yet implemented for Render")
+}
