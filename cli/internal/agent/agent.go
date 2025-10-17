@@ -299,13 +299,11 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 			a.tokenManager.ShowBalanceAfterLogin(ctx, output)
 		}
 
-		// If we have original input, process it now with a fresh context
+		// If we have original input, process it now
 		if a.originalInput != "" {
 			originalInput := a.originalInput
 			a.originalInput = "" // Clear it
-			// Create a fresh context since the original one may have been cancelled during auth
-			freshCtx := context.Background()
-			a.sm.next(WithCtxSession(freshCtx, session), originalInput, output)
+			a.sm.next(WithCtxSession(ctx, session), originalInput, output)
 			return
 		}
 
