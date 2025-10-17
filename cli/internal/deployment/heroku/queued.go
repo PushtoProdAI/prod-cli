@@ -75,12 +75,19 @@ func (qd *QueuedDeployment) GenerateAPISteps() []HerokuAPIStep {
 	}
 
 	envStepID := ""
-	if customEnvVars := qd.filterNonDBEnvVars(); len(customEnvVars) > 0 {
+	customEnvVars := qd.buildEnvVars()
+	dbMappings := qd.getDBEnvVarMappings()
+
+	// Create env step if we have custom env vars OR database mappings to configure
+	if len(customEnvVars) > 0 || len(dbMappings) > 0 {
 		envStepID = fmt.Sprintf("step-%d", stepCounter)
 
 		var deps []string
 		if !qd.spec.IsUpdate {
 			deps = append([]string{appStepID}, addonStepIDs...)
+		} else if len(addonStepIDs) > 0 {
+			// If updating and creating new addons, wait for them
+			deps = addonStepIDs
 		}
 
 		steps = append(steps, NewConfigureHerokuEnvStep(
@@ -88,6 +95,7 @@ func (qd *QueuedDeployment) GenerateAPISteps() []HerokuAPIStep {
 			"Configure environment variables",
 			appStepID,
 			customEnvVars,
+			dbMappings,
 			deps,
 		))
 		stepCounter++
@@ -250,4 +258,39 @@ func (qd *QueuedDeployment) filterNonDBEnvVars() map[string]string {
 	}
 
 	return envVars
+}
+
+// buildEnvVars builds the complete set of environment variables (non-DB only)
+// Database URL mappings are handled in ConfigureHerokuEnvStep
+func (qd *QueuedDeployment) buildEnvVars() map[string]string {
+	return qd.filterNonDBEnvVars()
+}
+
+// getDBEnvVarMappings returns a map of custom DB env var names to their Heroku defaults
+// e.g., if the app uses MY_CONN_URL but Heroku sets DATABASE_URL, returns {"MY_CONN_URL": "DATABASE_URL"}
+func (qd *QueuedDeployment) getDBEnvVarMappings() map[string]string {
+	mappings := make(map[string]string)
+
+	for _, envVar := range qd.spec.EnvVars {
+		if envVar.Role == deployment.EnvRoleFullURI {
+			var herokuDefaultName string
+			switch envVar.Service {
+			case "postgresql":
+				herokuDefaultName = "DATABASE_URL"
+			case "redis":
+				herokuDefaultName = "REDIS_URL"
+			case "mysql":
+				herokuDefaultName = "JAWSDB_URL"
+			case "mongodb":
+				herokuDefaultName = "MONGODB_URI"
+			}
+
+			// Only create mapping if custom name differs from Heroku's default
+			if herokuDefaultName != "" && envVar.Name != herokuDefaultName {
+				mappings[envVar.Name] = herokuDefaultName
+			}
+		}
+	}
+
+	return mappings
 }
