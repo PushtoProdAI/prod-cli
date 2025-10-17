@@ -226,3 +226,15 @@ func (nqd *NetlifyQueuedDeployment) getFunctionsDir() string {
 	// No functions directory found
 	return ""
 }
+
+func (nqd *NetlifyQueuedDeployment) GetCurrentDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	return nil, errors.Errorf("rollback not yet implemented for Netlify")
+}
+
+func (nqd *NetlifyQueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	return nil, errors.Errorf("rollback not yet implemented for Netlify")
+}
+
+func (nqd *NetlifyQueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
+	return errors.Errorf("rollback not yet implemented for Netlify")
+}

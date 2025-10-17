@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/output"
 )
@@ -293,4 +294,16 @@ func (qd *QueuedDeployment) getDBEnvVarMappings() map[string]string {
 	}
 
 	return mappings
+}
+
+func (qd *QueuedDeployment) GetCurrentDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	return nil, errors.Errorf("rollback not yet implemented for Heroku")
+}
+
+func (qd *QueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	return nil, errors.Errorf("rollback not yet implemented for Heroku")
+}
+
+func (qd *QueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
+	return errors.Errorf("rollback not yet implemented for Heroku")
 }

@@ -267,6 +267,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case ErrorDisplayMessage:
 		return m.handleErrorDisplayMessage(msg)
+	case WarningDisplayMessage:
+		return m.handleWarningDisplayMessage(msg)
 	case SuccessDisplayMessage:
 		return m.handleSuccessDisplayMessage(msg)
 	case InfoBoxMessage:

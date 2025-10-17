@@ -1316,16 +1316,63 @@ func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deploy
 
 	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
 	if err != nil {
-		// Log deployment failure
+		slog.Error("Health check failed, attempting rollback", "error", err, "url", fullUrl)
+
+		previousDeploy, rollbackErr := workflow.ExecuteActivity[*deployment.DeploymentInfo](ctx, ActivityOpts, AgentGetPreviousDeployment, *spec, Vercel).Get(ctx)
+		if rollbackErr != nil {
+			slog.Warn("No previous deployment available for rollback", "error", rollbackErr)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":              err.Error(),
+					"platform":           "vercel",
+					"stage":              "url_verification",
+					"url":                fullUrl,
+					"no_previous_deploy": true,
+				}).Get(ctx)
+			}
+			return deployResult{
+				Error: deployError{
+					Summary: "Deployment failed health check. This is your first deployment, so there's no previous version to roll back to",
+				},
+			}, nil
+		}
+
+		slog.Info("Found previous deployment for rollback", "deployment_id", previousDeploy.ID, "url", previousDeploy.URL)
+
+		_, rollbackErr = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentRollbackDeployment, *spec, Vercel, previousDeploy.URL).Get(ctx)
+		if rollbackErr != nil {
+			slog.Error("Rollback failed", "error", rollbackErr, "target_deployment", previousDeploy.URL)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":           err.Error(),
+					"platform":        "vercel",
+					"stage":           "url_verification",
+					"url":             fullUrl,
+					"rollback_error":  rollbackErr.Error(),
+					"rollback_target": previousDeploy.URL,
+				}).Get(ctx)
+			}
+			return deployResult{}, errors.Errorf("service URL %s is not live and rollback failed: %w", fullUrl, err)
+		}
+
+		slog.Info("Rollback completed successfully", "rolled_back_to", previousDeploy.ID)
+
 		if operationId != "" {
-			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
-				"error":    err.Error(),
-				"platform": "vercel",
-				"stage":    "url_verification",
-				"url":      fullUrl,
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "rolled_back", map[string]any{
+				"error":              err.Error(),
+				"platform":           "vercel",
+				"stage":              "url_verification",
+				"url":                fullUrl,
+				"rolled_back_to":     previousDeploy.ID,
+				"rolled_back_to_url": previousDeploy.URL,
 			}).Get(ctx)
 		}
-		return deployResult{}, errors.Errorf("service URL %s is not live: %w", fullUrl, err)
+		return deployResult{
+			Error: deployError{
+				Summary:   "Deployment failed health check. We've automatically rolled back to your previous working version",
+				IsWarning: true,
+			},
+		}, nil
 	}
 
 	// Log deployment success
