@@ -149,6 +149,10 @@ func (vqd *VercelQueuedDeployment) GenerateAPISteps() []VercelAPIStep {
 	)
 	steps = append(steps, deployStep)
 
+	// Explicitly promote the deployment to make it the current production deployment
+	promoteStep := NewPromoteDeploymentStep("deploy-project", projectStepID, vqd.getSourcePath())
+	steps = append(steps, promoteStep)
+
 	return steps
 }
 

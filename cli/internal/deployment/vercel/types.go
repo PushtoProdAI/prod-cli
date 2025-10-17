@@ -16,7 +16,7 @@ type VercelClient interface {
 	// Deployment
 	DeployProject(projectID string, production bool) (*VercelDeployment, error)
 	GetDeployment(deploymentID string) (*VercelDeployment, error)
-	PromoteDeployment(deploymentURL, projectName string) (string, error)
+	PromoteDeployment(deploymentURL, projectName string) error
 
 	// Environment variables
 	SetEnvironmentVariables(projectID string, vars map[string]string) error
@@ -48,14 +48,15 @@ type VercelProject struct {
 
 // VercelDeployment represents a deployment on Vercel
 type VercelDeployment struct {
-	ID        string    `json:"id"`
-	URL       string    `json:"url"`
-	ProjectID string    `json:"projectId"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
-	Ready     bool      `json:"ready"`
-	Source    string    `json:"source,omitempty"`
-	Target    string    `json:"target,omitempty"`
+	ID            string    `json:"id"`
+	URL           string    `json:"url"`           // Production alias URL (for liveness checks)
+	DeploymentURL string    `json:"deploymentUrl"` // Deployment-specific URL with hash (for promotion)
+	ProjectID     string    `json:"projectId"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+	Ready         bool      `json:"ready"`
+	Source        string    `json:"source,omitempty"`
+	Target        string    `json:"target,omitempty"`
 }
 
 // VercelConfig represents the configuration for deploying to Vercel
