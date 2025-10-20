@@ -464,7 +464,7 @@ func (d *HerokuProjectDetector) DetectExistingProject(ctx context.Context, proje
 	}
 	if existing != nil {
 		result.Exists = true
-		result.ProjectID = existing.AppID
+		result.ProjectID = existing.Name
 		result.Name = existing.Name
 		result.DeployURL = existing.WebURL
 		result.IsUpdate = true
