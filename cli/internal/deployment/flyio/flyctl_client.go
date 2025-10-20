@@ -794,3 +794,89 @@ func (c *FlyctlClient) generateFlyToml(config *FlyioConfig) (string, error) {
 
 	return builder.String(), nil
 }
+
+// ListReleases lists all releases for an app with their Docker images
+func (c *FlyctlClient) ListReleases(ctx context.Context, appID string) ([]FlyioRelease, error) {
+	if err := c.ensureFlyctl(ctx); err != nil {
+		return nil, err
+	}
+
+	args := []string{
+		"releases",
+		"--app", appID,
+		"--image",
+	}
+
+	output, err := c.executor.Execute(ctx, "flyctl", args...)
+	if err != nil {
+		return nil, errors.Errorf("failed to list releases: %w", err)
+	}
+
+	return c.parseReleases(string(output))
+}
+
+// parseReleases parses the output of `fly releases --image`
+func (c *FlyctlClient) parseReleases(output string) ([]FlyioRelease, error) {
+	lines := strings.Split(output, "\n")
+	var releases []FlyioRelease
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "VERSION") {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) < 6 {
+			continue
+		}
+
+		release := FlyioRelease{
+			Version:     fields[0],
+			Status:      fields[1],
+			Description: fields[2],
+			User:        fields[3],
+		}
+
+		dockerImageIdx := -1
+		for i := 4; i < len(fields); i++ {
+			if strings.Contains(fields[i], "registry.fly.io") {
+				dockerImageIdx = i
+				break
+			}
+		}
+
+		if dockerImageIdx != -1 {
+			release.DockerImage = fields[dockerImageIdx]
+			release.Date = strings.Join(fields[4:dockerImageIdx], " ")
+		} else {
+			release.Date = strings.Join(fields[4:], " ")
+		}
+
+		if release.DockerImage != "" {
+			releases = append(releases, release)
+		}
+	}
+
+	return releases, nil
+}
+
+// DeployImage deploys a specific Docker image to an app
+func (c *FlyctlClient) DeployImage(ctx context.Context, appID, imageURL string) error {
+	if err := c.ensureFlyctl(ctx); err != nil {
+		return err
+	}
+
+	args := []string{
+		"deploy",
+		"--app", appID,
+		"--image", imageURL,
+	}
+
+	_, err := c.executor.ExecuteWithStreaming(ctx, c.writer, "flyctl", args...)
+	if err != nil {
+		return errors.Errorf("failed to deploy image: %w", err)
+	}
+
+	return nil
+}

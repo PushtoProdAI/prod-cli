@@ -30,6 +30,10 @@ type FlyioClient interface {
 	// Monitoring
 	GetAppLogs(ctx context.Context, appID string) ([]LogEntry, error)
 	GetAppMetrics(ctx context.Context, appID string) (*AppMetrics, error)
+
+	// Releases
+	ListReleases(ctx context.Context, appID string) ([]FlyioRelease, error)
+	DeployImage(ctx context.Context, appID, imageURL string) error
 }
 
 // FlyioApp represents a Fly.io application
@@ -201,6 +205,16 @@ type AppMetrics struct {
 type NetworkMetrics struct {
 	BytesIn  int64 `json:"bytes_in"`
 	BytesOut int64 `json:"bytes_out"`
+}
+
+// FlyioRelease represents a release from fly releases command
+type FlyioRelease struct {
+	Version     string `json:"version"`
+	Status      string `json:"status"`
+	Description string `json:"description"`
+	User        string `json:"user"`
+	Date        string `json:"date"`
+	DockerImage string `json:"docker_image"`
 }
 
 type FlyioAPIStep = deployment.Step[FlyioClient]

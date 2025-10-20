@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/go-errors/errors"
 
@@ -346,13 +347,105 @@ func (fqd *FlyioQueuedDeployment) getInternalPortForLanguage(language string) in
 }
 
 func (fqd *FlyioQueuedDeployment) GetCurrentDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
-	return nil, errors.Errorf("rollback not yet implemented for Fly.io")
+	if fqd.spec.Name == "" {
+		return nil, errors.Errorf("no app name available")
+	}
+
+	releases, err := fqd.client.ListReleases(ctx, fqd.spec.Name)
+	if err != nil {
+		return nil, errors.Errorf("failed to list releases: %w", err)
+	}
+
+	if len(releases) == 0 {
+		return nil, errors.Errorf("no releases found for app %s", fqd.spec.Name)
+	}
+
+	slog.Info("GetCurrentDeployment: found releases", "count", len(releases))
+	for i, rel := range releases {
+		slog.Info("Release details", "index", i, "version", rel.Version, "status", rel.Status, "image", rel.DockerImage)
+	}
+
+	var currentDeployment *deployment.DeploymentInfo
+	for _, rel := range releases {
+		if rel.Status == "complete" && rel.DockerImage != "" {
+			slog.Info("Found complete release", "version", rel.Version, "image", rel.DockerImage)
+			currentDeployment = &deployment.DeploymentInfo{
+				ID:        rel.DockerImage,
+				Status:    rel.Status,
+				CreatedAt: rel.Date,
+			}
+		}
+	}
+
+	if currentDeployment == nil {
+		return nil, errors.Errorf("no complete release found for app %s", fqd.spec.Name)
+	}
+
+	slog.Info("Returning current deployment", "image", currentDeployment.ID)
+	return currentDeployment, nil
 }
 
 func (fqd *FlyioQueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
-	return nil, errors.Errorf("rollback not yet implemented for Fly.io")
+	if fqd.spec.Name == "" {
+		return nil, errors.Errorf("no app name available")
+	}
+
+	releases, err := fqd.client.ListReleases(ctx, fqd.spec.Name)
+	if err != nil {
+		return nil, errors.Errorf("failed to list releases: %w", err)
+	}
+
+	slog.Info("GetPreviousDeployment: found releases", "count", len(releases))
+	for i, rel := range releases {
+		slog.Info("All releases", "index", i, "version", rel.Version, "status", rel.Status, "image", rel.DockerImage)
+	}
+
+	currentRelease, err := fqd.GetCurrentDeployment(ctx)
+	if err != nil {
+		slog.Warn("Could not determine current release", "error", err)
+	} else {
+		slog.Info("Current release determined", "image", currentRelease.ID)
+	}
+
+	var previousDeployment *deployment.DeploymentInfo
+	for _, rel := range releases {
+		if rel.Status == "complete" && rel.DockerImage != "" {
+			if currentRelease != nil && rel.DockerImage == currentRelease.ID {
+				slog.Info("Found current release, stopping search", "version", rel.Version, "image", rel.DockerImage)
+				break
+			}
+			slog.Info("Found release candidate", "version", rel.Version, "image", rel.DockerImage, "status", rel.Status)
+			previousDeployment = &deployment.DeploymentInfo{
+				ID:        rel.DockerImage,
+				Status:    rel.Status,
+				CreatedAt: rel.Date,
+			}
+		}
+	}
+
+	if previousDeployment == nil {
+		return nil, errors.Errorf("no previous release found for app %s (this appears to be the first deployment)", fqd.spec.Name)
+	}
+
+	slog.Info("Returning previous deployment", "image", previousDeployment.ID)
+	return previousDeployment, nil
 }
 
 func (fqd *FlyioQueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
-	return errors.Errorf("rollback not yet implemented for Fly.io")
+	if fqd.spec.Name == "" {
+		return errors.Errorf("no app name available for rollback")
+	}
+
+	appName := fqd.spec.Name
+
+	slog.Info("Rolling back Fly.io release", "app", appName, "targetImage", targetDeploymentID)
+
+	err := fqd.client.DeployImage(ctx, appName, targetDeploymentID)
+	if err != nil {
+		return errors.Errorf("failed to rollback to image %s: %w", targetDeploymentID, err)
+	}
+
+	slog.Info("Release rolled back successfully", "targetImage", targetDeploymentID)
+
+	return nil
 }
