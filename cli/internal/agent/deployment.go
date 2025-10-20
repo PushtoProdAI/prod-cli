@@ -209,6 +209,7 @@ type ExistingProjectInfo struct {
 	DeployURL         string
 	IsUpdate          bool
 	ExistingDatabases []string
+	DetectedPlatforms []Platform
 }
 
 type ProjectDetector interface {
