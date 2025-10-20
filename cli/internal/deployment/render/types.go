@@ -214,4 +214,5 @@ type RenderClient interface {
 	TriggerDeploy(ctx context.Context, serviceID string) (*RenderDeploy, error)
 	GetDeploy(ctx context.Context, serviceID, deployID string) (*RenderDeploy, error)
 	ListDeploys(ctx context.Context, serviceID string) ([]*RenderDeploy, error)
+	RollbackDeploy(ctx context.Context, serviceID, deployID string) (*RenderDeploy, error)
 }
