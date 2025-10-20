@@ -123,6 +123,7 @@ type Action int
 
 const (
 	Deploy Action = iota
+	Rollback
 	UnknownAction
 )
 

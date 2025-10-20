@@ -177,17 +177,23 @@ func (w *TeaWriter) SendPlan(plan agent.DeployPlan, dryRun bool) {
 		}
 	}
 
+	detectedPlatforms := make([]string, len(plan.ExistingProjectInfo.DetectedPlatforms))
+	for i, p := range plan.ExistingProjectInfo.DetectedPlatforms {
+		detectedPlatforms[i] = p.String()
+	}
+
 	planMessage := PlanDisplayMessage{
-		Summary:  plan.Summary,
-		Action:   plan.Action.String(),
-		Platform: plan.Platform.String(),
-		Source:   plan.Source,
-		Name:     plan.Spec.Name,
-		Language: plan.Spec.Language,
-		DryRun:   dryRun,
-		Services: tuiServices,
-		EnvVars:  tuiEnvVars,
-		Routes:   tuiRoutes,
+		Summary:           plan.Summary,
+		Action:            plan.Action.String(),
+		Platform:          plan.Platform.String(),
+		Source:            plan.Source,
+		Name:              plan.Spec.Name,
+		Language:          plan.Spec.Language,
+		DryRun:            dryRun,
+		Services:          tuiServices,
+		EnvVars:           tuiEnvVars,
+		Routes:            tuiRoutes,
+		DetectedPlatforms: detectedPlatforms,
 		Pricing: PricingInfo{
 			Services: tuiPricingServices,
 			Total:    plan.Pricing.Total,

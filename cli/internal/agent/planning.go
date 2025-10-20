@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cschleiden/go-workflows/workflow"
@@ -50,6 +51,65 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		}
 	}
 
+	action := UnknownAction
+	switch strings.ToLower(intent.Action) {
+	case "deploy":
+		action = Deploy
+	case "rollback":
+		action = Rollback
+	default:
+		action = UnknownAction
+	}
+
+	platform := UnknownPlatform
+	switch strings.ToLower(intent.Platform) {
+	case "render":
+		platform = Render
+	case "fly.io":
+		platform = FlyIO
+	case "netlify":
+		platform = Netlify
+	case "vercel":
+		platform = Vercel
+	case "heroku":
+		platform = Heroku
+	default:
+		platform = UnknownPlatform
+	}
+
+	var existingProjectInfo ExistingProjectInfo
+
+	if action == Rollback {
+		w.uiWriter.SendStatus("detecting", "Detecting deployment platforms...")
+
+		existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentDetectPlatformsForRollback, spec.Name, intent.Source).Get(ctx)
+		if err != nil {
+			slog.Error("Failed to detect platforms for rollback", "error", err)
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":     PlanDeployWorkflowName,
+				"activity":     AgentDetectPlatformsForRollback,
+				"component":    "workflow",
+				"project_name": spec.Name,
+			})
+			w.uiWriter.SendStatusComplete("detecting", "❌ Failed to detect platforms")
+		} else {
+			existingProjectInfo = existingProject
+			if len(existingProject.DetectedPlatforms) == 0 {
+				w.uiWriter.SendStatusComplete("detecting", "❌ No deployments found on any platform")
+			} else if len(existingProject.DetectedPlatforms) == 1 {
+				platform = existingProject.DetectedPlatforms[0]
+				intent.Platform = platform.String()
+				w.uiWriter.SendStatusComplete("detecting", fmt.Sprintf("✅ Found deployment on %s", platform.String()))
+			} else {
+				platformNames := make([]string, len(existingProject.DetectedPlatforms))
+				for i, p := range existingProject.DetectedPlatforms {
+					platformNames[i] = p.String()
+				}
+				w.uiWriter.SendStatusComplete("detecting", fmt.Sprintf("⚠️ Found deployments on multiple platforms: %s", strings.Join(platformNames, ", ")))
+			}
+		}
+	}
+
 	opts := ActivityOpts
 	opts.RetryOptions.MaxAttempts = 2
 	_, err = workflow.ExecuteActivity[any](ctx, opts, AgentSendProjectStats, intent.Platform, spec).Get(ctx)
@@ -75,37 +135,15 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 			"language":     spec.Language,
 		})
 	}
-	platform := UnknownPlatform
-	switch strings.ToLower(intent.Platform) {
-	case "render":
-		platform = Render
-	case "fly.io":
-		platform = FlyIO
-	case "netlify":
-		platform = Netlify
-	case "vercel":
-		platform = Vercel
-	case "heroku":
-		platform = Heroku
-	default:
-		platform = UnknownPlatform
-	}
-
-	action := UnknownAction
-	switch strings.ToLower(intent.Action) {
-	case "deploy":
-		action = Deploy
-	default:
-		action = UnknownAction
-	}
 
 	plan := DeployPlan{
-		Action:           action,
-		Platform:         platform,
-		Source:           intent.Source,
-		Spec:             spec,
-		Summary:          summary,
-		DryRunFromPrompt: intent.DryRun,
+		Action:              action,
+		Platform:            platform,
+		Source:              intent.Source,
+		Spec:                spec,
+		Summary:             summary,
+		DryRunFromPrompt:    intent.DryRun,
+		ExistingProjectInfo: existingProjectInfo,
 	}
 
 	// Estimate costs during planning phase
@@ -442,6 +480,62 @@ func maskToken(token string) string {
 		return "***"
 	}
 	return token[:4] + "***" + token[len(token)-4:]
+}
+
+func (a *Activities) detectPlatformsForRollback(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
+	platforms := []Platform{Render, FlyIO, Netlify, Vercel, Heroku}
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var detectedPlatforms []Platform
+	var primaryResult ExistingProjectInfo
+	primaryResult.Platform = UnknownPlatform
+
+	for _, platform := range platforms {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			detector, err := a.getProjectDetector(platform)
+			if err != nil {
+				slog.Info("Failed to get detector for platform", "platform", platform, "error", err)
+				return
+			}
+
+			result, err := detector.DetectExistingProject(ctx, projectName, sourcePath)
+			if err != nil {
+				slog.Info("Failed to detect project on platform", "platform", platform, "error", err)
+				return
+			}
+
+			if result.Exists {
+				mu.Lock()
+				detectedPlatforms = append(detectedPlatforms, platform)
+				if primaryResult.Platform == UnknownPlatform {
+					primaryResult = result
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	primaryResult.DetectedPlatforms = detectedPlatforms
+
+	if len(detectedPlatforms) == 0 {
+		return ExistingProjectInfo{
+			Exists:            false,
+			Platform:          UnknownPlatform,
+			DetectedPlatforms: []Platform{},
+		}, nil
+	}
+
+	if len(detectedPlatforms) == 1 {
+		primaryResult.Platform = detectedPlatforms[0]
+	}
+
+	return primaryResult, nil
 }
 
 // min returns the smaller of two integers
