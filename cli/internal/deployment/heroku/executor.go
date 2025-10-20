@@ -16,11 +16,13 @@ func NewStepExecutor(client *HerokuClient, writer io.Writer) *StepExecutor {
 }
 
 func InjectExistingApp(se *StepExecutor, client *HerokuClient, appName string) {
+	slog.Info("InjectExistingApp called", "appName", appName)
 	app, err := client.GetApp(context.Background(), appName)
 	if err != nil {
 		slog.Warn("Failed to get app details for existing app", "app", appName, "error", err)
 		return
 	}
+	slog.Info("Successfully retrieved app details", "appName", app.Name, "appID", app.ID)
 
 	var webURL string
 	if app.WebURL != nil && *app.WebURL != "" {
@@ -42,4 +44,5 @@ func InjectExistingApp(se *StepExecutor, client *HerokuClient, appName string) {
 	}
 
 	se.InjectStepResult("app", resource)
+	slog.Info("Injected app resource into step results", "stepID", "app", "resourceName", resource.Name)
 }
