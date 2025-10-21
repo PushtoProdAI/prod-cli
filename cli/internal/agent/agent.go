@@ -901,10 +901,16 @@ func shouldProceed(plan DeployPlan) bool {
 		slog.Info("Validation failed", "reason", "unknown action", "action", plan.Action)
 		return false
 	}
+
 	if plan.Platform == UnknownPlatform {
-		slog.Info("Validation failed", "reason", "unknown platform", "platform", plan.Platform)
-		return false
+		if plan.Action == Rollback && len(plan.ExistingProjectInfo.DetectedPlatforms) > 0 {
+			slog.Info("Validation passed for rollback with multiple platforms", "platforms", plan.ExistingProjectInfo.DetectedPlatforms)
+		} else {
+			slog.Info("Validation failed", "reason", "unknown platform", "platform", plan.Platform)
+			return false
+		}
 	}
+
 	if plan.Spec.Name == "" || plan.Spec.Language == "" {
 		slog.Info("Validation failed", "reason", "missing spec fields", "name", plan.Spec.Name, "language", plan.Spec.Language)
 		return false

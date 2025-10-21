@@ -1,10 +1,13 @@
 package heroku
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/go-errors/errors"
 
@@ -43,18 +46,71 @@ func (hc *HerokuClient) GetWriter() io.Writer {
 	return hc.writer
 }
 
+// getHerokuAPIKey retrieves the Heroku API key from environment variables or ~/.netrc
+func getHerokuAPIKey() string {
+	// First check environment variables
+	apiKey := os.Getenv("HEROKU_API_KEY")
+	if apiKey != "" {
+		return apiKey
+	}
+
+	apiKey = os.Getenv("HEROKU_AUTH_TOKEN")
+	if apiKey != "" {
+		return apiKey
+	}
+
+	// Fall back to reading from ~/.netrc
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	netrcPath := filepath.Join(homeDir, ".netrc")
+	file, err := os.Open(netrcPath)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	// Parse .netrc file to find Heroku credentials
+	// Format:
+	// machine api.heroku.com
+	//   login email@example.com
+	//   password TOKEN
+	scanner := bufio.NewScanner(file)
+	inHerokuSection := false
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		if strings.HasPrefix(line, "machine") {
+			if strings.Contains(line, "api.heroku.com") {
+				inHerokuSection = true
+			} else {
+				inHerokuSection = false
+			}
+			continue
+		}
+
+		if inHerokuSection && strings.HasPrefix(line, "password") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				return parts[1]
+			}
+		}
+	}
+
+	return ""
+}
+
 // NewHerokuClient creates a new Heroku client using the official SDK
 func NewHerokuClient(apiKey string, writer io.Writer) *HerokuClient {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}
 
-	// If apiKey is empty, try to get from environment
+	// If apiKey is empty, try to get from environment or netrc
 	if apiKey == "" {
-		apiKey = os.Getenv("HEROKU_API_KEY")
-		if apiKey == "" {
-			apiKey = os.Getenv("HEROKU_AUTH_TOKEN")
-		}
+		apiKey = getHerokuAPIKey()
 	}
 
 	// For v6, use the DefaultTransport but create a copy to avoid global mutation

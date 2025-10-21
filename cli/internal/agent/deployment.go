@@ -260,7 +260,7 @@ func (d *RenderProjectDetector) DetectExistingProject(ctx context.Context, proje
 		ExistingDatabases: []string{},
 	}
 
-	existing, err := render.DetectExistingProject(ctx, d.client, projectName)
+	existing, err := render.DetectExistingProject(ctx, d.client, projectName, sourcePath)
 	if err != nil {
 		return result, errors.Errorf("failed to check for existing Render project: %w", err)
 	}
