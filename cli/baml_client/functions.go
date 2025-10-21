@@ -15,6 +15,7 @@ package baml_client
 
 import (
 	"context"
+	"fmt"
 
 	baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
 	"github.com/meroxa/prod/cli/baml_client/types"
@@ -40,23 +41,46 @@ func CategorizeRoutes(ctx context.Context, candidates []types.RouteCandidate, op
 		args.Collectors = callOpts.collectors
 	}
 
-	encoded, err := baml.EncodeArgs(args)
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	encoded, err := args.Encode()
 	if err != nil {
 		panic(err)
 	}
 
-	result, err := bamlRuntime.CallFunction(ctx, "CategorizeRoutes", encoded)
-	if err != nil {
-		return types.CategorizedRoutes{}, err
+	if callOpts.onTick == nil {
+		result, err := bamlRuntime.CallFunction(ctx, "CategorizeRoutes", encoded, callOpts.onTick)
+		if err != nil {
+			return types.CategorizedRoutes{}, err
+		}
+
+		if result.Error != nil {
+			return types.CategorizedRoutes{}, result.Error
+		}
+
+		casted := (result.Data).(types.CategorizedRoutes)
+
+		return casted, nil
+	} else {
+		channel, err := bamlRuntime.CallFunctionStream(ctx, "CategorizeRoutes", encoded, callOpts.onTick)
+		if err != nil {
+			return types.CategorizedRoutes{}, err
+		}
+
+		for result := range channel {
+			if result.Error != nil {
+				return types.CategorizedRoutes{}, result.Error
+			}
+
+			if result.HasData {
+				return result.Data.(types.CategorizedRoutes), nil
+			}
+		}
+
+		return types.CategorizedRoutes{}, fmt.Errorf("No data returned from stream")
 	}
-
-	if result.Error != nil {
-		return types.CategorizedRoutes{}, result.Error
-	}
-
-	casted := *(result.Data).(*types.CategorizedRoutes)
-
-	return casted, nil
 }
 
 func DetermineBuildOutput(ctx context.Context, candidate types.BuildOutputCandidate, opts ...CallOptionFunc) (types.BuildOutput, error) {
@@ -79,23 +103,46 @@ func DetermineBuildOutput(ctx context.Context, candidate types.BuildOutputCandid
 		args.Collectors = callOpts.collectors
 	}
 
-	encoded, err := baml.EncodeArgs(args)
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	encoded, err := args.Encode()
 	if err != nil {
 		panic(err)
 	}
 
-	result, err := bamlRuntime.CallFunction(ctx, "DetermineBuildOutput", encoded)
-	if err != nil {
-		return types.BuildOutput{}, err
+	if callOpts.onTick == nil {
+		result, err := bamlRuntime.CallFunction(ctx, "DetermineBuildOutput", encoded, callOpts.onTick)
+		if err != nil {
+			return types.BuildOutput{}, err
+		}
+
+		if result.Error != nil {
+			return types.BuildOutput{}, result.Error
+		}
+
+		casted := (result.Data).(types.BuildOutput)
+
+		return casted, nil
+	} else {
+		channel, err := bamlRuntime.CallFunctionStream(ctx, "DetermineBuildOutput", encoded, callOpts.onTick)
+		if err != nil {
+			return types.BuildOutput{}, err
+		}
+
+		for result := range channel {
+			if result.Error != nil {
+				return types.BuildOutput{}, result.Error
+			}
+
+			if result.HasData {
+				return result.Data.(types.BuildOutput), nil
+			}
+		}
+
+		return types.BuildOutput{}, fmt.Errorf("No data returned from stream")
 	}
-
-	if result.Error != nil {
-		return types.BuildOutput{}, result.Error
-	}
-
-	casted := *(result.Data).(*types.BuildOutput)
-
-	return casted, nil
 }
 
 func DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCandidate, dbList []string, opts ...CallOptionFunc) (types.EnvVarCategory, error) {
@@ -118,23 +165,46 @@ func DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCandidate, dbL
 		args.Collectors = callOpts.collectors
 	}
 
-	encoded, err := baml.EncodeArgs(args)
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	encoded, err := args.Encode()
 	if err != nil {
 		panic(err)
 	}
 
-	result, err := bamlRuntime.CallFunction(ctx, "DetermineEnvVarRoles", encoded)
-	if err != nil {
-		return types.EnvVarCategory{}, err
+	if callOpts.onTick == nil {
+		result, err := bamlRuntime.CallFunction(ctx, "DetermineEnvVarRoles", encoded, callOpts.onTick)
+		if err != nil {
+			return types.EnvVarCategory{}, err
+		}
+
+		if result.Error != nil {
+			return types.EnvVarCategory{}, result.Error
+		}
+
+		casted := (result.Data).(types.EnvVarCategory)
+
+		return casted, nil
+	} else {
+		channel, err := bamlRuntime.CallFunctionStream(ctx, "DetermineEnvVarRoles", encoded, callOpts.onTick)
+		if err != nil {
+			return types.EnvVarCategory{}, err
+		}
+
+		for result := range channel {
+			if result.Error != nil {
+				return types.EnvVarCategory{}, result.Error
+			}
+
+			if result.HasData {
+				return result.Data.(types.EnvVarCategory), nil
+			}
+		}
+
+		return types.EnvVarCategory{}, fmt.Errorf("No data returned from stream")
 	}
-
-	if result.Error != nil {
-		return types.EnvVarCategory{}, result.Error
-	}
-
-	casted := *(result.Data).(*types.EnvVarCategory)
-
-	return casted, nil
 }
 
 func DetermineLaunchCommand(ctx context.Context, language string, frameworks []string, envVars []string, lc types.LaunchContext, opts ...CallOptionFunc) (types.LaunchCommand, error) {
@@ -157,23 +227,46 @@ func DetermineLaunchCommand(ctx context.Context, language string, frameworks []s
 		args.Collectors = callOpts.collectors
 	}
 
-	encoded, err := baml.EncodeArgs(args)
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	encoded, err := args.Encode()
 	if err != nil {
 		panic(err)
 	}
 
-	result, err := bamlRuntime.CallFunction(ctx, "DetermineLaunchCommand", encoded)
-	if err != nil {
-		return types.LaunchCommand{}, err
+	if callOpts.onTick == nil {
+		result, err := bamlRuntime.CallFunction(ctx, "DetermineLaunchCommand", encoded, callOpts.onTick)
+		if err != nil {
+			return types.LaunchCommand{}, err
+		}
+
+		if result.Error != nil {
+			return types.LaunchCommand{}, result.Error
+		}
+
+		casted := (result.Data).(types.LaunchCommand)
+
+		return casted, nil
+	} else {
+		channel, err := bamlRuntime.CallFunctionStream(ctx, "DetermineLaunchCommand", encoded, callOpts.onTick)
+		if err != nil {
+			return types.LaunchCommand{}, err
+		}
+
+		for result := range channel {
+			if result.Error != nil {
+				return types.LaunchCommand{}, result.Error
+			}
+
+			if result.HasData {
+				return result.Data.(types.LaunchCommand), nil
+			}
+		}
+
+		return types.LaunchCommand{}, fmt.Errorf("No data returned from stream")
 	}
-
-	if result.Error != nil {
-		return types.LaunchCommand{}, result.Error
-	}
-
-	casted := *(result.Data).(*types.LaunchCommand)
-
-	return casted, nil
 }
 
 func DetermineMigrationCommand(ctx context.Context, language string, frameworks []string, ormTools []string, migrationContext types.MigrationContext, opts ...CallOptionFunc) (types.MigrationCommand, error) {
@@ -196,23 +289,46 @@ func DetermineMigrationCommand(ctx context.Context, language string, frameworks 
 		args.Collectors = callOpts.collectors
 	}
 
-	encoded, err := baml.EncodeArgs(args)
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	encoded, err := args.Encode()
 	if err != nil {
 		panic(err)
 	}
 
-	result, err := bamlRuntime.CallFunction(ctx, "DetermineMigrationCommand", encoded)
-	if err != nil {
-		return types.MigrationCommand{}, err
+	if callOpts.onTick == nil {
+		result, err := bamlRuntime.CallFunction(ctx, "DetermineMigrationCommand", encoded, callOpts.onTick)
+		if err != nil {
+			return types.MigrationCommand{}, err
+		}
+
+		if result.Error != nil {
+			return types.MigrationCommand{}, result.Error
+		}
+
+		casted := (result.Data).(types.MigrationCommand)
+
+		return casted, nil
+	} else {
+		channel, err := bamlRuntime.CallFunctionStream(ctx, "DetermineMigrationCommand", encoded, callOpts.onTick)
+		if err != nil {
+			return types.MigrationCommand{}, err
+		}
+
+		for result := range channel {
+			if result.Error != nil {
+				return types.MigrationCommand{}, result.Error
+			}
+
+			if result.HasData {
+				return result.Data.(types.MigrationCommand), nil
+			}
+		}
+
+		return types.MigrationCommand{}, fmt.Errorf("No data returned from stream")
 	}
-
-	if result.Error != nil {
-		return types.MigrationCommand{}, result.Error
-	}
-
-	casted := *(result.Data).(*types.MigrationCommand)
-
-	return casted, nil
 }
 
 func ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) (types.Intent, error) {
@@ -235,23 +351,46 @@ func ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) 
 		args.Collectors = callOpts.collectors
 	}
 
-	encoded, err := baml.EncodeArgs(args)
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	encoded, err := args.Encode()
 	if err != nil {
 		panic(err)
 	}
 
-	result, err := bamlRuntime.CallFunction(ctx, "ExtractIntent", encoded)
-	if err != nil {
-		return types.Intent{}, err
+	if callOpts.onTick == nil {
+		result, err := bamlRuntime.CallFunction(ctx, "ExtractIntent", encoded, callOpts.onTick)
+		if err != nil {
+			return types.Intent{}, err
+		}
+
+		if result.Error != nil {
+			return types.Intent{}, result.Error
+		}
+
+		casted := (result.Data).(types.Intent)
+
+		return casted, nil
+	} else {
+		channel, err := bamlRuntime.CallFunctionStream(ctx, "ExtractIntent", encoded, callOpts.onTick)
+		if err != nil {
+			return types.Intent{}, err
+		}
+
+		for result := range channel {
+			if result.Error != nil {
+				return types.Intent{}, result.Error
+			}
+
+			if result.HasData {
+				return result.Data.(types.Intent), nil
+			}
+		}
+
+		return types.Intent{}, fmt.Errorf("No data returned from stream")
 	}
-
-	if result.Error != nil {
-		return types.Intent{}, result.Error
-	}
-
-	casted := *(result.Data).(*types.Intent)
-
-	return casted, nil
 }
 
 func FetchPricing(ctx context.Context, service types.Service, content string, opts ...CallOptionFunc) (types.ServicePricing, error) {
@@ -274,23 +413,46 @@ func FetchPricing(ctx context.Context, service types.Service, content string, op
 		args.Collectors = callOpts.collectors
 	}
 
-	encoded, err := baml.EncodeArgs(args)
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	encoded, err := args.Encode()
 	if err != nil {
 		panic(err)
 	}
 
-	result, err := bamlRuntime.CallFunction(ctx, "FetchPricing", encoded)
-	if err != nil {
-		return types.ServicePricing{}, err
+	if callOpts.onTick == nil {
+		result, err := bamlRuntime.CallFunction(ctx, "FetchPricing", encoded, callOpts.onTick)
+		if err != nil {
+			return types.ServicePricing{}, err
+		}
+
+		if result.Error != nil {
+			return types.ServicePricing{}, result.Error
+		}
+
+		casted := (result.Data).(types.ServicePricing)
+
+		return casted, nil
+	} else {
+		channel, err := bamlRuntime.CallFunctionStream(ctx, "FetchPricing", encoded, callOpts.onTick)
+		if err != nil {
+			return types.ServicePricing{}, err
+		}
+
+		for result := range channel {
+			if result.Error != nil {
+				return types.ServicePricing{}, result.Error
+			}
+
+			if result.HasData {
+				return result.Data.(types.ServicePricing), nil
+			}
+		}
+
+		return types.ServicePricing{}, fmt.Errorf("No data returned from stream")
 	}
-
-	if result.Error != nil {
-		return types.ServicePricing{}, result.Error
-	}
-
-	casted := *(result.Data).(*types.ServicePricing)
-
-	return casted, nil
 }
 
 func SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Intent, spec types.ProjectSpec, os string, violations []string, opts ...CallOptionFunc) (types.Error, error) {
@@ -313,26 +475,49 @@ func SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Int
 		args.Collectors = callOpts.collectors
 	}
 
-	encoded, err := baml.EncodeArgs(args)
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	encoded, err := args.Encode()
 	if err != nil {
 		panic(err)
 	}
 
-	result, err := bamlRuntime.CallFunction(ctx, "SummarizeDeployError", encoded)
-	if err != nil {
-		return types.Error{}, err
+	if callOpts.onTick == nil {
+		result, err := bamlRuntime.CallFunction(ctx, "SummarizeDeployError", encoded, callOpts.onTick)
+		if err != nil {
+			return types.Error{}, err
+		}
+
+		if result.Error != nil {
+			return types.Error{}, result.Error
+		}
+
+		casted := (result.Data).(types.Error)
+
+		return casted, nil
+	} else {
+		channel, err := bamlRuntime.CallFunctionStream(ctx, "SummarizeDeployError", encoded, callOpts.onTick)
+		if err != nil {
+			return types.Error{}, err
+		}
+
+		for result := range channel {
+			if result.Error != nil {
+				return types.Error{}, result.Error
+			}
+
+			if result.HasData {
+				return result.Data.(types.Error), nil
+			}
+		}
+
+		return types.Error{}, fmt.Errorf("No data returned from stream")
 	}
-
-	if result.Error != nil {
-		return types.Error{}, result.Error
-	}
-
-	casted := *(result.Data).(*types.Error)
-
-	return casted, nil
 }
 
-func SummarizeIntent(ctx context.Context, intent types.Intent, name string, language string, opts ...CallOptionFunc) (types.Summary, error) {
+func SummarizeIntent(ctx context.Context, intent types.Intent, name string, language string, detectedPlatforms []string, opts ...CallOptionFunc) (types.Summary, error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -340,7 +525,7 @@ func SummarizeIntent(ctx context.Context, intent types.Intent, name string, lang
 	}
 
 	args := baml.BamlFunctionArguments{
-		Kwargs: map[string]any{"intent": intent, "name": name, "language": language},
+		Kwargs: map[string]any{"intent": intent, "name": name, "language": language, "detectedPlatforms": detectedPlatforms},
 		Env:    getEnvVars(callOpts.env),
 	}
 
@@ -352,23 +537,46 @@ func SummarizeIntent(ctx context.Context, intent types.Intent, name string, lang
 		args.Collectors = callOpts.collectors
 	}
 
-	encoded, err := baml.EncodeArgs(args)
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	encoded, err := args.Encode()
 	if err != nil {
 		panic(err)
 	}
 
-	result, err := bamlRuntime.CallFunction(ctx, "SummarizeIntent", encoded)
-	if err != nil {
-		return types.Summary{}, err
+	if callOpts.onTick == nil {
+		result, err := bamlRuntime.CallFunction(ctx, "SummarizeIntent", encoded, callOpts.onTick)
+		if err != nil {
+			return types.Summary{}, err
+		}
+
+		if result.Error != nil {
+			return types.Summary{}, result.Error
+		}
+
+		casted := (result.Data).(types.Summary)
+
+		return casted, nil
+	} else {
+		channel, err := bamlRuntime.CallFunctionStream(ctx, "SummarizeIntent", encoded, callOpts.onTick)
+		if err != nil {
+			return types.Summary{}, err
+		}
+
+		for result := range channel {
+			if result.Error != nil {
+				return types.Summary{}, result.Error
+			}
+
+			if result.HasData {
+				return result.Data.(types.Summary), nil
+			}
+		}
+
+		return types.Summary{}, fmt.Errorf("No data returned from stream")
 	}
-
-	if result.Error != nil {
-		return types.Summary{}, result.Error
-	}
-
-	casted := *(result.Data).(*types.Summary)
-
-	return casted, nil
 }
 
 func SummarizeSteps(ctx context.Context, steps []string, opts ...CallOptionFunc) (types.Summary, error) {
@@ -391,21 +599,44 @@ func SummarizeSteps(ctx context.Context, steps []string, opts ...CallOptionFunc)
 		args.Collectors = callOpts.collectors
 	}
 
-	encoded, err := baml.EncodeArgs(args)
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	encoded, err := args.Encode()
 	if err != nil {
 		panic(err)
 	}
 
-	result, err := bamlRuntime.CallFunction(ctx, "SummarizeSteps", encoded)
-	if err != nil {
-		return types.Summary{}, err
+	if callOpts.onTick == nil {
+		result, err := bamlRuntime.CallFunction(ctx, "SummarizeSteps", encoded, callOpts.onTick)
+		if err != nil {
+			return types.Summary{}, err
+		}
+
+		if result.Error != nil {
+			return types.Summary{}, result.Error
+		}
+
+		casted := (result.Data).(types.Summary)
+
+		return casted, nil
+	} else {
+		channel, err := bamlRuntime.CallFunctionStream(ctx, "SummarizeSteps", encoded, callOpts.onTick)
+		if err != nil {
+			return types.Summary{}, err
+		}
+
+		for result := range channel {
+			if result.Error != nil {
+				return types.Summary{}, result.Error
+			}
+
+			if result.HasData {
+				return result.Data.(types.Summary), nil
+			}
+		}
+
+		return types.Summary{}, fmt.Errorf("No data returned from stream")
 	}
-
-	if result.Error != nil {
-		return types.Summary{}, result.Error
-	}
-
-	casted := *(result.Data).(*types.Summary)
-
-	return casted, nil
 }

@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -76,6 +78,41 @@ func NewHTTPRenderClient(apiKey string, writer io.Writer) *HTTPRenderClient {
 	}
 }
 
+// getAPIKey retrieves the Render API key from environment variable or config file
+func (c *HTTPRenderClient) getAPIKey() string {
+	// First check environment variable
+	apiKey := os.Getenv("RENDER_API_KEY")
+	if apiKey != "" {
+		return apiKey
+	}
+
+	// Fall back to config file
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	configPath := filepath.Join(homeDir, ".render", "cli.yaml")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return ""
+	}
+
+	// Simple YAML parsing for the key field
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "key:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+
+	return ""
+}
+
 // makeRequest makes an HTTP request with proper authentication and error handling
 func (c *HTTPRenderClient) makeRequest(ctx context.Context, method, endpoint string, body any) (*http.Response, error) {
 	var reqBody io.Reader
@@ -95,8 +132,8 @@ func (c *HTTPRenderClient) makeRequest(ctx context.Context, method, endpoint str
 	}
 
 	// Set headers per Render API docs
-	// Dynamically get API key from environment variable
-	apiKey := os.Getenv("RENDER_API_KEY")
+	// Get API key from environment variable or config file
+	apiKey := c.getAPIKey()
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
