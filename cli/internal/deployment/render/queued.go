@@ -369,28 +369,22 @@ func (qd *QueuedDeployment) GetCurrentDeployment(ctx context.Context) (*deployme
 	}
 
 	slog.Info("GetCurrentDeployment: found deploys", "count", len(deploys))
-	for i, dep := range deploys {
-		slog.Info("Deploy details", "index", i, "id", dep.ID, "status", dep.Status, "createdAt", dep.CreatedAt)
-	}
 
-	var currentDeployment *deployment.DeploymentInfo
-	for _, dep := range deploys {
+	// Deploys are sorted newest-first, so take the first live deployment
+	for i, dep := range deploys {
+		slog.Info("Checking deploy", "index", i, "id", dep.ID, "status", dep.Status, "createdAt", dep.CreatedAt)
+
 		if dep.Status == "live" {
-			slog.Info("Found live deployment", "id", dep.ID)
-			currentDeployment = &deployment.DeploymentInfo{
+			slog.Info("Found current deployment", "id", dep.ID)
+			return &deployment.DeploymentInfo{
 				ID:        dep.ID,
 				Status:    dep.Status,
 				CreatedAt: dep.CreatedAt,
-			}
+			}, nil
 		}
 	}
 
-	if currentDeployment == nil {
-		return nil, errors.Errorf("no live deployment found for service %s", qd.spec.ExistingProjectID)
-	}
-
-	slog.Info("Returning current deployment", "id", currentDeployment.ID)
-	return currentDeployment, nil
+	return nil, errors.Errorf("no live deployment found for service %s", qd.spec.ExistingProjectID)
 }
 
 func (qd *QueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {

@@ -361,28 +361,22 @@ func (fqd *FlyioQueuedDeployment) getCurrentDeployment(ctx context.Context) (*de
 	}
 
 	slog.Info("GetCurrentDeployment: found releases", "count", len(releases))
-	for i, rel := range releases {
-		slog.Info("Release details", "index", i, "version", rel.Version, "status", rel.Status, "image", rel.DockerImage)
-	}
 
-	var currentDeployment *deployment.DeploymentInfo
-	for _, rel := range releases {
+	// Releases are sorted newest-first, so take the first complete release with a docker image
+	for i, rel := range releases {
+		slog.Info("Checking release", "index", i, "version", rel.Version, "status", rel.Status, "image", rel.DockerImage)
+
 		if rel.Status == "complete" && rel.DockerImage != "" {
-			slog.Info("Found complete release", "version", rel.Version, "image", rel.DockerImage)
-			currentDeployment = &deployment.DeploymentInfo{
+			slog.Info("Found current deployment", "version", rel.Version, "image", rel.DockerImage)
+			return &deployment.DeploymentInfo{
 				ID:        rel.DockerImage,
 				Status:    rel.Status,
 				CreatedAt: rel.Date,
-			}
+			}, nil
 		}
 	}
 
-	if currentDeployment == nil {
-		return nil, errors.Errorf("no complete release found for app %s", fqd.spec.Name)
-	}
-
-	slog.Info("Returning current deployment", "image", currentDeployment.ID)
-	return currentDeployment, nil
+	return nil, errors.Errorf("no complete release found for app %s", fqd.spec.Name)
 }
 
 func (fqd *FlyioQueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {

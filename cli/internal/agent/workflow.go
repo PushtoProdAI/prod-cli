@@ -1932,8 +1932,9 @@ func (w *Workflows) rollbackDeployment(ctx workflow.Context, plan DeployPlan) (d
 		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to build deployment spec: %v", err)}}, nil
 	}
 
-	// Set existing project info
+	// Set existing project info and rollback flag
 	spec.IsUpdate = true
+	spec.IsRollback = true
 	spec.ExistingProjectID = existingProject.ProjectID
 	spec.ExistingDatabases = existingProject.ExistingDatabases
 
