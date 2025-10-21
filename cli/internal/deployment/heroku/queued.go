@@ -351,11 +351,11 @@ func (qd *QueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deploym
 		return nil, errors.Errorf("failed to list releases: %w", err)
 	}
 
-	slog.Info("GetPreviousDeployment: found releases", "count", len(releases))
-	for i, rel := range releases {
-		hasSlug := rel.Slug != nil && rel.Slug.ID != ""
-		slog.Info("All releases", "index", i, "version", rel.Version, "status", rel.Status, "hasSlug", hasSlug, "id", rel.ID)
+	if len(releases) < 2 {
+		return nil, errors.Errorf("no previous deployment found for app %s (need at least 2 releases, found %d)", qd.spec.ExistingProjectID, len(releases))
 	}
+
+	slog.Info("GetPreviousDeployment: found releases", "count", len(releases))
 
 	currentRelease, err := qd.GetCurrentDeployment(ctx)
 	if err != nil {
@@ -364,32 +364,38 @@ func (qd *QueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deploym
 		slog.Info("Current release determined", "id", currentRelease.ID)
 	}
 
-	// Find deployment releases that have a slug, excluding the current one
-	// Releases are returned oldest-first, so we need to find the most recent one before current
-	var previousDeployment *deployment.DeploymentInfo
-	for _, rel := range releases {
-		if rel.Status == "succeeded" && rel.Slug != nil && rel.Slug.ID != "" {
-			// If this is the current release, stop - the previous one we found is what we want
-			if currentRelease != nil && rel.ID == currentRelease.ID {
-				slog.Info("Found current release, stopping search", "version", rel.Version, "id", rel.ID)
-				break
-			}
-			// This is a candidate for previous deployment
-			slog.Info("Found deployment release candidate", "version", rel.Version, "id", rel.ID, "status", rel.Status)
-			previousDeployment = &deployment.DeploymentInfo{
-				ID:        rel.ID,
-				Status:    rel.Status,
-				CreatedAt: rel.CreatedAt.String(),
-			}
+	// Releases are sorted newest first, so find the first succeeded release with a slug that's older than current
+	for i, rel := range releases {
+		slog.Info("Checking release", "index", i, "version", rel.Version, "status", rel.Status, "id", rel.ID)
+
+		// Skip releases without a slug or that didn't succeed
+		if rel.Status != "succeeded" || rel.Slug == nil || rel.Slug.ID == "" {
+			slog.Info("Skipping release without slug or failed", "version", rel.Version, "status", rel.Status)
+			continue
 		}
+
+		// Skip the current release
+		if currentRelease != nil && rel.ID == currentRelease.ID {
+			slog.Info("Skipping current release", "version", rel.Version, "id", rel.ID)
+			continue
+		}
+
+		// If we don't have a current release, skip the first (newest) succeeded release with a slug
+		if currentRelease == nil && i == 0 {
+			slog.Info("No current release found, skipping newest release", "version", rel.Version)
+			continue
+		}
+
+		// Return this release as the previous deployment
+		slog.Info("Found previous deployment", "version", rel.Version, "id", rel.ID, "status", rel.Status)
+		return &deployment.DeploymentInfo{
+			ID:        rel.ID,
+			Status:    rel.Status,
+			CreatedAt: rel.CreatedAt.String(),
+		}, nil
 	}
 
-	if previousDeployment == nil {
-		return nil, errors.Errorf("no previous deployment found for app %s (this appears to be the first deployment)", qd.spec.ExistingProjectID)
-	}
-
-	slog.Info("Returning previous deployment", "id", previousDeployment.ID)
-	return previousDeployment, nil
+	return nil, errors.Errorf("no previous deployment found for app %s", qd.spec.ExistingProjectID)
 }
 
 func (qd *QueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {

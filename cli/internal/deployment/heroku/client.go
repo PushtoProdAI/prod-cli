@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/go-errors/errors"
@@ -338,6 +340,18 @@ func (c *HerokuClient) ListReleases(ctx context.Context, appID string) (heroku.R
 	if err != nil {
 		return nil, errors.Errorf("failed to list releases: %w", err)
 	}
+
+	// Sort releases by version descending (newest first)
+	sort.Slice(releases, func(i, j int) bool {
+		return releases[i].Version > releases[j].Version
+	})
+
+	slog.Info("ListReleases sorted", "count", len(releases))
+	for i, r := range releases {
+		hasSlug := r.Slug != nil && r.Slug.ID != ""
+		slog.Info("Release", "index", i, "version", r.Version, "status", r.Status, "hasSlug", hasSlug, "createdAt", r.CreatedAt)
+	}
+
 	return releases, nil
 }
 
