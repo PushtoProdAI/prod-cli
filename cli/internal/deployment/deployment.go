@@ -73,6 +73,7 @@ type DeploymentSpec struct {
 	OutputDir         string
 	IsStatic          bool
 	IsUpdate          bool
+	IsRollback        bool
 	ExistingProjectID string
 	ExistingDatabases []string
 }

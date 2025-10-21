@@ -314,31 +314,23 @@ func (qd *QueuedDeployment) GetCurrentDeployment(ctx context.Context) (*deployme
 	}
 
 	slog.Info("GetCurrentDeployment: found releases", "count", len(releases))
-	for i, rel := range releases {
-		hasSlug := rel.Slug != nil && rel.Slug.ID != ""
-		slog.Info("Release details", "index", i, "version", rel.Version, "status", rel.Status, "hasSlug", hasSlug, "id", rel.ID)
-	}
 
 	// Find the most recent succeeded release with a slug (actual deployment)
-	// Releases are ordered oldest-first, so we need to find the last one with a slug
-	var currentDeployment *deployment.DeploymentInfo
-	for _, rel := range releases {
+	// Releases are sorted newest-first, so we take the first succeeded release with a slug
+	for i, rel := range releases {
+		slog.Info("Checking release", "index", i, "version", rel.Version, "status", rel.Status, "hasSlug", rel.Slug != nil && rel.Slug.ID != "", "id", rel.ID)
+
 		if rel.Status == "succeeded" && rel.Slug != nil && rel.Slug.ID != "" {
-			slog.Info("Found deployment release", "version", rel.Version, "id", rel.ID)
-			currentDeployment = &deployment.DeploymentInfo{
+			slog.Info("Found current deployment", "version", rel.Version, "id", rel.ID)
+			return &deployment.DeploymentInfo{
 				ID:        rel.ID,
 				Status:    rel.Status,
 				CreatedAt: rel.CreatedAt.String(),
-			}
+			}, nil
 		}
 	}
 
-	if currentDeployment == nil {
-		return nil, errors.Errorf("no successful deployment releases found for app %s", qd.spec.ExistingProjectID)
-	}
-
-	slog.Info("Returning current deployment", "id", currentDeployment.ID)
-	return currentDeployment, nil
+	return nil, errors.Errorf("no successful deployment releases found for app %s", qd.spec.ExistingProjectID)
 }
 
 func (qd *QueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
