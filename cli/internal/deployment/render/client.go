@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -560,9 +561,45 @@ func (c *HTTPRenderClient) ListDeploys(ctx context.Context, serviceID string) ([
 	}
 	defer resp.Body.Close()
 
-	var deploys []*RenderDeploy
-	if err := c.handleResponse(resp, &deploys); err != nil {
-		return nil, err
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, &HTTPError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("API request failed with status %d: %s", resp.StatusCode, string(body)),
+		}
+	}
+
+	var wrappedDeploys []struct {
+		Deploy RenderDeploy `json:"deploy"`
+		Cursor string       `json:"cursor"`
+	}
+	if err := json.Unmarshal(body, &wrappedDeploys); err != nil {
+		return nil, errors.Errorf("failed to parse response JSON: %w", err)
+	}
+
+	deploys := make([]*RenderDeploy, len(wrappedDeploys))
+	for i, wrapped := range wrappedDeploys {
+		deploy := wrapped.Deploy
+		deploys[i] = &deploy
+	}
+
+	// Sort deploys by createdAt descending (newest first)
+	sort.Slice(deploys, func(i, j int) bool {
+		timeI, errI := time.Parse(time.RFC3339, deploys[i].CreatedAt)
+		timeJ, errJ := time.Parse(time.RFC3339, deploys[j].CreatedAt)
+		if errI != nil || errJ != nil {
+			return false
+		}
+		return timeI.After(timeJ)
+	})
+
+	slog.Info("ListDeploys parsed and sorted", "count", len(deploys))
+	for i, d := range deploys {
+		slog.Info("Deploy", "index", i, "id", d.ID, "status", d.Status, "createdAt", d.CreatedAt)
 	}
 
 	return deploys, nil
