@@ -395,40 +395,51 @@ func (fqd *FlyioQueuedDeployment) GetPreviousDeployment(ctx context.Context) (*d
 		return nil, errors.Errorf("failed to list releases: %w", err)
 	}
 
-	slog.Info("GetPreviousDeployment: found releases", "count", len(releases))
-	for i, rel := range releases {
-		slog.Info("All releases", "index", i, "version", rel.Version, "status", rel.Status, "image", rel.DockerImage)
+	if len(releases) < 2 {
+		return nil, errors.Errorf("no previous release found for app %s (need at least 2 releases, found %d)", fqd.spec.Name, len(releases))
 	}
+
+	slog.Info("GetPreviousDeployment: found releases", "count", len(releases))
 
 	currentRelease, err := fqd.getCurrentDeployment(ctx)
 	if err != nil {
 		slog.Warn("Could not determine current release", "error", err)
 	} else {
-		slog.Info("Current release determined", "image", currentRelease.ID)
+		slog.Info("Current release determined", "version", currentRelease.ID)
 	}
 
-	var previousDeployment *deployment.DeploymentInfo
-	for _, rel := range releases {
-		if rel.Status == "complete" && rel.DockerImage != "" {
-			if currentRelease != nil && rel.DockerImage == currentRelease.ID {
-				slog.Info("Found current release, stopping search", "version", rel.Version, "image", rel.DockerImage)
-				break
-			}
-			slog.Info("Found release candidate", "version", rel.Version, "image", rel.DockerImage, "status", rel.Status)
-			previousDeployment = &deployment.DeploymentInfo{
-				ID:        rel.DockerImage,
-				Status:    rel.Status,
-				CreatedAt: rel.Date,
-			}
+	// Releases are sorted newest first, so find the first complete release that's older than current
+	for i, rel := range releases {
+		slog.Info("Checking release", "index", i, "version", rel.Version, "status", rel.Status, "image", rel.DockerImage)
+
+		// Skip non-complete releases
+		if rel.Status != "complete" || rel.DockerImage == "" {
+			slog.Info("Skipping incomplete release", "version", rel.Version, "status", rel.Status)
+			continue
 		}
+
+		// Skip the current release
+		if currentRelease != nil && rel.DockerImage == currentRelease.ID {
+			slog.Info("Skipping current release", "version", rel.Version, "image", rel.DockerImage)
+			continue
+		}
+
+		// If we don't have a current release, skip the first (newest) complete release
+		if currentRelease == nil && i == 0 {
+			slog.Info("No current release found, skipping newest release", "version", rel.Version)
+			continue
+		}
+
+		// Return this release as the previous deployment
+		slog.Info("Found previous release", "version", rel.Version, "image", rel.DockerImage, "status", rel.Status)
+		return &deployment.DeploymentInfo{
+			ID:        rel.DockerImage,
+			Status:    rel.Status,
+			CreatedAt: rel.Date,
+		}, nil
 	}
 
-	if previousDeployment == nil {
-		return nil, errors.Errorf("no previous release found for app %s (this appears to be the first deployment)", fqd.spec.Name)
-	}
-
-	slog.Info("Returning previous deployment", "image", previousDeployment.ID)
-	return previousDeployment, nil
+	return nil, errors.Errorf("no previous release found for app %s", fqd.spec.Name)
 }
 
 func (fqd *FlyioQueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
