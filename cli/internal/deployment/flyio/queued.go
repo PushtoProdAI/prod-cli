@@ -346,7 +346,7 @@ func (fqd *FlyioQueuedDeployment) getInternalPortForLanguage(language string) in
 	return config.InternalPort
 }
 
-func (fqd *FlyioQueuedDeployment) GetCurrentDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+func (fqd *FlyioQueuedDeployment) getCurrentDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
 	if fqd.spec.Name == "" {
 		return nil, errors.Errorf("no app name available")
 	}
@@ -400,7 +400,7 @@ func (fqd *FlyioQueuedDeployment) GetPreviousDeployment(ctx context.Context) (*d
 		slog.Info("All releases", "index", i, "version", rel.Version, "status", rel.Status, "image", rel.DockerImage)
 	}
 
-	currentRelease, err := fqd.GetCurrentDeployment(ctx)
+	currentRelease, err := fqd.getCurrentDeployment(ctx)
 	if err != nil {
 		slog.Warn("Could not determine current release", "error", err)
 	} else {

@@ -403,40 +403,45 @@ func (qd *QueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deploym
 		return nil, errors.Errorf("failed to list deploys: %w", err)
 	}
 
-	slog.Info("GetPreviousDeployment: found deploys", "count", len(deploys))
-	for i, dep := range deploys {
-		slog.Info("All deploys", "index", i, "id", dep.ID, "status", dep.Status, "createdAt", dep.CreatedAt)
+	if len(deploys) < 2 {
+		return nil, errors.Errorf("no previous deployment found for service %s (need at least 2 deploys, found %d)", qd.spec.ExistingProjectID, len(deploys))
 	}
+
+	slog.Info("GetPreviousDeployment: found deploys", "count", len(deploys))
 
 	currentDeploy, err := qd.GetCurrentDeployment(ctx)
 	if err != nil {
 		slog.Warn("Could not determine current deployment", "error", err)
 	} else {
-		slog.Info("Current deployment determined", "id", currentDeploy.ID)
+		slog.Info("Current deployment determined", "id", currentDeploy.ID, "createdAt", currentDeploy.CreatedAt)
 	}
 
-	var previousDeployment *deployment.DeploymentInfo
-	for _, dep := range deploys {
-		if dep.Status == "live" {
-			if currentDeploy != nil && dep.ID == currentDeploy.ID {
-				slog.Info("Found current deployment, stopping search", "id", dep.ID)
-				break
-			}
-			slog.Info("Found deployment candidate", "id", dep.ID, "status", dep.Status)
-			previousDeployment = &deployment.DeploymentInfo{
-				ID:        dep.ID,
-				Status:    dep.Status,
-				CreatedAt: dep.CreatedAt,
-			}
+	// Deploys are sorted newest first, so find the first deploy that's older than current
+	for i, dep := range deploys {
+		slog.Info("Checking deploy", "index", i, "id", dep.ID, "status", dep.Status, "createdAt", dep.CreatedAt)
+
+		// Skip the current live deployment
+		if currentDeploy != nil && dep.ID == currentDeploy.ID {
+			slog.Info("Skipping current deployment", "id", dep.ID)
+			continue
 		}
+
+		// If we don't have a current deployment, skip the first (newest) deploy
+		if currentDeploy == nil && i == 0 {
+			slog.Info("No current deployment found, skipping newest deploy", "id", dep.ID)
+			continue
+		}
+
+		// Return this deploy as the previous deployment
+		slog.Info("Found previous deployment", "id", dep.ID, "status", dep.Status, "createdAt", dep.CreatedAt)
+		return &deployment.DeploymentInfo{
+			ID:        dep.ID,
+			Status:    dep.Status,
+			CreatedAt: dep.CreatedAt,
+		}, nil
 	}
 
-	if previousDeployment == nil {
-		return nil, errors.Errorf("no previous deployment found for service %s (this appears to be the first deployment)", qd.spec.ExistingProjectID)
-	}
-
-	slog.Info("Returning previous deployment", "id", previousDeployment.ID)
-	return previousDeployment, nil
+	return nil, errors.Errorf("no previous deployment found for service %s", qd.spec.ExistingProjectID)
 }
 
 func (qd *QueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {

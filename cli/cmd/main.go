@@ -26,6 +26,9 @@ import (
 )
 
 func main() {
+	// Unset MallocStackLogging to prevent macOS malloc debug messages from interfering with TUI
+	os.Unsetenv("MallocStackLogging")
+
 	logFile, err := initLogFile()
 	if err != nil {
 		log.Fatalf("failed to initialize log file: %v", err)
