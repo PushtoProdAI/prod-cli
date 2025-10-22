@@ -77,17 +77,18 @@ func (t TextPrompt) String() string {
 
 // PlanDisplayMessage represents a deployment plan with structured data for table display
 type PlanDisplayMessage struct {
-	Summary  string
-	Action   string
-	Platform string
-	Source   string
-	Name     string
-	Language string
-	DryRun   bool
-	Services []ServiceRequirement
-	EnvVars  []EnvVarRequirement
-	Routes   []RouteRequirement
-	Pricing  PricingInfo
+	Summary           string
+	Action            string
+	Platform          string
+	Source            string
+	Name              string
+	Language          string
+	DryRun            bool
+	Services          []ServiceRequirement
+	EnvVars           []EnvVarRequirement
+	Routes            []RouteRequirement
+	Pricing           PricingInfo
+	DetectedPlatforms []string
 }
 
 type PricingInfo struct {

@@ -12,7 +12,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
-func listVercelDeployments(ctx context.Context, sourcePath string) ([]deployment.DeploymentInfo, error) {
+func listVercelDeployments(ctx context.Context, sourcePath string, projectName string) ([]deployment.DeploymentInfo, error) {
 	originalDir, err := os.Getwd()
 	if err != nil {
 		return nil, errors.Errorf("failed to get current directory: %w", err)
@@ -25,10 +25,13 @@ func listVercelDeployments(ctx context.Context, sourcePath string) ([]deployment
 		defer os.Chdir(originalDir)
 	}
 
+	currentDir, _ := os.Getwd()
+	slog.Info("Listing Vercel deployments", "currentDir", currentDir, "sourcePath", sourcePath, "projectName", projectName)
+
 	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(cmdCtx, "vercel", "list")
+	cmd := exec.CommandContext(cmdCtx, "vercel", "list", projectName, "--yes")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if cmdCtx.Err() == context.DeadlineExceeded {
@@ -43,10 +46,12 @@ func listVercelDeployments(ctx context.Context, sourcePath string) ([]deployment
 	lines := strings.Split(string(output), "\n")
 
 	inDeploymentTable := false
-	for _, line := range lines {
+	for i, line := range lines {
 		line = strings.TrimSpace(line)
+		slog.Debug("Parsing line", "lineNum", i, "line", line, "inTable", inDeploymentTable)
 
 		if strings.Contains(line, "Age") && strings.Contains(line, "Deployment") {
+			slog.Info("Found deployment table header")
 			inDeploymentTable = true
 			continue
 		}
@@ -56,6 +61,7 @@ func listVercelDeployments(ctx context.Context, sourcePath string) ([]deployment
 		}
 
 		if strings.HasPrefix(line, "https://") {
+			slog.Info("Found https:// prefix, exiting table")
 			inDeploymentTable = false
 			continue
 		}
@@ -65,14 +71,16 @@ func listVercelDeployments(ctx context.Context, sourcePath string) ([]deployment
 		}
 
 		fields := strings.Fields(line)
+		slog.Info("Parsing deployment line", "fields", fields, "fieldCount", len(fields))
 		if len(fields) >= 4 && strings.HasPrefix(fields[1], "https://") {
 			deployURL := fields[1]
 
 			parts := strings.Split(deployURL, "://")
 			if len(parts) > 1 {
 				domain := strings.Split(parts[1], ".")[0]
+				slog.Info("Found deployment", "domain", domain, "url", deployURL)
 				deployments = append(deployments, deployment.DeploymentInfo{
-					ID:        domain,
+					ID:        deployURL,
 					Status:    "Ready",
 					CreatedAt: fields[0],
 					URL:       deployURL,
@@ -81,11 +89,12 @@ func listVercelDeployments(ctx context.Context, sourcePath string) ([]deployment
 		}
 	}
 
+	slog.Info("Finished parsing deployments", "count", len(deployments))
 	return deployments, nil
 }
 
 func GetCurrentVercelDeployment(ctx context.Context, client VercelClient, projectName string, sourcePath string) (*deployment.DeploymentInfo, error) {
-	deployments, err := listVercelDeployments(ctx, sourcePath)
+	deployments, err := listVercelDeployments(ctx, sourcePath, projectName)
 	if err != nil {
 		return nil, err
 	}
@@ -94,11 +103,25 @@ func GetCurrentVercelDeployment(ctx context.Context, client VercelClient, projec
 		return nil, errors.Errorf("no deployments found for project %s", projectName)
 	}
 
-	return &deployments[0], nil
+	currentDeploy := &deployments[0]
+
+	// Get the production alias URL instead of the deployment-specific URL
+	// This is the URL users actually visit (e.g., https://project-name.vercel.app)
+	if cliClient, ok := client.(*CLIVercelClient); ok {
+		productionURL, err := cliClient.getProductionURLFromAliases(projectName)
+		if err != nil {
+			slog.Warn("Failed to get production URL from aliases, using deployment URL", "error", err, "deploymentURL", currentDeploy.URL)
+		} else {
+			slog.Info("Using production alias URL", "productionURL", productionURL, "deploymentURL", currentDeploy.URL)
+			currentDeploy.URL = productionURL
+		}
+	}
+
+	return currentDeploy, nil
 }
 
 func GetPreviousVercelDeployment(ctx context.Context, client VercelClient, projectName string, sourcePath string) (*deployment.DeploymentInfo, error) {
-	deployments, err := listVercelDeployments(ctx, sourcePath)
+	deployments, err := listVercelDeployments(ctx, sourcePath, projectName)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +130,21 @@ func GetPreviousVercelDeployment(ctx context.Context, client VercelClient, proje
 		return nil, errors.Errorf("no previous deployment found for project %s (only %d deployments exist)", projectName, len(deployments))
 	}
 
-	return &deployments[1], nil
+	previousDeploy := &deployments[1]
+
+	// Get the production alias URL instead of the deployment-specific URL
+	// This is the URL users actually visit (e.g., https://project-name.vercel.app)
+	if cliClient, ok := client.(*CLIVercelClient); ok {
+		productionURL, err := cliClient.getProductionURLFromAliases(projectName)
+		if err != nil {
+			slog.Warn("Failed to get production URL from aliases, using deployment URL", "error", err, "deploymentURL", previousDeploy.URL)
+		} else {
+			slog.Info("Using production alias URL for rollback result", "productionURL", productionURL, "deploymentURL", previousDeploy.URL)
+			previousDeploy.URL = productionURL
+		}
+	}
+
+	return previousDeploy, nil
 }
 
 // RollbackVercelDeployment rolls back to a previous deployment

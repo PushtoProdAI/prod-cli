@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/go-errors/errors"
@@ -856,6 +858,31 @@ func (c *FlyctlClient) parseReleases(output string) ([]FlyioRelease, error) {
 		if release.DockerImage != "" {
 			releases = append(releases, release)
 		}
+	}
+
+	// Sort releases by version number descending (newest first)
+	// Versions are in format "v123" so we extract the number and sort
+	sort.Slice(releases, func(i, j int) bool {
+		// Extract version numbers (remove 'v' prefix)
+		vi := strings.TrimPrefix(releases[i].Version, "v")
+		vj := strings.TrimPrefix(releases[j].Version, "v")
+
+		// Parse as integers
+		numI, errI := strconv.Atoi(vi)
+		numJ, errJ := strconv.Atoi(vj)
+
+		if errI != nil || errJ != nil {
+			// If parsing fails, fall back to string comparison
+			return releases[i].Version > releases[j].Version
+		}
+
+		// Sort descending (higher version first)
+		return numI > numJ
+	})
+
+	slog.Info("ListReleases sorted", "count", len(releases))
+	for i, r := range releases {
+		slog.Info("Release", "index", i, "version", r.Version, "status", r.Status, "image", r.DockerImage, "date", r.Date)
 	}
 
 	return releases, nil

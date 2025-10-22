@@ -59,8 +59,23 @@ func (c *CLIVercelClient) GetProject(projectID string) (*VercelProject, error) {
 		return nil, err
 	}
 
-	// Vercel CLI doesn't have a direct get project command
-	// We'll return a basic response for now
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "vercel", "project", "ls")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, errors.Errorf("project list timed out")
+		}
+		return nil, errors.Errorf("failed to list projects: %w\nOutput: %s", err, string(output))
+	}
+
+	outputStr := string(output)
+	if !strings.Contains(outputStr, projectID) {
+		return nil, errors.Errorf("project %s not found in Vercel account", projectID)
+	}
+
 	return &VercelProject{
 		ID:        projectID,
 		Name:      projectID,

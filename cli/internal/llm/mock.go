@@ -100,7 +100,7 @@ func (m *MockClient) ExtractIntent(ctx context.Context, prompt string) (types.In
 }
 
 // SummarizeIntent implements the Client interface.
-func (m *MockClient) SummarizeIntent(ctx context.Context, intent types.Intent, name, language string) (types.Summary, error) {
+func (m *MockClient) SummarizeIntent(ctx context.Context, intent types.Intent, name, language string, detectedPlatforms []string) (types.Summary, error) {
 	return m.SummarizeIntentFunc(ctx, intent, name, language)
 }
 

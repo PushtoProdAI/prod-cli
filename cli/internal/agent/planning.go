@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cschleiden/go-workflows/workflow"
@@ -50,31 +51,16 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		}
 	}
 
-	opts := ActivityOpts
-	opts.RetryOptions.MaxAttempts = 2
-	_, err = workflow.ExecuteActivity[any](ctx, opts, AgentSendProjectStats, intent.Platform, spec).Get(ctx)
-	if err != nil {
-		slog.Error("Failed to send project stats", "error", err)
-		prod_error.CaptureErrorWithContext(err, map[string]any{
-			"workflow":  PlanDeployWorkflowName,
-			"activity":  AgentSendProjectStats,
-			"component": "workflow",
-			"platform":  intent.Platform,
-		})
+	action := UnknownAction
+	switch strings.ToLower(intent.Action) {
+	case "deploy":
+		action = Deploy
+	case "rollback":
+		action = Rollback
+	default:
+		action = UnknownAction
 	}
 
-	summary, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarize, intent, spec.Name, spec.Language).Get(ctx)
-	if err != nil {
-		slog.Error("Failed to summarize intent", "error", err)
-		prod_error.CaptureErrorWithContext(err, map[string]any{
-			"workflow":     PlanDeployWorkflowName,
-			"activity":     AgentSummarize,
-			"component":    "workflow",
-			"platform":     intent.Platform,
-			"project_name": spec.Name,
-			"language":     spec.Language,
-		})
-	}
 	platform := UnknownPlatform
 	switch strings.ToLower(intent.Platform) {
 	case "render":
@@ -91,21 +77,91 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		platform = UnknownPlatform
 	}
 
-	action := UnknownAction
-	switch strings.ToLower(intent.Action) {
-	case "deploy":
-		action = Deploy
-	default:
-		action = UnknownAction
+	var existingProjectInfo ExistingProjectInfo
+
+	if action == Rollback && platform == UnknownPlatform {
+		// Only auto-detect platforms if the user didn't specify one in the prompt
+		w.uiWriter.SendStatus("detecting", "Detecting deployment platforms...")
+
+		existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentDetectPlatformsForRollback, spec.Name, intent.Source).Get(ctx)
+		if err != nil {
+			slog.Error("Failed to detect platforms for rollback", "error", err)
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":     PlanDeployWorkflowName,
+				"activity":     AgentDetectPlatformsForRollback,
+				"component":    "workflow",
+				"project_name": spec.Name,
+			})
+			w.uiWriter.SendStatusComplete("detecting", "❌ Failed to detect platforms")
+		} else {
+			existingProjectInfo = existingProject
+			if len(existingProject.DetectedPlatforms) == 0 {
+				w.uiWriter.SendStatusComplete("detecting", "❌ No deployments found on any platform")
+			} else if len(existingProject.DetectedPlatforms) == 1 {
+				platform = existingProject.DetectedPlatforms[0]
+				intent.Platform = platform.String()
+				w.uiWriter.SendStatusComplete("detecting", fmt.Sprintf("✅ Found deployment on %s", platform.String()))
+			} else {
+				platformNames := make([]string, len(existingProject.DetectedPlatforms))
+				for i, p := range existingProject.DetectedPlatforms {
+					platformNames[i] = p.String()
+				}
+				w.uiWriter.SendStatusComplete("detecting", fmt.Sprintf("⚠️ Found deployments on multiple platforms: %s", strings.Join(platformNames, ", ")))
+			}
+		}
+	} else if action == Rollback && platform != UnknownPlatform {
+		// Platform was specified in the prompt, use it directly
+		slog.Info("Using platform from prompt for rollback", "platform", platform)
+	}
+
+	opts := ActivityOpts
+	opts.RetryOptions.MaxAttempts = 2
+	_, err = workflow.ExecuteActivity[any](ctx, opts, AgentSendProjectStats, intent.Platform, spec).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to send project stats", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":  PlanDeployWorkflowName,
+			"activity":  AgentSendProjectStats,
+			"component": "workflow",
+			"platform":  intent.Platform,
+		})
+	}
+
+	// Prepare detected platforms list for summary
+	// If platform came from prompt (not auto-detected), use that; otherwise use detected platforms
+	var detectedPlatformNames []string
+	if action == Rollback && platform != UnknownPlatform && len(existingProjectInfo.DetectedPlatforms) == 0 {
+		// Platform was specified in prompt, not auto-detected
+		detectedPlatformNames = []string{platform.String()}
+	} else {
+		// Use auto-detected platforms
+		detectedPlatformNames = make([]string, len(existingProjectInfo.DetectedPlatforms))
+		for i, p := range existingProjectInfo.DetectedPlatforms {
+			detectedPlatformNames[i] = p.String()
+		}
+	}
+
+	summary, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentSummarize, intent, spec.Name, spec.Language, detectedPlatformNames).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to summarize intent", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     PlanDeployWorkflowName,
+			"activity":     AgentSummarize,
+			"component":    "workflow",
+			"platform":     intent.Platform,
+			"project_name": spec.Name,
+			"language":     spec.Language,
+		})
 	}
 
 	plan := DeployPlan{
-		Action:           action,
-		Platform:         platform,
-		Source:           intent.Source,
-		Spec:             spec,
-		Summary:          summary,
-		DryRunFromPrompt: intent.DryRun,
+		Action:              action,
+		Platform:            platform,
+		Source:              intent.Source,
+		Spec:                spec,
+		Summary:             summary,
+		DryRunFromPrompt:    intent.DryRun,
+		ExistingProjectInfo: existingProjectInfo,
 	}
 
 	// Estimate costs during planning phase
@@ -235,9 +291,9 @@ func (a *Activities) analyze(_ context.Context, intent types.Intent) (analyzer.P
 	return *spec, nil
 }
 
-func (a *Activities) summarize(ctx context.Context, intent types.Intent, name string, language string) (string, error) {
+func (a *Activities) summarize(ctx context.Context, intent types.Intent, name string, language string, detectedPlatforms []string) (string, error) {
 	a.uiWriter.SendStatus("summarizing", "Summarizing your request...")
-	summary, err := a.llmClient.SummarizeIntent(ctx, intent, name, language)
+	summary, err := a.llmClient.SummarizeIntent(ctx, intent, name, language, detectedPlatforms)
 	if err != nil {
 		a.uiWriter.SendStatusComplete("summarizing", "❌ Failed to summarize request")
 		return "", errors.Errorf("failed to summarize intent: %w", err)
@@ -442,6 +498,99 @@ func maskToken(token string) string {
 		return "***"
 	}
 	return token[:4] + "***" + token[len(token)-4:]
+}
+
+func (a *Activities) detectPlatformsForRollback(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
+	platforms := []Platform{Render, FlyIO, Netlify, Vercel, Heroku}
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var detectedPlatforms []Platform
+	var primaryResult ExistingProjectInfo
+	primaryResult.Platform = UnknownPlatform
+
+	type platformCheck struct {
+		platform Platform
+		exists   bool
+		skipped  bool
+		err      error
+	}
+
+	checkResults := make([]platformCheck, 0)
+
+	for _, p := range platforms {
+		wg.Add(1)
+		platform := p
+		go func() {
+			defer wg.Done()
+
+			detector, err := a.getProjectDetector(platform)
+			if err != nil {
+				slog.Info("Failed to get detector for platform", "platform", platform, "error", err)
+				mu.Lock()
+				checkResults = append(checkResults, platformCheck{platform: platform, skipped: true, err: err})
+				mu.Unlock()
+				return
+			}
+
+			result, err := detector.DetectExistingProject(ctx, projectName, sourcePath)
+			if err != nil {
+				slog.Info("Failed to detect project on platform (auth/API error)", "platform", platform, "error", err)
+				mu.Lock()
+				checkResults = append(checkResults, platformCheck{platform: platform, skipped: true, err: err})
+				mu.Unlock()
+				return
+			}
+
+			slog.Info("Platform detection result", "platform", platform, "exists", result.Exists)
+
+			if result.Exists {
+				mu.Lock()
+				detectedPlatforms = append(detectedPlatforms, platform)
+				checkResults = append(checkResults, platformCheck{platform: platform, exists: true})
+				if primaryResult.Platform == UnknownPlatform {
+					primaryResult = result
+				}
+				mu.Unlock()
+			} else {
+				mu.Lock()
+				checkResults = append(checkResults, platformCheck{platform: platform, exists: false})
+				mu.Unlock()
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Log what was skipped
+	var skippedPlatforms []Platform
+	for _, check := range checkResults {
+		if check.skipped {
+			skippedPlatforms = append(skippedPlatforms, check.platform)
+		}
+	}
+
+	if len(skippedPlatforms) > 0 {
+		slog.Warn("Some platforms were skipped due to authentication or API errors", "skipped", skippedPlatforms)
+	}
+
+	slog.Info("Detected platforms for rollback", "count", len(detectedPlatforms), "platforms", detectedPlatforms)
+
+	primaryResult.DetectedPlatforms = detectedPlatforms
+
+	if len(detectedPlatforms) == 0 {
+		return ExistingProjectInfo{
+			Exists:            false,
+			Platform:          UnknownPlatform,
+			DetectedPlatforms: []Platform{},
+		}, nil
+	}
+
+	if len(detectedPlatforms) == 1 {
+		primaryResult.Platform = detectedPlatforms[0]
+	}
+
+	return primaryResult, nil
 }
 
 // min returns the smaller of two integers
