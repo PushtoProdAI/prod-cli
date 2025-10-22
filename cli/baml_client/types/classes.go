@@ -24,7 +24,7 @@ type BuildOutput struct {
 	Path string `json:"path"`
 }
 
-func (c *BuildOutput) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *BuildOutput) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -39,12 +39,10 @@ func (c *BuildOutput) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) 
 		switch key {
 
 		case "path":
-			c.Path = baml.Decode(valueHolder).Interface().(string)
+			c.Path = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class BuildOutput", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -76,7 +74,7 @@ type BuildOutputCandidate struct {
 	Context   string `json:"context"`
 }
 
-func (c *BuildOutputCandidate) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *BuildOutputCandidate) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -91,21 +89,19 @@ func (c *BuildOutputCandidate) Decode(holder *cffi.CFFIValueClass, typeMap baml.
 		switch key {
 
 		case "default":
-			c.Default = baml.Decode(valueHolder).Interface().(string)
+			c.Default = baml.Decode(valueHolder).(string)
 
 		case "source":
-			c.Source = baml.Decode(valueHolder).Interface().(string)
+			c.Source = baml.Decode(valueHolder).(string)
 
 		case "framework":
-			c.Framework = baml.Decode(valueHolder).Interface().(string)
+			c.Framework = baml.Decode(valueHolder).(string)
 
 		case "context":
-			c.Context = baml.Decode(valueHolder).Interface().(string)
+			c.Context = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class BuildOutputCandidate", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -141,7 +137,7 @@ type CategorizedRoutes struct {
 	Recommended Route   `json:"recommended"`
 }
 
-func (c *CategorizedRoutes) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *CategorizedRoutes) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -156,15 +152,15 @@ func (c *CategorizedRoutes) Decode(holder *cffi.CFFIValueClass, typeMap baml.Typ
 		switch key {
 
 		case "routes":
-			c.Routes = baml.Decode(valueHolder).Interface().([]Route)
+			c.Routes = baml.DecodeList(valueHolder, func(inner *cffi.CFFIValueHolder) Route {
+				return *baml.Decode(inner).(*Route)
+			})
 
 		case "recommended":
-			c.Recommended = baml.Decode(valueHolder).Interface().(Route)
+			c.Recommended = *baml.Decode(valueHolder).(*Route)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class CategorizedRoutes", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -198,7 +194,7 @@ type EnvVarCandidate struct {
 	Context string `json:"context"`
 }
 
-func (c *EnvVarCandidate) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *EnvVarCandidate) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -213,21 +209,19 @@ func (c *EnvVarCandidate) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeM
 		switch key {
 
 		case "varName":
-			c.VarName = baml.Decode(valueHolder).Interface().(string)
+			c.VarName = baml.Decode(valueHolder).(string)
 
 		case "file":
-			c.File = baml.Decode(valueHolder).Interface().(string)
+			c.File = baml.Decode(valueHolder).(string)
 
 		case "line":
-			c.Line = baml.Decode(valueHolder).Interface().(int64)
+			c.Line = baml.Decode(valueHolder).(int64)
 
 		case "context":
-			c.Context = baml.Decode(valueHolder).Interface().(string)
+			c.Context = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class EnvVarCandidate", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -264,7 +258,7 @@ type EnvVarCategory struct {
 	DbType      string `json:"dbType"`
 }
 
-func (c *EnvVarCategory) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *EnvVarCategory) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -279,18 +273,16 @@ func (c *EnvVarCategory) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMa
 		switch key {
 
 		case "isDBRelated":
-			c.IsDBRelated = baml.Decode(valueHolder).Interface().(bool)
+			c.IsDBRelated = baml.Decode(valueHolder).(bool)
 
 		case "role":
-			c.Role = baml.Decode(valueHolder).Interface().(string)
+			c.Role = baml.Decode(valueHolder).(string)
 
 		case "dbType":
-			c.DbType = baml.Decode(valueHolder).Interface().(string)
+			c.DbType = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class EnvVarCategory", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -324,7 +316,7 @@ type Error struct {
 	Remediations []Remediation `json:"remediations"`
 }
 
-func (c *Error) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *Error) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -339,15 +331,15 @@ func (c *Error) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		switch key {
 
 		case "summary":
-			c.Summary = baml.Decode(valueHolder).Interface().(string)
+			c.Summary = baml.Decode(valueHolder).(string)
 
 		case "remediations":
-			c.Remediations = baml.Decode(valueHolder).Interface().([]Remediation)
+			c.Remediations = baml.DecodeList(valueHolder, func(inner *cffi.CFFIValueHolder) Remediation {
+				return *baml.Decode(inner).(*Remediation)
+			})
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class Error", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -381,7 +373,7 @@ type Intent struct {
 	DryRun   bool   `json:"dryRun"`
 }
 
-func (c *Intent) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *Intent) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -396,21 +388,19 @@ func (c *Intent) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		switch key {
 
 		case "action":
-			c.Action = baml.Decode(valueHolder).Interface().(string)
+			c.Action = baml.Decode(valueHolder).(string)
 
 		case "platform":
-			c.Platform = baml.Decode(valueHolder).Interface().(string)
+			c.Platform = baml.Decode(valueHolder).(string)
 
 		case "source":
-			c.Source = baml.Decode(valueHolder).Interface().(string)
+			c.Source = baml.Decode(valueHolder).(string)
 
 		case "dryRun":
-			c.DryRun = baml.Decode(valueHolder).Interface().(bool)
+			c.DryRun = baml.Decode(valueHolder).(bool)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class Intent", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -445,7 +435,7 @@ type LaunchCommand struct {
 	Command string `json:"command"`
 }
 
-func (c *LaunchCommand) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *LaunchCommand) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -460,12 +450,10 @@ func (c *LaunchCommand) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap
 		switch key {
 
 		case "command":
-			c.Command = baml.Decode(valueHolder).Interface().(string)
+			c.Command = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class LaunchCommand", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -495,7 +483,7 @@ type LaunchContext struct {
 	Readme    string         `json:"readme"`
 }
 
-func (c *LaunchContext) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *LaunchContext) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -510,15 +498,15 @@ func (c *LaunchContext) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap
 		switch key {
 
 		case "launchers":
-			c.Launchers = baml.Decode(valueHolder).Interface().([]LauncherFile)
+			c.Launchers = baml.DecodeList(valueHolder, func(inner *cffi.CFFIValueHolder) LauncherFile {
+				return *baml.Decode(inner).(*LauncherFile)
+			})
 
 		case "readme":
-			c.Readme = baml.Decode(valueHolder).Interface().(string)
+			c.Readme = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class LaunchContext", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -550,7 +538,7 @@ type LauncherFile struct {
 	Content string `json:"content"`
 }
 
-func (c *LauncherFile) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *LauncherFile) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -565,15 +553,13 @@ func (c *LauncherFile) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap)
 		switch key {
 
 		case "name":
-			c.Name = baml.Decode(valueHolder).Interface().(string)
+			c.Name = baml.Decode(valueHolder).(string)
 
 		case "content":
-			c.Content = baml.Decode(valueHolder).Interface().(string)
+			c.Content = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class LauncherFile", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -606,7 +592,7 @@ type MigrationCommand struct {
 	Explanation string `json:"explanation"`
 }
 
-func (c *MigrationCommand) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *MigrationCommand) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -621,18 +607,16 @@ func (c *MigrationCommand) Decode(holder *cffi.CFFIValueClass, typeMap baml.Type
 		switch key {
 
 		case "command":
-			c.Command = baml.Decode(valueHolder).Interface().(string)
+			c.Command = baml.Decode(valueHolder).(string)
 
 		case "confidence":
-			c.Confidence = baml.Decode(valueHolder).Interface().(string)
+			c.Confidence = baml.Decode(valueHolder).(string)
 
 		case "explanation":
-			c.Explanation = baml.Decode(valueHolder).Interface().(string)
+			c.Explanation = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class MigrationCommand", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -668,7 +652,7 @@ type MigrationContext struct {
 	ConfigSnippets string          `json:"configSnippets"`
 }
 
-func (c *MigrationContext) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *MigrationContext) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -683,21 +667,23 @@ func (c *MigrationContext) Decode(holder *cffi.CFFIValueClass, typeMap baml.Type
 		switch key {
 
 		case "migrationFiles":
-			c.MigrationFiles = baml.Decode(valueHolder).Interface().([]MigrationFile)
+			c.MigrationFiles = baml.DecodeList(valueHolder, func(inner *cffi.CFFIValueHolder) MigrationFile {
+				return *baml.Decode(inner).(*MigrationFile)
+			})
 
 		case "ormTools":
-			c.OrmTools = baml.Decode(valueHolder).Interface().([]string)
+			c.OrmTools = baml.DecodeList(valueHolder, func(inner *cffi.CFFIValueHolder) string {
+				return baml.Decode(inner).(string)
+			})
 
 		case "packageScripts":
-			c.PackageScripts = baml.Decode(valueHolder).Interface().(string)
+			c.PackageScripts = baml.Decode(valueHolder).(string)
 
 		case "configSnippets":
-			c.ConfigSnippets = baml.Decode(valueHolder).Interface().(string)
+			c.ConfigSnippets = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class MigrationContext", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -733,7 +719,7 @@ type MigrationFile struct {
 	Type string `json:"type"`
 }
 
-func (c *MigrationFile) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *MigrationFile) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -748,15 +734,13 @@ func (c *MigrationFile) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap
 		switch key {
 
 		case "path":
-			c.Path = baml.Decode(valueHolder).Interface().(string)
+			c.Path = baml.Decode(valueHolder).(string)
 
 		case "type":
-			c.Type = baml.Decode(valueHolder).Interface().(string)
+			c.Type = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class MigrationFile", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -788,7 +772,7 @@ type PricingResponse struct {
 	Total_cost float64          `json:"total_cost"`
 }
 
-func (c *PricingResponse) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *PricingResponse) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -803,15 +787,15 @@ func (c *PricingResponse) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeM
 		switch key {
 
 		case "services":
-			c.Services = baml.Decode(valueHolder).Interface().([]ServicePricing)
+			c.Services = baml.DecodeList(valueHolder, func(inner *cffi.CFFIValueHolder) ServicePricing {
+				return *baml.Decode(inner).(*ServicePricing)
+			})
 
 		case "total_cost":
-			c.Total_cost = baml.Decode(valueHolder).Interface().(float64)
+			c.Total_cost = baml.Decode(valueHolder).(float64)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class PricingResponse", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -846,7 +830,7 @@ type ProjectSpec struct {
 	StartCommand        string               `json:"startCommand"`
 }
 
-func (c *ProjectSpec) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *ProjectSpec) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -861,24 +845,24 @@ func (c *ProjectSpec) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) 
 		switch key {
 
 		case "name":
-			c.Name = baml.Decode(valueHolder).Interface().(string)
+			c.Name = baml.Decode(valueHolder).(string)
 
 		case "language":
-			c.Language = baml.Decode(valueHolder).Interface().(string)
+			c.Language = baml.Decode(valueHolder).(string)
 
 		case "serviceRequirements":
-			c.ServiceRequirements = baml.Decode(valueHolder).Interface().([]ServiceRequirement)
+			c.ServiceRequirements = baml.DecodeList(valueHolder, func(inner *cffi.CFFIValueHolder) ServiceRequirement {
+				return *baml.Decode(inner).(*ServiceRequirement)
+			})
 
 		case "buildCommand":
-			c.BuildCommand = baml.Decode(valueHolder).Interface().(string)
+			c.BuildCommand = baml.Decode(valueHolder).(string)
 
 		case "startCommand":
-			c.StartCommand = baml.Decode(valueHolder).Interface().(string)
+			c.StartCommand = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class ProjectSpec", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -916,7 +900,7 @@ type Remediation struct {
 	CliCommand  string `json:"cliCommand"`
 }
 
-func (c *Remediation) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *Remediation) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -931,15 +915,13 @@ func (c *Remediation) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) 
 		switch key {
 
 		case "description":
-			c.Description = baml.Decode(valueHolder).Interface().(string)
+			c.Description = baml.Decode(valueHolder).(string)
 
 		case "cliCommand":
-			c.CliCommand = baml.Decode(valueHolder).Interface().(string)
+			c.CliCommand = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class Remediation", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -972,7 +954,7 @@ type Route struct {
 	Confidence float64 `json:"confidence"`
 }
 
-func (c *Route) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *Route) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -987,18 +969,16 @@ func (c *Route) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		switch key {
 
 		case "method":
-			c.Method = baml.Decode(valueHolder).Interface().(string)
+			c.Method = baml.Decode(valueHolder).(string)
 
 		case "path":
-			c.Path = baml.Decode(valueHolder).Interface().(string)
+			c.Path = baml.Decode(valueHolder).(string)
 
 		case "confidence":
-			c.Confidence = baml.Decode(valueHolder).Interface().(float64)
+			c.Confidence = baml.Decode(valueHolder).(float64)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class Route", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -1035,7 +1015,7 @@ type RouteCandidate struct {
 	Context string `json:"context"`
 }
 
-func (c *RouteCandidate) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *RouteCandidate) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -1050,24 +1030,22 @@ func (c *RouteCandidate) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMa
 		switch key {
 
 		case "method":
-			c.Method = baml.Decode(valueHolder).Interface().(string)
+			c.Method = baml.Decode(valueHolder).(string)
 
 		case "path":
-			c.Path = baml.Decode(valueHolder).Interface().(string)
+			c.Path = baml.Decode(valueHolder).(string)
 
 		case "file":
-			c.File = baml.Decode(valueHolder).Interface().(string)
+			c.File = baml.Decode(valueHolder).(string)
 
 		case "line":
-			c.Line = baml.Decode(valueHolder).Interface().(int64)
+			c.Line = baml.Decode(valueHolder).(int64)
 
 		case "context":
-			c.Context = baml.Decode(valueHolder).Interface().(string)
+			c.Context = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class RouteCandidate", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -1107,7 +1085,7 @@ type Service struct {
 	Storage string `json:"storage"`
 }
 
-func (c *Service) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *Service) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -1122,21 +1100,19 @@ func (c *Service) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		switch key {
 
 		case "name":
-			c.Name = baml.Decode(valueHolder).Interface().(string)
+			c.Name = baml.Decode(valueHolder).(string)
 
 		case "type":
-			c.Type = baml.Decode(valueHolder).Interface().(string)
+			c.Type = baml.Decode(valueHolder).(string)
 
 		case "plan":
-			c.Plan = baml.Decode(valueHolder).Interface().(string)
+			c.Plan = baml.Decode(valueHolder).(string)
 
 		case "storage":
-			c.Storage = baml.Decode(valueHolder).Interface().(string)
+			c.Storage = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class Service", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -1175,7 +1151,7 @@ type ServicePricing struct {
 	Usage_cost   *[]UsageCost `json:"usage_cost"`
 }
 
-func (c *ServicePricing) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *ServicePricing) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -1190,24 +1166,31 @@ func (c *ServicePricing) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMa
 		switch key {
 
 		case "service_name":
-			c.Service_name = baml.Decode(valueHolder).Interface().(string)
+			c.Service_name = baml.Decode(valueHolder).(string)
 
 		case "service_type":
-			c.Service_type = baml.Decode(valueHolder).Interface().(string)
+			c.Service_type = baml.Decode(valueHolder).(string)
 
 		case "plan":
-			c.Plan = baml.Decode(valueHolder).Interface().(string)
+			c.Plan = baml.Decode(valueHolder).(string)
 
 		case "monthly_cost":
-			c.Monthly_cost = baml.Decode(valueHolder).Interface().(float64)
+			c.Monthly_cost = baml.Decode(valueHolder).(float64)
 
 		case "usage_cost":
-			c.Usage_cost = baml.Decode(valueHolder).Interface().(*[]UsageCost)
+			c.Usage_cost = func(param *cffi.CFFIValueHolder) *[]UsageCost {
+				decoded := baml.Decode(param)
+				return func(result any) *[]UsageCost {
+					if result == nil {
+						return nil
+					}
+					casted := (result).([]UsageCost)
+					return &casted
+				}(decoded)
+			}(valueHolder)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class ServicePricing", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -1245,7 +1228,7 @@ type ServiceRequirement struct {
 	Provider string `json:"provider"`
 }
 
-func (c *ServiceRequirement) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *ServiceRequirement) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -1260,15 +1243,13 @@ func (c *ServiceRequirement) Decode(holder *cffi.CFFIValueClass, typeMap baml.Ty
 		switch key {
 
 		case "type":
-			c.Type = baml.Decode(valueHolder).Interface().(string)
+			c.Type = baml.Decode(valueHolder).(string)
 
 		case "provider":
-			c.Provider = baml.Decode(valueHolder).Interface().(string)
+			c.Provider = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class ServiceRequirement", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -1299,7 +1280,7 @@ type Summary struct {
 	Summary string `json:"summary"`
 }
 
-func (c *Summary) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *Summary) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -1314,12 +1295,10 @@ func (c *Summary) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		switch key {
 
 		case "summary":
-			c.Summary = baml.Decode(valueHolder).Interface().(string)
+			c.Summary = baml.Decode(valueHolder).(string)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class Summary", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 
@@ -1349,7 +1328,7 @@ type UsageCost struct {
 	Cost_per_unit float64 `json:"cost_per_unit"`
 }
 
-func (c *UsageCost) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *UsageCost) Decode(holder *cffi.CFFIValueClass) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
@@ -1364,15 +1343,13 @@ func (c *UsageCost) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		switch key {
 
 		case "unit":
-			c.Unit = baml.Decode(valueHolder).Interface().(string)
+			c.Unit = baml.Decode(valueHolder).(string)
 
 		case "cost_per_unit":
-			c.Cost_per_unit = baml.Decode(valueHolder).Interface().(float64)
+			c.Cost_per_unit = baml.Decode(valueHolder).(float64)
 
 		default:
-
-			panic(fmt.Sprintf("unexpected field: %s in class UsageCost", key))
-
+			panic(fmt.Sprintf("unexpected field: %s", key))
 		}
 	}
 

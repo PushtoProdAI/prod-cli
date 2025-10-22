@@ -1502,9 +1502,9 @@ func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deploy
 
 		slog.Info("Found previous deployment for rollback", "deployment_id", previousDeploy.ID, "url", previousDeploy.URL)
 
-		_, rollbackErr = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentRollbackDeployment, *spec, Vercel, previousDeploy.URL).Get(ctx)
+		_, rollbackErr = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentRollbackDeployment, *spec, Vercel, previousDeploy.ID).Get(ctx)
 		if rollbackErr != nil {
-			slog.Error("Rollback failed", "error", rollbackErr, "target_deployment", previousDeploy.URL)
+			slog.Error("Rollback failed", "error", rollbackErr, "target_deployment", previousDeploy.ID)
 			if operationId != "" {
 				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
 					"error":           err.Error(),

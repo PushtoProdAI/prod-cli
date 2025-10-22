@@ -19,40 +19,44 @@ import (
 	"github.com/meroxa/prod/cli/internal/output"
 )
 
-func (a *Activities) deploySteps(ctx context.Context, spec deployment.DeploymentSpec, platform Platform) ([]deployment.CreatedResource, error) {
-	// Create platform-specific Deployable implementation
-	var deployable deployment.Deployable
+func (a *Activities) createDeployable(spec *deployment.DeploymentSpec, platform Platform) (deployment.Deployable, error) {
 	switch platform {
 	case Render:
 		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
-		deployable = render.NewQueuedDeployment(a.renderClient, &spec, dockerGen, true, a.uiWriter)
+		return render.NewQueuedDeployment(a.renderClient, spec, dockerGen, true, a.uiWriter), nil
 	case FlyIO:
 		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
-		deployable = flyio.NewFlyioQueuedDeployment(a.flyClient, &spec, dockerGen, a.uiWriter)
+		return flyio.NewFlyioQueuedDeployment(a.flyClient, spec, dockerGen, a.uiWriter), nil
 	case Netlify:
-		// Use the Netlify deployment adapter
 		netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter, a.llmClient)
-		var err error
-		deployable, err = netlifyAdapter.GenerateArtifacts(&spec, deployment.StrategyNetlify)
+		deployable, err := netlifyAdapter.GenerateArtifacts(spec, deployment.StrategyNetlify)
 		if err != nil {
 			return nil, errors.Errorf("failed to create Netlify deployment: %w", err)
 		}
+		return deployable, nil
 	case Vercel:
 		vercelAdapter := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter, a.llmClient)
-		var err error
-		deployable, err = vercelAdapter.GenerateArtifacts(&spec, deployment.StrategyVercel)
+		deployable, err := vercelAdapter.GenerateArtifacts(spec, deployment.StrategyVercel)
 		if err != nil {
 			return nil, errors.Errorf("failed to create Vercel deployment: %w", err)
 		}
+		return deployable, nil
 	case Heroku:
 		herokuAdapter := heroku.NewDefaultHerokuDeploymentAdapter(a.uiWriter)
-		var err error
-		deployable, err = herokuAdapter.GenerateArtifacts(&spec, deployment.StrategyHeroku)
+		deployable, err := herokuAdapter.GenerateArtifacts(spec, deployment.StrategyHeroku)
 		if err != nil {
 			return nil, errors.Errorf("failed to create Heroku deployment: %w", err)
 		}
+		return deployable, nil
 	default:
 		return nil, errors.Errorf("unsupported platform: %s", platform)
+	}
+}
+
+func (a *Activities) deploySteps(ctx context.Context, spec deployment.DeploymentSpec, platform Platform) ([]deployment.CreatedResource, error) {
+	deployable, err := a.createDeployable(&spec, platform)
+	if err != nil {
+		return nil, err
 	}
 
 	createdResources, err := deployable.Deploy(ctx)
@@ -493,40 +497,12 @@ func contains(s, substr string) bool {
 func (a *Activities) rollbackDeployment(ctx context.Context, spec deployment.DeploymentSpec, platform Platform, targetDeploymentID string) error {
 	a.uiWriter.SendStatus("rolling_back", fmt.Sprintf("Rolling back to deployment %s", targetDeploymentID))
 
-	var deployable deployment.Deployable
-	switch platform {
-	case Render:
-		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
-		deployable = render.NewQueuedDeployment(a.renderClient, &spec, dockerGen, true, a.uiWriter)
-	case FlyIO:
-		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
-		deployable = flyio.NewFlyioQueuedDeployment(a.flyClient, &spec, dockerGen, a.uiWriter)
-	case Netlify:
-		netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter, a.llmClient)
-		var err error
-		deployable, err = netlifyAdapter.GenerateArtifacts(&spec, deployment.StrategyNetlify)
-		if err != nil {
-			return errors.Errorf("failed to create Netlify deployment: %w", err)
-		}
-	case Vercel:
-		vercelAdapter := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter, a.llmClient)
-		var err error
-		deployable, err = vercelAdapter.GenerateArtifacts(&spec, deployment.StrategyVercel)
-		if err != nil {
-			return errors.Errorf("failed to create Vercel deployment: %w", err)
-		}
-	case Heroku:
-		herokuAdapter := heroku.NewDefaultHerokuDeploymentAdapter(a.uiWriter)
-		var err error
-		deployable, err = herokuAdapter.GenerateArtifacts(&spec, deployment.StrategyHeroku)
-		if err != nil {
-			return errors.Errorf("failed to create Heroku deployment: %w", err)
-		}
-	default:
-		return errors.Errorf("unsupported platform: %s", platform)
+	deployable, err := a.createDeployable(&spec, platform)
+	if err != nil {
+		return err
 	}
 
-	err := deployable.Rollback(ctx, targetDeploymentID)
+	err = deployable.Rollback(ctx, targetDeploymentID)
 	if err != nil {
 		a.uiWriter.SendStatusComplete("rolling_back", fmt.Sprintf("❌ Rollback failed: %v", err))
 		return errors.Errorf("failed to rollback %s deployment: %w", platform, err)
@@ -537,37 +513,9 @@ func (a *Activities) rollbackDeployment(ctx context.Context, spec deployment.Dep
 }
 
 func (a *Activities) getPreviousDeployment(ctx context.Context, spec deployment.DeploymentSpec, platform Platform) (*deployment.DeploymentInfo, error) {
-	var deployable deployment.Deployable
-	switch platform {
-	case Render:
-		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
-		deployable = render.NewQueuedDeployment(a.renderClient, &spec, dockerGen, true, a.uiWriter)
-	case FlyIO:
-		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
-		deployable = flyio.NewFlyioQueuedDeployment(a.flyClient, &spec, dockerGen, a.uiWriter)
-	case Netlify:
-		netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter, a.llmClient)
-		var err error
-		deployable, err = netlifyAdapter.GenerateArtifacts(&spec, deployment.StrategyNetlify)
-		if err != nil {
-			return nil, errors.Errorf("failed to create Netlify deployment: %w", err)
-		}
-	case Vercel:
-		vercelAdapter := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter, a.llmClient)
-		var err error
-		deployable, err = vercelAdapter.GenerateArtifacts(&spec, deployment.StrategyVercel)
-		if err != nil {
-			return nil, errors.Errorf("failed to create Vercel deployment: %w", err)
-		}
-	case Heroku:
-		herokuAdapter := heroku.NewDefaultHerokuDeploymentAdapter(a.uiWriter)
-		var err error
-		deployable, err = herokuAdapter.GenerateArtifacts(&spec, deployment.StrategyHeroku)
-		if err != nil {
-			return nil, errors.Errorf("failed to create Heroku deployment: %w", err)
-		}
-	default:
-		return nil, errors.Errorf("unsupported platform: %s", platform)
+	deployable, err := a.createDeployable(&spec, platform)
+	if err != nil {
+		return nil, err
 	}
 
 	return deployable.GetPreviousDeployment(ctx)
