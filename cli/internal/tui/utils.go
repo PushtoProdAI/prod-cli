@@ -16,14 +16,27 @@ import (
 var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 func getBanner() string {
-	return `
-______              _ 
+	cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("#7DD3FC"))
+	yellow := lipgloss.NewStyle().Foreground(lipgloss.Color("#FDE047"))
+	green := lipgloss.NewStyle().Foreground(lipgloss.Color("#4ADE80"))
+	gray := lipgloss.NewStyle().Foreground(lipgloss.Color("#E5E7EB"))
+	white := lipgloss.NewStyle().Foreground(lipgloss.Color("#F3F4F6"))
+
+	flag := cyan.Render("   ███████") + "\n" +
+		yellow.Render("   ███████") + "\n" +
+		green.Render("   ███████") + "\n" +
+		gray.Render("   ███    ") + "\n" +
+		"           " + "\n" +
+		"           "
+
+	text := white.Render(`______              _ 
 | ___ \            | |
 | |_/ / __ ___   __| |
 |  __/ '__/ _ \ / _` + "`" + ` |
 | |  | | | (_) | (_| |
-\_|  |_|  \___/ \__,_|
-`
+\_|  |_|  \___/ \__,_|`)
+
+	return "\n" + lipgloss.JoinHorizontal(lipgloss.Top, flag, text) + "\n"
 }
 
 func greetUser() string {
