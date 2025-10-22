@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"time"
@@ -16,36 +17,9 @@ import (
 // Default timeout for build operations
 const defaultBuildTimeout = 15 * time.Minute
 
-// VercelAPIStep represents a single deployment step
-type VercelAPIStep interface {
-	Execute(ctx context.Context, client VercelClient, stepResults map[string]any) (any, error)
-	Rollback(ctx context.Context, client VercelClient, stepResults map[string]any) error
-	GetID() string
-	GetDescription() string
-	GetDependencies() []string
-}
+type VercelAPIStep = deployment.Step[VercelClient]
 
-// BaseStep provides common functionality for all steps
-type BaseStep struct {
-	ID           string
-	Description  string
-	Dependencies []string
-}
-
-func (b *BaseStep) GetID() string {
-	return b.ID
-}
-
-func (b *BaseStep) GetDescription() string {
-	return b.Description
-}
-
-func (b *BaseStep) GetDependencies() []string {
-	if b.Dependencies == nil {
-		return []string{}
-	}
-	return b.Dependencies
-}
+type BaseStep = deployment.BaseStep
 
 // CreateVercelProjectStep creates a new Vercel project
 type CreateVercelProjectStep struct {
@@ -58,9 +32,9 @@ type CreateVercelProjectStep struct {
 func NewCreateVercelProjectStep(projectName, framework string, envVars map[string]string) *CreateVercelProjectStep {
 	return &CreateVercelProjectStep{
 		BaseStep: BaseStep{
-			ID:           "create-project",
-			Description:  fmt.Sprintf("Create Vercel project: %s", projectName),
-			Dependencies: []string{},
+			ID:          "create-project",
+			Description: fmt.Sprintf("Create Vercel project: %s", projectName),
+			DependsOn:   []string{},
 		},
 		projectName: projectName,
 		framework:   framework,
@@ -111,9 +85,9 @@ type LinkVercelProjectStep struct {
 func NewLinkVercelProjectStep(projectDependency, sourcePath string, writer io.Writer) *LinkVercelProjectStep {
 	return &LinkVercelProjectStep{
 		BaseStep: BaseStep{
-			ID:           "link-project",
-			Description:  "Link directory to Vercel project",
-			Dependencies: []string{projectDependency},
+			ID:          "link-project",
+			Description: "Link directory to Vercel project",
+			DependsOn:   []string{projectDependency},
 		},
 		projectDependency: projectDependency,
 		sourcePath:        sourcePath,
@@ -170,9 +144,9 @@ type PullProjectStep struct {
 func NewPullProjectStep(linkDependency, sourcePath string, writer io.Writer) *PullProjectStep {
 	return &PullProjectStep{
 		BaseStep: BaseStep{
-			ID:           "pull-project",
-			Description:  "Pull project configuration from Vercel",
-			Dependencies: []string{linkDependency},
+			ID:          "pull-project",
+			Description: "Pull project configuration from Vercel",
+			DependsOn:   []string{linkDependency},
 		},
 		linkDependency: linkDependency,
 		sourcePath:     sourcePath,
@@ -220,9 +194,9 @@ type SetEnvironmentVariablesStep struct {
 func NewSetEnvironmentVariablesStep(projectDependency, linkDependency, sourcePath string, envVars map[string]string, writer io.Writer) *SetEnvironmentVariablesStep {
 	return &SetEnvironmentVariablesStep{
 		BaseStep: BaseStep{
-			ID:           "set-env-vars",
-			Description:  fmt.Sprintf("Set %d environment variables", len(envVars)),
-			Dependencies: []string{projectDependency, linkDependency},
+			ID:          "set-env-vars",
+			Description: fmt.Sprintf("Set %d environment variables", len(envVars)),
+			DependsOn:   []string{projectDependency, linkDependency},
 		},
 		projectDependency: projectDependency,
 		linkDependency:    linkDependency,
@@ -284,9 +258,9 @@ type BuildProjectStep struct {
 func NewBuildProjectStep(buildCommand, migrationCommand, sourcePath string, envVars []deployment.EnvVar, writer io.Writer, production bool) *BuildProjectStep {
 	return &BuildProjectStep{
 		BaseStep: BaseStep{
-			ID:           "build-project",
-			Description:  fmt.Sprintf("Build project: %s", buildCommand),
-			Dependencies: []string{},
+			ID:          "build-project",
+			Description: fmt.Sprintf("Build project: %s", buildCommand),
+			DependsOn:   []string{},
 		},
 		buildCommand:     buildCommand,
 		migrationCommand: migrationCommand,
@@ -433,9 +407,9 @@ func NewDeployVercelProjectStep(projectDependency, buildDependency, sourcePath s
 
 	return &DeployVercelProjectStep{
 		BaseStep: BaseStep{
-			ID:           "deploy-project",
-			Description:  "Deploy project to Vercel",
-			Dependencies: dependencies,
+			ID:          "deploy-project",
+			Description: "Deploy project to Vercel",
+			DependsOn:   dependencies,
 		},
 		projectDependency:  projectDependency,
 		buildDependency:    buildDependency,
@@ -474,16 +448,22 @@ func (s *DeployVercelProjectStep) Execute(ctx context.Context, client VercelClie
 		return nil, errors.Errorf("failed to deploy project: %w", err)
 	}
 
+	// Store both URLs:
+	// - url: Production alias for liveness checks
+	// - deployment_url: Deployment-specific URL with hash for promotion
+	metadata := map[string]any{
+		"url":            deploy.URL,           // Production alias for liveness checks
+		"deployment_url": deploy.DeploymentURL, // For promotion
+		"project_id":     deploy.ProjectID,
+		"ready":          deploy.Ready,
+		"created_at":     deploy.CreatedAt,
+	}
+
 	return deployment.CreatedResource{
-		ID:   deploy.ID,
-		Type: "vercel_deployment",
-		Name: fmt.Sprintf("deployment-%s", deploy.ID),
-		Metadata: map[string]any{
-			"url":        deploy.URL,
-			"project_id": deploy.ProjectID,
-			"ready":      deploy.Ready,
-			"created_at": deploy.CreatedAt,
-		},
+		ID:       deploy.ID,
+		Type:     "vercel_deployment",
+		Name:     fmt.Sprintf("deployment-%s", deploy.ID),
+		Metadata: metadata,
 	}, nil
 }
 
@@ -496,21 +476,36 @@ type PromoteDeploymentStep struct {
 	BaseStep
 	deploymentDependency string
 	projectDependency    string
+	sourcePath           string
 }
 
-func NewPromoteDeploymentStep(deploymentDependency, projectDependency string) *PromoteDeploymentStep {
+func NewPromoteDeploymentStep(deploymentDependency, projectDependency, sourcePath string) *PromoteDeploymentStep {
 	return &PromoteDeploymentStep{
 		BaseStep: BaseStep{
-			ID:           "promote-deployment",
-			Description:  "Promote deployment to production",
-			Dependencies: []string{deploymentDependency, projectDependency},
+			ID:          "promote-deployment",
+			Description: "Promote deployment to production",
+			DependsOn:   []string{deploymentDependency, projectDependency},
 		},
 		deploymentDependency: deploymentDependency,
 		projectDependency:    projectDependency,
+		sourcePath:           sourcePath,
 	}
 }
 
 func (s *PromoteDeploymentStep) Execute(ctx context.Context, client VercelClient, stepResults map[string]any) (any, error) {
+	// Change to source directory so vercel CLI can find .vercel config
+	originalDir, err := os.Getwd()
+	if err != nil {
+		return nil, errors.Errorf("failed to get current directory: %w", err)
+	}
+
+	if s.sourcePath != "." && s.sourcePath != "" {
+		if err := os.Chdir(s.sourcePath); err != nil {
+			return nil, errors.Errorf("failed to change to source directory: %w", err)
+		}
+		defer os.Chdir(originalDir)
+	}
+
 	deploymentResult, ok := stepResults[s.deploymentDependency]
 	if !ok {
 		return nil, errors.Errorf("deployment dependency %s not found in results", s.deploymentDependency)
@@ -521,10 +516,17 @@ func (s *PromoteDeploymentStep) Execute(ctx context.Context, client VercelClient
 		return nil, errors.Errorf("deployment dependency result is not a CreatedResource")
 	}
 
-	deploymentURL, ok := resource.Metadata["url"].(string)
+	// Use the deployment-specific URL (with hash) for promotion, not the production alias
+	deploymentURL, ok := resource.Metadata["deployment_url"].(string)
 	if !ok || deploymentURL == "" {
-		return nil, errors.Errorf("deployment URL not found in metadata")
+		// Fallback to "url" for backwards compatibility
+		deploymentURL, ok = resource.Metadata["url"].(string)
+		if !ok || deploymentURL == "" {
+			return nil, errors.Errorf("deployment URL not found in metadata")
+		}
 	}
+
+	slog.Info("Promoting deployment to production", "deployment_url", deploymentURL, "deployment_id", resource.ID)
 
 	// Get project name from project dependency
 	projectResult, ok := stepResults[s.projectDependency]
@@ -537,12 +539,21 @@ func (s *PromoteDeploymentStep) Execute(ctx context.Context, client VercelClient
 		return nil, errors.Errorf("project dependency result is not a CreatedResource")
 	}
 
-	productionURL, err := client.PromoteDeployment(deploymentURL, projectResource.Name)
+	err = client.PromoteDeployment(deploymentURL, projectResource.Name)
 	if err != nil {
 		return nil, errors.Errorf("failed to promote deployment: %w", err)
 	}
 
-	// Return the production URL as a CreatedResource so it gets used for health checks
+	// Use the original production alias URL from deployment metadata for liveness checks
+	// This was already set correctly by the deploy step
+	productionURL, ok := resource.Metadata["url"].(string)
+	if !ok || productionURL == "" {
+		return nil, errors.Errorf("production URL not found in deployment metadata")
+	}
+
+	slog.Info("Promotion completed, using production alias for liveness checks", "url", productionURL)
+
+	// Return the production alias URL as a CreatedResource so it gets used for health checks
 	return deployment.CreatedResource{
 		ID:   resource.ID,
 		Type: "vercel_deployment",

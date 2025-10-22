@@ -3,8 +3,8 @@ package render
 import (
 	"context"
 	"fmt"
-
-	"github.com/go-errors/errors"
+	"os"
+	"path/filepath"
 )
 
 type ExistingProject struct {
@@ -13,13 +13,28 @@ type ExistingProject struct {
 	Type      string
 }
 
-func DetectExistingProject(ctx context.Context, client RenderClient, projectName string) (*ExistingProject, error) {
-	webServiceName := fmt.Sprintf("%s-web", projectName)
+func DetectExistingProject(ctx context.Context, client RenderClient, projectName string, sourcePath string) (*ExistingProject, error) {
+	// Check for local render.yaml file first
+	if sourcePath == "" {
+		sourcePath = "."
+	}
 
-	// List all services
+	hasLocalConfig := false
+	renderYamlPath := filepath.Join(sourcePath, "render.yaml")
+	if _, err := os.Stat(renderYamlPath); err == nil {
+		hasLocalConfig = true
+	}
+
+	// Try to list services via API
+	webServiceName := fmt.Sprintf("%s-web", projectName)
 	allServices, err := client.ListServices(ctx, "")
 	if err != nil {
-		return nil, errors.Errorf("failed to list services: %w", err)
+		// If we have local config but API fails, can't verify
+		// If no local config and API fails, propagate error
+		if !hasLocalConfig {
+			return nil, err
+		}
+		return nil, nil
 	}
 
 	for _, service := range allServices {

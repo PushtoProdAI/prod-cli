@@ -14,7 +14,7 @@ import (
 type Client interface {
 	// Planning operations
 	ExtractIntent(ctx context.Context, prompt string) (types.Intent, error)
-	SummarizeIntent(ctx context.Context, intent types.Intent, name, language string) (types.Summary, error)
+	SummarizeIntent(ctx context.Context, intent types.Intent, name, language string, detectedPlatforms []string) (types.Summary, error)
 	DetermineLaunchCommand(ctx context.Context, language string, frameworks, envVars []string, lc types.LaunchContext) (types.LaunchCommand, error)
 	DetermineMigrationCommand(ctx context.Context, language string, frameworks, ormTools []string, migrationContext types.MigrationContext) (types.MigrationCommand, error)
 
@@ -111,9 +111,9 @@ func (c *client) ExtractIntent(ctx context.Context, prompt string) (types.Intent
 }
 
 // SummarizeIntent creates a summary of the user's intent.
-func (c *client) SummarizeIntent(ctx context.Context, intent types.Intent, name, language string) (types.Summary, error) {
+func (c *client) SummarizeIntent(ctx context.Context, intent types.Intent, name, language string, detectedPlatforms []string) (types.Summary, error) {
 	opts := c.getCallOptions(ctx)
-	summary, err := baml_client.SummarizeIntent(ctx, intent, name, language, opts...)
+	summary, err := baml_client.SummarizeIntent(ctx, intent, name, language, detectedPlatforms, opts...)
 	if err != nil {
 		return types.Summary{}, errors.Errorf("failed to summarize intent: %w", err)
 	}

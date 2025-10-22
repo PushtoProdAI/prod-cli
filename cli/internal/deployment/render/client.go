@@ -9,7 +9,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -76,6 +79,41 @@ func NewHTTPRenderClient(apiKey string, writer io.Writer) *HTTPRenderClient {
 	}
 }
 
+// getAPIKey retrieves the Render API key from environment variable or config file
+func (c *HTTPRenderClient) getAPIKey() string {
+	// First check environment variable
+	apiKey := os.Getenv("RENDER_API_KEY")
+	if apiKey != "" {
+		return apiKey
+	}
+
+	// Fall back to config file
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	configPath := filepath.Join(homeDir, ".render", "cli.yaml")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return ""
+	}
+
+	// Simple YAML parsing for the key field
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "key:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+
+	return ""
+}
+
 // makeRequest makes an HTTP request with proper authentication and error handling
 func (c *HTTPRenderClient) makeRequest(ctx context.Context, method, endpoint string, body any) (*http.Response, error) {
 	var reqBody io.Reader
@@ -95,8 +133,8 @@ func (c *HTTPRenderClient) makeRequest(ctx context.Context, method, endpoint str
 	}
 
 	// Set headers per Render API docs
-	// Dynamically get API key from environment variable
-	apiKey := os.Getenv("RENDER_API_KEY")
+	// Get API key from environment variable or config file
+	apiKey := c.getAPIKey()
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -221,7 +259,7 @@ func (c *HTTPRenderClient) CreateWebService(ctx context.Context, req CreateWebSe
 
 func (c *HTTPRenderClient) UpdateServiceImage(ctx context.Context, serviceID string, req UpdateServiceImageRequest) error {
 	updateReq := map[string]any{
-		"imagePath": req.ImagePath,
+		"image": req.Image,
 	}
 
 	resp, err := c.makeRequest(ctx, "PATCH", fmt.Sprintf("/v1/services/%s", serviceID), updateReq)
@@ -230,8 +268,13 @@ func (c *HTTPRenderClient) UpdateServiceImage(ctx context.Context, serviceID str
 	}
 	defer resp.Body.Close()
 
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		slog.Warn("Failed to read response body", "error", readErr)
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		return errors.Errorf("failed to update service image: status %d", resp.StatusCode)
+		return errors.Errorf("failed to update service image: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	return nil
@@ -518,10 +561,65 @@ func (c *HTTPRenderClient) ListDeploys(ctx context.Context, serviceID string) ([
 	}
 	defer resp.Body.Close()
 
-	var deploys []*RenderDeploy
-	if err := c.handleResponse(resp, &deploys); err != nil {
-		return nil, err
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, &HTTPError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("API request failed with status %d: %s", resp.StatusCode, string(body)),
+		}
+	}
+
+	var wrappedDeploys []struct {
+		Deploy RenderDeploy `json:"deploy"`
+		Cursor string       `json:"cursor"`
+	}
+	if err := json.Unmarshal(body, &wrappedDeploys); err != nil {
+		return nil, errors.Errorf("failed to parse response JSON: %w", err)
+	}
+
+	deploys := make([]*RenderDeploy, len(wrappedDeploys))
+	for i, wrapped := range wrappedDeploys {
+		deploy := wrapped.Deploy
+		deploys[i] = &deploy
+	}
+
+	// Sort deploys by createdAt descending (newest first)
+	sort.Slice(deploys, func(i, j int) bool {
+		timeI, errI := time.Parse(time.RFC3339, deploys[i].CreatedAt)
+		timeJ, errJ := time.Parse(time.RFC3339, deploys[j].CreatedAt)
+		if errI != nil || errJ != nil {
+			return false
+		}
+		return timeI.After(timeJ)
+	})
+
+	slog.Info("ListDeploys parsed and sorted", "count", len(deploys))
+	for i, d := range deploys {
+		slog.Info("Deploy", "index", i, "id", d.ID, "status", d.Status, "createdAt", d.CreatedAt)
 	}
 
 	return deploys, nil
+}
+
+func (c *HTTPRenderClient) RollbackDeploy(ctx context.Context, serviceID, deployID string) (*RenderDeploy, error) {
+	rollbackReq := map[string]string{
+		"deployId": deployID,
+	}
+
+	resp, err := c.makeRequest(ctx, "POST", fmt.Sprintf("/v1/services/%s/rollback", serviceID), rollbackReq)
+	if err != nil {
+		return nil, errors.Errorf("failed to rollback deploy: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var deploy RenderDeploy
+	if err := c.handleResponse(resp, &deploy); err != nil {
+		return nil, err
+	}
+
+	return &deploy, nil
 }

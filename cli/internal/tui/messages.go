@@ -77,17 +77,18 @@ func (t TextPrompt) String() string {
 
 // PlanDisplayMessage represents a deployment plan with structured data for table display
 type PlanDisplayMessage struct {
-	Summary  string
-	Action   string
-	Platform string
-	Source   string
-	Name     string
-	Language string
-	DryRun   bool
-	Services []ServiceRequirement
-	EnvVars  []EnvVarRequirement
-	Routes   []RouteRequirement
-	Pricing  PricingInfo
+	Summary           string
+	Action            string
+	Platform          string
+	Source            string
+	Name              string
+	Language          string
+	DryRun            bool
+	Services          []ServiceRequirement
+	EnvVars           []EnvVarRequirement
+	Routes            []RouteRequirement
+	Pricing           PricingInfo
+	DetectedPlatforms []string
 }
 
 type PricingInfo struct {
@@ -138,6 +139,11 @@ type ErrorDisplayMessage struct {
 	Remediations []RemediationItem
 }
 
+type WarningDisplayMessage struct {
+	Summary      string
+	Remediations []RemediationItem
+}
+
 type RemediationItem struct {
 	Description string
 	CliCommand  string
@@ -145,6 +151,10 @@ type RemediationItem struct {
 
 func (e ErrorDisplayMessage) String() string {
 	return "Error Display"
+}
+
+func (w WarningDisplayMessage) String() string {
+	return "Warning Display"
 }
 
 type SuccessDisplayMessage struct {
@@ -196,6 +206,7 @@ var _ tea.Msg = TextPrompt{}
 var _ tea.Msg = PlanDisplayMessage{}
 var _ tea.Msg = ClipboardCopyMsg{}
 var _ tea.Msg = ErrorDisplayMessage{}
+var _ tea.Msg = WarningDisplayMessage{}
 var _ tea.Msg = SuccessDisplayMessage{}
 var _ tea.Msg = InfoBoxMessage{}
 var _ tea.Msg = ClearScreenMsg{}

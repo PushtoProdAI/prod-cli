@@ -231,3 +231,13 @@ func (c *HTTPFlyioClient) GetAppLogs(ctx context.Context, appID string) ([]LogEn
 func (c *HTTPFlyioClient) GetAppMetrics(ctx context.Context, appID string) (*AppMetrics, error) {
 	return nil, errors.Errorf("GetAppMetrics is not implemented for HTTP client - use flyctl client instead")
 }
+
+// ListReleases lists all releases for an app
+func (c *HTTPFlyioClient) ListReleases(ctx context.Context, appID string) ([]FlyioRelease, error) {
+	return nil, errors.Errorf("ListReleases is not implemented for HTTP client - use flyctl client instead")
+}
+
+// DeployImage deploys a specific Docker image
+func (c *HTTPFlyioClient) DeployImage(ctx context.Context, appID, imageURL string) error {
+	return errors.Errorf("DeployImage is not implemented for HTTP client - use flyctl client instead")
+}

@@ -149,3 +149,11 @@ func (m *MockFlyioClient) GetAppMetrics(ctx context.Context, appID string) (*App
 func (m *MockFlyioClient) ListPostgres(ctx context.Context) ([]FlyioPostgresCluster, error) {
 	return []FlyioPostgresCluster{}, nil
 }
+
+func (m *MockFlyioClient) ListReleases(ctx context.Context, appID string) ([]FlyioRelease, error) {
+	return []FlyioRelease{}, nil
+}
+
+func (m *MockFlyioClient) DeployImage(ctx context.Context, appID, imageURL string) error {
+	return nil
+}

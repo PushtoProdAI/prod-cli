@@ -31,12 +31,13 @@ func _() {
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
 	_ = x[Deploy-0]
-	_ = x[UnknownAction-1]
+	_ = x[Rollback-1]
+	_ = x[UnknownAction-2]
 }
 
-const _Action_name = "DeployUnknownAction"
+const _Action_name = "DeployRollbackUnknownAction"
 
-var _Action_index = [...]uint8{0, 6, 19}
+var _Action_index = [...]uint8{0, 6, 14, 27}
 
 func (i Action) String() string {
 	if i < 0 || i >= Action(len(_Action_index)-1) {

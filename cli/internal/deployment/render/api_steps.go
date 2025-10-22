@@ -635,14 +635,24 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		return nil, errors.Errorf("failed to create web service: %w", err)
 	}
 
+	metadata := make(map[string]any)
+
 	deploys, err := client.ListDeploys(ctx, webService.ID)
 	if err == nil && len(deploys) > 0 {
-		stepResults["trigger_deploy_extra"] = map[string]any{
-			"deployId": deploys[0].ID,
-		}
+		metadata["deployId"] = deploys[0].ID
 	}
 
-	return webService, nil
+	fullWebService, err := client.GetWebService(ctx, webService.ID)
+	if err == nil && fullWebService != nil {
+		metadata["url"] = fullWebService.ServiceDetails.URL
+	}
+
+	return deployment.CreatedResource{
+		ID:       webService.ID,
+		Type:     "web_service",
+		Name:     webService.Name,
+		Metadata: metadata,
+	}, nil
 }
 
 func (s *CreateWebServiceStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error {
@@ -650,15 +660,21 @@ func (s *CreateWebServiceStep) Rollback(ctx context.Context, client RenderClient
 }
 
 type TriggerDeployStepConfig struct {
-	ID          string
-	Description string
-	ServiceID   string
-	DependsOn   []string
+	ID                 string
+	Description        string
+	ServiceID          string
+	DockerImageStepID  string
+	RegistryCredStepID string
+	OwnerID            string
+	DependsOn          []string
 }
 
 type TriggerDeployStep struct {
 	BaseStep
-	ServiceID string `json:"serviceId"`
+	ServiceID          string `json:"serviceId"`
+	DockerImageStepID  string `json:"dockerImageStepId"`
+	RegistryCredStepID string `json:"registryCredStepId"`
+	OwnerID            string `json:"ownerId"`
 }
 
 func NewTriggerDeployStep(config TriggerDeployStepConfig) *TriggerDeployStep {
@@ -668,23 +684,50 @@ func NewTriggerDeployStep(config TriggerDeployStepConfig) *TriggerDeployStep {
 			Description: config.Description,
 			DependsOn:   config.DependsOn,
 		},
-		ServiceID: config.ServiceID,
+		ServiceID:          config.ServiceID,
+		DockerImageStepID:  config.DockerImageStepID,
+		RegistryCredStepID: config.RegistryCredStepID,
+		OwnerID:            config.OwnerID,
 	}
 }
 
 func (s *TriggerDeployStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error) {
-	dockerImageResult, exists := stepResults[s.DependsOn[0]]
-	if exists {
-		if dockerResult, ok := dockerImageResult.(map[string]any); ok {
-			if imagePath, ok := dockerResult["pushedImageURL"].(string); ok {
-				updateReq := UpdateServiceImageRequest{
-					ImagePath: imagePath,
-				}
-				err := client.UpdateServiceImage(ctx, s.ServiceID, updateReq)
-				if err != nil {
-					return nil, errors.Errorf("failed to update service image: %w", err)
-				}
-			}
+	if s.DockerImageStepID != "" && s.RegistryCredStepID != "" {
+		dockerImageResult, exists := stepResults[s.DockerImageStepID]
+		if !exists {
+			return nil, errors.Errorf("docker image step result not found")
+		}
+
+		registryCredResult, exists := stepResults[s.RegistryCredStepID]
+		if !exists {
+			return nil, errors.Errorf("registry credential step result not found")
+		}
+
+		registryCred, ok := registryCredResult.(*RegistryCredential)
+		if !ok {
+			return nil, errors.Errorf("invalid registry credential result type")
+		}
+
+		dockerResult, ok := dockerImageResult.(map[string]any)
+		if !ok {
+			return nil, errors.Errorf("invalid docker image result type")
+		}
+
+		imagePath, ok := dockerResult["pushedImageURL"].(string)
+		if !ok {
+			return nil, errors.Errorf("pushedImageURL not found in docker result")
+		}
+
+		updateReq := UpdateServiceImageRequest{
+			Image: &ImageDetails{
+				OwnerID:              s.OwnerID,
+				RegistryCredentialID: registryCred.ID,
+				ImagePath:            imagePath,
+			},
+		}
+		err := client.UpdateServiceImage(ctx, s.ServiceID, updateReq)
+		if err != nil {
+			return nil, errors.Errorf("failed to update service image: %w", err)
 		}
 	}
 
@@ -698,20 +741,20 @@ func (s *TriggerDeployStep) Execute(ctx context.Context, client RenderClient, st
 		return nil, errors.Errorf("failed to get web service details: %w", err)
 	}
 
-	service := &RenderService{
-		ID:   webService.ID,
-		Name: webService.Name,
-		Type: "web_service",
+	metadata := map[string]any{
+		"deployId": deploy.ID,
 	}
 
-	se := stepResults["trigger_deploy_extra"]
-	if se == nil {
-		stepResults["trigger_deploy_extra"] = map[string]any{
-			"deployId": deploy.ID,
-		}
+	if webService != nil {
+		metadata["url"] = webService.ServiceDetails.URL
 	}
 
-	return service, nil
+	return deployment.CreatedResource{
+		ID:       webService.ID,
+		Type:     "web_service",
+		Name:     webService.Name,
+		Metadata: metadata,
+	}, nil
 }
 
 func (s *TriggerDeployStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error {

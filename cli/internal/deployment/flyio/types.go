@@ -3,6 +3,8 @@ package flyio
 import (
 	"context"
 	"time"
+
+	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
 // FlyioClient interface for all Fly.io API operations
@@ -28,6 +30,10 @@ type FlyioClient interface {
 	// Monitoring
 	GetAppLogs(ctx context.Context, appID string) ([]LogEntry, error)
 	GetAppMetrics(ctx context.Context, appID string) (*AppMetrics, error)
+
+	// Releases
+	ListReleases(ctx context.Context, appID string) ([]FlyioRelease, error)
+	DeployImage(ctx context.Context, appID, imageURL string) error
 }
 
 // FlyioApp represents a Fly.io application
@@ -201,30 +207,16 @@ type NetworkMetrics struct {
 	BytesOut int64 `json:"bytes_out"`
 }
 
-// FlyioAPIStep interface for all deployment steps
-type FlyioAPIStep interface {
-	Execute(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) (interface{}, error)
-	Rollback(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) error
-	GetID() string
-	GetDescription() string
-	GetDependencies() []string
+// FlyioRelease represents a release from fly releases command
+type FlyioRelease struct {
+	Version     string `json:"version"`
+	Status      string `json:"status"`
+	Description string `json:"description"`
+	User        string `json:"user"`
+	Date        string `json:"date"`
+	DockerImage string `json:"docker_image"`
 }
 
-// BaseStep provides common functionality for all steps
-type BaseStep struct {
-	ID          string   `json:"id"`
-	Description string   `json:"description"`
-	DependsOn   []string `json:"dependsOn,omitempty"`
-}
+type FlyioAPIStep = deployment.Step[FlyioClient]
 
-func (b *BaseStep) GetID() string {
-	return b.ID
-}
-
-func (b *BaseStep) GetDescription() string {
-	return b.Description
-}
-
-func (b *BaseStep) GetDependencies() []string {
-	return b.DependsOn
-}
+type BaseStep = deployment.BaseStep

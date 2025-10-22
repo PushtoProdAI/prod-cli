@@ -164,7 +164,7 @@ You are a strict classifier. Your only job is to analyze deployment requests and
   "#
 }
 
-function SummarizeIntent(intent: Intent, name: string, language: string) -> Summary {
+function SummarizeIntent(intent: Intent, name: string, language: string, detectedPlatforms: string[]) -> Summary {
   client "ProxyClient"
   prompt #"
     {{ _.role("system") }}
@@ -174,32 +174,45 @@ function SummarizeIntent(intent: Intent, name: string, language: string) -> Summ
   - `intent`: { action, platform, source }
   - `name`: application name
   - `language`: programming language
+  - `detectedPlatforms`: list of platforms where the project is currently deployed (for rollback)
 
-  Your job is to generate a friendly summary of the deployment request, but ONLY after validating the input.
+  Your job is to generate a friendly summary of the request, but ONLY after validating the input.
 
   ## STEP 1: VALIDATION
   Check each field:
   - If any of the following are missing or invalid, note them:
     - intent.action is "UNKNOWN"
-    - intent.platform is "UNKNOWN"
+    - intent.platform is "UNKNOWN" AND no detectedPlatforms provided
     - intent.source is "UNKNOWN"
     - name is missing or ""
     - language is missing or ""
 
-  ## STEP 2: SUMMARY RULES
+  ## STEP 2: SUMMARY RULES FOR ROLLBACK
 
-  - If **any fields are missing or invalid**:
-    - Generate a friendly summary that includes what is known.
-    - Clearly mention what is missing (e.g., "We couldn't determine the language").
-    - Tell the user to check the code at the given source path.
-    - Say: “We’re not quite ready to deploy yet.”
+  If intent.action is "ROLLBACK":
+    - Use "rollback" terminology, NOT "deploy" or "deployment"
+    - Platform handling:
+      1. If detectedPlatforms has exactly 1 platform: "We found your application deployed on [Platform]. We'll rollback your deployment there."
+      2. If detectedPlatforms has multiple platforms: "We found your application deployed on multiple platforms: [Platform1, Platform2]. We'll ask you to choose which one to rollback before proceeding."
+      3. If detectedPlatforms is empty or intent.platform is UNKNOWN: "We couldn't find your application deployed on any platform. Please make sure you're in the correct directory, or specify the platform explicitly in your request (e.g., 'rollback to Render')."
+    - Include the project name, language, and source path
+    - End with: "If everything looks good, we'll take care of rolling it back for you."
 
-  - If **all fields are present and valid**:
-    - Generate a clear and friendly summary of the request.
-    - Include the action, platform, project name, language, and source path.
-    - Do **not** include any warnings or "check your code" suggestions.
-    - If this is a dry-run request (intent.dryRun is true), end with: "We'll show you what would happen without making any changes."
-    - If this is NOT a dry-run request (intent.dryRun is false), end with: "If everything looks good, we'll take care of deploying it for you."
+  ## STEP 3: SUMMARY RULES FOR DEPLOY
+
+  If intent.action is "DEPLOY":
+    - If **any fields are missing or invalid**:
+      - Generate a friendly summary that includes what is known.
+      - Clearly mention what is missing (e.g., "We couldn't determine the language").
+      - Tell the user to check the code at the given source path.
+      - Say: "We're not quite ready to deploy yet."
+
+    - If **all fields are present and valid**:
+      - Generate a clear and friendly summary of the request.
+      - Include the action, platform, project name, language, and source path.
+      - Do **not** include any warnings or "check your code" suggestions.
+      - If this is a dry-run request (intent.dryRun is true), end with: "We'll show you what would happen without making any changes."
+      - If this is NOT a dry-run request (intent.dryRun is false), end with: "If everything looks good, we'll take care of deploying it for you."
 
   ## STYLE
   - Keep it friendly and simple.
@@ -207,12 +220,13 @@ function SummarizeIntent(intent: Intent, name: string, language: string) -> Summ
   - Only include fallback/warning messages when something is actually missing.
     {{ _.role("user") }}
 
-  Please summarize this deployment request in friendly, simple language so a non-technical user can confirm the details. 
+  Please summarize this request in friendly, simple language so a non-technical user can confirm the details. 
   If anything important is missing, clearly explain what's missing and what to check. Otherwise, give a clean summary with no extra warnings.
 
     Intent: {{ intent }}
     Language: {{ language }}
     Name: {{ name }}
+    Detected Platforms: {{ detectedPlatforms }}
 
  
     {{ctx.output_format }}
@@ -621,9 +635,11 @@ test intentSummary
       action "DEPLOY"
       platform "Render"
       source "/path/to/app"
+      dryRun false
     }
     name "foo"
     language ""
+    detectedPlatforms []
   }
 }
 

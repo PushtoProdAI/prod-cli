@@ -332,7 +332,7 @@ func SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Int
 	return casted, nil
 }
 
-func SummarizeIntent(ctx context.Context, intent types.Intent, name string, language string, opts ...CallOptionFunc) (types.Summary, error) {
+func SummarizeIntent(ctx context.Context, intent types.Intent, name string, language string, detectedPlatforms []string, opts ...CallOptionFunc) (types.Summary, error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -340,7 +340,7 @@ func SummarizeIntent(ctx context.Context, intent types.Intent, name string, lang
 	}
 
 	args := baml.BamlFunctionArguments{
-		Kwargs: map[string]any{"intent": intent, "name": name, "language": language},
+		Kwargs: map[string]any{"intent": intent, "name": name, "language": language, "detectedPlatforms": detectedPlatforms},
 		Env:    getEnvVars(callOpts.env),
 	}
 

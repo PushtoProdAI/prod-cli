@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/go-errors/errors"
@@ -225,4 +226,51 @@ func (nqd *NetlifyQueuedDeployment) getFunctionsDir() string {
 
 	// No functions directory found
 	return ""
+}
+
+func (nqd *NetlifyQueuedDeployment) GetCurrentDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	if nqd.spec.ExistingProjectID == "" {
+		return nil, errors.Errorf("no site ID available")
+	}
+
+	return &deployment.DeploymentInfo{
+		ID:     nqd.spec.ExistingProjectID,
+		Status: "active",
+	}, nil
+}
+
+func (nqd *NetlifyQueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	if nqd.spec.ExistingProjectID == "" {
+		return nil, errors.Errorf("no site ID available")
+	}
+
+	if !nqd.spec.IsUpdate {
+		return nil, errors.Errorf("no previous deployment found for site (only 1 deployment exists)")
+	}
+
+	return &deployment.DeploymentInfo{
+		ID:     nqd.spec.ExistingProjectID,
+		Status: "previous",
+	}, nil
+}
+
+func (nqd *NetlifyQueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
+	if nqd.spec.ExistingProjectID == "" {
+		return errors.Errorf("no site ID available for rollback")
+	}
+
+	siteID := nqd.spec.ExistingProjectID
+
+	return rollbackNetlifySiteDeploy(ctx, siteID)
+}
+
+func rollbackNetlifySiteDeploy(ctx context.Context, siteID string) error {
+	cmd := exec.CommandContext(ctx, "netlify", "api", "rollbackSiteDeploy", "--data", fmt.Sprintf(`{"site_id": "%s"}`, siteID))
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return errors.Errorf("failed to rollback Netlify site: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
 }
