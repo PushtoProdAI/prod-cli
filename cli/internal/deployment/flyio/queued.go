@@ -395,37 +395,48 @@ func (fqd *FlyioQueuedDeployment) GetPreviousDeployment(ctx context.Context) (*d
 
 	slog.Info("GetPreviousDeployment: found releases", "count", len(releases))
 
-	currentRelease, err := fqd.getCurrentDeployment(ctx)
-	if err != nil {
-		slog.Warn("Could not determine current release", "error", err)
+	// Determine if we need to skip the first complete release or not
+	// If the most recent release is failed/incomplete, this is likely an auto-rollback
+	// after a failed deployment, so we want the first complete release
+	// If the most recent release is complete, this is likely a manual rollback,
+	// so we want the second complete release (to go back one step)
+	mostRecentIsFailed := len(releases) > 0 && (releases[0].Status != "complete" || releases[0].DockerImage == "")
+
+	if mostRecentIsFailed {
+		slog.Info("Most recent release is failed/incomplete - auto-rollback scenario, will return first complete release")
 	} else {
-		slog.Info("Current release determined", "version", currentRelease.ID)
+		slog.Info("Most recent release is complete - manual rollback scenario, will skip first complete and return second")
 	}
 
-	// Releases are sorted newest first, so find the first complete release that's older than current
+	// Releases are sorted newest first
+	foundFirstComplete := false
 	for i, rel := range releases {
 		slog.Info("Checking release", "index", i, "version", rel.Version, "status", rel.Status, "image", rel.DockerImage)
 
-		// Skip non-complete releases
+		// Skip non-complete releases (including failed ones)
 		if rel.Status != "complete" || rel.DockerImage == "" {
 			slog.Info("Skipping incomplete release", "version", rel.Version, "status", rel.Status)
 			continue
 		}
 
-		// Skip the current release
-		if currentRelease != nil && rel.DockerImage == currentRelease.ID {
-			slog.Info("Skipping current release", "version", rel.Version, "image", rel.DockerImage)
+		// If most recent is failed (auto-rollback), return the first complete release
+		if mostRecentIsFailed {
+			slog.Info("Found previous release for auto-rollback (first complete)", "version", rel.Version, "image", rel.DockerImage, "status", rel.Status)
+			return &deployment.DeploymentInfo{
+				ID:        rel.DockerImage,
+				Status:    rel.Status,
+				CreatedAt: rel.Date,
+			}, nil
+		}
+
+		// Otherwise (manual rollback), skip the first complete and return the second
+		if !foundFirstComplete {
+			slog.Info("Skipping most recent complete release for manual rollback", "version", rel.Version, "image", rel.DockerImage)
+			foundFirstComplete = true
 			continue
 		}
 
-		// If we don't have a current release, skip the first (newest) complete release
-		if currentRelease == nil && i == 0 {
-			slog.Info("No current release found, skipping newest release", "version", rel.Version)
-			continue
-		}
-
-		// Return this release as the previous deployment
-		slog.Info("Found previous release", "version", rel.Version, "image", rel.DockerImage, "status", rel.Status)
+		slog.Info("Found previous release for manual rollback (second complete)", "version", rel.Version, "image", rel.DockerImage, "status", rel.Status)
 		return &deployment.DeploymentInfo{
 			ID:        rel.DockerImage,
 			Status:    rel.Status,

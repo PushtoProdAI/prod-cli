@@ -62,7 +62,7 @@ func (c *CLIVercelClient) GetProject(projectID string) (*VercelProject, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "vercel", "project", "ls", "--yes")
+	cmd := exec.CommandContext(ctx, "vercel", "project", "ls")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
