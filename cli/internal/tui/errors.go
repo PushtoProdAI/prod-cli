@@ -61,6 +61,60 @@ func (m Model) formatErrorDisplay(errMsg ErrorDisplayMessage) string {
 	return result.String()
 }
 
+func (m Model) formatWarningDisplay(warnMsg WarningDisplayMessage) string {
+	var result strings.Builder
+
+	header := lipgloss.NewStyle().
+		Margin(1, 0, 0, 0).
+		Render(warningHeaderStyle.Render("⚠️  Deployment Warning"))
+	result.WriteString(header)
+	result.WriteString("\n\n")
+
+	maxWidth := m.viewport.Width() - 20
+	if maxWidth < 40 {
+		maxWidth = 40
+	}
+	if maxWidth > 100 {
+		maxWidth = 100
+	}
+
+	summaryBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(warningColor).
+		Padding(1, 2).
+		Margin(0, 1).
+		Width(maxWidth).
+		Render(warnMsg.Summary)
+
+	result.WriteString(summaryBox)
+	result.WriteString("\n")
+
+	if len(warnMsg.Remediations) > 0 {
+		headerText := "💡 Suggested Fixes"
+
+		header := lipgloss.NewStyle().
+			Margin(1, 0, 0, 0).
+			Render(remediationHeaderStyle.Render(headerText))
+		result.WriteString(header)
+		result.WriteString("\n")
+
+		for i, remediation := range warnMsg.Remediations {
+			result.WriteString(m.formatRemediation(i, remediation))
+			result.WriteString("\n")
+		}
+
+		retryMsg := lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Italic(true).
+			Margin(1, 1, 0, 1).
+			Render("Once you're ready to retry, just let me know!")
+		result.WriteString(retryMsg)
+		result.WriteString("\n")
+	}
+
+	return result.String()
+}
+
 func (m Model) formatRemediation(index int, remediation RemediationItem) string {
 	var result strings.Builder
 

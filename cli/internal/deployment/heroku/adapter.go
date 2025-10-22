@@ -143,6 +143,11 @@ func (hda *HerokuDeploymentAdapter) validateSpec(spec *deployment.DeploymentSpec
 		return errors.Errorf("deployment spec cannot be nil")
 	}
 
+	// Skip validation for rollbacks - we're reverting to a previously working deployment
+	if spec.IsRollback {
+		return nil
+	}
+
 	// Heroku doesn't support static-only deployments (needs a dyno)
 	if spec.IsStatic && spec.StartCommand == "" {
 		return errors.Errorf("Heroku requires a web process; static sites need a server (e.g., nginx, serve)")

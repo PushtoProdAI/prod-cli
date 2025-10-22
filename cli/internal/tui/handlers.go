@@ -518,12 +518,40 @@ func (m Model) handleErrorDisplayMessage(msg ErrorDisplayMessage) (tea.Model, te
 
 	return m, nil
 }
+
+func (m Model) handleWarningDisplayMessage(msg WarningDisplayMessage) (tea.Model, tea.Cmd) {
+	m.errorStartLine = len(m.content)
+
+	warningContent := m.formatWarningDisplay(msg)
+
+	for _, line := range strings.Split(warningContent, "\n") {
+		if line != "" {
+			m.content = append(m.content, line)
+		}
+	}
+
+	m.errorEndLine = len(m.content)
+
+	if len(m.content) > maxHistoryLength {
+		m.content = m.content[len(m.content)-maxHistoryLength:]
+	}
+
+	viewportContent := m.renderViewportContent()
+	m.viewport.SetContent(viewportContent)
+
+	if m.autoScrollEnabled {
+		m.viewport.GotoBottom()
+	}
+
+	return m, nil
+}
+
 func (m Model) handleClearScreen() (tea.Model, tea.Cmd) {
 	banner := getBanner()
 	greeting := greetUser()
 
 	var initialContent []string
-	bannerLines := strings.Split(headerStyle.Render(banner), "\n")
+	bannerLines := strings.Split(banner, "\n")
 	initialContent = append(initialContent, bannerLines...)
 	initialContent = append(initialContent, "")
 	initialContent = append(initialContent, logStyle.Render(greeting))

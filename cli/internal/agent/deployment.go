@@ -19,40 +19,44 @@ import (
 	"github.com/meroxa/prod/cli/internal/output"
 )
 
-func (a *Activities) deploySteps(ctx context.Context, spec deployment.DeploymentSpec, platform Platform) ([]deployment.CreatedResource, error) {
-	// Create platform-specific Deployable implementation
-	var deployable deployment.Deployable
+func (a *Activities) createDeployable(spec *deployment.DeploymentSpec, platform Platform) (deployment.Deployable, error) {
 	switch platform {
 	case Render:
 		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
-		deployable = render.NewQueuedDeployment(a.renderClient, &spec, dockerGen, true, a.uiWriter)
+		return render.NewQueuedDeployment(a.renderClient, spec, dockerGen, true, a.uiWriter), nil
 	case FlyIO:
 		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
-		deployable = flyio.NewFlyioQueuedDeployment(a.flyClient, &spec, dockerGen, a.uiWriter)
+		return flyio.NewFlyioQueuedDeployment(a.flyClient, spec, dockerGen, a.uiWriter), nil
 	case Netlify:
-		// Use the Netlify deployment adapter
 		netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter, a.llmClient)
-		var err error
-		deployable, err = netlifyAdapter.GenerateArtifacts(&spec, deployment.StrategyNetlify)
+		deployable, err := netlifyAdapter.GenerateArtifacts(spec, deployment.StrategyNetlify)
 		if err != nil {
 			return nil, errors.Errorf("failed to create Netlify deployment: %w", err)
 		}
+		return deployable, nil
 	case Vercel:
 		vercelAdapter := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter, a.llmClient)
-		var err error
-		deployable, err = vercelAdapter.GenerateArtifacts(&spec, deployment.StrategyVercel)
+		deployable, err := vercelAdapter.GenerateArtifacts(spec, deployment.StrategyVercel)
 		if err != nil {
 			return nil, errors.Errorf("failed to create Vercel deployment: %w", err)
 		}
+		return deployable, nil
 	case Heroku:
 		herokuAdapter := heroku.NewDefaultHerokuDeploymentAdapter(a.uiWriter)
-		var err error
-		deployable, err = herokuAdapter.GenerateArtifacts(&spec, deployment.StrategyHeroku)
+		deployable, err := herokuAdapter.GenerateArtifacts(spec, deployment.StrategyHeroku)
 		if err != nil {
 			return nil, errors.Errorf("failed to create Heroku deployment: %w", err)
 		}
+		return deployable, nil
 	default:
 		return nil, errors.Errorf("unsupported platform: %s", platform)
+	}
+}
+
+func (a *Activities) deploySteps(ctx context.Context, spec deployment.DeploymentSpec, platform Platform) ([]deployment.CreatedResource, error) {
+	deployable, err := a.createDeployable(&spec, platform)
+	if err != nil {
+		return nil, err
 	}
 
 	createdResources, err := deployable.Deploy(ctx)
@@ -209,6 +213,7 @@ type ExistingProjectInfo struct {
 	DeployURL         string
 	IsUpdate          bool
 	ExistingDatabases []string
+	DetectedPlatforms []Platform
 }
 
 type ProjectDetector interface {
@@ -259,7 +264,7 @@ func (d *RenderProjectDetector) DetectExistingProject(ctx context.Context, proje
 		ExistingDatabases: []string{},
 	}
 
-	existing, err := render.DetectExistingProject(ctx, d.client, projectName)
+	existing, err := render.DetectExistingProject(ctx, d.client, projectName, sourcePath)
 	if err != nil {
 		return result, errors.Errorf("failed to check for existing Render project: %w", err)
 	}
@@ -464,7 +469,7 @@ func (d *HerokuProjectDetector) DetectExistingProject(ctx context.Context, proje
 	}
 	if existing != nil {
 		result.Exists = true
-		result.ProjectID = existing.AppID
+		result.ProjectID = existing.Name
 		result.Name = existing.Name
 		result.DeployURL = existing.WebURL
 		result.IsUpdate = true
@@ -487,4 +492,31 @@ func (d *HerokuProjectDetector) DetectExistingProject(ctx context.Context, proje
 
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && s[:len(substr)] == substr
+}
+
+func (a *Activities) rollbackDeployment(ctx context.Context, spec deployment.DeploymentSpec, platform Platform, targetDeploymentID string) error {
+	a.uiWriter.SendStatus("rolling_back", fmt.Sprintf("Rolling back to deployment %s", targetDeploymentID))
+
+	deployable, err := a.createDeployable(&spec, platform)
+	if err != nil {
+		return err
+	}
+
+	err = deployable.Rollback(ctx, targetDeploymentID)
+	if err != nil {
+		a.uiWriter.SendStatusComplete("rolling_back", fmt.Sprintf("❌ Rollback failed: %v", err))
+		return errors.Errorf("failed to rollback %s deployment: %w", platform, err)
+	}
+
+	a.uiWriter.SendStatusComplete("rolling_back", "✅ Successfully rolled back to previous working version")
+	return nil
+}
+
+func (a *Activities) getPreviousDeployment(ctx context.Context, spec deployment.DeploymentSpec, platform Platform) (*deployment.DeploymentInfo, error) {
+	deployable, err := a.createDeployable(&spec, platform)
+	if err != nil {
+		return nil, err
+	}
+
+	return deployable.GetPreviousDeployment(ctx)
 }

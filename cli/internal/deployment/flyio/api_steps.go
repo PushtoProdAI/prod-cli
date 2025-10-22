@@ -19,7 +19,7 @@ type CreateFlyioAppStep struct {
 	region  string
 }
 
-func (c *CreateFlyioAppStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) (interface{}, error) {
+func (c *CreateFlyioAppStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
 	app, err := client.CreateApp(ctx, CreateAppRequest{
 		Name:    c.appName,
 		Region:  c.region,
@@ -37,7 +37,7 @@ func (c *CreateFlyioAppStep) Execute(ctx context.Context, client FlyioClient, st
 	}, nil
 }
 
-func (c *CreateFlyioAppStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) error {
+func (c *CreateFlyioAppStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]any) error {
 	// Get the app ID from step results
 	if appResult, ok := stepResults[c.GetID()]; ok {
 		if resource, ok := appResult.(deployment.CreatedResource); ok {
@@ -54,7 +54,7 @@ type DeployFlyioConfigStep struct {
 	config  *FlyioConfig
 }
 
-func (d *DeployFlyioConfigStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) (interface{}, error) {
+func (d *DeployFlyioConfigStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
 	// Use the app name directly (no template resolution needed)
 	err := client.DeployApp(ctx, d.appName, d.config)
 	if err != nil {
@@ -76,7 +76,7 @@ func (d *DeployFlyioConfigStep) Execute(ctx context.Context, client FlyioClient,
 		ID:   app.ID,
 		Type: "app",
 		Name: app.Name,
-		Metadata: map[string]interface{}{
+		Metadata: map[string]any{
 			"url":      app.Hostname,
 			"app_url":  app.AppURL,
 			"hostname": app.Hostname,
@@ -84,7 +84,7 @@ func (d *DeployFlyioConfigStep) Execute(ctx context.Context, client FlyioClient,
 	}, nil
 }
 
-func (d *DeployFlyioConfigStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) error {
+func (d *DeployFlyioConfigStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]any) error {
 	// For config deployment, rollback might involve redeploying a previous config
 	// For now, we'll just log that rollback is not implemented
 	return errors.Errorf("config rollback not implemented")
@@ -99,7 +99,7 @@ type CreateFlyioServiceStep struct {
 	size        int
 }
 
-func (c *CreateFlyioServiceStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) (interface{}, error) {
+func (c *CreateFlyioServiceStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
 	switch c.serviceType {
 	case "postgres":
 		cluster, err := client.CreatePostgres(ctx, CreatePostgresRequest{
@@ -117,7 +117,7 @@ func (c *CreateFlyioServiceStep) Execute(ctx context.Context, client FlyioClient
 			ID:   cluster.ID,
 			Type: "postgres_cluster",
 			Name: cluster.Name,
-			Metadata: map[string]interface{}{
+			Metadata: map[string]any{
 				"cluster_id":        cluster.ID,
 				"connection_string": cluster.ConnectionString,
 			},
@@ -187,7 +187,7 @@ func (c *CreateFlyioServiceStep) waitForServiceReady(ctx context.Context, client
 	}
 }
 
-func (c *CreateFlyioServiceStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) error {
+func (c *CreateFlyioServiceStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]any) error {
 	// Get the service ID from step results
 	if serviceResult, ok := stepResults[c.GetID()]; ok {
 		if resource, ok := serviceResult.(deployment.CreatedResource); ok {
@@ -207,7 +207,7 @@ type AttachPostgresStep struct {
 	variableName  string
 }
 
-func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
 	// Get the cluster ID from the previous step
 	clusterID := ""
 	if serviceResult, ok := stepResults[s.serviceStepID]; ok {
@@ -241,7 +241,7 @@ func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, st
 	}, nil
 }
 
-func (s *AttachPostgresStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) error {
+func (s *AttachPostgresStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]any) error {
 	// Detaching would require removing the database user and connection
 	// For now, we'll log that detachment is not implemented
 	return errors.Errorf("postgres detachment not implemented")
@@ -255,7 +255,7 @@ type AttachRedisStep struct {
 	variableName string
 }
 
-func (s *AttachRedisStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) (interface{}, error) {
+func (s *AttachRedisStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
 	// Attach the Redis database to the app
 	err := client.AttachRedis(ctx, AttachRedisRequest{
 		AppName:      s.appName,
@@ -275,7 +275,7 @@ func (s *AttachRedisStep) Execute(ctx context.Context, client FlyioClient, stepR
 	}, nil
 }
 
-func (s *AttachRedisStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) error {
+func (s *AttachRedisStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]any) error {
 	// Detaching would require removing the Redis connection
 	// For now, we'll log that detachment is not implemented
 	return errors.Errorf("redis detachment not implemented")
@@ -288,7 +288,7 @@ type GenerateDockerfileStep struct {
 	dockerGenerator *deployment.DockerGenerator
 }
 
-func (g *GenerateDockerfileStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) (interface{}, error) {
+func (g *GenerateDockerfileStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
 	// Get the build context from metadata
 	buildContext := "."
 	if bc, ok := g.spec.Metadata["buildContext"].(string); ok {
@@ -349,7 +349,7 @@ func (g *GenerateDockerfileStep) Execute(ctx context.Context, client FlyioClient
 		}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"dockerfile_path": dockerfilePath,
 		"build_context":   buildContext,
 	}, nil
@@ -372,10 +372,10 @@ func (g *GenerateDockerfileStep) determineInternalPort() int {
 	return config.InternalPort
 }
 
-func (g *GenerateDockerfileStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]interface{}) error {
+func (g *GenerateDockerfileStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]any) error {
 	// Get the result from this step
 	if result, ok := stepResults[g.GetID()]; ok {
-		if resultMap, ok := result.(map[string]interface{}); ok {
+		if resultMap, ok := result.(map[string]any); ok {
 			if dockerfilePath, ok := resultMap["dockerfile_path"].(string); ok {
 				// Clean up generated Dockerfile
 				if err := os.Remove(dockerfilePath); err != nil {

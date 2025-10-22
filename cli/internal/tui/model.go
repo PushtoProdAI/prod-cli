@@ -125,7 +125,7 @@ func NewModel(agent *agent.Agent) Model {
 
 	// Split banner into individual lines (it contains embedded newlines)
 	var initialContent []string
-	bannerLines := strings.Split(headerStyle.Render(banner), "\n")
+	bannerLines := strings.Split(banner, "\n")
 	initialContent = append(initialContent, bannerLines...)
 	initialContent = append(initialContent, "")
 	initialContent = append(initialContent, logStyle.Render(greeting))
@@ -267,6 +267,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case ErrorDisplayMessage:
 		return m.handleErrorDisplayMessage(msg)
+	case WarningDisplayMessage:
+		return m.handleWarningDisplayMessage(msg)
 	case SuccessDisplayMessage:
 		return m.handleSuccessDisplayMessage(msg)
 	case InfoBoxMessage:

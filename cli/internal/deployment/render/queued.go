@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/go-errors/errors"
 
@@ -62,9 +63,8 @@ func (qd *QueuedDeployment) Deploy(ctx context.Context) ([]deployment.CreatedRes
 	// Generate steps with the owner ID
 	steps := qd.GenerateAPISteps(ownerID)
 
-	// Execute steps with dependency resolution
 	stepExecutor := NewStepExecutor(qd.client, qd.writer)
-	return stepExecutor.ExecuteSteps(ctx, steps, qd.writer)
+	return stepExecutor.ExecuteSteps(ctx, steps)
 }
 
 func (qd *QueuedDeployment) GenerateAPISteps(ownerID string) []RenderAPIStep {
@@ -88,10 +88,13 @@ func (qd *QueuedDeployment) GenerateAPISteps(ownerID string) []RenderAPIStep {
 
 	if qd.spec.IsUpdate {
 		triggerDeployStep := NewTriggerDeployStep(TriggerDeployStepConfig{
-			ID:          fmt.Sprintf("step-%d", stepCounter),
-			Description: "Trigger deployment to Render",
-			ServiceID:   qd.spec.ExistingProjectID,
-			DependsOn:   []string{deploymentConfig.dockerImageStepID, deploymentConfig.registryCredStepID},
+			ID:                 fmt.Sprintf("step-%d", stepCounter),
+			Description:        "Trigger deployment to Render",
+			ServiceID:          qd.spec.ExistingProjectID,
+			DockerImageStepID:  deploymentConfig.dockerImageStepID,
+			RegistryCredStepID: deploymentConfig.registryCredStepID,
+			OwnerID:            ownerID,
+			DependsOn:          []string{deploymentConfig.dockerImageStepID, deploymentConfig.registryCredStepID},
 		})
 		steps = append(steps, triggerDeployStep)
 	} else {
@@ -349,4 +352,107 @@ func (qd *QueuedDeployment) getNativeDeploymentConfig() (buildCommand, startComm
 	}
 
 	return buildCommand, startCommand, env
+}
+
+func (qd *QueuedDeployment) GetCurrentDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	if qd.spec.ExistingProjectID == "" {
+		return nil, errors.Errorf("no service ID available")
+	}
+
+	deploys, err := qd.client.ListDeploys(ctx, qd.spec.ExistingProjectID)
+	if err != nil {
+		return nil, errors.Errorf("failed to list deploys: %w", err)
+	}
+
+	if len(deploys) == 0 {
+		return nil, errors.Errorf("no deploys found for service %s", qd.spec.ExistingProjectID)
+	}
+
+	slog.Info("GetCurrentDeployment: found deploys", "count", len(deploys))
+
+	// Deploys are sorted newest-first, so take the first live deployment
+	for i, dep := range deploys {
+		slog.Info("Checking deploy", "index", i, "id", dep.ID, "status", dep.Status, "createdAt", dep.CreatedAt)
+
+		if dep.Status == "live" {
+			slog.Info("Found current deployment", "id", dep.ID)
+			return &deployment.DeploymentInfo{
+				ID:        dep.ID,
+				Status:    dep.Status,
+				CreatedAt: dep.CreatedAt,
+			}, nil
+		}
+	}
+
+	return nil, errors.Errorf("no live deployment found for service %s", qd.spec.ExistingProjectID)
+}
+
+func (qd *QueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	if qd.spec.ExistingProjectID == "" {
+		return nil, errors.Errorf("no service ID available")
+	}
+
+	deploys, err := qd.client.ListDeploys(ctx, qd.spec.ExistingProjectID)
+	if err != nil {
+		return nil, errors.Errorf("failed to list deploys: %w", err)
+	}
+
+	if len(deploys) < 2 {
+		return nil, errors.Errorf("no previous deployment found for service %s (need at least 2 deploys, found %d)", qd.spec.ExistingProjectID, len(deploys))
+	}
+
+	slog.Info("GetPreviousDeployment: found deploys", "count", len(deploys))
+
+	currentDeploy, err := qd.GetCurrentDeployment(ctx)
+	if err != nil {
+		slog.Warn("Could not determine current deployment", "error", err)
+	} else {
+		slog.Info("Current deployment determined", "id", currentDeploy.ID, "createdAt", currentDeploy.CreatedAt)
+	}
+
+	// Deploys are sorted newest first, so find the first deploy that's older than current
+	for i, dep := range deploys {
+		slog.Info("Checking deploy", "index", i, "id", dep.ID, "status", dep.Status, "createdAt", dep.CreatedAt)
+
+		// Skip the current live deployment
+		if currentDeploy != nil && dep.ID == currentDeploy.ID {
+			slog.Info("Skipping current deployment", "id", dep.ID)
+			continue
+		}
+
+		// If we don't have a current deployment, skip the first (newest) deploy
+		if currentDeploy == nil && i == 0 {
+			slog.Info("No current deployment found, skipping newest deploy", "id", dep.ID)
+			continue
+		}
+
+		// Return this deploy as the previous deployment
+		slog.Info("Found previous deployment", "id", dep.ID, "status", dep.Status, "createdAt", dep.CreatedAt)
+		return &deployment.DeploymentInfo{
+			ID:        dep.ID,
+			Status:    dep.Status,
+			CreatedAt: dep.CreatedAt,
+		}, nil
+	}
+
+	return nil, errors.Errorf("no previous deployment found for service %s", qd.spec.ExistingProjectID)
+}
+
+func (qd *QueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
+	if qd.spec.ExistingProjectID == "" {
+		return errors.Errorf("no service ID available for rollback")
+	}
+
+	serviceID := qd.spec.ExistingProjectID
+
+	slog.Info("Rolling back Render deployment", "service", serviceID, "targetDeploy", targetDeploymentID)
+
+	_, err := qd.client.RollbackDeploy(ctx, serviceID, targetDeploymentID)
+	if err != nil {
+		return errors.Errorf("failed to rollback to deploy %s: %w", targetDeploymentID, err)
+	}
+
+	slog.Info("Deployment rolled back successfully", "targetDeploy", targetDeploymentID)
+
+	return nil
 }

@@ -625,7 +625,7 @@ func (*stream) SummarizeDeployError(ctx context.Context, errorMsg string, intent
 }
 
 // / Streaming version of SummarizeIntent
-func (*stream) SummarizeIntent(ctx context.Context, intent types.Intent, name string, language string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Summary, types.Summary], error) {
+func (*stream) SummarizeIntent(ctx context.Context, intent types.Intent, name string, language string, detectedPlatforms []string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Summary, types.Summary], error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -633,7 +633,7 @@ func (*stream) SummarizeIntent(ctx context.Context, intent types.Intent, name st
 	}
 
 	args := baml.BamlFunctionArguments{
-		Kwargs: map[string]any{"intent": intent, "name": name, "language": language},
+		Kwargs: map[string]any{"intent": intent, "name": name, "language": language, "detectedPlatforms": detectedPlatforms},
 		Env:    getEnvVars(callOpts.env),
 	}
 

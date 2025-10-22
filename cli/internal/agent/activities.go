@@ -10,38 +10,41 @@ import (
 )
 
 const (
-	AgentDetermineIntent           = "agent.determineIntent"
-	AgentAnalyzeProject            = "agent.analyzeProject"
-	AgentSummarize                 = "agent.summarize"
-	AgentGetRenderWorkspace        = "agent.getRenderWorkspace"
-	AgentDeploySteps               = "agent.deploySteps"
-	AgentSummarizeDeploySteps      = "agent.summarizeDeploySteps"
-	AgentSummarizeError            = "agent.summarizeError"
-	AgentEstimateRenderCosts       = "agent.estimateRenderCosts"
-	AgentEstimateFlyioCosts        = "agent.estimateFlyioCosts"
-	AgentEstimateNetlifyCosts      = "agent.estimateNetlifyCosts"
-	AgentEstimateVercelCosts       = "agent.estimateVercelCosts"
-	AgentGetRenderServiceURL       = "agent.getRenderServiceURL"
-	AgentWaitForRenderDeploy       = "agent.waitForRenderDeploy"
-	AgentIsURLLive                 = "agent.isURLLive"
-	AgentSendProjectStats          = "agent.sendProjectStats"
-	AgentGetFlyIOAppURL            = "agent.getFlyIOAppURL"
-	AgentCategorizeEnvVars         = "agent.categorizeEnvVars"
-	AgentReadEnvFiles              = "agent.readEnvFiles"
-	AgentCreateDockerRepo          = "agent.createDockerRepo"
-	AgentDetermineRootPath         = "agent.determineRootPath"
-	AgentDetermineBuildOutput      = "agent.determineBuildOutput"
-	AgentDetermineRunCommand       = "agent.determineRunCommand"
-	AgentDetermineMigrationCommand = "agent.determineMigrationCommand"
-	AgentCreatePackageLock         = "agent.createPackageLock"
-	AgentUpdateJavaScriptConfig    = "agent.updateJavaScriptConfig"
-	AgentRestoreConfigFromBackup   = "agent.restoreConfigFromBackup"
-	AgentPrepareDeployment         = "agent.prepareDeployment"
-	AgentCheckExistingProject      = "agent.checkExistingProject"
-	AgentDetectProject             = "agent.detectProject"
-	AgentBuildDetectionSummary     = "agent.buildDetectionSummary"
-	AgentLogDeploymentStart        = "agent.logDeploymentStart"
-	AgentUpdateDeploymentStatus    = "agent.updateDeploymentStatus"
+	AgentDetermineIntent            = "agent.determineIntent"
+	AgentAnalyzeProject             = "agent.analyzeProject"
+	AgentSummarize                  = "agent.summarize"
+	AgentGetRenderWorkspace         = "agent.getRenderWorkspace"
+	AgentDeploySteps                = "agent.deploySteps"
+	AgentSummarizeDeploySteps       = "agent.summarizeDeploySteps"
+	AgentSummarizeError             = "agent.summarizeError"
+	AgentEstimateRenderCosts        = "agent.estimateRenderCosts"
+	AgentEstimateFlyioCosts         = "agent.estimateFlyioCosts"
+	AgentEstimateNetlifyCosts       = "agent.estimateNetlifyCosts"
+	AgentEstimateVercelCosts        = "agent.estimateVercelCosts"
+	AgentGetRenderServiceURL        = "agent.getRenderServiceURL"
+	AgentWaitForRenderDeploy        = "agent.waitForRenderDeploy"
+	AgentIsURLLive                  = "agent.isURLLive"
+	AgentSendProjectStats           = "agent.sendProjectStats"
+	AgentGetFlyIOAppURL             = "agent.getFlyIOAppURL"
+	AgentCategorizeEnvVars          = "agent.categorizeEnvVars"
+	AgentReadEnvFiles               = "agent.readEnvFiles"
+	AgentCreateDockerRepo           = "agent.createDockerRepo"
+	AgentDetermineRootPath          = "agent.determineRootPath"
+	AgentDetermineBuildOutput       = "agent.determineBuildOutput"
+	AgentDetermineRunCommand        = "agent.determineRunCommand"
+	AgentDetermineMigrationCommand  = "agent.determineMigrationCommand"
+	AgentCreatePackageLock          = "agent.createPackageLock"
+	AgentUpdateJavaScriptConfig     = "agent.updateJavaScriptConfig"
+	AgentRestoreConfigFromBackup    = "agent.restoreConfigFromBackup"
+	AgentPrepareDeployment          = "agent.prepareDeployment"
+	AgentCheckExistingProject       = "agent.checkExistingProject"
+	AgentDetectPlatformsForRollback = "agent.detectPlatformsForRollback"
+	AgentDetectProject              = "agent.detectProject"
+	AgentBuildDetectionSummary      = "agent.buildDetectionSummary"
+	AgentLogDeploymentStart         = "agent.logDeploymentStart"
+	AgentUpdateDeploymentStatus     = "agent.updateDeploymentStatus"
+	AgentRollbackDeployment         = "agent.rollbackDeployment"
+	AgentGetPreviousDeployment      = "agent.getPreviousDeployment"
 )
 
 type Activities struct {
@@ -82,7 +85,10 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentRestoreConfigFromBackup, ActFunc: a.restoreFromBackup},
 		{Name: AgentPrepareDeployment, ActFunc: a.prepareDeployment},
 		{Name: AgentCheckExistingProject, ActFunc: a.checkExistingProject},
+		{Name: AgentDetectPlatformsForRollback, ActFunc: a.detectPlatformsForRollback},
 		{Name: AgentLogDeploymentStart, ActFunc: a.logDeploymentStart},
 		{Name: AgentUpdateDeploymentStatus, ActFunc: a.updateDeploymentStatus},
+		{Name: AgentGetPreviousDeployment, ActFunc: a.getPreviousDeployment},
+		{Name: AgentRollbackDeployment, ActFunc: a.rollbackDeployment},
 	}
 }
