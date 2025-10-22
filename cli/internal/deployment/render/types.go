@@ -2,35 +2,13 @@ package render
 
 import (
 	"context"
+
+	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
-// RenderAPIStep interface for all deployment steps
-type RenderAPIStep interface {
-	Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error)
-	Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error
-	GetID() string
-	GetDescription() string
-	GetDependencies() []string
-}
+type RenderAPIStep = deployment.Step[RenderClient]
 
-// BaseStep provides common functionality for all steps
-type BaseStep struct {
-	ID          string   `json:"id"`
-	Description string   `json:"description"`
-	DependsOn   []string `json:"dependsOn,omitempty"`
-}
-
-func (b *BaseStep) GetID() string {
-	return b.ID
-}
-
-func (b *BaseStep) GetDescription() string {
-	return b.Description
-}
-
-func (b *BaseStep) GetDependencies() []string {
-	return b.DependsOn
-}
+type BaseStep = deployment.BaseStep
 
 type CreateWebServiceRequest struct {
 	Name             string                `json:"name"`
@@ -236,4 +214,5 @@ type RenderClient interface {
 	TriggerDeploy(ctx context.Context, serviceID string) (*RenderDeploy, error)
 	GetDeploy(ctx context.Context, serviceID, deployID string) (*RenderDeploy, error)
 	ListDeploys(ctx context.Context, serviceID string) ([]*RenderDeploy, error)
+	RollbackDeploy(ctx context.Context, serviceID, deployID string) (*RenderDeploy, error)
 }

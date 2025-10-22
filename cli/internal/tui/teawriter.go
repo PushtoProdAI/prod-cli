@@ -214,6 +214,23 @@ func (w *TeaWriter) SendError(summary string, remediations []agent.Remediation) 
 	w.send(errorMessage)
 }
 
+func (w *TeaWriter) SendWarning(summary string, remediations []agent.Remediation) {
+	tuiRemediations := make([]RemediationItem, len(remediations))
+	for i, r := range remediations {
+		tuiRemediations[i] = RemediationItem{
+			Description: r.Description,
+			CliCommand:  r.CliCommand,
+		}
+	}
+
+	warningMessage := WarningDisplayMessage{
+		Summary:      summary,
+		Remediations: tuiRemediations,
+	}
+
+	w.send(warningMessage)
+}
+
 func (w *TeaWriter) SendSuccess(platform string, appName string, url string) {
 	successMessage := SuccessDisplayMessage{
 		Platform: platform,

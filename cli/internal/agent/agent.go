@@ -33,6 +33,7 @@ type TUIWriter interface {
 	SendTextPromptWithDefault(message string, defaultValue string)
 	SendPlan(plan DeployPlan, dryRun bool)
 	SendError(summary string, remediations []Remediation)
+	SendWarning(summary string, remediations []Remediation)
 	SendSuccess(platform string, appName string, url string)
 	StopSpinner()
 	ClearScreen()
@@ -98,6 +99,7 @@ type deployResult struct {
 type deployError struct {
 	Summary      string
 	Remediations []Remediation
+	IsWarning    bool
 }
 
 type Remediation struct {
@@ -692,9 +694,17 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 		}
 		if result.Error.Summary != "" {
 			if tuiWriter, ok := out.(TUIWriter); ok {
-				tuiWriter.SendError(result.Error.Summary, result.Error.Remediations)
+				if result.Error.IsWarning {
+					tuiWriter.SendWarning(result.Error.Summary, result.Error.Remediations)
+				} else {
+					tuiWriter.SendError(result.Error.Summary, result.Error.Remediations)
+				}
 			} else {
-				fmt.Fprintf(out, "❌ %s\n", result.Error.Summary)
+				if result.Error.IsWarning {
+					fmt.Fprintf(out, "⚠️  %s\n", result.Error.Summary)
+				} else {
+					fmt.Fprintf(out, "❌ %s\n", result.Error.Summary)
+				}
 				if len(result.Error.Remediations) > 0 {
 					fmt.Fprint(out, "Here are some suggestions to fix the issues:\n")
 					for _, r := range result.Error.Remediations {
@@ -822,9 +832,17 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 
 	if result.Error.Summary != "" {
 		if tuiWriter, ok := out.(TUIWriter); ok {
-			tuiWriter.SendError(result.Error.Summary, result.Error.Remediations)
+			if result.Error.IsWarning {
+				tuiWriter.SendWarning(result.Error.Summary, result.Error.Remediations)
+			} else {
+				tuiWriter.SendError(result.Error.Summary, result.Error.Remediations)
+			}
 		} else {
-			fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
+			if result.Error.IsWarning {
+				fmt.Fprint(out, "⚠️  Deployment warning\n")
+			} else {
+				fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
+			}
 			fmt.Fprintf(out, "%s\n", result.Error.Summary)
 			if len(result.Error.Remediations) > 0 {
 				fmt.Fprint(out, "Here are some suggestions to fix the issues:\n")

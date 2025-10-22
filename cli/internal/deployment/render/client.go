@@ -230,8 +230,13 @@ func (c *HTTPRenderClient) UpdateServiceImage(ctx context.Context, serviceID str
 	}
 	defer resp.Body.Close()
 
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		slog.Warn("Failed to read response body", "error", readErr)
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		return errors.Errorf("failed to update service image: status %d", resp.StatusCode)
+		return errors.Errorf("failed to update service image: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	return nil
@@ -524,4 +529,23 @@ func (c *HTTPRenderClient) ListDeploys(ctx context.Context, serviceID string) ([
 	}
 
 	return deploys, nil
+}
+
+func (c *HTTPRenderClient) RollbackDeploy(ctx context.Context, serviceID, deployID string) (*RenderDeploy, error) {
+	rollbackReq := map[string]string{
+		"deployId": deployID,
+	}
+
+	resp, err := c.makeRequest(ctx, "POST", fmt.Sprintf("/v1/services/%s/rollback", serviceID), rollbackReq)
+	if err != nil {
+		return nil, errors.Errorf("failed to rollback deploy: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var deploy RenderDeploy
+	if err := c.handleResponse(resp, &deploy); err != nil {
+		return nil, err
+	}
+
+	return &deploy, nil
 }

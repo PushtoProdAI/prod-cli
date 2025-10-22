@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/go-errors/errors"
 
@@ -62,9 +63,8 @@ func (qd *QueuedDeployment) Deploy(ctx context.Context) ([]deployment.CreatedRes
 	// Generate steps with the owner ID
 	steps := qd.GenerateAPISteps(ownerID)
 
-	// Execute steps with dependency resolution
 	stepExecutor := NewStepExecutor(qd.client, qd.writer)
-	return stepExecutor.ExecuteSteps(ctx, steps, qd.writer)
+	return stepExecutor.ExecuteSteps(ctx, steps)
 }
 
 func (qd *QueuedDeployment) GenerateAPISteps(ownerID string) []RenderAPIStep {
@@ -352,4 +352,108 @@ func (qd *QueuedDeployment) getNativeDeploymentConfig() (buildCommand, startComm
 	}
 
 	return buildCommand, startCommand, env
+}
+
+func (qd *QueuedDeployment) GetCurrentDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	if qd.spec.ExistingProjectID == "" {
+		return nil, errors.Errorf("no service ID available")
+	}
+
+	deploys, err := qd.client.ListDeploys(ctx, qd.spec.ExistingProjectID)
+	if err != nil {
+		return nil, errors.Errorf("failed to list deploys: %w", err)
+	}
+
+	if len(deploys) == 0 {
+		return nil, errors.Errorf("no deploys found for service %s", qd.spec.ExistingProjectID)
+	}
+
+	slog.Info("GetCurrentDeployment: found deploys", "count", len(deploys))
+	for i, dep := range deploys {
+		slog.Info("Deploy details", "index", i, "id", dep.ID, "status", dep.Status, "createdAt", dep.CreatedAt)
+	}
+
+	var currentDeployment *deployment.DeploymentInfo
+	for _, dep := range deploys {
+		if dep.Status == "live" {
+			slog.Info("Found live deployment", "id", dep.ID)
+			currentDeployment = &deployment.DeploymentInfo{
+				ID:        dep.ID,
+				Status:    dep.Status,
+				CreatedAt: dep.CreatedAt,
+			}
+		}
+	}
+
+	if currentDeployment == nil {
+		return nil, errors.Errorf("no live deployment found for service %s", qd.spec.ExistingProjectID)
+	}
+
+	slog.Info("Returning current deployment", "id", currentDeployment.ID)
+	return currentDeployment, nil
+}
+
+func (qd *QueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	if qd.spec.ExistingProjectID == "" {
+		return nil, errors.Errorf("no service ID available")
+	}
+
+	deploys, err := qd.client.ListDeploys(ctx, qd.spec.ExistingProjectID)
+	if err != nil {
+		return nil, errors.Errorf("failed to list deploys: %w", err)
+	}
+
+	slog.Info("GetPreviousDeployment: found deploys", "count", len(deploys))
+	for i, dep := range deploys {
+		slog.Info("All deploys", "index", i, "id", dep.ID, "status", dep.Status, "createdAt", dep.CreatedAt)
+	}
+
+	currentDeploy, err := qd.GetCurrentDeployment(ctx)
+	if err != nil {
+		slog.Warn("Could not determine current deployment", "error", err)
+	} else {
+		slog.Info("Current deployment determined", "id", currentDeploy.ID)
+	}
+
+	var previousDeployment *deployment.DeploymentInfo
+	for _, dep := range deploys {
+		if dep.Status == "live" {
+			if currentDeploy != nil && dep.ID == currentDeploy.ID {
+				slog.Info("Found current deployment, stopping search", "id", dep.ID)
+				break
+			}
+			slog.Info("Found deployment candidate", "id", dep.ID, "status", dep.Status)
+			previousDeployment = &deployment.DeploymentInfo{
+				ID:        dep.ID,
+				Status:    dep.Status,
+				CreatedAt: dep.CreatedAt,
+			}
+		}
+	}
+
+	if previousDeployment == nil {
+		return nil, errors.Errorf("no previous deployment found for service %s (this appears to be the first deployment)", qd.spec.ExistingProjectID)
+	}
+
+	slog.Info("Returning previous deployment", "id", previousDeployment.ID)
+	return previousDeployment, nil
+}
+
+func (qd *QueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
+	if qd.spec.ExistingProjectID == "" {
+		return errors.Errorf("no service ID available for rollback")
+	}
+
+	serviceID := qd.spec.ExistingProjectID
+
+	slog.Info("Rolling back Render deployment", "service", serviceID, "targetDeploy", targetDeploymentID)
+
+	_, err := qd.client.RollbackDeploy(ctx, serviceID, targetDeploymentID)
+	if err != nil {
+		return errors.Errorf("failed to rollback to deploy %s: %w", targetDeploymentID, err)
+	}
+
+	slog.Info("Deployment rolled back successfully", "targetDeploy", targetDeploymentID)
+
+	return nil
 }

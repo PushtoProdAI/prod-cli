@@ -371,3 +371,16 @@ func (c *HerokuClient) SetBuildpacks(ctx context.Context, appID string, buildpac
 
 	return result, nil
 }
+
+// RollbackRelease rolls back to a previous release
+func (c *HerokuClient) RollbackRelease(ctx context.Context, appID string, releaseID string) (*heroku.Release, error) {
+	opts := heroku.ReleaseRollbackOpts{
+		Release: releaseID,
+	}
+
+	release, err := c.client.ReleaseRollback(ctx, appID, opts)
+	if err != nil {
+		return nil, errors.Errorf("failed to rollback release: %w", err)
+	}
+	return release, nil
+}
