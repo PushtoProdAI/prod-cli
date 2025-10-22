@@ -11,11 +11,21 @@ import (
 func (m Model) createDeploymentConfigTable(plan PlanDisplayMessage) string {
 	rows := [][]string{
 		{"Action", plan.Action},
-		{"Platform", plan.Platform},
+	}
+
+	if len(plan.DetectedPlatforms) > 1 {
+		platformList := strings.Join(plan.DetectedPlatforms, ", ")
+		rows = append(rows, []string{"Detected Platforms", platformList})
+	} else {
+		rows = append(rows, []string{"Platform", plan.Platform})
+	}
+
+	rows = append(rows, [][]string{
 		{"Source", plan.Source},
 		{"Name", plan.Name},
 		{"Language", plan.Language},
-	}
+	}...)
+
 	columnWidths := []int{18, 54}
 
 	table := m.createTable(rows, columnWidths)

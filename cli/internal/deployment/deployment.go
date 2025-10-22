@@ -32,12 +32,11 @@ type CreatedResource struct {
 	ID       string
 	Type     string
 	Name     string
-	Metadata map[string]interface{} // Additional metadata about the resource
+	Metadata map[string]any // Additional metadata about the resource
 }
 
 type Deployable interface {
 	Deploy(ctx context.Context) ([]CreatedResource, error)
-	GetCurrentDeployment(ctx context.Context) (*DeploymentInfo, error)
 	GetPreviousDeployment(ctx context.Context) (*DeploymentInfo, error)
 	Rollback(ctx context.Context, targetDeploymentID string) error
 }
@@ -74,6 +73,7 @@ type DeploymentSpec struct {
 	OutputDir         string
 	IsStatic          bool
 	IsUpdate          bool
+	IsRollback        bool
 	ExistingProjectID string
 	ExistingDatabases []string
 }

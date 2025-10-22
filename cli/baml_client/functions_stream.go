@@ -15,9 +15,9 @@ package baml_client
 
 import (
 	"context"
+	"fmt"
 
 	baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
-	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/baml_client/stream_types"
 	"github.com/meroxa/prod/cli/baml_client/types"
 )
@@ -65,7 +65,7 @@ func (*stream) CategorizeRoutes(ctx context.Context, candidates []types.RouteCan
 	if err != nil {
 		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
 		// and include the type of the args you're passing in.
-		wrapped_err := errors.Errorf("BAML INTERNAL ERROR: CategorizeRoutes: %w", err)
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: CategorizeRoutes: %w", err)
 		panic(wrapped_err)
 	}
 
@@ -138,7 +138,7 @@ func (*stream) DetermineBuildOutput(ctx context.Context, candidate types.BuildOu
 	if err != nil {
 		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
 		// and include the type of the args you're passing in.
-		wrapped_err := errors.Errorf("BAML INTERNAL ERROR: DetermineBuildOutput: %w", err)
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: DetermineBuildOutput: %w", err)
 		panic(wrapped_err)
 	}
 
@@ -211,7 +211,7 @@ func (*stream) DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCand
 	if err != nil {
 		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
 		// and include the type of the args you're passing in.
-		wrapped_err := errors.Errorf("BAML INTERNAL ERROR: DetermineEnvVarRoles: %w", err)
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: DetermineEnvVarRoles: %w", err)
 		panic(wrapped_err)
 	}
 
@@ -284,7 +284,7 @@ func (*stream) DetermineLaunchCommand(ctx context.Context, language string, fram
 	if err != nil {
 		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
 		// and include the type of the args you're passing in.
-		wrapped_err := errors.Errorf("BAML INTERNAL ERROR: DetermineLaunchCommand: %w", err)
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: DetermineLaunchCommand: %w", err)
 		panic(wrapped_err)
 	}
 
@@ -357,7 +357,7 @@ func (*stream) DetermineMigrationCommand(ctx context.Context, language string, f
 	if err != nil {
 		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
 		// and include the type of the args you're passing in.
-		wrapped_err := errors.Errorf("BAML INTERNAL ERROR: DetermineMigrationCommand: %w", err)
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: DetermineMigrationCommand: %w", err)
 		panic(wrapped_err)
 	}
 
@@ -430,7 +430,7 @@ func (*stream) ExtractIntent(ctx context.Context, request string, opts ...CallOp
 	if err != nil {
 		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
 		// and include the type of the args you're passing in.
-		wrapped_err := errors.Errorf("BAML INTERNAL ERROR: ExtractIntent: %w", err)
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: ExtractIntent: %w", err)
 		panic(wrapped_err)
 	}
 
@@ -503,7 +503,7 @@ func (*stream) FetchPricing(ctx context.Context, service types.Service, content 
 	if err != nil {
 		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
 		// and include the type of the args you're passing in.
-		wrapped_err := errors.Errorf("BAML INTERNAL ERROR: FetchPricing: %w", err)
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: FetchPricing: %w", err)
 		panic(wrapped_err)
 	}
 
@@ -576,7 +576,7 @@ func (*stream) SummarizeDeployError(ctx context.Context, errorMsg string, intent
 	if err != nil {
 		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
 		// and include the type of the args you're passing in.
-		wrapped_err := errors.Errorf("BAML INTERNAL ERROR: SummarizeDeployError: %w", err)
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: SummarizeDeployError: %w", err)
 		panic(wrapped_err)
 	}
 
@@ -625,7 +625,7 @@ func (*stream) SummarizeDeployError(ctx context.Context, errorMsg string, intent
 }
 
 // / Streaming version of SummarizeIntent
-func (*stream) SummarizeIntent(ctx context.Context, intent types.Intent, name string, language string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Summary, types.Summary], error) {
+func (*stream) SummarizeIntent(ctx context.Context, intent types.Intent, name string, language string, detectedPlatforms []string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Summary, types.Summary], error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -633,7 +633,7 @@ func (*stream) SummarizeIntent(ctx context.Context, intent types.Intent, name st
 	}
 
 	args := baml.BamlFunctionArguments{
-		Kwargs: map[string]any{"intent": intent, "name": name, "language": language},
+		Kwargs: map[string]any{"intent": intent, "name": name, "language": language, "detectedPlatforms": detectedPlatforms},
 		Env:    getEnvVars(callOpts.env),
 	}
 
@@ -649,7 +649,7 @@ func (*stream) SummarizeIntent(ctx context.Context, intent types.Intent, name st
 	if err != nil {
 		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
 		// and include the type of the args you're passing in.
-		wrapped_err := errors.Errorf("BAML INTERNAL ERROR: SummarizeIntent: %w", err)
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: SummarizeIntent: %w", err)
 		panic(wrapped_err)
 	}
 
@@ -722,7 +722,7 @@ func (*stream) SummarizeSteps(ctx context.Context, steps []string, opts ...CallO
 	if err != nil {
 		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
 		// and include the type of the args you're passing in.
-		wrapped_err := errors.Errorf("BAML INTERNAL ERROR: SummarizeSteps: %w", err)
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: SummarizeSteps: %w", err)
 		panic(wrapped_err)
 	}
 

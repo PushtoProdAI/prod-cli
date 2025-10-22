@@ -123,6 +123,7 @@ type Action int
 
 const (
 	Deploy Action = iota
+	Rollback
 	UnknownAction
 )
 
@@ -407,20 +408,40 @@ func (a *Agent) processConfirmationResponse(ctx context.Context, input string, o
 	input = strings.ToLower(strings.TrimSpace(input))
 
 	if input == "y" || input == "yes" {
+		// Check if this is a rollback or deploy
+		if a.DeployPlan.Action == Rollback {
+			// For rollback, check if we need platform selection
+			if len(a.DeployPlan.ExistingProjectInfo.DetectedPlatforms) > 1 {
+				fmt.Fprintf(out, "Proceeding with rollback...\n")
+				return a.selectPlatform(ctx, input, out)
+			}
+			// Single platform or platform from prompt - proceed to auth check
+			fmt.Fprintf(out, "Proceeding with rollback...\n")
+			a.nextStateAfterAuth = a.executeRollback
+			return a.checkAuthentication(ctx, input, out)
+		}
+
+		// Deploy flow
 		fmt.Fprintf(out, "Proceeding with deployment...\n")
-		// Set next state after auth to be detectExisting
 		a.nextStateAfterAuth = a.detectExisting
-		// Check authentication before detection (reusing existing checkAuthentication)
 		return a.checkAuthentication(ctx, input, out)
 	}
 
 	if input == "n" || input == "no" {
-		fmt.Fprintf(out, "Deployment cancelled\n")
+		if a.DeployPlan.Action == Rollback {
+			fmt.Fprintf(out, "Rollback cancelled\n")
+		} else {
+			fmt.Fprintf(out, "Deployment cancelled\n")
+		}
 		return a.plan, nil
 	}
 
 	// Invalid response - ask again
-	a.sendConfirmation(out, "Do you want to proceed with the deployment?")
+	if a.DeployPlan.Action == Rollback {
+		a.sendConfirmation(out, "Do you want to proceed with the rollback?")
+	} else {
+		a.sendConfirmation(out, "Do you want to proceed with the deployment?")
+	}
 	return a.waitForConfirmation, nil
 }
 
@@ -886,6 +907,112 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 	return a.plan, nil
 }
 
+func (a *Agent) selectPlatform(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	// Build platform options from detected platforms
+	platformOptions := make([]string, len(a.DeployPlan.ExistingProjectInfo.DetectedPlatforms))
+	for i, p := range a.DeployPlan.ExistingProjectInfo.DetectedPlatforms {
+		platformOptions[i] = p.String()
+	}
+
+	a.sendSelect(out, "Multiple deployments found. Which platform would you like to rollback?", platformOptions)
+	return a.waitForPlatformSelection, nil
+}
+
+func (a *Agent) waitForPlatformSelection(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	input = strings.TrimSpace(input)
+
+	// Parse the selection index
+	selectionIndex := -1
+	_, err := fmt.Sscanf(input, "%d", &selectionIndex)
+	if err != nil || selectionIndex < 0 || selectionIndex >= len(a.DeployPlan.ExistingProjectInfo.DetectedPlatforms) {
+		// Invalid selection
+		platformOptions := make([]string, len(a.DeployPlan.ExistingProjectInfo.DetectedPlatforms))
+		for i, p := range a.DeployPlan.ExistingProjectInfo.DetectedPlatforms {
+			platformOptions[i] = p.String()
+		}
+		a.sendSelect(out, "Invalid selection. Which platform would you like to rollback?", platformOptions)
+		return a.waitForPlatformSelection, nil
+	}
+
+	// Set the selected platform
+	selectedPlatform := a.DeployPlan.ExistingProjectInfo.DetectedPlatforms[selectionIndex]
+	a.DeployPlan.Platform = selectedPlatform
+
+	slog.Info("User selected platform for rollback", "platform", selectedPlatform)
+	fmt.Fprintf(out, "Selected %s for rollback\n", selectedPlatform.String())
+
+	// Now proceed to auth check
+	a.nextStateAfterAuth = a.executeRollback
+	return a.checkAuthentication(ctx, input, out)
+}
+
+func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (stateFn, error) {
+	a.nextStateAfterAuth = nil
+
+	wf, err := Workflows{}.Rollback(ctx, a.wfClient, *a.DeployPlan)
+	if err != nil {
+		slog.Error("Rollback workflow execution failed", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     "rollback",
+			"component":    "agent",
+			"operation":    "workflow_execution",
+			"platform":     a.DeployPlan.Platform,
+			"project_name": a.DeployPlan.Spec.Name,
+		})
+		fmt.Fprint(out, "Sorry, couldn't execute the rollback\n")
+		return a.plan, nil
+	}
+
+	result, err := client.GetWorkflowResult[deployResult](ctx, a.wfClient, wf, 10*time.Minute)
+	a.stopSpinner(out)
+
+	if err != nil {
+		slog.Error("Rollback workflow result error", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     "rollback",
+			"component":    "agent",
+			"operation":    "get_workflow_result",
+			"platform":     a.DeployPlan.Platform,
+			"project_name": a.DeployPlan.Spec.Name,
+		})
+		a.wfClient.CancelWorkflowInstance(ctx, wf)
+		fmt.Fprint(out, "Sorry, we had trouble rolling back your deployment\n")
+		return a.plan, nil
+	}
+
+	if result.Error.Summary != "" {
+		if tuiWriter, ok := out.(TUIWriter); ok {
+			tuiWriter.SendError(result.Error.Summary, result.Error.Remediations)
+		} else {
+			fmt.Fprint(out, "Sorry, we had trouble rolling back your deployment\n")
+			fmt.Fprintf(out, "%s\n", result.Error.Summary)
+		}
+		if !a.interactive {
+			return nil, nil
+		}
+		return a.plan, nil
+	}
+
+	// Success
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendSuccess(a.DeployPlan.Platform.String(), a.DeployPlan.Spec.Name, result.Url)
+		if result.Url != "" {
+			openInBrowser(result.Url)
+		}
+	} else {
+		fmt.Fprint(out, "✅ Rollback completed successfully!\n")
+		if result.Url != "" {
+			fmt.Fprintf(out, "Your application is now at: %s\n", result.Url)
+			openInBrowser(result.Url)
+		}
+	}
+
+	if !a.interactive {
+		return nil, nil
+	}
+	return a.plan, nil
+}
+
 func (a *Agent) dryRunDeploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	// Check authentication before dry run deployment
 	if a.DeployPlan.Platform == Render {
@@ -900,10 +1027,16 @@ func shouldProceed(plan DeployPlan) bool {
 		slog.Info("Validation failed", "reason", "unknown action", "action", plan.Action)
 		return false
 	}
+
 	if plan.Platform == UnknownPlatform {
-		slog.Info("Validation failed", "reason", "unknown platform", "platform", plan.Platform)
-		return false
+		if plan.Action == Rollback && len(plan.ExistingProjectInfo.DetectedPlatforms) > 0 {
+			slog.Info("Validation passed for rollback with multiple platforms", "platforms", plan.ExistingProjectInfo.DetectedPlatforms)
+		} else {
+			slog.Info("Validation failed", "reason", "unknown platform", "platform", plan.Platform)
+			return false
+		}
 	}
+
 	if plan.Spec.Name == "" || plan.Spec.Language == "" {
 		slog.Info("Validation failed", "reason", "missing spec fields", "name", plan.Spec.Name, "language", plan.Spec.Language)
 		return false
