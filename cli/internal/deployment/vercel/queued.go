@@ -27,7 +27,18 @@ func NewVercelQueuedDeployment(client VercelClient, spec *deployment.DeploymentS
 	}
 }
 
-// Deploy performs the queued deployment to Vercel
+func (vqd *VercelQueuedDeployment) GetCurrentDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	return GetCurrentVercelDeployment(ctx, vqd.client, vqd.spec.Name, vqd.getSourcePath())
+}
+
+func (vqd *VercelQueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	return GetPreviousVercelDeployment(ctx, vqd.client, vqd.spec.Name, vqd.getSourcePath())
+}
+
+func (vqd *VercelQueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
+	return RollbackVercelDeployment(ctx, vqd.client, targetDeploymentID, vqd.getSourcePath())
+}
+
 func (vqd *VercelQueuedDeployment) Deploy(ctx context.Context) ([]deployment.CreatedResource, error) {
 	steps := vqd.GenerateAPISteps()
 
@@ -148,6 +159,10 @@ func (vqd *VercelQueuedDeployment) GenerateAPISteps() []VercelAPIStep {
 		true, // Always deploy to production
 	)
 	steps = append(steps, deployStep)
+
+	// Explicitly promote the deployment to make it the current production deployment
+	promoteStep := NewPromoteDeploymentStep("deploy-project", projectStepID, vqd.getSourcePath())
+	steps = append(steps, promoteStep)
 
 	return steps
 }

@@ -199,26 +199,63 @@ func (c *CLIVercelClient) DeployProject(projectID string, production bool) (*Ver
 		return nil, errors.Errorf("deployment failed: %w\nOutput: %s", err, string(output))
 	}
 
-	// After deployment, get the production URL from aliases
-	deployURL, err := c.getProductionURLFromAliases(projectID)
-	if err != nil {
-		slog.Warn("Failed to get production URL from aliases, falling back to parsing deploy output", "error", err)
-		// Fallback: parse from deploy output
-		lines := strings.Split(string(output), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if strings.Contains(line, "vercel.app") && strings.Contains(line, "https://") {
-				if idx := strings.Index(line, "https://"); idx >= 0 {
-					urlPart := line[idx:]
-					deployURL = strings.Fields(urlPart)[0]
-					break
+	slog.Info("Vercel deploy output", "output", string(output))
+
+	// Parse BOTH the deployment-specific URL and production alias from deploy output
+	// - Deployment URL (with hash): needed for promotion
+	// - Production alias: needed for liveness checks
+	var deploymentURL string      // The unique deployment URL with hash
+	var productionAliasURL string // The production alias URL
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "vercel.app") && strings.Contains(line, "https://") {
+			if idx := strings.Index(line, "https://"); idx >= 0 {
+				urlPart := line[idx:]
+				potentialURL := strings.Fields(urlPart)[0]
+
+				// Count hyphens to distinguish deployment URLs from aliases
+				// Deployment URLs have more hyphens (e.g., project-abc123-team.vercel.app)
+				// Production aliases have fewer (e.g., project-name.vercel.app)
+				hyphenCount := strings.Count(strings.Split(potentialURL, ".")[0], "-")
+
+				if hyphenCount >= 2 {
+					// Likely a deployment-specific URL with hash
+					if deploymentURL == "" || hyphenCount > strings.Count(strings.Split(deploymentURL, ".")[0], "-") {
+						deploymentURL = potentialURL
+					}
+				} else {
+					// Likely a production alias
+					if productionAliasURL == "" {
+						productionAliasURL = potentialURL
+					}
 				}
 			}
 		}
-		if deployURL == "" {
-			return nil, errors.Errorf("could not find deployment URL in output: %s", string(output))
+	}
+
+	// Prefer deployment URL, but fall back to production alias if needed
+	deployURL := deploymentURL
+	if deployURL == "" {
+		deployURL = productionAliasURL
+	}
+
+	if deployURL == "" {
+		return nil, errors.Errorf("could not find deployment URL in output: %s", string(output))
+	}
+
+	// Get production alias if we don't have it from the output
+	if productionAliasURL == "" {
+		productionAliasURL, err = c.getProductionURLFromAliases(projectID)
+		if err != nil {
+			slog.Warn("Failed to get production URL from aliases", "error", err)
+			// Fallback to using the deployment URL
+			productionAliasURL = deployURL
 		}
 	}
+
+	slog.Info("Parsed URLs from deployment", "deployment_url", deploymentURL, "production_alias", productionAliasURL)
 
 	// Extract deployment ID from URL (format: https://<id>-<team>.vercel.app)
 	deploymentID := ""
@@ -231,23 +268,30 @@ func (c *CLIVercelClient) DeployProject(projectID string, production bool) (*Ver
 	}
 
 	// Convert to our VercelDeployment struct
+	// URL = production alias (for liveness checks)
+	// DeploymentURL = deployment-specific URL with hash (for promotion)
 	deployment := &VercelDeployment{
-		ID:        deploymentID,
-		URL:       deployURL,
-		ProjectID: projectID,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		Ready:     true,
+		ID:            deploymentID,
+		URL:           productionAliasURL,
+		DeploymentURL: deploymentURL,
+		ProjectID:     projectID,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+		Ready:         true,
 	}
+
+	slog.Info("Deployment completed", "deployment_id", deploymentID, "deployment_url", deploymentURL, "production_alias", productionAliasURL, "project_id", projectID)
 
 	return deployment, nil
 }
 
-// PromoteDeployment promotes a deployment to production and returns the production URL
-func (c *CLIVercelClient) PromoteDeployment(deploymentURL, projectName string) (string, error) {
+// PromoteDeployment promotes a deployment to production
+func (c *CLIVercelClient) PromoteDeployment(deploymentURL, projectName string) error {
 	if err := c.ensureVercelCLI(); err != nil {
-		return "", err
+		return err
 	}
+
+	slog.Info("Running vercel promote", "deployment_url", deploymentURL, "project", projectName)
 
 	// Run vercel promote with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -255,52 +299,29 @@ func (c *CLIVercelClient) PromoteDeployment(deploymentURL, projectName string) (
 
 	cmd := exec.CommandContext(ctx, "vercel", "promote", deploymentURL, "--yes")
 	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return "", errors.Errorf("promote timed out after 30s")
+			return errors.Errorf("promote timed out after 30s")
 		}
-		return "", errors.Errorf("promote failed: %w\nOutput: %s", err, string(output))
-	}
 
-	slog.Info("Vercel promote output", "output", string(output))
+		// Check if deployment is already current by inspecting the error message
+		// Vercel returns a specific error when trying to promote an already-current deployment
+		isAlreadyCurrent := strings.Contains(outputStr, "is already the current") ||
+			strings.Contains(outputStr, "already current") ||
+			strings.Contains(outputStr, "already promoted")
 
-	// Parse the production URL from the promote output
-	// The promote command output contains the production URLs
-	lines := strings.Split(string(output), "\n")
-	var productionURLs []string
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		// Look for URLs in the output
-		if strings.Contains(line, "https://") && strings.Contains(line, ".vercel.app") {
-			// Extract URL from the line
-			if idx := strings.Index(line, "https://"); idx >= 0 {
-				urlPart := line[idx:]
-				url := strings.Fields(urlPart)[0]
-				// Skip the deployment-specific preview URL
-				if url != deploymentURL {
-					productionURLs = append(productionURLs, url)
-				}
-			}
+		if isAlreadyCurrent {
+			slog.Info("Deployment is already current, skipping promotion", "deployment_url", deploymentURL)
+			return nil // Success - deployment is already live
 		}
+
+		return errors.Errorf("promote failed: %w\nOutput: %s", err, outputStr)
 	}
 
-	// Return the first non-deployment URL found
-	if len(productionURLs) > 0 {
-		slog.Info("Found production URL from promote output", "url", productionURLs[0])
-		return productionURLs[0], nil
-	}
-
-	// Fallback: try to get from aliases
-	slog.Info("No production URL in promote output, trying aliases")
-	productionURL, err := c.getLatestProductionURL(projectName)
-	if err != nil {
-		slog.Warn("Failed to get production URL, falling back to deployment URL", "error", err, "project", projectName)
-		return deploymentURL, nil
-	}
-
-	slog.Info("Production URL fetched successfully", "url", productionURL, "project", projectName)
-	return productionURL, nil
+	slog.Info("Vercel promote completed successfully", "output", outputStr)
+	return nil
 }
 
 // getProductionURLFromAliases gets the production URL by reading the first alias
@@ -478,12 +499,13 @@ func (c *CLIVercelClient) SetEnvironmentVariables(projectID string, vars map[str
 	return nil
 }
 
-// setEnvVar sets a single environment variable
+// setEnvVar sets a single environment variable, overwriting if it already exists
 func (c *CLIVercelClient) setEnvVar(key, value string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), envVarTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "vercel", "env", "add", key, "production")
+	// Use --force to overwrite existing variables
+	cmd := exec.CommandContext(ctx, "vercel", "env", "add", key, "production", "--force")
 	cmd.Stdin = strings.NewReader(value + "\n")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -493,5 +515,7 @@ func (c *CLIVercelClient) setEnvVar(key, value string) error {
 		slog.Error("Failed to set env var", "key", key, "error", err, "output", string(output))
 		return errors.Errorf("failed to set env var: %w\nOutput: %s", err, string(output))
 	}
+
+	slog.Info("Successfully set environment variable", "key", key)
 	return nil
 }

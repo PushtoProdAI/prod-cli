@@ -530,30 +530,73 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 			"project_name": input.Spec.Name,
 			"language":     input.Spec.Language,
 		})
-		// Log deployment failure
+
+		slog.Error("Deployment failed, attempting rollback", "error", err)
+
+		previousDeploy, rollbackErr := workflow.ExecuteActivity[*deployment.DeploymentInfo](ctx, ActivityOpts, AgentGetPreviousDeployment, *spec, FlyIO).Get(ctx)
+		if rollbackErr != nil {
+			slog.Warn("No previous deployment available for rollback", "error", rollbackErr)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":              err.Error(),
+					"platform":           "flyio",
+					"stage":              "deployment_steps",
+					"no_previous_deploy": true,
+				}).Get(ctx)
+			}
+			return deployResult{
+				Error: deployError{
+					Summary: "Deployment failed. This is your first deployment, so there's no previous version to roll back to",
+				},
+			}, nil
+		}
+
+		slog.Info("Found previous deployment for rollback", "image", previousDeploy.ID)
+
+		_, rollbackErr = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentRollbackDeployment, *spec, FlyIO, previousDeploy.ID).Get(ctx)
+		if rollbackErr != nil {
+			slog.Error("Rollback failed", "error", rollbackErr, "target_image", previousDeploy.ID)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":           err.Error(),
+					"platform":        "flyio",
+					"stage":           "deployment_steps",
+					"rollback_error":  rollbackErr.Error(),
+					"rollback_target": previousDeploy.ID,
+				}).Get(ctx)
+			}
+			summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+			if e1 != nil {
+				prod_error.CaptureErrorWithContext(e1, map[string]any{
+					"workflow":     DeployFlyioWorkflowName,
+					"activity":     AgentSummarizeError,
+					"component":    "deployment",
+					"platform":     "flyio",
+					"project_name": input.Spec.Name,
+					"language":     input.Spec.Language,
+					"operation":    "summarize_original_error",
+				})
+				return deployResult{Error: deployError{Summary: err.Error()}}, nil
+			}
+			return deployResult{Error: summary}, nil
+		}
+
+		slog.Info("Rollback completed successfully", "rolled_back_to", previousDeploy.ID)
+
 		if operationId != "" {
-			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
-				"error":    err.Error(),
-				"platform": "flyio",
-				"stage":    "deployment_steps",
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "rolled_back", map[string]any{
+				"error":          err.Error(),
+				"platform":       "flyio",
+				"stage":          "deployment_steps",
+				"rolled_back_to": previousDeploy.ID,
 			}).Get(ctx)
 		}
-		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
-		if e1 != nil {
-			// Send the summarize error
-			prod_error.CaptureErrorWithContext(e1, map[string]any{
-				"workflow":     DeployFlyioWorkflowName,
-				"activity":     AgentSummarizeError,
-				"component":    "deployment",
-				"platform":     "flyio",
-				"project_name": input.Spec.Name,
-				"language":     input.Spec.Language,
-				"operation":    "summarize_original_error",
-			})
-			return deployResult{Error: deployError{Summary: err.Error()}}, nil
-		}
-		slog.Info("Deployment failed", "error", err)
-		return deployResult{Error: summary}, nil
+		return deployResult{
+			Error: deployError{
+				Summary:   "Deployment failed. We've automatically rolled back to your previous working version",
+				IsWarning: true,
+			},
+		}, nil
 	}
 
 	// Find app resource
@@ -597,32 +640,63 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 			"project_name": input.Spec.Name,
 			"language":     input.Spec.Language,
 		})
-		// Log deployment failure
+
+		slog.Error("Health check failed, attempting rollback", "error", err, "url", fullUrl)
+
+		previousDeploy, rollbackErr := workflow.ExecuteActivity[*deployment.DeploymentInfo](ctx, ActivityOpts, AgentGetPreviousDeployment, *spec, FlyIO).Get(ctx)
+		if rollbackErr != nil {
+			slog.Warn("No previous deployment available for rollback", "error", rollbackErr)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":              err.Error(),
+					"platform":           "flyio",
+					"stage":              "url_verification",
+					"url":                fullUrl,
+					"no_previous_deploy": true,
+				}).Get(ctx)
+			}
+			return deployResult{
+				Error: deployError{
+					Summary: "Deployment failed health check. This is your first deployment, so there's no previous version to roll back to",
+				},
+			}, nil
+		}
+
+		slog.Info("Found previous deployment for rollback", "image", previousDeploy.ID)
+
+		_, rollbackErr = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentRollbackDeployment, *spec, FlyIO, previousDeploy.ID).Get(ctx)
+		if rollbackErr != nil {
+			slog.Error("Rollback failed", "error", rollbackErr, "target_image", previousDeploy.ID)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":           err.Error(),
+					"platform":        "flyio",
+					"stage":           "url_verification",
+					"url":             fullUrl,
+					"rollback_error":  rollbackErr.Error(),
+					"rollback_target": previousDeploy.ID,
+				}).Get(ctx)
+			}
+			return deployResult{}, errors.Errorf("service URL %s is not live and rollback failed: %w", fullUrl, err)
+		}
+
+		slog.Info("Rollback completed successfully", "rolled_back_to", previousDeploy.ID)
+
 		if operationId != "" {
-			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
-				"error":    err.Error(),
-				"platform": "flyio",
-				"stage":    "url_verification",
-				"url":      fullUrl,
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "rolled_back", map[string]any{
+				"error":          err.Error(),
+				"platform":       "flyio",
+				"stage":          "url_verification",
+				"url":            fullUrl,
+				"rolled_back_to": previousDeploy.ID,
 			}).Get(ctx)
 		}
-		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
-		if e1 != nil {
-			// Send the summarize error
-			prod_error.CaptureErrorWithContext(e1, map[string]any{
-				"workflow":     DeployFlyioWorkflowName,
-				"activity":     AgentSummarizeError,
-				"component":    "deployment",
-				"platform":     "flyio",
-				"project_name": input.Spec.Name,
-				"language":     input.Spec.Language,
-				"operation":    "summarize_original_error",
-			})
-			slog.Info("Failed to summarize error", "error", e1)
-			return deployResult{Error: deployError{Summary: err.Error()}}, nil
-		}
-		slog.Info("service URL is not live", "url", fullUrl, "error", err)
-		return deployResult{Error: summary}, nil
+		return deployResult{
+			Error: deployError{
+				Summary:   "Deployment failed health check. We've automatically rolled back to your previous working version",
+				IsWarning: true,
+			},
+		}, nil
 	}
 
 	// Log deployment success
@@ -1164,12 +1238,15 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 		return deployResult{Error: summary}, nil
 	}
 
-	// Extract deployment URL from created resources
+	// Extract deployment URL and site ID from created resources
 	var deploymentURL string
+	var siteID string
 	for _, resource := range createdResources {
 		if url, ok := resource.Metadata["url"].(string); ok {
 			deploymentURL = url
-			break
+		}
+		if resource.Type == "netlify_site" {
+			siteID = resource.ID
 		}
 	}
 
@@ -1178,10 +1255,89 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 		deploymentURL = "Deployment completed but URL not available"
 	}
 
+	// Store site ID in spec for rollback operations
+	if siteID != "" {
+		spec.ExistingProjectID = siteID
+	}
+
+	path, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineRootPath, input.Spec.Routes).Get(ctx)
+	if err != nil {
+		// if there is an error, we will just default to /
+		slog.Info("Failed to determine root path for application", "error", err)
+		path = "/"
+	}
+
+	fullUrl, err := url.JoinPath(deploymentURL, path)
+	if err != nil {
+		slog.Info("Failed to combine paths", "error", err)
+		fullUrl = deploymentURL
+	}
+
+	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
+	if err != nil {
+		slog.Error("Health check failed, attempting rollback", "error", err, "url", fullUrl)
+
+		previousDeploy, rollbackErr := workflow.ExecuteActivity[*deployment.DeploymentInfo](ctx, ActivityOpts, AgentGetPreviousDeployment, *spec, Netlify).Get(ctx)
+		if rollbackErr != nil {
+			slog.Warn("No previous deployment available for rollback", "error", rollbackErr)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":              err.Error(),
+					"platform":           "netlify",
+					"stage":              "url_verification",
+					"url":                fullUrl,
+					"no_previous_deploy": true,
+				}).Get(ctx)
+			}
+			return deployResult{
+				Error: deployError{
+					Summary: "Deployment failed health check. This is your first deployment, so there's no previous version to roll back to",
+				},
+			}, nil
+		}
+
+		slog.Info("Found previous deployment for rollback", "deployment_id", previousDeploy.ID, "url", previousDeploy.URL)
+
+		_, rollbackErr = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentRollbackDeployment, *spec, Netlify, previousDeploy.URL).Get(ctx)
+		if rollbackErr != nil {
+			slog.Error("Rollback failed", "error", rollbackErr, "target_deployment", previousDeploy.URL)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":           err.Error(),
+					"platform":        "netlify",
+					"stage":           "url_verification",
+					"url":             fullUrl,
+					"rollback_error":  rollbackErr.Error(),
+					"rollback_target": previousDeploy.URL,
+				}).Get(ctx)
+			}
+			return deployResult{}, errors.Errorf("service URL %s is not live and rollback failed: %w", fullUrl, err)
+		}
+
+		slog.Info("Rollback completed successfully", "rolled_back_to", previousDeploy.ID)
+
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "rolled_back", map[string]any{
+				"error":              err.Error(),
+				"platform":           "netlify",
+				"stage":              "url_verification",
+				"url":                fullUrl,
+				"rolled_back_to":     previousDeploy.ID,
+				"rolled_back_to_url": previousDeploy.URL,
+			}).Get(ctx)
+		}
+		return deployResult{
+			Error: deployError{
+				Summary:   "Deployment failed health check. We've automatically rolled back to your previous working version",
+				IsWarning: true,
+			},
+		}, nil
+	}
+
 	// Log deployment success
 	if operationId != "" {
 		workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", map[string]any{
-			"url":               deploymentURL,
+			"url":               fullUrl,
 			"platform":          "netlify",
 			"resources_created": createdResources,
 		}).Get(ctx)
@@ -1316,16 +1472,63 @@ func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deploy
 
 	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
 	if err != nil {
-		// Log deployment failure
+		slog.Error("Health check failed, attempting rollback", "error", err, "url", fullUrl)
+
+		previousDeploy, rollbackErr := workflow.ExecuteActivity[*deployment.DeploymentInfo](ctx, ActivityOpts, AgentGetPreviousDeployment, *spec, Vercel).Get(ctx)
+		if rollbackErr != nil {
+			slog.Warn("No previous deployment available for rollback", "error", rollbackErr)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":              err.Error(),
+					"platform":           "vercel",
+					"stage":              "url_verification",
+					"url":                fullUrl,
+					"no_previous_deploy": true,
+				}).Get(ctx)
+			}
+			return deployResult{
+				Error: deployError{
+					Summary: "Deployment failed health check. This is your first deployment, so there's no previous version to roll back to",
+				},
+			}, nil
+		}
+
+		slog.Info("Found previous deployment for rollback", "deployment_id", previousDeploy.ID, "url", previousDeploy.URL)
+
+		_, rollbackErr = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentRollbackDeployment, *spec, Vercel, previousDeploy.URL).Get(ctx)
+		if rollbackErr != nil {
+			slog.Error("Rollback failed", "error", rollbackErr, "target_deployment", previousDeploy.URL)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":           err.Error(),
+					"platform":        "vercel",
+					"stage":           "url_verification",
+					"url":             fullUrl,
+					"rollback_error":  rollbackErr.Error(),
+					"rollback_target": previousDeploy.URL,
+				}).Get(ctx)
+			}
+			return deployResult{}, errors.Errorf("service URL %s is not live and rollback failed: %w", fullUrl, err)
+		}
+
+		slog.Info("Rollback completed successfully", "rolled_back_to", previousDeploy.ID)
+
 		if operationId != "" {
-			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
-				"error":    err.Error(),
-				"platform": "vercel",
-				"stage":    "url_verification",
-				"url":      fullUrl,
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "rolled_back", map[string]any{
+				"error":              err.Error(),
+				"platform":           "vercel",
+				"stage":              "url_verification",
+				"url":                fullUrl,
+				"rolled_back_to":     previousDeploy.ID,
+				"rolled_back_to_url": previousDeploy.URL,
 			}).Get(ctx)
 		}
-		return deployResult{}, errors.Errorf("service URL %s is not live: %w", fullUrl, err)
+		return deployResult{
+			Error: deployError{
+				Summary:   "Deployment failed health check. We've automatically rolled back to your previous working version",
+				IsWarning: true,
+			},
+		}, nil
 	}
 
 	// Log deployment success
@@ -1377,6 +1580,7 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 		spec.IsUpdate = true
 		spec.ExistingProjectID = existingProject.ProjectID
 		spec.ExistingDatabases = existingProject.ExistingDatabases
+		slog.Info("Set spec for existing project", "ExistingProjectID", spec.ExistingProjectID, "IsUpdate", spec.IsUpdate, "Name", existingProject.Name)
 	}
 
 	// Use default Heroku adapter
@@ -1451,18 +1655,26 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 		return deployResult{Error: summary}, nil
 	}
 
-	// Extract deployment URL from created resources
+	// Extract deployment URL and app name from created resources
 	var deploymentURL string
+	var appName string
 	for _, resource := range createdResources {
 		if url, ok := resource.Metadata["url"].(string); ok {
 			deploymentURL = url
-			break
+		}
+		if resource.Type == "heroku_app" {
+			appName = resource.Name
 		}
 	}
 
 	if deploymentURL == "" {
 		slog.Info("No deployment URL found in created resources")
 		deploymentURL = "Deployment completed but URL not available"
+	}
+
+	// Store app name in spec for rollback operations (only if not already set from existing project)
+	if appName != "" && spec.ExistingProjectID == "" {
+		spec.ExistingProjectID = appName
 	}
 
 	path, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineRootPath, input.Spec.Routes).Get(ctx)
@@ -1480,41 +1692,62 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 
 	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
 	if err != nil {
-		// Send the original error before summarizing
-		prod_error.CaptureErrorWithContext(err, map[string]any{
-			"workflow":     DeployHerokuWorkflowName,
-			"activity":     AgentIsURLLive,
-			"component":    "deployment",
-			"platform":     "heroku",
-			"project_name": input.Spec.Name,
-			"language":     input.Spec.Language,
-		})
-		// Log deployment failure
+		slog.Error("Health check failed, attempting rollback", "error", err, "url", fullUrl)
+
+		previousDeploy, rollbackErr := workflow.ExecuteActivity[*deployment.DeploymentInfo](ctx, ActivityOpts, AgentGetPreviousDeployment, *spec, Heroku).Get(ctx)
+		if rollbackErr != nil {
+			slog.Warn("No previous deployment available for rollback", "error", rollbackErr)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":              err.Error(),
+					"platform":           "heroku",
+					"stage":              "url_verification",
+					"url":                fullUrl,
+					"no_previous_deploy": true,
+				}).Get(ctx)
+			}
+			return deployResult{
+				Error: deployError{
+					Summary: "Deployment failed health check. This is your first deployment, so there's no previous version to roll back to",
+				},
+			}, nil
+		}
+
+		slog.Info("Found previous deployment for rollback", "deployment_id", previousDeploy.ID)
+
+		_, rollbackErr = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentRollbackDeployment, *spec, Heroku, previousDeploy.ID).Get(ctx)
+		if rollbackErr != nil {
+			slog.Error("Rollback failed", "error", rollbackErr, "target_deployment", previousDeploy.ID)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":           err.Error(),
+					"platform":        "heroku",
+					"stage":           "url_verification",
+					"url":             fullUrl,
+					"rollback_error":  rollbackErr.Error(),
+					"rollback_target": previousDeploy.ID,
+				}).Get(ctx)
+			}
+			return deployResult{}, errors.Errorf("service URL %s is not live and rollback failed: %w", fullUrl, err)
+		}
+
+		slog.Info("Rollback completed successfully", "rolled_back_to", previousDeploy.ID)
+
 		if operationId != "" {
-			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
-				"error":    err.Error(),
-				"platform": "heroku",
-				"stage":    "url_verification",
-				"url":      fullUrl,
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "rolled_back", map[string]any{
+				"error":          err.Error(),
+				"platform":       "heroku",
+				"stage":          "url_verification",
+				"url":            fullUrl,
+				"rolled_back_to": previousDeploy.ID,
 			}).Get(ctx)
 		}
-		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
-		if e1 != nil {
-			// Send the summarize error
-			prod_error.CaptureErrorWithContext(e1, map[string]any{
-				"workflow":     DeployHerokuWorkflowName,
-				"activity":     AgentSummarizeError,
-				"component":    "deployment",
-				"platform":     "heroku",
-				"project_name": input.Spec.Name,
-				"language":     input.Spec.Language,
-				"operation":    "summarize_original_error",
-			})
-			slog.Info("Failed to summarize error", "error", e1)
-			return deployResult{Error: deployError{Summary: err.Error()}}, nil
-		}
-		slog.Info("service URL is not live", "url", fullUrl, "error", err)
-		return deployResult{Error: summary}, nil
+		return deployResult{
+			Error: deployError{
+				Summary:   "Deployment failed health check. We've automatically rolled back to your previous working version",
+				IsWarning: true,
+			},
+		}, nil
 	}
 
 	// Log deployment success

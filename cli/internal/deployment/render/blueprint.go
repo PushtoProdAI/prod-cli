@@ -172,3 +172,15 @@ func (bd *BlueprintDeployment) getEnvironmentForLanguage(language string) string
 		return "docker" // Default to docker for unsupported languages
 	}
 }
+
+func (bd *BlueprintDeployment) GetCurrentDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	return nil, errors.Errorf("rollback not yet implemented for Render blueprint deployments")
+}
+
+func (bd *BlueprintDeployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	return nil, errors.Errorf("rollback not yet implemented for Render blueprint deployments")
+}
+
+func (bd *BlueprintDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
+	return errors.Errorf("rollback not yet implemented for Render blueprint deployments")
+}

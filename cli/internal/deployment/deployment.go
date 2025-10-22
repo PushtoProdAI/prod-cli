@@ -37,6 +37,16 @@ type CreatedResource struct {
 
 type Deployable interface {
 	Deploy(ctx context.Context) ([]CreatedResource, error)
+	GetCurrentDeployment(ctx context.Context) (*DeploymentInfo, error)
+	GetPreviousDeployment(ctx context.Context) (*DeploymentInfo, error)
+	Rollback(ctx context.Context, targetDeploymentID string) error
+}
+
+type DeploymentInfo struct {
+	ID        string
+	Status    string
+	CreatedAt string
+	URL       string
 }
 
 type DeploymentAdapter interface {
