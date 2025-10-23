@@ -3,6 +3,7 @@ package tokens
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -195,10 +196,5 @@ func ValidateOperation(operation string) bool {
 		OperationStatus,
 	}
 
-	for _, op := range validOps {
-		if operation == op {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(validOps, operation)
 }

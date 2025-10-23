@@ -710,7 +710,7 @@ function DetermineMigrationCommand(
   ormTools: string[],
   migrationContext: MigrationContext
 ) -> MigrationCommand {
-  client "OllamaClient"
+  client "ProxyClient"
   prompt #"
 {{_.role("system")}}
 You are an expert in database migration tools and ORMs across different programming languages.

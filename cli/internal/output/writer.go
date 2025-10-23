@@ -3,6 +3,7 @@ package output
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 
@@ -73,12 +74,7 @@ func ShouldShowSpinnerForStatus(status string) bool {
 		"pricing",
 	}
 
-	for _, spinnerStatus := range spinnerStatuses {
-		if status == spinnerStatus {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(spinnerStatuses, status)
 }
 
 // ExtractSpinnerMessage extracts a friendly spinner message from the log message
