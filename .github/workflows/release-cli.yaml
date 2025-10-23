@@ -355,6 +355,139 @@ jobs:
                     value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
                     short: false
 
+  build-windows-staging:
+    name: Build Windows (Staging)
+    runs-on: windows-latest
+    environment: staging
+    needs: test
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Notify build start
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "🔨 CLI build started"
+            attachments:
+              - color: "ffc107"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Platform"
+                    value: "Windows"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.4"
+
+      - name: Create bin directory
+        run: mkdir -p bin
+        shell: bash
+
+      - name: Build Windows binaries (Staging)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_DEBUG: true
+          ENVIRONMENT: staging
+        run: |
+          echo "Building staging binaries with PROD_DEBUG=true, ENVIRONMENT=staging"
+          cd cli
+          make build-cli-windows
+        shell: bash
+
+      - name: Get version
+        id: version
+        run: |
+          # Try to get the latest tag, fallback to commit hash
+          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$latest_tag" ]; then
+            echo "version=$latest_tag" >> $GITHUB_OUTPUT
+          else
+            echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Upload Windows AMD64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-staging-windows-amd64-${{ steps.version.outputs.version }}
+          path: bin/prod-*-windows-amd64.exe
+          retention-days: 7
+
+      - name: Notify build success
+        if: success()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "✅ CLI build completed successfully! :hammer_and_wrench:"
+            attachments:
+              - color: "28a745"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Platform"
+                    value: "Windows"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+
+      - name: Notify build failure
+        if: failure()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "❌ CLI build failed"
+            attachments:
+              - color: "dc3545"
+                fields:
+                  - title: "Environment"
+                    value: "Staging"
+                    short: true
+                  - title: "Platform"
+                    value: "Windows"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+                  - title: "Workflow"
+                    value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                    short: false
+
   build-macos-staging:
     name: Build macOS (Staging)
     runs-on: macos-latest
@@ -485,6 +618,132 @@ jobs:
                     short: true
                   - title: "Platform"
                     value: "macOS"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+                  - title: "Workflow"
+                    value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                    short: false
+
+  build-windows-production:
+    name: Build Windows (Production)
+    runs-on: windows-latest
+    environment: prod
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Notify build start
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "🔨 CLI build started"
+            attachments:
+              - color: "ffc107"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Platform"
+                    value: "Windows"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.4"
+
+      - name: Create bin directory
+        run: mkdir -p bin
+        shell: bash
+
+      - name: Build Windows binaries (Production)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_DEBUG: false
+          ENVIRONMENT: production
+        run: |
+          echo "Building production binaries with PROD_DEBUG=false, ENVIRONMENT=production"
+          cd cli
+          make build-cli-windows
+        shell: bash
+
+      - name: Get version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Upload Windows AMD64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-production-windows-amd64-${{ steps.version.outputs.version }}
+          path: bin/prod-*-windows-amd64.exe
+          retention-days: 90
+
+      - name: Notify build success
+        if: success()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "✅ CLI build completed successfully! :hammer_and_wrench:"
+            attachments:
+              - color: "28a745"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Platform"
+                    value: "Windows"
+                    short: true
+                  - title: "Branch"
+                    value: "${{ github.ref_name }}"
+                    short: true
+                  - title: "Commit"
+                    value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
+                    short: true
+
+      - name: Notify build failure
+        if: failure()
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2.1.1
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "❌ CLI build failed"
+            attachments:
+              - color: "dc3545"
+                fields:
+                  - title: "Environment"
+                    value: "Production"
+                    short: true
+                  - title: "Platform"
+                    value: "Windows"
                     short: true
                   - title: "Branch"
                     value: "${{ github.ref_name }}"
@@ -633,7 +892,7 @@ jobs:
   # Create a staging release with all binaries for staging builds
   release-staging:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
-    needs: [test, build-linux-staging, build-macos-staging]
+    needs: [test, build-linux-staging, build-windows-staging, build-macos-staging]
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -1024,7 +1283,7 @@ jobs:
   # Create a production release with all binaries when a tag is pushed
   release-production:
     if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
-    needs: [test, build-linux-production, build-macos-production]
+    needs: [test, build-linux-production, build-windows-production, build-macos-production]
     runs-on: ubuntu-latest
     environment: prod
     steps:
@@ -1373,13 +1632,14 @@ jobs:
             ### Direct Downloads from Supabase
             - **Linux AMD64**: [prod_${version}_linux_amd64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_linux_amd64)
             - **Linux ARM64**: [prod_${version}_linux_arm64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_linux_arm64)
+            - **Windows AMD64**: [prod_${version}_windows_amd64.exe](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_windows_amd64.exe)
             - **macOS AMD64**: [prod_${version}_darwin_amd64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_darwin_amd64)
             - **macOS ARM64**: [prod_${version}_darwin_arm64](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/prod_${version}_darwin_arm64)
 
             ### Installer Script
-            ```bash
+            \`\`\`bash
             curl -sSL ${supabaseUrl}/storage/v1/object/public/cli-binaries/install.sh | bash
-            ```
+            \`\`\`
 
             ### Release Manifest
             [View all available files](${supabaseUrl}/storage/v1/object/public/cli-binaries/releases/${version}/manifest.json)
