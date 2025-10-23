@@ -706,11 +706,14 @@ func (p *PythonAnalyzer) collectMigrationContext(dependencies []string, serviceR
 	}
 
 	// Detect ORM tools from dependencies
-	migrationContext.ORMTools = DetectORMTools(dependencies, "python")
+	detectedTools := DetectORMTools(dependencies, "python")
 
 	// Find migration files and directories
 	migrationFiles, _ := FindMigrationFiles(p.ProjectFS.rootPath)
 	migrationContext.MigrationFiles = migrationFiles
+
+	// Filter ORM tools to only include those with actual migration setup
+	migrationContext.ORMTools = FilterConfiguredMigrationTools(detectedTools, migrationFiles, p.ProjectFS.rootPath)
 
 	// Check for Django manage.py
 	managePyPath := filepath.Join(p.ProjectFS.rootPath, "manage.py")
@@ -759,7 +762,7 @@ func (p *PythonAnalyzer) collectMigrationContext(dependencies []string, serviceR
 			for _, line := range lines {
 				lineLower := strings.ToLower(line)
 				if strings.Contains(lineLower, "migrate") || strings.Contains(lineLower, "alembic") ||
-				   strings.Contains(lineLower, "django") && strings.Contains(lineLower, "manage.py") {
+					strings.Contains(lineLower, "django") && strings.Contains(lineLower, "manage.py") {
 					// Extract make target name if it's a target line
 					if strings.Contains(line, ":") && !strings.HasPrefix(strings.TrimSpace(line), "#") {
 						parts := strings.Split(line, ":")

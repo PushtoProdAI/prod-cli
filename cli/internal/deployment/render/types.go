@@ -11,17 +11,16 @@ type RenderAPIStep = deployment.Step[RenderClient]
 type BaseStep = deployment.BaseStep
 
 type CreateWebServiceRequest struct {
-	Name             string                `json:"name"`
-	Type             string                `json:"type"` // "web_service"
-	OwnerID          string                `json:"ownerId"`
-	Repo             string                `json:"repo,omitempty"`
-	Branch           string                `json:"branch,omitempty"`
-	BuildCommand     string                `json:"buildCommand,omitempty"`
-	StartCommand     string                `json:"startCommand,omitempty"`
-	PreDeployCommand string                `json:"preDeployCommand,omitempty"`
-	Image            *ImageDetails         `json:"image,omitempty"` // For Docker image deployments
-	EnvVars          []CreateServiceEnvVar `json:"envVars,omitempty"`
-	ServiceDetails   *WebServiceDetails    `json:"serviceDetails,omitempty"`
+	Name           string                `json:"name"`
+	Type           string                `json:"type"` // "web_service"
+	OwnerID        string                `json:"ownerId"`
+	Repo           string                `json:"repo,omitempty"`
+	Branch         string                `json:"branch,omitempty"`
+	BuildCommand   string                `json:"buildCommand,omitempty"`
+	StartCommand   string                `json:"startCommand,omitempty"`
+	Image          *ImageDetails         `json:"image,omitempty"` // For Docker image deployments
+	EnvVars        []CreateServiceEnvVar `json:"envVars,omitempty"`
+	ServiceDetails *WebServiceDetails    `json:"serviceDetails,omitempty"`
 }
 
 type CreateServiceEnvVar struct {
@@ -66,17 +65,18 @@ type UpdateServiceImageRequest struct {
 }
 
 type WebServiceDetails struct {
-	Runtime                    string
-	Plan                       string
-	EnvSpecificDetails         *WebServiceEnvSpecificDetails
-	BuildFilter                *BuildFilter `json:"buildFilter,omitempty"`
-	PublishPath                string       `json:"publishPath,omitempty"` // For static sites
-	PullRequestPreviewsEnabled *bool        `json:"pullRequestPreviewsEnabled,omitempty"`
-	Region                     string       `json:"region,omitempty"` // Optional, if not provided, defaults to oregon
+	Runtime                    string                        `json:"runtime"`
+	Plan                       string                        `json:"plan"`
+	EnvSpecificDetails         *WebServiceEnvSpecificDetails `json:"envSpecificDetails,omitempty"`
+	BuildFilter                *BuildFilter                  `json:"buildFilter,omitempty"`
+	PublishPath                string                        `json:"publishPath,omitempty"` // For static sites
+	PullRequestPreviewsEnabled *bool                         `json:"pullRequestPreviewsEnabled,omitempty"`
+	Region                     string                        `json:"region,omitempty"` // Optional, if not provided, defaults to oregon
+	PreDeployCommand           string                        `json:"preDeployCommand,omitempty"`
 }
 
 type WebServiceEnvSpecificDetails struct {
-	RegistryCredentialID string
+	RegistryCredentialID string `json:"registryCredentialId"`
 }
 
 type BuildFilter struct {

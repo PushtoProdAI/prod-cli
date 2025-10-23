@@ -515,11 +515,14 @@ func (n *NodeAnalyzer) collectMigrationContext(pkgJson *PackageJson, serviceRequ
 	}
 
 	// Detect ORM tools from dependencies
-	migrationContext.ORMTools = DetectORMTools(allDeps, "node")
+	detectedTools := DetectORMTools(allDeps, "node")
 
 	// Find migration files and directories
 	migrationFiles, _ := FindMigrationFiles(n.ProjectFS.rootPath)
 	migrationContext.MigrationFiles = migrationFiles
+
+	// Filter ORM tools to only include those with actual migration setup
+	migrationContext.ORMTools = FilterConfiguredMigrationTools(detectedTools, migrationFiles, n.ProjectFS.rootPath)
 
 	// Extract migration-related scripts from package.json
 	if pkgJson.Scripts != nil {
@@ -535,6 +538,22 @@ func (n *NodeAnalyzer) collectMigrationContext(pkgJson *PackageJson, serviceRequ
 		"ormconfig.js",
 		"typeorm.config.ts",
 		".sequelizerc",
+		"drizzle.config.ts",
+		"drizzle.config.js",
+		// Custom migration files
+		"migrate.ts",
+		"migrate.js",
+		"db/migrate.ts",
+		"db/migrate.js",
+		"db/schema.sql",
+		"src/db/migrate.ts",
+		"src/db/migrate.js",
+		"src/db/schema.sql",
+		"src/server/db/migrate.ts",
+		"src/server/db/migrate.js",
+		"src/server/db/schema.sql",
+		"lib/db/migrate.ts",
+		"lib/db/migrate.js",
 	}
 
 	for _, configFile := range configFilesToCheck {
@@ -550,6 +569,21 @@ func (n *NodeAnalyzer) collectMigrationContext(pkgJson *PackageJson, serviceRequ
 				snippet := strings.Join(lines[:maxLines], "\n")
 				migrationContext.ConfigFiles[configFile] = snippet
 			}
+		}
+	}
+
+	// If we have migration scripts but no ORM tools, add a marker to indicate custom migrations
+	if len(migrationContext.PackageScripts) > 0 && len(migrationContext.ORMTools) == 0 {
+		// Check if we found any custom migration files
+		hasCustomMigration := false
+		for key := range migrationContext.ConfigFiles {
+			if strings.Contains(key, "migrate") || strings.Contains(key, "schema.sql") {
+				hasCustomMigration = true
+				break
+			}
+		}
+		if hasCustomMigration || len(migrationContext.MigrationFiles) > 0 {
+			migrationContext.ORMTools = append(migrationContext.ORMTools, "custom")
 		}
 	}
 
