@@ -1066,7 +1066,7 @@ func extractStepConfig(step render.RenderAPIStep) map[string]any {
 	return config
 }
 
-func performConflictChecks(workspaceID string, spec *deployment.DeploymentSpec, client render.RenderClient) []ConflictCheck {
+func performConflictChecks(_ string, spec *deployment.DeploymentSpec, _ render.RenderClient) []ConflictCheck {
 	var checks []ConflictCheck
 
 	checks = append(checks, ConflictCheck{

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -501,14 +502,7 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 			if service.Type != "database" && service.Type != "cache" {
 				continue
 			}
-			found := false
-			for _, existingDB := range result.ExistingDatabases {
-				if existingDB == service.Provider {
-					found = true
-					break
-				}
-			}
-			if !found {
+			if !slices.Contains(result.ExistingDatabases, service.Provider) {
 				needsToCreate = append(needsToCreate, service.Provider)
 			}
 		}
@@ -907,7 +901,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 	return a.plan, nil
 }
 
-func (a *Agent) selectPlatform(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+func (a *Agent) selectPlatform(_ context.Context, _ string, out io.Writer) (stateFn, error) {
 	// Build platform options from detected platforms
 	platformOptions := make([]string, len(a.DeployPlan.ExistingProjectInfo.DetectedPlatforms))
 	for i, p := range a.DeployPlan.ExistingProjectInfo.DetectedPlatforms {
