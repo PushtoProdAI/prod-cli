@@ -7,7 +7,7 @@ replace github.com/cschleiden/go-workflows => github.com/lyuboxa/go-workflows v0
 require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.4.0
 	github.com/atotto/clipboard v0.1.4
-	github.com/boundaryml/baml v0.201.0
+	github.com/boundaryml/baml v0.211.2
 	github.com/charmbracelet/bubbles/v2 v2.0.0-beta.1
 	github.com/charmbracelet/bubbletea/v2 v2.0.0-beta.4
 	github.com/charmbracelet/lipgloss/v2 v2.0.0-beta1
