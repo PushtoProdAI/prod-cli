@@ -4,6 +4,8 @@ go 1.24.4
 
 replace github.com/cschleiden/go-workflows => github.com/lyuboxa/go-workflows v0.0.0-20241218014403-3f2a5a73e6ee
 
+replace github.com/boundaryml/baml => github.com/boundaryml/baml v0.0.0-20251020131728-5430aa61c227
+
 require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.4.0
 	github.com/atotto/clipboard v0.1.4
