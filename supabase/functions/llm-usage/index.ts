@@ -10,6 +10,17 @@ interface ModelUsageStats {
   total_cost: number
 }
 
+interface FunctionUsageStats {
+  function_name: string
+  total_requests: number
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  total_cost: number
+  avg_response_time_ms: number
+  success_rate: number
+}
+
 serve(async (req) => {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -67,6 +78,7 @@ serve(async (req) => {
 
     const url = new URL(req.url)
     const period = url.searchParams.get('period') || 'all'
+    const groupBy = url.searchParams.get('group_by') || 'model'
 
     // Validate period format if not 'all'
     if (period !== 'all' && !period.match(/^\d{4}-\d{2}$/)) {
@@ -76,7 +88,16 @@ serve(async (req) => {
       )
     }
 
-    const { data: modelStats, error } = await supabase.rpc('get_llm_usage_by_model', {
+    // Validate group_by parameter
+    if (!['model', 'function'].includes(groupBy)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid group_by parameter. Use "model" or "function"' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const rpcFunction = groupBy === 'function' ? 'get_llm_usage_by_function' : 'get_llm_usage_by_model'
+    const { data: stats, error } = await supabase.rpc(rpcFunction, {
       p_period: period
     })
 
@@ -90,7 +111,8 @@ serve(async (req) => {
 
     const response = {
       period,
-      data: modelStats || []
+      group_by: groupBy,
+      data: stats || []
     }
 
     return new Response(

@@ -12,6 +12,7 @@ interface ChatCompletionRequest {
   max_tokens?: number
   temperature?: number
   stream?: boolean
+  baml_function_name?: string
 }
 
 serve(async (req) => {
@@ -21,7 +22,7 @@ serve(async (req) => {
 
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-baml-function-name',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   }
 
@@ -70,6 +71,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     const authHeader = req.headers.get('Authorization')
+    const functionNameHeader = req.headers.get('X-BAML-Function-Name')
     
     if (!authHeader) {
       return new Response(
@@ -90,6 +92,7 @@ serve(async (req) => {
     }
 
     const userId = user.id
+    const functionName = functionNameHeader || body.baml_function_name || 'chat_completion'
 
     const chatConfig: ChatCompletionRequest = {
       model: body.model || 'gpt-4o-mini',
@@ -152,7 +155,7 @@ serve(async (req) => {
         .from('llm_usage_logs')
         .insert({
           user_id: userId,
-          function_name: 'chat_completion',
+          function_name: functionName,
           model_used: modelUsed,
           tokens_used: tokensUsed,
           prompt_tokens: promptTokens,

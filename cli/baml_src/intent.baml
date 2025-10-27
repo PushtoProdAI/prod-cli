@@ -423,6 +423,12 @@ RULES:
    Include common naming patterns and generic aliases (e.g., DB_USER, PGHOST, DATABASE_URL).
    Do not classify variables that relate to app-level configuration (e.g., admin users, 
    API keys, secret keys, app modules) unless they directly configure database access.
+   
+   IMPORTANT: Variables used for client-side API access are NOT database variables:
+   - NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY → not_db_related (client-side API access)
+   - Variables with NEXT_PUBLIC_ prefix are exposed to the browser and are NOT direct database credentials
+   - Supabase variables with PUBLIC, ANON_KEY, or API_URL patterns are for API access, not database connections
+   - Only SUPABASE_DB_* or DATABASE_URL patterns pointing to direct Postgres connections are DB-related
 
 3. Contextual references to DB usage (e.g., used in a connection object, ORM config, 
    connection pool setup) are a strong signal — but do not override rule #1 or #2.
@@ -469,7 +475,9 @@ DB_USER = "admin" → username
 NODE_ENV = "production" → not_db_related  
 PGSSLMODE = "require" → other_db_config  
 SECRET_KEY = "s3cr3t" → not_db_related  
-DJANGO_SUPERUSER_EMAIL = "admin@example.com" → not_db_related 
+DJANGO_SUPERUSER_EMAIL = "admin@example.com" → not_db_related
+NEXT_PUBLIC_SUPABASE_URL = "https://xyz.supabase.co" → not_db_related
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJ..." → not_db_related 
     {{ctx.output_format }}
   "#
 
