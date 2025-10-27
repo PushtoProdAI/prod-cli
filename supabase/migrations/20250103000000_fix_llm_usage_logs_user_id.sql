@@ -10,7 +10,7 @@ DROP POLICY IF EXISTS "user_usage_logs_policy" ON llm_usage_logs;
 DROP POLICY IF EXISTS "Service role can insert usage logs" ON llm_usage_logs;
 
 -- Delete any rows with invalid user_id values (like 'anonymous')
-DELETE FROM llm_usage_logs WHERE user_id = 'anonymous' OR user_id !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+DELETE FROM llm_usage_logs WHERE user_id::text !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 
 -- Alter the user_id column to be a proper UUID foreign key
 ALTER TABLE llm_usage_logs 
