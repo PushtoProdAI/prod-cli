@@ -67,6 +67,9 @@ client<llm> ProxyClient {
     base_url env.SUPABASE_URL
     model gpt-4o-mini
     api_key env.PROXY_API_KEY
+    headers {
+      "X-BAML-Function-Name" env.BAML_FUNCTION_NAME
+    }
   }
 }
 
