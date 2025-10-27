@@ -1,30 +1,26 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-interface UsageStats {
+interface ModelUsageStats {
+  model: string
   total_requests: number
+  input_tokens: number
+  output_tokens: number
   total_tokens: number
   total_cost: number
-  average_latency: number
-  requests_by_model: Record<string, number>
-  cost_by_model: Record<string, number>
-  requests_by_day: Record<string, number>
 }
 
 serve(async (req) => {
-  // CORS headers
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
   }
 
-  // Handle preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 200, headers: corsHeaders })
   }
 
-  // Only allow GET requests
   if (req.method !== 'GET') {
     return new Response(
       JSON.stringify({ error: 'Method not allowed' }),
@@ -33,42 +29,56 @@ serve(async (req) => {
   }
 
   try {
-    // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Get user ID from JWT token
     const authHeader = req.headers.get('Authorization')
-    let userId = 'anonymous'
     
-    if (authHeader) {
-      try {
-        const token = authHeader.replace('Bearer ', '')
-        const { data: { user } } = await supabase.auth.getUser(token)
-        userId = user?.id || 'anonymous'
-      } catch (error) {
-        console.warn('Failed to get user from token:', error)
-      }
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
-    // Parse query parameters
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    
+    if (authError || !user) {
+      console.error('Authentication error:', authError)
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const { data: isAdmin, error: adminError } = await supabase.rpc('is_admin_user', {
+      p_user_id: user.id
+    })
+
+    if (adminError || !isAdmin) {
+      console.error('Admin check failed:', adminError)
+      return new Response(
+        JSON.stringify({ error: 'Forbidden: Admin access required' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     const url = new URL(req.url)
-    const period = url.searchParams.get('period') || '30d'
-    const days = parseInt(url.searchParams.get('days') || '30')
+    const period = url.searchParams.get('period') || 'all'
 
-    // Calculate date range
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setDate(startDate.getDate() - days)
+    // Validate period format if not 'all'
+    if (period !== 'all' && !period.match(/^\d{4}-\d{2}$/)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid period format. Use YYYY-MM or "all"' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
-    // Query usage logs
-    const { data: logs, error } = await supabase
-      .from('llm_usage_logs')
-      .select('*')
-      .eq('user_id', userId)
-      .gte('created_at', startDate.toISOString())
-      .lte('created_at', endDate.toISOString())
+    const { data: modelStats, error } = await supabase.rpc('get_llm_usage_by_model', {
+      p_period: period
+    })
 
     if (error) {
       console.error('Database error:', error)
@@ -78,41 +88,13 @@ serve(async (req) => {
       )
     }
 
-    // Calculate statistics
-    const stats: UsageStats = {
-      total_requests: 0,
-      total_tokens: 0,
-      total_cost: 0,
-      average_latency: 0,
-      requests_by_model: {},
-      cost_by_model: {},
-      requests_by_day: {}
-    }
-
-    if (logs && logs.length > 0) {
-      let totalLatency = 0
-      
-      for (const log of logs) {
-        stats.total_requests++
-        stats.total_tokens += log.tokens_used || 0
-        stats.total_cost += log.cost || 0
-        totalLatency += log.response_time_ms || 0
-
-        // Group by model
-        const model = log.model_used || 'unknown'
-        stats.requests_by_model[model] = (stats.requests_by_model[model] || 0) + 1
-        stats.cost_by_model[model] = (stats.cost_by_model[model] || 0) + (log.cost || 0)
-
-        // Group by day
-        const day = new Date(log.created_at).toISOString().split('T')[0]
-        stats.requests_by_day[day] = (stats.requests_by_day[day] || 0) + 1
-      }
-
-      stats.average_latency = stats.total_requests > 0 ? totalLatency / stats.total_requests : 0
+    const response = {
+      period,
+      data: modelStats || []
     }
 
     return new Response(
-      JSON.stringify(stats),
+      JSON.stringify(response),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 

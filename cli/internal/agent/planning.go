@@ -314,16 +314,27 @@ func (a *Activities) sendProjectStats(ctx context.Context, platform string, spec
 	return nil
 }
 
-func (a *Activities) logDeploymentStart(ctx context.Context, platform string, spec analyzer.ProjectSpec, source string) (string, error) {
+func (a *Activities) logDeploymentStart(ctx context.Context, platform string, spec analyzer.ProjectSpec, source string, action Action) (string, error) {
 	session := CtxSession(ctx)
 	if session == nil {
 		return "", workflow.NewPermanentError(errors.New("no session found in context"))
 	}
 
+	// Map Action to operation_type string
+	var operationType string
+	switch action {
+	case Deploy:
+		operationType = "deploy"
+	case Rollback:
+		operationType = "rollback"
+	default:
+		operationType = "deploy"
+	}
+
 	// Build deployment operation data
 	operation := map[string]any{
 		"user_id":        session.User.ID,
-		"operation_type": "deploy",
+		"operation_type": operationType,
 		"resource_type":  "app",
 		"resource_id":    fmt.Sprintf("%s-%s", platform, spec.Name),
 		"resource_name":  spec.Name,

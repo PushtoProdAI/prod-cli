@@ -212,6 +212,13 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		token = session.AccessToken
 	}
 
+	// Log deployment start
+	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "render", input.Spec, input.Source, input.Action).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to log deployment start", "error", err)
+		// Continue with deployment even if logging fails
+	}
+
 	// Use existing project info from DeployPlan
 	existingProject := input.ExistingProjectInfo
 	if existingProject.Exists {
@@ -220,8 +227,15 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 
 	// Validate Docker availability for Render
 	if !deployment.IsDockerAvailable() {
-		summary, err := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, "not able to build docker image. cannot connect to local docker daemon", input).Get(ctx)
-		if err != nil {
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    "Docker not available",
+				"platform": "render",
+				"stage":    "docker_validation",
+			}).Get(ctx)
+		}
+		summary, err2 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, "not able to build docker image. cannot connect to local docker daemon", input).Get(ctx)
+		if err2 != nil {
 			return deployResult{Error: deployError{Summary: "not able to build docker image. cannont connect to local docker daemon"}}, nil
 		}
 		return deployResult{Error: summary}, nil
@@ -232,6 +246,14 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	db := deployment.NewDeploymentBuilder(&input.Spec, envVars)
 	spec, err := db.Build()
 	if err != nil {
+		// Log deployment failure
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    err.Error(),
+				"platform": "render",
+				"stage":    "spec_build",
+			}).Get(ctx)
+		}
 		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
 	}
 	spec.Metadata["buildContext"] = input.Source
@@ -269,7 +291,21 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 				"operation":    "summarize_original_error",
 			})
 			slog.Info("Failed to summarize error", "error", e1)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":    err.Error(),
+					"platform": "render",
+					"stage":    "get_workspace",
+				}).Get(ctx)
+			}
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    err.Error(),
+				"platform": "render",
+				"stage":    "get_workspace",
+			}).Get(ctx)
 		}
 		return deployResult{Error: summary}, nil
 	}
@@ -298,7 +334,21 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 				"operation":    "summarize_original_error",
 			})
 			slog.Info("Failed to summarize error", "error", e1)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":    err.Error(),
+					"platform": "render",
+					"stage":    "create_docker_repo",
+				}).Get(ctx)
+			}
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    err.Error(),
+				"platform": "render",
+				"stage":    "create_docker_repo",
+			}).Get(ctx)
 		}
 		return deployResult{Error: summary}, nil
 	}
@@ -362,9 +412,23 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 				"language":     input.Spec.Language,
 				"operation":    "summarize_original_error",
 			})
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":    err.Error(),
+					"platform": "render",
+					"stage":    "deploy_steps",
+				}).Get(ctx)
+			}
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		slog.Info("Deployment failed", "error", err)
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    err.Error(),
+				"platform": "render",
+				"stage":    "deploy_steps",
+			}).Get(ctx)
+		}
 		return deployResult{Error: summary}, nil
 	}
 
@@ -411,9 +475,25 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 					"language":     input.Spec.Language,
 					"operation":    "summarize_original_error",
 				})
+				if operationId != "" {
+					workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+						"error":     err.Error(),
+						"platform":  "render",
+						"stage":     "wait_for_deploy",
+						"deploy_id": deployID,
+					}).Get(ctx)
+				}
 				return deployResult{Error: deployError{Summary: err.Error()}}, nil
 			}
 			slog.Info("deployment failed", "deployId", deployID, "error", err)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":     err.Error(),
+					"platform":  "render",
+					"stage":     "wait_for_deploy",
+					"deploy_id": deployID,
+				}).Get(ctx)
+			}
 			return deployResult{Error: summary}, nil
 		}
 	}
@@ -453,10 +533,34 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 				"language":     input.Spec.Language,
 				"operation":    "summarize_original_error",
 			})
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":    err.Error(),
+					"platform": "render",
+					"stage":    "url_check",
+					"url":      fullUrl,
+				}).Get(ctx)
+			}
 			return deployResult{Error: deployError{Summary: err.Error()}}, nil
 		}
 		slog.Info("service URL is not live", "url", fullUrl, "error", err)
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    err.Error(),
+				"platform": "render",
+				"stage":    "url_check",
+				"url":      fullUrl,
+			}).Get(ctx)
+		}
 		return deployResult{Error: summary}, nil
+	}
+
+	// Log deployment success
+	if operationId != "" {
+		workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", map[string]any{
+			"url":      fullUrl,
+			"platform": "render",
+		}).Get(ctx)
 	}
 
 	return deployResult{Url: fullUrl}, nil
@@ -474,7 +578,7 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 	}
 
 	// Log deployment start
-	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "flyio", input.Spec, input.Source).Get(ctx)
+	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "flyio", input.Spec, input.Source, input.Action).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to log deployment start", "error", err)
 		// Continue with deployment even if logging fails
@@ -1162,7 +1266,7 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	}
 
 	// Log deployment start
-	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "netlify", input.Spec, input.Source).Get(ctx)
+	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "netlify", input.Spec, input.Source, input.Action).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to log deployment start", "error", err)
 		// Continue with deployment even if logging fails
@@ -1367,7 +1471,7 @@ func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deploy
 	}
 
 	// Log deployment start
-	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "vercel", input.Spec, input.Source).Get(ctx)
+	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "vercel", input.Spec, input.Source, input.Action).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to log deployment start", "error", err)
 		// Continue with deployment even if logging fails
@@ -1562,7 +1666,7 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 	}
 
 	// Log deployment start
-	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "heroku", input.Spec, input.Source).Get(ctx)
+	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "heroku", input.Spec, input.Source, input.Action).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to log deployment start", "error", err)
 		// Continue with deployment even if logging fails
@@ -1889,6 +1993,13 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 func (w *Workflows) rollbackDeployment(ctx workflow.Context, plan DeployPlan) (deployResult, error) {
 	workflow.Logger(ctx).Info("starting rollback workflow", "platform", plan.Platform, "project", plan.Spec.Name)
 
+	// Log deployment start
+	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, plan.Platform.String(), plan.Spec, plan.Source, plan.Action).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to log deployment start", "error", err)
+		// Continue with rollback even if logging fails
+	}
+
 	// For platforms that need existing project info, we need to detect it first if not already available
 	// or if the existing info is from a different platform (multi-platform case)
 	existingProject := plan.ExistingProjectInfo
@@ -1904,6 +2015,13 @@ func (w *Workflows) rollbackDeployment(ctx workflow.Context, plan DeployPlan) (d
 				"platform":     plan.Platform.String(),
 				"project_name": plan.Spec.Name,
 			})
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":    err.Error(),
+					"platform": plan.Platform.String(),
+					"stage":    "check_existing",
+				}).Get(ctx)
+			}
 			return deployResult{
 				Error: deployError{
 					Summary: "Could not find existing deployment to rollback. Please make sure the application is deployed.",
@@ -1913,6 +2031,13 @@ func (w *Workflows) rollbackDeployment(ctx workflow.Context, plan DeployPlan) (d
 
 		if !detectedProject.Exists {
 			workflow.Logger(ctx).Warn("No existing deployment found for rollback")
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":    "No existing deployment found",
+					"platform": plan.Platform.String(),
+					"stage":    "check_existing",
+				}).Get(ctx)
+			}
 			return deployResult{
 				Error: deployError{
 					Summary: "No existing deployment found to rollback. Please make sure the application is deployed.",
@@ -1929,6 +2054,13 @@ func (w *Workflows) rollbackDeployment(ctx workflow.Context, plan DeployPlan) (d
 	spec, err := db.Build()
 	if err != nil {
 		workflow.Logger(ctx).Error("Failed to build deployment spec", "error", err)
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    err.Error(),
+				"platform": plan.Platform.String(),
+				"stage":    "spec_build",
+			}).Get(ctx)
+		}
 		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to build deployment spec: %v", err)}}, nil
 	}
 
@@ -1949,6 +2081,13 @@ func (w *Workflows) rollbackDeployment(ctx workflow.Context, plan DeployPlan) (d
 			"platform":     plan.Platform.String(),
 			"project_name": spec.Name,
 		})
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    err.Error(),
+				"platform": plan.Platform.String(),
+				"stage":    "get_previous_deployment",
+			}).Get(ctx)
+		}
 		return deployResult{
 			Error: deployError{
 				Summary: "No previous deployment found to rollback to. This might be your first deployment.",
@@ -1958,6 +2097,13 @@ func (w *Workflows) rollbackDeployment(ctx workflow.Context, plan DeployPlan) (d
 
 	if previousDeploy == nil {
 		workflow.Logger(ctx).Warn("No previous deployment available for rollback")
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":    "No previous deployment available",
+				"platform": plan.Platform.String(),
+				"stage":    "get_previous_deployment",
+			}).Get(ctx)
+		}
 		return deployResult{
 			Error: deployError{
 				Summary: "No previous deployment found to rollback to. This might be your first deployment.",
@@ -1979,6 +2125,14 @@ func (w *Workflows) rollbackDeployment(ctx workflow.Context, plan DeployPlan) (d
 			"project_name":      spec.Name,
 			"target_deployment": previousDeploy.ID,
 		})
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error":             err.Error(),
+				"platform":          plan.Platform.String(),
+				"stage":             "rollback_execution",
+				"target_deployment": previousDeploy.ID,
+			}).Get(ctx)
+		}
 		return deployResult{
 			Error: deployError{
 				Summary: fmt.Sprintf("Failed to rollback deployment: %v", err),
@@ -1987,6 +2141,15 @@ func (w *Workflows) rollbackDeployment(ctx workflow.Context, plan DeployPlan) (d
 	}
 
 	workflow.Logger(ctx).Info("Rollback completed successfully")
+
+	// Log rollback success
+	if operationId != "" {
+		workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", map[string]any{
+			"url":               previousDeploy.URL,
+			"platform":          plan.Platform.String(),
+			"target_deployment": previousDeploy.ID,
+		}).Get(ctx)
+	}
 
 	return deployResult{
 		Url: previousDeploy.URL,
