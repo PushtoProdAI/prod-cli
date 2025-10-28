@@ -317,8 +317,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				IsRepeat:    key.IsRepeat,
 			}
 			msg = tea.KeyPressMsg(newKey)
+			m.content = append(m.content, "DEBUG: Created new KeyPressMsg with Text="+string(key.Code))
 		}
 	}
+
+	// DEBUG: Log what we're about to pass to textinput
+	key := msg.Key()
+	m.content = append(m.content, "DEBUG: Before textinput - Text='"+key.Text+"', Code="+string(rune(key.Code))+", Value='"+m.textInput.Value()+"'")
 
 	if !m.isMode(ModeNormal) {
 		return m.handleSpecialModeKeys(msg)
@@ -327,6 +332,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Update text input for normal mode
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(msg)
+
+	// DEBUG: Log after textinput update
+	m.content = append(m.content, "DEBUG: After textinput - Value='"+m.textInput.Value()+"'")
 
 	// Check if we should show slash commands
 	m.updateSlashCommandVisibility()
