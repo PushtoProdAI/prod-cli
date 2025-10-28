@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/textinput"
@@ -306,7 +307,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// create a new KeyPressMsg with Text populated from Code
 	if isKeyPress {
 		key := msg.Key()
-		if key.Text == "" && key.Code >= 32 && key.Code <= 126 && key.Mod == 0 {
+		debugMsg := "DEBUG: Checking workaround - Text='" + key.Text + "', Code=" + string(rune(key.Code)) + fmt.Sprintf(", CodeInt=%d, Mod=%d", key.Code, key.Mod)
+		m.content = append(m.content, debugMsg)
+		if key.Text == "" && key.Code >= 32 && key.Code <= 126 {
 			// Create a new Key with Text populated
 			newKey := tea.Key{
 				Text:        string(key.Code),
@@ -318,6 +321,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			msg = tea.KeyPressMsg(newKey)
 			m.content = append(m.content, "DEBUG: Created new KeyPressMsg with Text="+string(key.Code))
+		} else {
+			m.content = append(m.content, fmt.Sprintf("DEBUG: Condition failed - TextEmpty=%v, CodeRange=%v", key.Text == "", key.Code >= 32 && key.Code <= 126))
 		}
 	}
 
