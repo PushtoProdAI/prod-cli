@@ -710,14 +710,36 @@ function DetermineMigrationCommand(
   ormTools: string[],
   migrationContext: MigrationContext
 ) -> MigrationCommand {
-  client "OllamaClient"
+  client "ProxyClient"
   prompt #"
 {{_.role("system")}}
 You are an expert in database migration tools and ORMs across different programming languages.
 Your task is to determine the production database migration command for a project.
 
-IMPORTANT: Only suggest a migration command if you have strong evidence the project uses migrations.
-If unsure or no clear migration tool is detected, return an empty command.
+CRITICAL VALIDATION RULES:
+1. Only suggest a migration command if BOTH conditions are met:
+   a) The migration tool is listed in dependencies/ormTools
+   b) The migration tool has actual configuration files or migration directories present
+2. Simply having a tool in dependencies is NOT sufficient - you must see evidence of actual migration setup
+3. If you see an ORM tool (e.g. alembic, sqlalchemy) but NO migration files or config, return EMPTY command
+4. If migrationContext.migrationFiles is empty or only contains generic directories, return EMPTY command
+5. When in doubt, return an empty command - false positives are worse than false negatives
+
+Evidence Requirements by Tool:
+- Alembic: Requires alembic.ini OR alembic/versions directory
+- Django: Requires manage.py AND migrations directories
+- Flask-Migrate: Requires migrations/ directory with alembic.ini inside
+- Prisma: Requires prisma/migrations directory OR prisma/schema.prisma
+- TypeORM: Requires migration files OR ormconfig with migrations path
+- Sequelize: Requires migrations/ directory
+- Custom migrations: If "custom" is in ormTools, check packageScripts and configSnippets for migration commands
+
+Special Case - Custom Migrations:
+When ormTools includes "custom", this indicates a project with custom migration scripts.
+Look for:
+1. Package.json scripts with migration keywords (db:migrate, migrate, etc.)
+2. Custom migration files like migrate.ts, migrate.js, schema.sql
+3. The command should use the npm script name (e.g., "npm run db:migrate")
 
 Common migration patterns by language and tool:
 
@@ -727,7 +749,9 @@ Common migration patterns by language and tool:
 - Sequelize: `npx sequelize-cli db:migrate` or `npm run db:migrate`
 - Knex: `npx knex migrate:latest` or `npm run knex migrate:latest`
 - Mikro-ORM: `npx mikro-orm migration:up`
+- Drizzle: `npm run db:migrate` or `npx drizzle-kit migrate` (check package.json scripts first)
 - db-migrate: `npx db-migrate up`
+- Custom: If package.json has a migration script (e.g., "db:migrate"), use `npm run <script-name>`
 
 **Python:**
 - Django: `python manage.py migrate` or `./manage.py migrate`
@@ -746,7 +770,10 @@ Common migration patterns by language and tool:
 - Liquibase: `liquibase update`
 
 Rules for determining the command:
-1. Prefer commands that appear in package.json scripts (for Node.js projects)
+1. ALWAYS prefer commands that appear in package.json scripts (for Node.js projects)
+   - If you see "db:migrate" in packageScripts, return "npm run db:migrate"
+   - If you see "migrate" in packageScripts, return "npm run migrate"
+   - This is the HIGHEST priority for Node.js projects
 2. Use production-safe commands (e.g., `prisma migrate deploy` not `prisma db push`)
 3. Include necessary prefixes (npx, bundle exec, python, etc.)
 4. Don't include environment-specific flags (--env=production, etc.)

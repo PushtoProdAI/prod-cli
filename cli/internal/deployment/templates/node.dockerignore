@@ -62,7 +62,6 @@ Thumbs.db
 README.md
 CHANGELOG.md
 docs
-*.md
 
 # CI/CD
 .github

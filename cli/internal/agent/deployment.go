@@ -478,9 +478,9 @@ func (d *HerokuProjectDetector) DetectExistingProject(ctx context.Context, proje
 		if err == nil {
 			for _, addon := range addons {
 				planName := addon.Plan.Name
-				if contains(planName, "heroku-postgresql") {
+				if strings.HasPrefix(planName, "heroku-postgresql") {
 					result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
-				} else if contains(planName, "heroku-redis") {
+				} else if strings.HasPrefix(planName, "heroku-redis") {
 					result.ExistingDatabases = append(result.ExistingDatabases, "redis")
 				}
 			}
@@ -488,10 +488,6 @@ func (d *HerokuProjectDetector) DetectExistingProject(ctx context.Context, proje
 	}
 
 	return result, nil
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && s[:len(substr)] == substr
 }
 
 func (a *Activities) rollbackDeployment(ctx context.Context, spec deployment.DeploymentSpec, platform Platform, targetDeploymentID string) error {
