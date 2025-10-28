@@ -140,180 +140,176 @@ func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 // handleKey processes keyboard events
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	var keyPress tea.KeyPressMsg
-	var isKeyPress bool
-
-	if kp, ok := msg.(tea.KeyPressMsg); ok {
-		keyPress = kp
-		isKeyPress = true
+	// Only process key press events, not key release events
+	if _, ok := msg.(tea.KeyPressMsg); !ok {
+		// Not a key press, ignore it
+		return m, nil
 	}
 
-	if isKeyPress {
-		key := keyPress.Key()
+	key := msg.Key()
 
-		// Handle Ctrl+C
-		if key.Code == 'c' && key.Mod == tea.ModCtrl {
-			// If text is selected, copy to clipboard instead of quitting
-			if m.selection.Active && len(m.selection.Content) > 0 {
-				return m, m.copySelectionToClipboard()
-			}
-			// Otherwise quit as usual
-			m.quitting = true
-			m.saveHistoryOnExit()
-			return m, tea.Quit
+	// Handle Ctrl+C
+	if key.Code == 'c' && key.Mod == tea.ModCtrl {
+		// If text is selected, copy to clipboard instead of quitting
+		if m.selection.Active && len(m.selection.Content) > 0 {
+			return m, m.copySelectionToClipboard()
 		}
+		// Otherwise quit as usual
+		m.quitting = true
+		m.saveHistoryOnExit()
+		return m, tea.Quit
+	}
 
-		// Handle Ctrl+U
-		if key.Code == 'u' && key.Mod == tea.ModCtrl {
-			m.viewport.HalfViewUp()
-			m.autoScrollEnabled = false
-			return m, nil
-		}
+	// Handle Ctrl+U
+	if key.Code == 'u' && key.Mod == tea.ModCtrl {
+		m.viewport.HalfViewUp()
+		m.autoScrollEnabled = false
+		return m, nil
+	}
 
-		// Handle Ctrl+D
-		if key.Code == 'd' && key.Mod == tea.ModCtrl {
-			m.viewport.HalfViewDown()
-			m.autoScrollEnabled = m.viewport.AtBottom()
-			return m, nil
-		}
+	// Handle Ctrl+D
+	if key.Code == 'd' && key.Mod == tea.ModCtrl {
+		m.viewport.HalfViewDown()
+		m.autoScrollEnabled = m.viewport.AtBottom()
+		return m, nil
+	}
 
-		// Handle Ctrl+A
-		if key.Code == 'a' && key.Mod == tea.ModCtrl {
-			// Select all text
-			m.selectAll()
-			return m, nil
-		}
+	// Handle Ctrl+A
+	if key.Code == 'a' && key.Mod == tea.ModCtrl {
+		// Select all text
+		m.selectAll()
+		return m, nil
+	}
 
-		// Handle Ctrl+N (next match in search)
-		if key.Code == 'n' && key.Mod == tea.ModCtrl && m.isMode(ModeSearch) {
-			m.nextMatch()
-			return m, nil
-		}
+	// Handle Ctrl+N (next match in search)
+	if key.Code == 'n' && key.Mod == tea.ModCtrl && m.isMode(ModeSearch) {
+		m.nextMatch()
+		return m, nil
+	}
 
-		// Handle Ctrl+P (previous match in search)
-		if key.Code == 'p' && key.Mod == tea.ModCtrl && m.isMode(ModeSearch) {
-			m.prevMatch()
-			return m, nil
-		}
+	// Handle Ctrl+P (previous match in search)
+	if key.Code == 'p' && key.Mod == tea.ModCtrl && m.isMode(ModeSearch) {
+		m.prevMatch()
+		return m, nil
+	}
 
-		// Handle Shift+Up
-		if key.Code == tea.KeyUp && key.Mod == tea.ModShift {
-			m.viewport.LineUp(1)
-			m.autoScrollEnabled = false
-			return m, nil
-		}
+	// Handle Shift+Up
+	if key.Code == tea.KeyUp && key.Mod == tea.ModShift {
+		m.viewport.LineUp(1)
+		m.autoScrollEnabled = false
+		return m, nil
+	}
 
-		// Handle Shift+Down
-		if key.Code == tea.KeyDown && key.Mod == tea.ModShift {
-			m.viewport.LineDown(1)
-			m.autoScrollEnabled = m.viewport.AtBottom()
-			return m, nil
-		}
+	// Handle Shift+Down
+	if key.Code == tea.KeyDown && key.Mod == tea.ModShift {
+		m.viewport.LineDown(1)
+		m.autoScrollEnabled = m.viewport.AtBottom()
+		return m, nil
+	}
 
-		switch key.Code {
-		case tea.KeyEnter:
-			return m.handleEnterKey()
-		case tea.KeyUp:
-			return m.handleUpKey()
-		case tea.KeyDown:
-			return m.handleDownKey()
-		case tea.KeyPgUp:
-			m.viewport.HalfViewUp()
-			m.autoScrollEnabled = false
-			return m, nil
-		case tea.KeyPgDown:
-			m.viewport.HalfViewDown()
-			m.autoScrollEnabled = m.viewport.AtBottom()
-			return m, nil
-		case tea.KeyHome:
-			m.viewport.GotoTop()
-			m.autoScrollEnabled = false
-			return m, nil
-		case tea.KeyEnd:
-			m.viewport.GotoBottom()
-			m.autoScrollEnabled = true
-			return m, nil
-		case tea.KeyTab:
-			// Handle Tab for slash command autocomplete
-			if m.showSlashCommands && m.isMode(ModeNormal) {
-				filtered := m.getFilteredSlashCommands()
-				if len(filtered) > 0 && m.slashCommandCursor < len(filtered) {
-					m.textInput.SetValue(filtered[m.slashCommandCursor].Command)
-					m.textInput.CursorEnd()
-					m.showSlashCommands = false
-				}
-				return m, nil
-			}
-		case tea.KeyEsc:
-			// Exit search mode on Esc
-			if m.isMode(ModeSearch) {
-				m.setMode(ModeNormal)
-				m.clearSearch()
-				m.textInput.SetValue("")
-				m.textInput.Placeholder = ""
-				return m, nil
-			}
-			// Hide slash commands on Esc
-			if m.showSlashCommands {
+	switch key.Code {
+	case tea.KeyEnter:
+		return m.handleEnterKey()
+	case tea.KeyUp:
+		return m.handleUpKey()
+	case tea.KeyDown:
+		return m.handleDownKey()
+	case tea.KeyPgUp:
+		m.viewport.HalfViewUp()
+		m.autoScrollEnabled = false
+		return m, nil
+	case tea.KeyPgDown:
+		m.viewport.HalfViewDown()
+		m.autoScrollEnabled = m.viewport.AtBottom()
+		return m, nil
+	case tea.KeyHome:
+		m.viewport.GotoTop()
+		m.autoScrollEnabled = false
+		return m, nil
+	case tea.KeyEnd:
+		m.viewport.GotoBottom()
+		m.autoScrollEnabled = true
+		return m, nil
+	case tea.KeyTab:
+		// Handle Tab for slash command autocomplete
+		if m.showSlashCommands && m.isMode(ModeNormal) {
+			filtered := m.getFilteredSlashCommands()
+			if len(filtered) > 0 && m.slashCommandCursor < len(filtered) {
+				m.textInput.SetValue(filtered[m.slashCommandCursor].Command)
+				m.textInput.CursorEnd()
 				m.showSlashCommands = false
-				return m, nil
 			}
-			// Clear selection if active
-			if m.selection.Active {
-				m.clearSelection()
-				return m, nil
-			}
-		default:
-			// Check for number keys to toggle remediations
-			if m.currentError != nil && key.Code >= '1' && key.Code <= '9' {
-				index := int(key.Code - '1')
-				if index < len(m.currentError.Remediations) {
-					m.expandedRemediations[index] = !m.expandedRemediations[index]
-
-					// Remove old error display
-					if m.errorStartLine >= 0 && m.errorEndLine > m.errorStartLine {
-						m.content = append(m.content[:m.errorStartLine], m.content[m.errorEndLine:]...)
-					}
-
-					// Re-render the error display at the same position
-					m.errorStartLine = len(m.content)
-					errorContent := m.formatErrorDisplay(*m.currentError)
-
-					var newLines []string
-					for _, line := range strings.Split(errorContent, "\n") {
-						if line != "" {
-							newLines = append(newLines, line)
-						}
-					}
-
-					m.content = append(m.content, newLines...)
-					m.errorEndLine = len(m.content)
-
-					viewportContent := m.renderViewportContent()
-					m.viewport.SetContent(viewportContent)
-					m.viewport.GotoBottom()
-
-					return m, nil
-				}
-			}
-
-			// Handle special keys based on current mode
-			if !m.isMode(ModeNormal) {
-				return m.handleSpecialModeKeys(msg)
-			}
-
-			// Update text input for normal mode
-			var cmd tea.Cmd
-			m.textInput, cmd = m.textInput.Update(msg)
-
-			// Check if we should show slash commands
-			m.updateSlashCommandVisibility()
-
-			return m, cmd
+			return m, nil
 		}
+	case tea.KeyEsc:
+		// Exit search mode on Esc
+		if m.isMode(ModeSearch) {
+			m.setMode(ModeNormal)
+			m.clearSearch()
+			m.textInput.SetValue("")
+			m.textInput.Placeholder = ""
+			return m, nil
+		}
+		// Hide slash commands on Esc
+		if m.showSlashCommands {
+			m.showSlashCommands = false
+			return m, nil
+		}
+		// Clear selection if active
+		if m.selection.Active {
+			m.clearSelection()
+			return m, nil
+		}
+	default:
+		// Check for number keys to toggle remediations
+		if m.currentError != nil && key.Code >= '1' && key.Code <= '9' {
+			index := int(key.Code - '1')
+			if index < len(m.currentError.Remediations) {
+				m.expandedRemediations[index] = !m.expandedRemediations[index]
+
+				// Remove old error display
+				if m.errorStartLine >= 0 && m.errorEndLine > m.errorStartLine {
+					m.content = append(m.content[:m.errorStartLine], m.content[m.errorEndLine:]...)
+				}
+
+				// Re-render the error display at the same position
+				m.errorStartLine = len(m.content)
+				errorContent := m.formatErrorDisplay(*m.currentError)
+
+				var newLines []string
+				for _, line := range strings.Split(errorContent, "\n") {
+					if line != "" {
+						newLines = append(newLines, line)
+					}
+				}
+
+				m.content = append(m.content, newLines...)
+				m.errorEndLine = len(m.content)
+
+				viewportContent := m.renderViewportContent()
+				m.viewport.SetContent(viewportContent)
+				m.viewport.GotoBottom()
+
+				return m, nil
+			}
+		}
+
+		// Handle special keys based on current mode
+		if !m.isMode(ModeNormal) {
+			return m.handleSpecialModeKeys(msg)
+		}
+
+		// Update text input for normal mode
+		var cmd tea.Cmd
+		m.textInput, cmd = m.textInput.Update(msg)
+
+		// Check if we should show slash commands
+		m.updateSlashCommandVisibility()
+
+		return m, cmd
 	}
 
-	// Handle key events that aren't KeyPressMsg or pass through after handling
+	// Handle special keys based on current mode after switch
 	if !m.isMode(ModeNormal) {
 		return m.handleSpecialModeKeys(msg)
 	}
@@ -392,22 +388,20 @@ func (m Model) handleDownKey() (tea.Model, tea.Cmd) {
 
 // handleSpecialModeKeys processes keys in special modes
 func (m Model) handleSpecialModeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if keyPress, ok := msg.(tea.KeyPressMsg); ok {
-		key := keyPress.Key()
-		switch key.Code {
-		case tea.KeyEsc:
-			// Exit any special mode
-			m.setMode(ModeNormal)
-			m.confirmationPrompt = nil
-			m.authSelectionPrompt = nil
-			m.apiKeyPrompt = nil
-			m.selectPrompt = nil
-			m.textPrompt = nil
-			m.textInput.SetValue("")
-			// Restore normal echo mode
-			m.textInput.EchoMode = textinput.EchoNormal
-			return m, nil
-		}
+	key := msg.Key()
+	switch key.Code {
+	case tea.KeyEsc:
+		// Exit any special mode
+		m.setMode(ModeNormal)
+		m.confirmationPrompt = nil
+		m.authSelectionPrompt = nil
+		m.apiKeyPrompt = nil
+		m.selectPrompt = nil
+		m.textPrompt = nil
+		m.textInput.SetValue("")
+		// Restore normal echo mode
+		m.textInput.EchoMode = textinput.EchoNormal
+		return m, nil
 	}
 
 	// Update text input for non-select modes
