@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/textinput"
@@ -141,19 +140,11 @@ func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 // handleKey processes keyboard events
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// DEBUG: Log message type and key info
-	key := msg.Key()
-	debugMsg := "DEBUG: KeyMsg type=" + fmt.Sprintf("%T", msg) + ", String=" + msg.String() + ", Code=" + fmt.Sprintf("%d", key.Code) + ", Text=" + key.Text
-	m.content = append(m.content, debugMsg)
-
 	// Check if this is a key press event (not a key release)
 	// Only process key press events for our special handling
 	isKeyPress := false
 	if _, ok := msg.(tea.KeyPressMsg); ok {
 		isKeyPress = true
-		m.content = append(m.content, "DEBUG: This is a KeyPressMsg")
-	} else {
-		m.content = append(m.content, "DEBUG: NOT a KeyPressMsg")
 	}
 
 	// Only handle special keys if this is a key press event
