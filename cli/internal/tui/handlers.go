@@ -140,8 +140,15 @@ func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 // handleKey processes keyboard events
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Check if it's a key press event
-	if keyPress, ok := msg.(tea.KeyPressMsg); ok {
+	var keyPress tea.KeyPressMsg
+	var isKeyPress bool
+
+	if kp, ok := msg.(tea.KeyPressMsg); ok {
+		keyPress = kp
+		isKeyPress = true
+	}
+
+	if isKeyPress {
 		key := keyPress.Key()
 
 		// Handle Ctrl+C
@@ -256,40 +263,37 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.clearSelection()
 				return m, nil
 			}
-			// Fall through to default behavior
 		default:
 			// Check for number keys to toggle remediations
-			if keyPress, ok := msg.(tea.KeyPressMsg); ok {
-				if m.currentError != nil && keyPress.Code >= '1' && keyPress.Code <= '9' {
-					index := int(keyPress.Code - '1')
-					if index < len(m.currentError.Remediations) {
-						m.expandedRemediations[index] = !m.expandedRemediations[index]
+			if m.currentError != nil && key.Code >= '1' && key.Code <= '9' {
+				index := int(key.Code - '1')
+				if index < len(m.currentError.Remediations) {
+					m.expandedRemediations[index] = !m.expandedRemediations[index]
 
-						// Remove old error display
-						if m.errorStartLine >= 0 && m.errorEndLine > m.errorStartLine {
-							m.content = append(m.content[:m.errorStartLine], m.content[m.errorEndLine:]...)
-						}
-
-						// Re-render the error display at the same position
-						m.errorStartLine = len(m.content)
-						errorContent := m.formatErrorDisplay(*m.currentError)
-
-						var newLines []string
-						for _, line := range strings.Split(errorContent, "\n") {
-							if line != "" {
-								newLines = append(newLines, line)
-							}
-						}
-
-						m.content = append(m.content, newLines...)
-						m.errorEndLine = len(m.content)
-
-						viewportContent := m.renderViewportContent()
-						m.viewport.SetContent(viewportContent)
-						m.viewport.GotoBottom()
-
-						return m, nil
+					// Remove old error display
+					if m.errorStartLine >= 0 && m.errorEndLine > m.errorStartLine {
+						m.content = append(m.content[:m.errorStartLine], m.content[m.errorEndLine:]...)
 					}
+
+					// Re-render the error display at the same position
+					m.errorStartLine = len(m.content)
+					errorContent := m.formatErrorDisplay(*m.currentError)
+
+					var newLines []string
+					for _, line := range strings.Split(errorContent, "\n") {
+						if line != "" {
+							newLines = append(newLines, line)
+						}
+					}
+
+					m.content = append(m.content, newLines...)
+					m.errorEndLine = len(m.content)
+
+					viewportContent := m.renderViewportContent()
+					m.viewport.SetContent(viewportContent)
+					m.viewport.GotoBottom()
+
+					return m, nil
 				}
 			}
 
@@ -309,7 +313,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Handle other key events (like release)
+	// Handle key events that aren't KeyPressMsg or pass through after handling
 	if !m.isMode(ModeNormal) {
 		return m.handleSpecialModeKeys(msg)
 	}
@@ -403,15 +407,16 @@ func (m Model) handleSpecialModeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Restore normal echo mode
 			m.textInput.EchoMode = textinput.EchoNormal
 			return m, nil
-		default:
-			// Update text input for non-select modes
-			if !m.isMode(ModeSelect) {
-				var cmd tea.Cmd
-				m.textInput, cmd = m.textInput.Update(msg)
-				return m, cmd
-			}
 		}
 	}
+
+	// Update text input for non-select modes
+	if !m.isMode(ModeSelect) {
+		var cmd tea.Cmd
+		m.textInput, cmd = m.textInput.Update(msg)
+		return m, cmd
+	}
+
 	return m, nil
 }
 
