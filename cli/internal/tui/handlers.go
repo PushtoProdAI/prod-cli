@@ -301,6 +301,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Always pass the message to special mode handler or text input
 	// This ensures the textinput gets all key events it needs
+
+	// WORKAROUND for Windows: If Text is empty but Code is a printable character,
+	// create a new KeyPressMsg with Text populated from Code
+	if isKeyPress {
+		key := msg.Key()
+		if key.Text == "" && key.Code >= 32 && key.Code <= 126 && key.Mod == 0 {
+			// Create a new Key with Text populated
+			newKey := tea.Key{
+				Text:        string(key.Code),
+				Mod:         key.Mod,
+				Code:        key.Code,
+				ShiftedCode: key.ShiftedCode,
+				BaseCode:    key.BaseCode,
+				IsRepeat:    key.IsRepeat,
+			}
+			msg = tea.KeyPressMsg(newKey)
+		}
+	}
+
 	if !m.isMode(ModeNormal) {
 		return m.handleSpecialModeKeys(msg)
 	}
