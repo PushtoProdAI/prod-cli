@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/textinput"
@@ -300,17 +299,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Always pass the message to special mode handler or text input
-	// This ensures the textinput gets all key events it needs
-
-	// WORKAROUND for Windows: If Text is empty but Code is a printable character,
-	// create a new KeyPressMsg with Text populated from Code
+	// WORKAROUND for Windows: bubbletea v2.0.0-beta.4 has a bug where Key.Text is empty
+	// on Windows even for printable characters. The textinput component requires Text to be
+	// populated, so we manually set it from Code when it's empty and Code is printable.
 	if isKeyPress {
 		key := msg.Key()
-		debugMsg := "DEBUG: Checking workaround - Text='" + key.Text + "', Code=" + string(rune(key.Code)) + fmt.Sprintf(", CodeInt=%d, Mod=%d", key.Code, key.Mod)
-		m.content = append(m.content, debugMsg)
 		if key.Text == "" && key.Code >= 32 && key.Code <= 126 {
-			// Create a new Key with Text populated
+			// Create a new Key with Text populated from Code
 			newKey := tea.Key{
 				Text:        string(key.Code),
 				Mod:         key.Mod,
@@ -320,16 +315,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				IsRepeat:    key.IsRepeat,
 			}
 			msg = tea.KeyPressMsg(newKey)
-			m.content = append(m.content, "DEBUG: Created new KeyPressMsg with Text="+string(key.Code))
-		} else {
-			m.content = append(m.content, fmt.Sprintf("DEBUG: Condition failed - TextEmpty=%v, CodeRange=%v", key.Text == "", key.Code >= 32 && key.Code <= 126))
 		}
 	}
 
-	// DEBUG: Log what we're about to pass to textinput
-	key := msg.Key()
-	m.content = append(m.content, "DEBUG: Before textinput - Text='"+key.Text+"', Code="+string(rune(key.Code))+", Value='"+m.textInput.Value()+"'")
-
+	// Handle special keys based on current mode
 	if !m.isMode(ModeNormal) {
 		return m.handleSpecialModeKeys(msg)
 	}
@@ -337,9 +326,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Update text input for normal mode
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(msg)
-
-	// DEBUG: Log after textinput update
-	m.content = append(m.content, "DEBUG: After textinput - Value='"+m.textInput.Value()+"'")
 
 	// Check if we should show slash commands
 	m.updateSlashCommandVisibility()
