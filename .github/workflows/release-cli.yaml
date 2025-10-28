@@ -358,6 +358,7 @@ jobs:
     name: Build Windows (Staging)
     runs-on: windows-latest
     environment: staging
+    needs: test
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
 
     steps:
@@ -631,6 +632,7 @@ jobs:
     name: Build Windows (Production)
     runs-on: windows-latest
     environment: prod
+    needs: test
     if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
 
     steps:
