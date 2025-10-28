@@ -489,17 +489,6 @@ func (a *Activities) determineMigrationCommand(ctx context.Context, spec analyze
 	return cmd.Command, nil
 }
 
-// maskToken masks sensitive tokens for logging
-func maskToken(token string) string {
-	if token == "" {
-		return "(empty)"
-	}
-	if len(token) < 8 {
-		return "***"
-	}
-	return token[:4] + "***" + token[len(token)-4:]
-}
-
 func (a *Activities) detectPlatformsForRollback(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
 	platforms := []Platform{Render, FlyIO, Netlify, Vercel, Heroku}
 
@@ -591,12 +580,4 @@ func (a *Activities) detectPlatformsForRollback(ctx context.Context, projectName
 	}
 
 	return primaryResult, nil
-}
-
-// min returns the smaller of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
