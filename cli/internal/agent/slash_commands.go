@@ -51,12 +51,12 @@ func (a *Agent) handleClearCommand(ctx context.Context, out io.Writer) (stateFn,
 	if ok {
 		tuiWriter.ClearScreen()
 	}
-	return a.plan, nil
+	return a.checkPrerequisites, nil
 }
 
 func (a *Agent) handleLogoutCommand(ctx context.Context, out io.Writer) (stateFn, error) {
 	a.internalAuth.Logout(ctx)
-	return a.plan, nil
+	return a.checkPrerequisites, nil
 }
 
 func (a *Agent) handleQuitCommand(ctx context.Context, out io.Writer) (stateFn, error) {
@@ -72,7 +72,7 @@ func (a *Agent) handleSearchCommand(ctx context.Context, out io.Writer) (stateFn
 	if ok {
 		tuiWriter.Search()
 	}
-	return a.plan, nil
+	return a.checkPrerequisites, nil
 }
 
 func (a *Agent) handleLoginCommand(ctx context.Context, out io.Writer) (stateFn, error) {
