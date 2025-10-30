@@ -76,34 +76,76 @@ Deno.serve(async (req) => {
     const serviceType = url.searchParams.get('service_type')
     const serviceProvider = url.searchParams.get('service_provider')
 
-
     try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken)
+      if (authError || !user) {
+        console.error('Authentication error:', authError)
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
 
-      const { data, error } = await supabase.rpc('get_stack_usage_stats', {
+      console.log("Checking if is admin user")
+      const { data: isAdmin, error: adminError } = await supabase.rpc('is_admin_user', {
+        p_user_id: user.id
+      })
+
+      if (adminError || !isAdmin) {
+        console.error('Admin check failed:', adminError)
+        return new Response(
+          JSON.stringify({ error: 'Forbidden: Admin access required' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const { data: serviceStats, error: serviceError } = await supabase.rpc('get_stack_usage_stats', {
         p_platform: platform?.toLowerCase() || null,
         p_language: language?.toLowerCase() || null,
         p_service_type: serviceType?.toLowerCase() || null,
         p_service_provider: serviceProvider?.toLowerCase() || null
       })
 
-      if (error) {
-        console.error('Error retrieving usage stats:', error)
-        captureException(new Error(String(error)), {
+      if (serviceError) {
+        console.error('Error retrieving service usage stats:', serviceError)
+        captureException(new Error(String(serviceError)), {
           function: 'record-stack',
-          operation: 'get_usage_stats',
+          operation: 'get_service_usage_stats',
           platform,
           language,
           service_type: serviceType,
           service_provider: serviceProvider
         });
         return new Response(
-          JSON.stringify({ error: 'Failed to retrieve usage stats' }),
+          JSON.stringify({ error: 'Failed to retrieve service usage stats' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const { data: platformLanguageStats, error: platformLanguageError } = await supabase.rpc('get_platform_language_stats', {
+        p_platform: platform?.toLowerCase() || null,
+        p_language: language?.toLowerCase() || null
+      })
+
+      if (platformLanguageError) {
+        console.error('Error retrieving platform+language stats:', platformLanguageError)
+        captureException(new Error(String(platformLanguageError)), {
+          function: 'record-stack',
+          operation: 'get_platform_language_stats',
+          platform,
+          language
+        });
+        return new Response(
+          JSON.stringify({ error: 'Failed to retrieve platform+language stats' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
       return new Response(
-        JSON.stringify({ data }),
+        JSON.stringify({ 
+          serviceStats,
+          platformLanguageStats
+        }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     } catch (error) {
@@ -155,6 +197,26 @@ Deno.serve(async (req) => {
     : [{ type: 'none', provider: 'none' }] // Default service for basic usage of just a web app
 
   console.log('Processing services:', servicesToProcess.map(s => ({ type: s.type, provider: s.provider })))
+
+  const { error: platformLangError } = await updatePlatformLanguageStats(
+    supabase,
+    usageData.platform,
+    usageData.language
+  )
+
+  if (platformLangError) {
+    console.error('Error updating platform+language stats:', platformLangError)
+    captureException(new Error(String(platformLangError) || 'Unknown database error'), {
+      function: 'record-stack',
+      operation: 'update_platform_language_stats',
+      platform: usageData.platform,
+      language: usageData.language
+    });
+    return new Response(
+      JSON.stringify({ error: 'Failed to update platform+language stats' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+  }
 
   for (const service of servicesToProcess) {
     console.log('Updating usage stats for service:', { 
@@ -221,6 +283,20 @@ Deno.serve(async (req) => {
     );
   }
 })
+
+async function updatePlatformLanguageStats(
+  supabase: ReturnType<typeof createClient>,
+  platform: string,
+  language: string
+): Promise<{ error: unknown | null }> {
+  
+  const { error } = await supabase.rpc('increment_platform_language_usage', {
+    p_platform: platform.toLowerCase(),
+    p_language: language.toLowerCase()
+  })
+  
+  return { error }
+}
 
 async function updateUsageStats(
   supabase: ReturnType<typeof createClient>,
