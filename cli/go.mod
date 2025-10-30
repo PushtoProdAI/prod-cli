@@ -7,11 +7,11 @@ replace github.com/cschleiden/go-workflows => github.com/lyuboxa/go-workflows v0
 require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.4.0
 	github.com/atotto/clipboard v0.1.4
-	github.com/boundaryml/baml v0.201.0
+	github.com/boundaryml/baml v0.212.0
 	github.com/charmbracelet/bubbles/v2 v2.0.0-beta.1
 	github.com/charmbracelet/bubbletea/v2 v2.0.0-beta.4
 	github.com/charmbracelet/lipgloss/v2 v2.0.0-beta1
-	github.com/charmbracelet/x/ansi v0.9.3
+	github.com/charmbracelet/x/ansi v0.10.2
 	github.com/conduitio/ecdysis v0.4.2
 	github.com/cschleiden/go-workflows v0.0.0-00010101000000-000000000000
 	github.com/docker/docker v28.3.3+incompatible
@@ -40,11 +40,13 @@ require (
 	github.com/brianvoe/gofakeit/v6 v6.28.0 // indirect
 	github.com/cenkalti/backoff v2.1.1+incompatible // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
-	github.com/charmbracelet/colorprofile v0.3.1 // indirect
+	github.com/charmbracelet/colorprofile v0.3.2 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20251017140847-d4ace4d6e731 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.14-0.20250505150409-97991a1f17d1 // indirect
 	github.com/charmbracelet/x/input v0.3.7 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
-	github.com/charmbracelet/x/windows v0.2.1 // indirect
+	github.com/charmbracelet/x/termios v0.1.1 // indirect
+	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/cheggaaa/pb/v3 v3.1.5 // indirect
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
@@ -71,10 +73,10 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jellydator/ttlcache/v3 v3.0.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
-	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
+	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/mattn/go-runewidth v0.0.16 // indirect
+	github.com/mattn/go-runewidth v0.0.17 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/moby/term v0.5.2 // indirect
@@ -112,8 +114,8 @@ require (
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/mod v0.26.0 // indirect
-	golang.org/x/sync v0.16.0 // indirect
-	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/text v0.28.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
 	golang.org/x/tools v0.35.0 // indirect
