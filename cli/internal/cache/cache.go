@@ -98,12 +98,17 @@ func FetchURLAsMarkdown(url string) (string, error) {
 
 // FetchURLAsMarkdownWithOptions fetches a URL and converts it to markdown with optional HTML cleaning
 func FetchURLAsMarkdownWithOptions(url string, cleanHTML bool) (string, error) {
+	return FetchURLAsMarkdownWithFilter(url, cleanHTML, nil)
+}
+
+// FetchURLAsMarkdownWithFilter fetches a URL and converts it to markdown with optional HTML cleaning and custom filter
+func FetchURLAsMarkdownWithFilter(url string, cleanHTML bool, shouldKeepElement func(*html.Node) bool) (string, error) {
 	return fetchURL(url, "md", func(content string) (string, error) {
 		processedContent := content
 
 		// Clean HTML to remove hidden elements if requested
 		if cleanHTML {
-			cleanedHTML, err := CleanVisibleHTML(content)
+			cleanedHTML, err := CleanVisibleHTMLWithFilter(content, shouldKeepElement)
 			if err != nil {
 				// If cleaning fails, proceed with original content
 				processedContent = content
@@ -145,6 +150,11 @@ func fetchURLDirect(url string, processor func(string) (string, error)) (string,
 
 // CleanVisibleHTML removes hidden or deprecated elements from HTML before markdown conversion.
 func CleanVisibleHTML(input string) (string, error) {
+	return CleanVisibleHTMLWithFilter(input, nil)
+}
+
+// CleanVisibleHTMLWithFilter removes hidden elements from HTML with optional custom filter function
+func CleanVisibleHTMLWithFilter(input string, shouldKeepElement func(*html.Node) bool) (string, error) {
 	// Parse the HTML
 	doc, err := html.Parse(strings.NewReader(input))
 	if err != nil {
@@ -152,7 +162,7 @@ func CleanVisibleHTML(input string) (string, error) {
 	}
 
 	// Remove hidden elements
-	removeHiddenElements(doc)
+	removeHiddenElementsWithFilter(doc, shouldKeepElement)
 
 	// Render back to string
 	var buf bytes.Buffer
@@ -165,6 +175,11 @@ func CleanVisibleHTML(input string) (string, error) {
 
 // removeHiddenElements recursively removes hidden elements from the HTML tree
 func removeHiddenElements(n *html.Node) {
+	removeHiddenElementsWithFilter(n, nil)
+}
+
+// removeHiddenElementsWithFilter recursively removes hidden elements with optional custom filter
+func removeHiddenElementsWithFilter(n *html.Node, shouldKeepElement func(*html.Node) bool) {
 	// Process children first (reverse order to avoid issues with removal)
 	var children []*html.Node
 	for child := n.FirstChild; child != nil; child = child.NextSibling {
@@ -172,11 +187,11 @@ func removeHiddenElements(n *html.Node) {
 	}
 
 	for _, child := range children {
-		removeHiddenElements(child)
+		removeHiddenElementsWithFilter(child, shouldKeepElement)
 	}
 
 	// Check if current node should be removed
-	if n.Type == html.ElementNode && shouldRemoveElement(n) {
+	if n.Type == html.ElementNode && shouldRemoveElement(n, shouldKeepElement) {
 		if n.Parent != nil {
 			n.Parent.RemoveChild(n)
 		}
@@ -184,7 +199,12 @@ func removeHiddenElements(n *html.Node) {
 }
 
 // shouldRemoveElement checks if an element should be removed based on hiding attributes
-func shouldRemoveElement(n *html.Node) bool {
+func shouldRemoveElement(n *html.Node, shouldKeepElement func(*html.Node) bool) bool {
+	// If a custom filter is provided, use it first
+	if shouldKeepElement != nil && shouldKeepElement(n) {
+		return false
+	}
+
 	for _, attr := range n.Attr {
 		switch strings.ToLower(attr.Key) {
 		case "style":
