@@ -42,7 +42,7 @@ func (a *Activities) createDeployable(spec *deployment.DeploymentSpec, platform 
 		}
 		return deployable, nil
 	case Heroku:
-		herokuAdapter := heroku.NewDefaultHerokuDeploymentAdapter(a.uiWriter)
+		herokuAdapter := heroku.NewDefaultHerokuDeploymentAdapter(a.uiWriter, a.llmClient)
 		deployable, err := herokuAdapter.GenerateArtifacts(spec, deployment.StrategyHeroku)
 		if err != nil {
 			return nil, errors.Errorf("failed to create Heroku deployment: %w", err)
@@ -141,6 +141,15 @@ func (a *Activities) estimateNetlifyCosts(ctx context.Context, spec deployment.D
 func (a *Activities) estimateVercelCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
 	va := vercel.NewVercelDeploymentAdapter(vercel.NewCLIVercelClient(), a.uiWriter, a.llmClient)
 	costs, err := va.EstimateCost(ctx, &spec, strategy)
+	if err != nil {
+		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
+	}
+	return costs, nil
+}
+
+func (a *Activities) estimateHerokuCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+	ha := heroku.NewDefaultHerokuDeploymentAdapter(a.uiWriter, a.llmClient)
+	costs, err := ha.EstimateCost(ctx, &spec, strategy)
 	if err != nil {
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
