@@ -75,7 +75,7 @@ func NewAgent(wfClient *client.Client, internalAuth *auth.SupabaseAuth, errorTra
 		internalAuth:         internalAuth,
 		errorTrackingEnabled: errorTrackingEnabled,
 	}
-	sm := deploySM{currentState: a.plan}
+	sm := deploySM{currentState: a.checkPrerequisites}
 	a.sm = sm
 	return a
 }
@@ -205,10 +205,41 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 		output = a.UIOutput
 	}
 
+	// Handle slash commands - they bypass the state machine
+	if strings.HasPrefix(strings.TrimSpace(input), "/") {
+		nextState, err := a.handleSlashCommand(ctx, input, output)
+		if err != nil {
+			slog.Error("Error handling slash command", "error", err)
+			return
+		}
+		// Update the state machine's current state if the command returns one
+		if nextState != nil {
+			a.sm.currentState = nextState
+		}
+		return
+	}
+
+	// Enrich context with session if authenticated
+	contextWithSession := ctx
+	if a.internalAuth.IsAuthenticated() {
+		session, err := a.internalAuth.GetSession()
+		if err != nil {
+			slog.Error("Failed to get session", "error", err)
+		} else {
+			contextWithSession = WithCtxSession(ctx, session)
+		}
+	}
+
+	// Delegate everything else to the state machine
+	a.sm.next(contextWithSession, input, output)
+}
+
+func (a *Agent) checkPrerequisites(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	slog.Info("checkPrerequisites called", "isAuthenticated", a.internalAuth.IsAuthenticated())
+
 	// If we're in consent flow, continue with that
 	if a.inConsentFlow {
-		a.sm.next(ctx, input, output)
-		return
+		return nil, nil // The consent states will handle the flow
 	}
 
 	// Check for error tracking consent first
@@ -224,9 +255,7 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 					// First run - need to prompt for consent using state machine
 					a.inConsentFlow = true
 					a.originalInput = input // Store original input to use after consent
-					a.sm.currentState = a.promptForConsent
-					a.sm.next(ctx, input, output)
-					return
+					return a.promptForConsent(ctx, input, out)
 				}
 			}
 		} else {
@@ -234,36 +263,21 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 		}
 	}
 
-	// Handle slash commands before auth check - they bypass the state machine
-	if strings.HasPrefix(strings.TrimSpace(input), "/") {
-		nextState, err := a.handleSlashCommand(ctx, input, output)
-		if err != nil {
-			slog.Error("Error handling slash command", "error", err)
-			return
-		}
-		// Update the state machine's current state if the command returns one
-		if nextState != nil {
-			a.sm.currentState = nextState
-		}
-		return
+	// Always check authentication when checkPrerequisites is called
+	// This ensures auth is validated on every new user input
+	if !a.ensureAuthenticated(ctx, out) {
+		return a.checkPrerequisites, nil
 	}
 
-	// handle auth before processing the input
-	if !a.internalAuth.IsAuthenticated() {
-		fmt.Fprint(output, "🔐 Before we proceed, let's get you logged in!\n")
-		authenticated := a.authenticateCLI(ctx)
-		if !authenticated {
-			fmt.Fprint(output, "❌ Authentication failed. Please try again.\n")
-			// don't proceed to the next state if auth failed
-			return
-		}
-	}
+	// Get session and enrich context after successful authentication
 	session, err := a.internalAuth.GetSession()
 	if err != nil {
 		slog.Error("Failed to get session", "error", err)
 	}
+	ctxWithSession := WithCtxSession(ctx, session)
 
-	a.sm.next(WithCtxSession(ctx, session), input, output)
+	// Both consent and auth are complete, proceed to plan
+	return a.plan(ctxWithSession, input, out)
 }
 
 func (a *Agent) promptForConsent(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -310,21 +324,22 @@ func (a *Agent) processConsentResponse(ctx context.Context, input string, out io
 	// Clear consent flow flag
 	a.inConsentFlow = false
 
-	// Continue with the original input that triggered the consent flow
+	// Continue with the original input through checkPrerequisites
+	// This will handle authentication and then proceed to plan
 	if a.originalInput != "" {
 		originalInput := a.originalInput
 		a.originalInput = "" // Clear it
-		return a.plan(ctx, originalInput, out)
+		return a.checkPrerequisites(ctx, originalInput, out)
 	}
 
-	// Return to plan state - this will handle authentication and continue normally
-	return a.plan, nil
+	// No original input, go back to checkPrerequisites which will proceed to plan
+	return a.checkPrerequisites, nil
 }
 
 func (a *Agent) handleSlashCommand(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	parts := strings.Fields(input)
 	if len(parts) == 0 {
-		return a.plan, nil
+		return a.checkPrerequisites, nil
 	}
 
 	commandName := parts[0]
@@ -338,7 +353,7 @@ func (a *Agent) handleSlashCommand(ctx context.Context, input string, out io.Wri
 
 	// Command not found
 	fmt.Fprintf(out, "Unknown command: %s\n", commandName)
-	return a.plan, nil
+	return a.checkPrerequisites, nil
 }
 
 func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -372,7 +387,7 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 
 	if !shouldProceed(plan) {
 		fmt.Fprintf(out, "Cannot proceed with deployment plan\n")
-		return a.plan, nil
+		return a.checkPrerequisites, nil
 	}
 	a.DeployPlan = &plan
 
@@ -434,7 +449,7 @@ func (a *Agent) processConfirmationResponse(ctx context.Context, input string, o
 		} else {
 			fmt.Fprintf(out, "Deployment cancelled\n")
 		}
-		return a.plan, nil
+		return a.checkPrerequisites, nil
 	}
 
 	// Invalid response - ask again
@@ -466,7 +481,7 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 			"platform":     a.DeployPlan.Platform,
 			"project_name": a.DeployPlan.Spec.Name,
 		})
-		return a.plan, nil
+		return a.checkPrerequisites, nil
 	}
 
 	result, err := client.GetWorkflowResult[ExistingProjectInfo](ctx, a.wfClient, wf, 2*time.Minute)
@@ -479,7 +494,7 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 			"platform":     a.DeployPlan.Platform,
 			"project_name": a.DeployPlan.Spec.Name,
 		})
-		return a.plan, nil
+		return a.checkPrerequisites, nil
 	}
 
 	a.DeployPlan.ExistingProjectInfo = result
@@ -691,7 +706,7 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 				"project_type": "javascript",
 			})
 			fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
-			return a.plan, nil
+			return a.checkPrerequisites, nil
 		}
 
 		result, err := client.GetWorkflowResult[SetupJavaScriptProjectResult](ctx, a.wfClient, wf, 2*time.Minute)
@@ -822,7 +837,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 			"language":     DeployPlanWithEnvVars.Spec.Language,
 		})
 		fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
-		return a.plan, nil
+		return a.checkPrerequisites, nil
 	}
 
 	// give a generous timeout for the deployment to complete
@@ -842,7 +857,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 		})
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
 		fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
-		return a.plan, nil
+		return a.checkPrerequisites, nil
 	}
 
 	if result.Error.Summary != "" {
@@ -877,7 +892,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 		if !a.interactive {
 			return nil, nil
 		}
-		return a.plan, nil
+		return a.checkPrerequisites, nil
 	}
 
 	if tuiWriter, ok := out.(TUIWriter); ok {
@@ -898,7 +913,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 		return nil, nil
 	}
 	// In interactive mode, return to input processing state for more commands
-	return a.plan, nil
+	return a.checkPrerequisites, nil
 }
 
 func (a *Agent) selectPlatform(_ context.Context, _ string, out io.Writer) (stateFn, error) {
@@ -954,7 +969,7 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 			"project_name": a.DeployPlan.Spec.Name,
 		})
 		fmt.Fprint(out, "Sorry, couldn't execute the rollback\n")
-		return a.plan, nil
+		return a.checkPrerequisites, nil
 	}
 
 	result, err := client.GetWorkflowResult[deployResult](ctx, a.wfClient, wf, 10*time.Minute)
@@ -971,7 +986,7 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 		})
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
 		fmt.Fprint(out, "Sorry, we had trouble rolling back your deployment\n")
-		return a.plan, nil
+		return a.checkPrerequisites, nil
 	}
 
 	if result.Error.Summary != "" {
@@ -984,7 +999,7 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 		if !a.interactive {
 			return nil, nil
 		}
-		return a.plan, nil
+		return a.checkPrerequisites, nil
 	}
 
 	// Success
@@ -1004,7 +1019,7 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 	if !a.interactive {
 		return nil, nil
 	}
-	return a.plan, nil
+	return a.checkPrerequisites, nil
 }
 
 func (a *Agent) dryRunDeploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -1150,7 +1165,7 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 	authenticated, err := authProvider.CheckAuthentication(ctx)
 	if err != nil {
 		fmt.Fprintf(out, "Error checking authentication: %v\n", err)
-		return a.plan, err
+		return a.checkPrerequisites, err
 	}
 
 	if !authenticated {
@@ -1302,7 +1317,7 @@ func (a *Agent) checkRenderAuthenticationForDryRun(ctx context.Context, input st
 	authenticated, err := renderAuth.CheckAuthentication(ctx)
 	if err != nil {
 		fmt.Fprintf(out, "Error checking authentication: %v\n", err)
-		return a.plan, err
+		return a.checkPrerequisites, err
 	}
 
 	if !authenticated {
@@ -1442,7 +1457,7 @@ func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) 
 			"language":     a.DeployPlan.Spec.Language,
 		})
 		fmt.Fprint(out, "Sorry, couldn't create a dry-run deployment plan \n")
-		return a.plan, nil
+		return a.checkPrerequisites, nil
 	}
 
 	// get the dry-run result with a longer timeout to accommodate LLM operations
@@ -1458,7 +1473,7 @@ func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) 
 		})
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
 		fmt.Fprint(out, "Sorry that we had trouble creating the dry-run preview \n")
-		return a.plan, nil
+		return a.checkPrerequisites, nil
 	}
 
 	// Display the dry-run preview
@@ -1469,7 +1484,19 @@ func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) 
 		return nil, nil
 	}
 	// In interactive mode, return to input processing state for more commands
-	return a.plan, nil
+	return a.checkPrerequisites, nil
+}
+
+func (a *Agent) ensureAuthenticated(ctx context.Context, out io.Writer) bool {
+	if !a.internalAuth.IsAuthenticated() {
+		fmt.Fprint(out, "🔐 Before we proceed, let's get you logged in!\n")
+		authenticated := a.authenticateCLI(ctx)
+		if !authenticated {
+			fmt.Fprint(out, "❌ Authentication failed. Please try again.\n")
+			return false
+		}
+	}
+	return true
 }
 
 func (a *Agent) authenticateCLI(ctx context.Context) bool {

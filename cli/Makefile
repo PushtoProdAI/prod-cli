@@ -91,6 +91,20 @@ build-cli-darwin-arm64:
 	@mkdir -p $(BUILD_DIR)
 	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-darwin-arm64 $(CMD_PATH)
 
+.PHONY: build-cli-windows
+build-cli-windows:
+	@echo "Building for Windows AMD64..."
+	@mkdir -p $(BUILD_DIR)
+	@echo "Note: This must be built natively on Windows"
+	@if [ "$(shell go env GOOS)" != "windows" ]; then \
+		echo "Error: Windows builds must be built natively on Windows"; \
+		exit 1; \
+	fi
+	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-windows-amd64.exe $(CMD_PATH)
+
+.PHONY: build-windows-all
+build-windows-all: build-cli-windows
+
 .PHONY: clean
 clean:
 	@echo "Cleaning build artifacts..."

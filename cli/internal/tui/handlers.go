@@ -140,9 +140,16 @@ func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 // handleKey processes keyboard events
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Check if it's a key press event
-	if keyPress, ok := msg.(tea.KeyPressMsg); ok {
-		key := keyPress.Key()
+	// Check if this is a key press event (not a key release)
+	// Only process key press events for our special handling
+	isKeyPress := false
+	if _, ok := msg.(tea.KeyPressMsg); ok {
+		isKeyPress = true
+	}
+
+	// Only handle special keys if this is a key press event
+	if isKeyPress {
+		key := msg.Key()
 
 		// Handle Ctrl+C
 		if key.Code == 'c' && key.Mod == tea.ModCtrl {
@@ -256,60 +263,62 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.clearSelection()
 				return m, nil
 			}
-			// Fall through to default behavior
 		default:
 			// Check for number keys to toggle remediations
-			if keyPress, ok := msg.(tea.KeyPressMsg); ok {
-				if m.currentError != nil && keyPress.Code >= '1' && keyPress.Code <= '9' {
-					index := int(keyPress.Code - '1')
-					if index < len(m.currentError.Remediations) {
-						m.expandedRemediations[index] = !m.expandedRemediations[index]
+			if m.currentError != nil && key.Code >= '1' && key.Code <= '9' {
+				index := int(key.Code - '1')
+				if index < len(m.currentError.Remediations) {
+					m.expandedRemediations[index] = !m.expandedRemediations[index]
 
-						// Remove old error display
-						if m.errorStartLine >= 0 && m.errorEndLine > m.errorStartLine {
-							m.content = append(m.content[:m.errorStartLine], m.content[m.errorEndLine:]...)
-						}
-
-						// Re-render the error display at the same position
-						m.errorStartLine = len(m.content)
-						errorContent := m.formatErrorDisplay(*m.currentError)
-
-						var newLines []string
-						for _, line := range strings.Split(errorContent, "\n") {
-							if line != "" {
-								newLines = append(newLines, line)
-							}
-						}
-
-						m.content = append(m.content, newLines...)
-						m.errorEndLine = len(m.content)
-
-						viewportContent := m.renderViewportContent()
-						m.viewport.SetContent(viewportContent)
-						m.viewport.GotoBottom()
-
-						return m, nil
+					// Remove old error display
+					if m.errorStartLine >= 0 && m.errorEndLine > m.errorStartLine {
+						m.content = append(m.content[:m.errorStartLine], m.content[m.errorEndLine:]...)
 					}
+
+					// Re-render the error display at the same position
+					m.errorStartLine = len(m.content)
+					errorContent := m.formatErrorDisplay(*m.currentError)
+
+					var newLines []string
+					for _, line := range strings.Split(errorContent, "\n") {
+						if line != "" {
+							newLines = append(newLines, line)
+						}
+					}
+
+					m.content = append(m.content, newLines...)
+					m.errorEndLine = len(m.content)
+
+					viewportContent := m.renderViewportContent()
+					m.viewport.SetContent(viewportContent)
+					m.viewport.GotoBottom()
+
+					return m, nil
 				}
 			}
-
-			// Handle special keys based on current mode
-			if !m.isMode(ModeNormal) {
-				return m.handleSpecialModeKeys(msg)
-			}
-
-			// Update text input for normal mode
-			var cmd tea.Cmd
-			m.textInput, cmd = m.textInput.Update(msg)
-
-			// Check if we should show slash commands
-			m.updateSlashCommandVisibility()
-
-			return m, cmd
 		}
 	}
 
-	// Handle other key events (like release)
+	// WORKAROUND for Windows: bubbletea v2.0.0-beta.4 has a bug where Key.Text is empty
+	// on Windows even for printable characters. The textinput component requires Text to be
+	// populated, so we manually set it from Code when it's empty and Code is printable.
+	if isKeyPress {
+		key := msg.Key()
+		if key.Text == "" && key.Code >= 32 && key.Code <= 126 {
+			// Create a new Key with Text populated from Code
+			newKey := tea.Key{
+				Text:        string(key.Code),
+				Mod:         key.Mod,
+				Code:        key.Code,
+				ShiftedCode: key.ShiftedCode,
+				BaseCode:    key.BaseCode,
+				IsRepeat:    key.IsRepeat,
+			}
+			msg = tea.KeyPressMsg(newKey)
+		}
+	}
+
+	// Handle special keys based on current mode
 	if !m.isMode(ModeNormal) {
 		return m.handleSpecialModeKeys(msg)
 	}
@@ -388,30 +397,29 @@ func (m Model) handleDownKey() (tea.Model, tea.Cmd) {
 
 // handleSpecialModeKeys processes keys in special modes
 func (m Model) handleSpecialModeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if keyPress, ok := msg.(tea.KeyPressMsg); ok {
-		key := keyPress.Key()
-		switch key.Code {
-		case tea.KeyEsc:
-			// Exit any special mode
-			m.setMode(ModeNormal)
-			m.confirmationPrompt = nil
-			m.authSelectionPrompt = nil
-			m.apiKeyPrompt = nil
-			m.selectPrompt = nil
-			m.textPrompt = nil
-			m.textInput.SetValue("")
-			// Restore normal echo mode
-			m.textInput.EchoMode = textinput.EchoNormal
-			return m, nil
-		default:
-			// Update text input for non-select modes
-			if !m.isMode(ModeSelect) {
-				var cmd tea.Cmd
-				m.textInput, cmd = m.textInput.Update(msg)
-				return m, cmd
-			}
-		}
+	key := msg.Key()
+	switch key.Code {
+	case tea.KeyEsc:
+		// Exit any special mode
+		m.setMode(ModeNormal)
+		m.confirmationPrompt = nil
+		m.authSelectionPrompt = nil
+		m.apiKeyPrompt = nil
+		m.selectPrompt = nil
+		m.textPrompt = nil
+		m.textInput.SetValue("")
+		// Restore normal echo mode
+		m.textInput.EchoMode = textinput.EchoNormal
+		return m, nil
 	}
+
+	// Update text input for non-select modes
+	if !m.isMode(ModeSelect) {
+		var cmd tea.Cmd
+		m.textInput, cmd = m.textInput.Update(msg)
+		return m, cmd
+	}
+
 	return m, nil
 }
 
