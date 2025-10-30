@@ -223,6 +223,8 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateNetlifyCosts, *deploymentSpec, deployment.StrategyNetlify).Get(ctx)
 			case Vercel:
 				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateVercelCosts, *deploymentSpec, deployment.StrategyVercel).Get(ctx)
+			case Heroku:
+				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateHerokuCosts, *deploymentSpec, deployment.StrategyHeroku).Get(ctx)
 			}
 
 			if err != nil {
@@ -237,6 +239,8 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 					activity = AgentEstimateNetlifyCosts
 				case Vercel:
 					activity = AgentEstimateVercelCosts
+				case Heroku:
+					activity = AgentEstimateHerokuCosts
 				}
 				prod_error.CaptureErrorWithContext(err, map[string]any{
 					"workflow":     PlanDeployWorkflowName,

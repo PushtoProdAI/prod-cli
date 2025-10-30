@@ -1,6 +1,7 @@
 package heroku
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"strings"
@@ -8,29 +9,33 @@ import (
 	"github.com/go-errors/errors"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/pricing"
+	"github.com/meroxa/prod/cli/internal/llm"
 	"github.com/meroxa/prod/cli/internal/output"
 )
 
 // HerokuDeploymentAdapter implements the DeploymentAdapter interface for Heroku
 type HerokuDeploymentAdapter struct {
-	client *HerokuClient
-	writer io.Writer
+	client    *HerokuClient
+	writer    io.Writer
+	llmClient llm.Client
 }
 
 // NewHerokuDeploymentAdapter creates a new Heroku deployment adapter
-func NewHerokuDeploymentAdapter(client *HerokuClient, writer io.Writer) *HerokuDeploymentAdapter {
+func NewHerokuDeploymentAdapter(client *HerokuClient, writer io.Writer, llmClient llm.Client) *HerokuDeploymentAdapter {
 	if writer == nil {
 		writer = output.NewNoOpWriter()
 	}
 	return &HerokuDeploymentAdapter{
-		client: client,
-		writer: writer,
+		client:    client,
+		writer:    writer,
+		llmClient: llmClient,
 	}
 }
 
 // NewDefaultHerokuDeploymentAdapter creates a deployment adapter with the default client
-func NewDefaultHerokuDeploymentAdapter(writer io.Writer) *HerokuDeploymentAdapter {
-	return NewHerokuDeploymentAdapter(NewHerokuClient("", writer), writer)
+func NewDefaultHerokuDeploymentAdapter(writer io.Writer, llmClient llm.Client) *HerokuDeploymentAdapter {
+	return NewHerokuDeploymentAdapter(NewHerokuClient("", writer), writer, llmClient)
 }
 
 // SupportedStrategies returns the deployment strategies supported by Heroku
@@ -79,7 +84,7 @@ func (hda *HerokuDeploymentAdapter) GenerateArtifactsWithSource(spec *deployment
 }
 
 // EstimateCost estimates the cost of deployment on Heroku
-func (hda *HerokuDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+func (hda *HerokuDeploymentAdapter) EstimateCost(ctx context.Context, spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
 	slog.Info("Estimating costs for spec", "spec", spec, "strategy", strategy)
 
 	// Build cost request from deployment spec
@@ -118,7 +123,30 @@ func (hda *HerokuDeploymentAdapter) EstimateCost(spec *deployment.DeploymentSpec
 	}
 	cr.Services = append(cr.Services, cs)
 
-	ce := estimateHerokuCostFallback(cr)
+	return hda.estimateCost(ctx, cr)
+}
+
+func (hda *HerokuDeploymentAdapter) estimateCost(ctx context.Context, cr deployment.CostRequest) (deployment.CostEstimate, error) {
+	slog.Info("Estimating costs for request", "request", cr)
+
+	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
+	ce.Total = 0.0
+
+	pricingProvider := NewPricingProvider()
+	pricingService := pricing.NewPricingService(pricingProvider, pricing.DefaultRetries, hda.llmClient)
+
+	for _, service := range cr.Services {
+		result, err := pricingService.EstimateCost(ctx, service)
+		if err != nil {
+			slog.Info("Failed to fetch pricing via LLM, using fallback", "service", service.Name, "error", err)
+			return estimateHerokuCostFallback(cr), nil
+		}
+
+		service.Cost = result.Cost
+		ce.Total += service.Cost
+		ce.Services = append(ce.Services, service)
+	}
+
 	return ce, nil
 }
 
