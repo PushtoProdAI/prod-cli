@@ -27,7 +27,7 @@ interface UpdateDeploymentOperation {
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Max-Age': '86400',
 }
 
@@ -38,14 +38,12 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  // Skip JWT verification for this function
-  if (req.method !== 'POST') {
+  if (req.method !== 'POST' && req.method !== 'GET') {
     return new Response(
       JSON.stringify({ error: 'Method not allowed' }),
       { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
-
   // Extract access token from custom CLI token or use Authorization header directly
   let accessToken = req.headers.get('authorization')?.replace('Bearer ', '')
   
@@ -73,6 +71,98 @@ Deno.serve(async (req) => {
       }
     }
   )
+
+  if (req.method === 'GET') {
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken)
+      
+      if (authError || !user) {
+        console.error('Authentication error:', authError)
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const { data: isAdmin, error: adminError } = await supabase.rpc('is_admin_user', {
+        p_user_id: user.id
+      })
+
+      if (adminError || !isAdmin) {
+        console.error('Admin check failed:', adminError)
+        return new Response(
+          JSON.stringify({ error: 'Forbidden: Admin access required' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const url = new URL(req.url)
+      const page = parseInt(url.searchParams.get('page') || '1')
+      const limit = parseInt(url.searchParams.get('limit') || '50')
+      const offset = (page - 1) * limit
+
+      if (page < 1 || limit < 1 || limit > 1000) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid pagination parameters. Page must be >= 1, limit must be 1-1000' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const { data: count, error: countError } = await supabase.rpc('get_deployment_operations_count')
+
+      if (countError) {
+        console.error('Count error:', countError)
+        return new Response(
+          JSON.stringify({ error: 'Failed to fetch deployment count' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const { data: deployments, error } = await supabase.rpc('get_deployment_operations', {
+        p_limit: limit,
+        p_offset: offset
+      })
+
+      if (error) {
+        console.error('Database error:', error)
+        return new Response(
+          JSON.stringify({ error: 'Failed to fetch deployment data' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const response = {
+        data: deployments.map(d => ({
+          operation_type: d.operation_type,
+          resource_type: d.resource_type,
+          status: d.status,
+          platform: d.platform,
+          language: d.language,
+          started_at: d.started_at,
+          completed_at: d.completed_at,
+          duration: d.duration_seconds
+        })),
+        pagination: {
+          page,
+          limit,
+          total: count || 0,
+          total_pages: Math.ceil((count || 0) / limit)
+        }
+      }
+
+      return new Response(
+        JSON.stringify(response),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+
+    } catch (error) {
+      console.error('Deployment fetch error:', error)
+      return new Response(
+        JSON.stringify({ error: 'Internal server error' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+  }
 
   try {
     const body = await req.json()

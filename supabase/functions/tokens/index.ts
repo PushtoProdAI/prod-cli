@@ -229,6 +229,62 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Route: GET /tokens/total-used - Get total used tokens (admin only)
+    if (req.method === 'GET' && pathname.endsWith('/tokens/total-used')) {
+      try {
+        // Create service role client for admin check
+        const supabaseService = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+        )
+
+        // Check if user is admin
+        const { data: isAdmin, error: adminError } = await supabaseService.rpc('is_admin_user', {
+          p_user_id: user.id
+        })
+
+        if (adminError || !isAdmin) {
+          console.error('Admin check failed:', adminError)
+          return new Response(
+            JSON.stringify({ error: 'Forbidden: Admin access required' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Get total used tokens using RPC
+        const { data: totalUsed, error } = await supabaseService.rpc('get_total_used_tokens')
+
+        if (error) {
+          console.error('Error getting total used tokens:', error)
+          captureException(new Error(String(error)), {
+            function: 'tokens',
+            operation: 'get_total_used',
+            user_id: user.id
+          })
+          return new Response(
+            JSON.stringify({ error: 'Failed to get total used tokens' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        return new Response(
+          JSON.stringify({ total_used_tokens: totalUsed }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      } catch (error) {
+        console.error('Error in GET /tokens/total-used:', error)
+        captureException(error instanceof Error ? error : new Error(String(error)), {
+          function: 'tokens',
+          operation: 'get_total_used_error',
+          user_id: user.id
+        })
+        return new Response(
+          JSON.stringify({ error: 'Internal server error' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
+
     // Route: GET /tokens/packages - Get available token packages for purchase
     if (req.method === 'GET' && pathname.endsWith('/tokens/packages')) {
       try {

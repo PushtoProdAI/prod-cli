@@ -12,6 +12,7 @@ interface ChatCompletionRequest {
   max_tokens?: number
   temperature?: number
   stream?: boolean
+  baml_function_name?: string
 }
 
 serve(async (req) => {
@@ -21,7 +22,7 @@ serve(async (req) => {
 
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-baml-function-name',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   }
 
@@ -70,19 +71,28 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     const authHeader = req.headers.get('Authorization')
+    const functionNameHeader = req.headers.get('X-BAML-Function-Name')
     
-    let userId = 'anonymous'
-    
-    if (authHeader) {
-      try {
-        const token = authHeader.replace('Bearer ', '')
-        const { data: { user } } = await supabase.auth.getUser(token)
-        userId = user?.id || 'anonymous'
-      } catch (error) {
-        console.error(`[${new Date().toISOString()}] DEBUG: Token validation failed:`, error)
-        console.warn('Failed to get user from token:', error)
-      }
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized: Authentication required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
+
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    
+    if (authError || !user) {
+      console.error(`[${new Date().toISOString()}] Authentication failed:`, authError)
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized: Invalid token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const userId = user.id
+    const functionName = functionNameHeader || body.baml_function_name || 'chat_completion'
 
     const chatConfig: ChatCompletionRequest = {
       model: body.model || 'gpt-4o-mini',
@@ -114,22 +124,42 @@ serve(async (req) => {
 
     try {
       const tokensUsed = responseData.usage?.total_tokens || 0
+      const promptTokens = responseData.usage?.prompt_tokens || 0
+      const completionTokens = responseData.usage?.completion_tokens || 0
       const modelUsed = responseData.model || chatConfig.model
-      
-      const costs: Record<string, number> = {
-        'gpt-3.5-turbo': 0.0005 / 1000,
-        'gpt-4o-mini': 0.00015 / 1000,
-        'gpt-4o': 0.005 / 1000,
+     
+      console.log(modelUsed)
+
+      // Model pricing: input cost per 1k tokens, output cost per 1k tokens
+      interface ModelPricing {
+        inputCostPer1k: number
+        outputCostPer1k: number
       }
-      const cost = tokensUsed * (costs[modelUsed] || 0.0005 / 1000)
+
+      const modelPricing: Record<string, ModelPricing> = {
+        'gpt-3.5-turbo': { inputCostPer1k: 0.0015, outputCostPer1k: 0.002 },
+        'gpt-4o-mini': { inputCostPer1k: 0.00015, outputCostPer1k: 0.0006 },
+        'gpt-4o-mini-2024-07-18': { inputCostPer1k: 0.00015, outputCostPer1k: 0.0006 },
+        'gpt-4o': { inputCostPer1k: 0.0025, outputCostPer1k: 0.01 },
+      }
+
+      // Get pricing for model, default to gpt-4o-mini pricing if not found
+      const pricing = modelPricing[modelUsed] || modelPricing['gpt-4o-mini']
+      
+      // Calculate cost: (input_tokens / 1000) * input_cost_per_1k + (output_tokens / 1000) * output_cost_per_1k
+      const inputCost = (promptTokens / 1000) * pricing.inputCostPer1k
+      const outputCost = (completionTokens / 1000) * pricing.outputCostPer1k
+      const cost = inputCost + outputCost
 
       const { error: insertError } = await supabase
         .from('llm_usage_logs')
         .insert({
           user_id: userId,
-          function_name: 'chat_completion',
+          function_name: functionName,
           model_used: modelUsed,
           tokens_used: tokensUsed,
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
           cost: cost,
           response_time_ms: responseTime,
           success: openaiResponse.ok
