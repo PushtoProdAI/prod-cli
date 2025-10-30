@@ -57,6 +57,7 @@ type Workflows struct {
 	renderClient render.RenderClient
 	flyClient    flyio.FlyioClient
 	uiWriter     output.StatusWriter
+	llmClient    llm.Client
 }
 
 // DiffLine represents a single line in a diff
@@ -93,17 +94,19 @@ func newAgentLLMClient() llm.Client {
 }
 
 func NewWorkflows(renderClient render.RenderClient, flyClient flyio.FlyioClient, beClient *backend.Client, uiWriter output.StatusWriter) *Workflows {
+	llmClient := newAgentLLMClient()
 	return &Workflows{
 		Acts: &Activities{
 			renderClient: renderClient,
 			flyClient:    flyClient,
 			beClient:     beClient,
 			uiWriter:     uiWriter,
-			llmClient:    newAgentLLMClient(),
+			llmClient:    llmClient,
 		},
 		renderClient: renderClient,
 		flyClient:    flyClient,
 		uiWriter:     uiWriter,
+		llmClient:    llmClient,
 	}
 }
 
@@ -1695,7 +1698,7 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 	}
 
 	// Use default Heroku adapter
-	herokuAdapter := heroku.NewDefaultHerokuDeploymentAdapter(w.uiWriter)
+	herokuAdapter := heroku.NewDefaultHerokuDeploymentAdapter(w.uiWriter, w.llmClient)
 	d, err := herokuAdapter.GenerateArtifactsWithSource(spec, deployment.StrategyHeroku, input.Source)
 	if err != nil {
 		slog.Error("Failed to generate Heroku deployment", "error", err)
@@ -1729,6 +1732,22 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 				"language":     input.Spec.Language,
 			})
 		}
+	}
+
+	// Estimate costs
+	estimatedCosts, err := workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateHerokuCosts, *spec, deployment.StrategyHeroku).Get(ctx)
+	if err != nil {
+		slog.Error("Error estimating costs", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     DeployHerokuWorkflowName,
+			"activity":     AgentEstimateHerokuCosts,
+			"component":    "deployment",
+			"platform":     "heroku",
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
+	} else {
+		slog.Info("Estimated monthly costs", "total", estimatedCosts.Total, "services", len(estimatedCosts.Services))
 	}
 
 	// Use limited retries for Heroku deployment (it has long-running git operations)
