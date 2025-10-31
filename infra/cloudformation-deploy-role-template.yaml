@@ -1,0 +1,292 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM Role for Prod CLI to deploy App Runner and RDS in your AWS account'
+
+Parameters:
+  ExternalId:
+    Type: String
+    Description: External ID for secure role assumption
+    MinLength: 10
+    NoEcho: true
+  
+  ProdAWSAccountId:
+    Type: String
+    Description: AWS Account ID of Prod's backend
+    Default: '588738592923'
+  
+  RoleName:
+    Type: String
+    Description: Name for the deployment role
+    Default: ProdDeployRole
+
+Resources:
+  # Main deployment role that Prod will assume
+  ProdDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: 'Allows Prod CLI to deploy App Runner and RDS resources'
+      MaxSessionDuration: 43200  # 12 hours
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${ProdAWSAccountId}:root'
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref ExternalId
+      ManagedPolicyArns:
+        - !Ref AppRunnerDeploymentPolicy
+        - !Ref RDSDeploymentPolicy
+        - !Ref ECRAccessPolicy
+        - !Ref VPCNetworkingPolicy
+        - !Ref SecretsManagerPolicy
+      Tags:
+        - Key: ManagedBy
+          Value: Prod
+        - Key: Purpose
+          Value: Deployment
+
+  # Policy for App Runner operations
+  AppRunnerDeploymentPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-AppRunner'
+      Description: 'Permissions for App Runner service management'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AppRunnerServiceManagement
+            Effect: Allow
+            Action:
+              - apprunner:CreateService
+              - apprunner:UpdateService
+              - apprunner:DeleteService
+              - apprunner:DescribeService
+              - apprunner:ListServices
+              - apprunner:TagResource
+              - apprunner:UntagResource
+              - apprunner:ListTagsForResource
+              - apprunner:StartDeployment
+              - apprunner:PauseService
+              - apprunner:ResumeService
+            Resource: '*'
+          - Sid: AppRunnerAutoScaling
+            Effect: Allow
+            Action:
+              - apprunner:DescribeAutoScalingConfiguration
+              - apprunner:CreateAutoScalingConfiguration
+              - apprunner:DeleteAutoScalingConfiguration
+              - apprunner:ListAutoScalingConfigurations
+            Resource: '*'
+          - Sid: AppRunnerVPCConnector
+            Effect: Allow
+            Action:
+              - apprunner:CreateVpcConnector
+              - apprunner:DeleteVpcConnector
+              - apprunner:DescribeVpcConnector
+              - apprunner:ListVpcConnectors
+            Resource: '*'
+          - Sid: AppRunnerConnection
+            Effect: Allow
+            Action:
+              - apprunner:CreateConnection
+              - apprunner:DeleteConnection
+              - apprunner:DescribeConnection
+              - apprunner:ListConnections
+            Resource: '*'
+
+  # Policy for RDS operations
+  RDSDeploymentPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-RDS'
+      Description: 'Permissions for RDS database management'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: RDSInstanceManagement
+            Effect: Allow
+            Action:
+              - rds:CreateDBInstance
+              - rds:DeleteDBInstance
+              - rds:ModifyDBInstance
+              - rds:DescribeDBInstances
+              - rds:StartDBInstance
+              - rds:StopDBInstance
+              - rds:RebootDBInstance
+              - rds:AddTagsToResource
+              - rds:RemoveTagsFromResource
+              - rds:ListTagsForResource
+            Resource: '*'
+          - Sid: RDSSubnetGroup
+            Effect: Allow
+            Action:
+              - rds:CreateDBSubnetGroup
+              - rds:DeleteDBSubnetGroup
+              - rds:DescribeDBSubnetGroups
+              - rds:ModifyDBSubnetGroup
+            Resource: '*'
+          - Sid: RDSParameterGroup
+            Effect: Allow
+            Action:
+              - rds:CreateDBParameterGroup
+              - rds:DeleteDBParameterGroup
+              - rds:DescribeDBParameterGroups
+              - rds:ModifyDBParameterGroup
+              - rds:DescribeDBParameters
+            Resource: '*'
+          - Sid: RDSSecurityGroup
+            Effect: Allow
+            Action:
+              - rds:CreateDBSecurityGroup
+              - rds:DeleteDBSecurityGroup
+              - rds:DescribeDBSecurityGroups
+              - rds:AuthorizeDBSecurityGroupIngress
+              - rds:RevokeDBSecurityGroupIngress
+            Resource: '*'
+          - Sid: RDSSnapshots
+            Effect: Allow
+            Action:
+              - rds:CreateDBSnapshot
+              - rds:DeleteDBSnapshot
+              - rds:DescribeDBSnapshots
+              - rds:RestoreDBInstanceFromDBSnapshot
+            Resource: '*'
+
+  # Policy for ECR operations
+  ECRAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-ECR'
+      Description: 'Permissions for ECR repository and image management'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ECRAuthentication
+            Effect: Allow
+            Action:
+              - ecr:GetAuthorizationToken
+            Resource: '*'
+          - Sid: ECRRepositoryManagement
+            Effect: Allow
+            Action:
+              - ecr:CreateRepository
+              - ecr:DeleteRepository
+              - ecr:DescribeRepositories
+              - ecr:ListTagsForResource
+              - ecr:TagResource
+              - ecr:UntagResource
+            Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
+          - Sid: ECRImageManagement
+            Effect: Allow
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:BatchGetImage
+              - ecr:CompleteLayerUpload
+              - ecr:DescribeImages
+              - ecr:GetDownloadUrlForLayer
+              - ecr:InitiateLayerUpload
+              - ecr:ListImages
+              - ecr:PutImage
+              - ecr:UploadLayerPart
+              - ecr:BatchDeleteImage
+              - ecr:GetRepositoryPolicy
+              - ecr:SetRepositoryPolicy
+              - ecr:DeleteRepositoryPolicy
+            Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
+
+  # Policy for VPC networking
+  VPCNetworkingPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-VPC'
+      Description: 'Permissions for VPC networking setup'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: VPCRead
+            Effect: Allow
+            Action:
+              - ec2:DescribeVpcs
+              - ec2:DescribeSubnets
+              - ec2:DescribeSecurityGroups
+              - ec2:DescribeNetworkInterfaces
+              - ec2:DescribeAvailabilityZones
+              - ec2:DescribeRouteTables
+              - ec2:DescribeInternetGateways
+              - ec2:DescribeNatGateways
+            Resource: '*'
+          - Sid: SecurityGroupManagement
+            Effect: Allow
+            Action:
+              - ec2:CreateSecurityGroup
+              - ec2:DeleteSecurityGroup
+              - ec2:AuthorizeSecurityGroupIngress
+              - ec2:AuthorizeSecurityGroupEgress
+              - ec2:RevokeSecurityGroupIngress
+              - ec2:RevokeSecurityGroupEgress
+              - ec2:UpdateSecurityGroupRuleDescriptionsIngress
+              - ec2:UpdateSecurityGroupRuleDescriptionsEgress
+              - ec2:CreateTags
+              - ec2:DeleteTags
+            Resource: '*'
+          - Sid: VPCCreation
+            Effect: Allow
+            Action:
+              - ec2:CreateVpc
+              - ec2:DeleteVpc
+              - ec2:ModifyVpcAttribute
+              - ec2:CreateSubnet
+              - ec2:DeleteSubnet
+              - ec2:ModifySubnetAttribute
+              - ec2:CreateRouteTable
+              - ec2:DeleteRouteTable
+              - ec2:AssociateRouteTable
+              - ec2:DisassociateRouteTable
+              - ec2:CreateRoute
+              - ec2:DeleteRoute
+              - ec2:CreateInternetGateway
+              - ec2:DeleteInternetGateway
+              - ec2:AttachInternetGateway
+              - ec2:DetachInternetGateway
+            Resource: '*'
+
+  # Policy for Secrets Manager (for DB credentials)
+  SecretsManagerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-Secrets'
+      Description: 'Permissions for Secrets Manager to store database credentials'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SecretsManagement
+            Effect: Allow
+            Action:
+              - secretsmanager:CreateSecret
+              - secretsmanager:DeleteSecret
+              - secretsmanager:DescribeSecret
+              - secretsmanager:GetSecretValue
+              - secretsmanager:PutSecretValue
+              - secretsmanager:UpdateSecret
+              - secretsmanager:TagResource
+              - secretsmanager:UntagResource
+              - secretsmanager:ListSecrets
+            Resource: '*'
+
+Outputs:
+  RoleArn:
+    Description: 'ARN of the deployment role - paste this into the Prod CLI'
+    Value: !GetAtt ProdDeployRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RoleArn'
+  
+  ExternalId:
+    Description: 'External ID used for this role'
+    Value: !Ref ExternalId
+  
+  RoleName:
+    Description: 'Name of the deployment role'
+    Value: !Ref RoleName

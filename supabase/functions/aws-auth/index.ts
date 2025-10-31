@@ -36,6 +36,7 @@ Deno.serve(async (req) => {
       )
     }
 
+    // GET - Check if user has AWS credentials configured
     if (req.method === 'GET') {
       try {
         const { data, error } = await supabase.rpc('check_aws_authentication')
@@ -62,6 +63,131 @@ Deno.serve(async (req) => {
         captureException(error instanceof Error ? error : new Error(String(error)), {
           function: 'aws-auth',
           operation: 'check_error',
+          user_id: user.id
+        })
+        return new Response(
+          JSON.stringify({ error: 'Internal server error' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
+
+    // POST - Initialize AWS auth setup or store credentials
+    if (req.method === 'POST') {
+      try {
+        const body = await req.json()
+        const action = body.action
+
+        // Initialize AWS auth setup - generate external ID
+        if (action === 'initialize') {
+          // Generate a unique external ID
+          const externalId = `prod-${user.id.substring(0, 8)}-${crypto.randomUUID().substring(0, 8)}`
+          
+          // Store the external ID (role_arn will be added when user completes setup)
+          const { error: insertError } = await supabase
+            .from('aws_credentials')
+            .upsert({
+              user_id: user.id,
+              external_id: externalId,
+              role_arn: null,  // Will be set when user completes CloudFormation setup
+              region: body.region || 'us-east-1'
+            }, {
+              onConflict: 'user_id'
+            })
+
+          if (insertError) {
+            console.error('Error storing external ID:', insertError)
+            captureException(new Error(String(insertError)), {
+              function: 'aws-auth',
+              operation: 'initialize',
+              user_id: user.id
+            })
+            return new Response(
+              JSON.stringify({ error: 'Failed to initialize AWS auth setup' }),
+              { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+
+          return new Response(
+            JSON.stringify({ 
+              external_id: externalId,
+              region: body.region || 'us-east-1'
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Complete AWS auth setup - store role ARN
+        if (action === 'complete') {
+          const { role_arn, region } = body
+
+          if (!role_arn || typeof role_arn !== 'string') {
+            return new Response(
+              JSON.stringify({ error: 'role_arn is required' }),
+              { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+
+          // Validate role ARN format
+          const roleArnPattern = /^arn:aws:iam::[0-9]{12}:role\/[a-zA-Z0-9+=,.@_-]+$/
+          if (!roleArnPattern.test(role_arn)) {
+            return new Response(
+              JSON.stringify({ error: 'Invalid role ARN format' }),
+              { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+
+          // Get the existing record to ensure external_id exists
+          const { data: existing, error: fetchError } = await supabase
+            .from('aws_credentials')
+            .select('external_id')
+            .eq('user_id', user.id)
+            .single()
+
+          if (fetchError || !existing) {
+            return new Response(
+              JSON.stringify({ error: 'AWS auth setup not initialized. Please start the setup process again.' }),
+              { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+
+          // Update with the actual role ARN
+          const { error: updateError } = await supabase
+            .from('aws_credentials')
+            .update({
+              role_arn: role_arn,
+              region: region || 'us-east-1'
+            })
+            .eq('user_id', user.id)
+
+          if (updateError) {
+            console.error('Error storing role ARN:', updateError)
+            captureException(new Error(String(updateError)), {
+              function: 'aws-auth',
+              operation: 'complete',
+              user_id: user.id
+            })
+            return new Response(
+              JSON.stringify({ error: 'Failed to store AWS credentials' }),
+              { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+
+          return new Response(
+            JSON.stringify({ success: true }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        return new Response(
+          JSON.stringify({ error: 'Invalid action. Use "initialize" or "complete"' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      } catch (error) {
+        console.error('Error in POST /aws-auth:', error)
+        captureException(error instanceof Error ? error : new Error(String(error)), {
+          function: 'aws-auth',
+          operation: 'post_error',
           user_id: user.id
         })
         return new Response(

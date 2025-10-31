@@ -61,6 +61,7 @@ type Agent struct {
 	inConsentFlow        bool
 	originalInput        string
 	nextStateAfterAuth   stateFn // State to transition to after successful PaaS authentication
+	awsRegion            string  // Selected AWS region for deployment
 }
 
 type agentContextKey string
@@ -1180,9 +1181,10 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 			return nil, nil
 		}
 
-		// AWS has a custom CloudFormation-based auth flow, skip method selection
+		// AWS has a custom CloudFormation-based auth flow
+		// First prompt for region selection, then proceed to auth setup
 		if a.DeployPlan.Platform == AWS {
-			return a.performAWSAuth(ctx, input, out)
+			return a.promptForAWSRegion(ctx, input, out)
 		}
 
 		// In interactive mode, transition to auth selection state for other platforms
@@ -1289,24 +1291,107 @@ func (a *Agent) waitForAPIKey(ctx context.Context, input string, out io.Writer) 
 	return a.executeDeployment(ctx, input, out)
 }
 
+func (a *Agent) promptForAWSRegion(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	fmt.Fprint(out, "🌍 Enter your preferred AWS region for deployment\n")
+	fmt.Fprint(out, "   Common regions: us-east-1, us-west-2, eu-west-1, ap-southeast-1\n\n")
+	a.sendTextPromptWithDefault(out, "AWS Region:", "us-east-1")
+	return a.waitForAWSRegionInput, nil
+}
+
+func (a *Agent) waitForAWSRegionInput(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	region := strings.TrimSpace(input)
+
+	// If empty, use default
+	if region == "" {
+		region = "us-east-1"
+	}
+
+	// Basic validation for AWS region format (e.g., us-east-1, eu-west-2)
+	// Simple format check: should contain at least one dash
+	if !strings.Contains(region, "-") {
+		fmt.Fprintf(out, "Invalid region format: %s\n", region)
+		fmt.Fprint(out, "AWS regions should be in format like 'us-east-1' or 'eu-west-2'\n\n")
+		a.sendTextPromptWithDefault(out, "AWS Region:", "us-east-1")
+		return a.waitForAWSRegionInput, nil
+	}
+
+	a.awsRegion = region
+	fmt.Fprintf(out, "Using region: %s\n\n", region)
+	return a.performAWSAuth(ctx, input, out)
+}
+
 func (a *Agent) performAWSAuth(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	fmt.Fprint(out, "🚀 Setting up AWS authentication...\n")
+	fmt.Fprintf(out, "🚀 Setting up AWS authentication for region: %s\n", a.awsRegion)
 	fmt.Fprint(out, "We'll guide you through creating an IAM role in your AWS account.\n\n")
 
-	// Perform AWS-specific CloudFormation auth flow
-	if err := a.auth.PerformOAuthLogin(ctx); err != nil {
-		fmt.Fprintf(out, "❌ AWS authentication setup failed: %v\n", err)
+	// Set the region on the AWS auth provider
+	awsAuth, ok := a.auth.(*auth.AWSAuth)
+	if !ok {
+		return nil, errors.Errorf("auth provider is not AWSAuth")
+	}
+	awsAuth.SetRegion(a.awsRegion)
+
+	// Initialize AWS auth setup (get external ID, show CloudFormation URL)
+	if err := awsAuth.InitializeSetup(ctx); err != nil {
+		fmt.Fprintf(out, "❌ Failed to initialize AWS setup: %v\n", err)
 		prod_error.CaptureErrorWithContext(err, map[string]any{
 			"component": "agent",
-			"operation": "aws_auth_setup",
+			"operation": "aws_auth_init",
 			"auth_type": "cloudformation",
 			"platform":  "aws",
+			"region":    a.awsRegion,
 			"flow":      "deployment",
 		})
 		return a.checkPrerequisites, err
 	}
 
+	// Prompt user for Role ARN
+	a.sendTextPrompt(out, "Paste the Role ARN from CloudFormation stack outputs:")
+	return a.waitForAWSRoleArn, nil
+}
+
+func (a *Agent) waitForAWSRoleArn(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	roleArn := strings.TrimSpace(input)
+
+	// Basic validation
+	if roleArn == "" {
+		fmt.Fprint(out, "❌ Role ARN cannot be empty\n")
+		a.sendTextPrompt(out, "Paste the Role ARN from CloudFormation stack outputs:")
+		return a.waitForAWSRoleArn, nil
+	}
+
+	// Validate ARN format
+	if !strings.HasPrefix(roleArn, "arn:aws:iam::") || !strings.Contains(roleArn, ":role/") {
+		fmt.Fprintf(out, "❌ Invalid Role ARN format: %s\n", roleArn)
+		fmt.Fprint(out, "Expected format: arn:aws:iam::123456789012:role/RoleName\n")
+		a.sendTextPrompt(out, "Paste the Role ARN from CloudFormation stack outputs:")
+		return a.waitForAWSRoleArn, nil
+	}
+
+	// Complete the AWS auth setup
+	awsAuth, ok := a.auth.(*auth.AWSAuth)
+	if !ok {
+		return nil, errors.Errorf("auth provider is not AWSAuth")
+	}
+
+	fmt.Fprint(out, "💾 Saving AWS credentials...\n")
+	if err := awsAuth.CompleteSetup(ctx, roleArn); err != nil {
+		fmt.Fprintf(out, "❌ Failed to save AWS credentials: %v\n", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"component": "agent",
+			"operation": "aws_auth_complete",
+			"auth_type": "cloudformation",
+			"platform":  "aws",
+			"region":    a.awsRegion,
+			"flow":      "deployment",
+		})
+		a.sendTextPrompt(out, "Paste the Role ARN from CloudFormation stack outputs:")
+		return a.waitForAWSRoleArn, nil
+	}
+
 	fmt.Fprint(out, "✅ AWS authentication configured successfully!\n")
+	fmt.Fprintf(out, "   Role: %s\n", roleArn)
+	fmt.Fprintf(out, "   Region: %s\n\n", a.awsRegion)
 
 	// Continue to next state (detection or deployment)
 	if a.nextStateAfterAuth != nil {

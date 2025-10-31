@@ -10,8 +10,8 @@ CREATE TABLE IF NOT EXISTS public.aws_credentials (
 
   -- AWS Role Information
   external_id TEXT NOT NULL,
-  role_arn TEXT NOT NULL,
-  region TEXT NOT NULL DEFAULT 'us-east-1',
+  role_arn TEXT,  -- Nullable during setup, required after completion
+  region TEXT NOT NULL DEFAULT 'us-east-1',  -- User's preferred deployment region
 
   -- Metadata
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS public.aws_credentials (
 
   -- Constraints for data integrity
   CONSTRAINT external_id_not_empty CHECK (LENGTH(external_id) > 0),
-  CONSTRAINT role_arn_format CHECK (role_arn ~ '^arn:aws:iam::[0-9]{12}:role/[a-zA-Z0-9+=,.@_-]+$'),
+  CONSTRAINT role_arn_format CHECK (role_arn IS NULL OR role_arn ~ '^arn:aws:iam::[0-9]{12}:role/[a-zA-Z0-9+=,.@_-]+$'),
   CONSTRAINT valid_region CHECK (LENGTH(region) > 0)
 );
 
@@ -80,7 +80,8 @@ CREATE TRIGGER set_updated_at_aws_credentials
 -- ============================================================================
 -- Check AWS Authentication Status Function
 -- ============================================================================
--- Returns true if the authenticated user has AWS credentials configured
+-- Returns true if the authenticated user has completed AWS credentials setup
+-- (i.e., both external_id and role_arn are present)
 CREATE OR REPLACE FUNCTION public.check_aws_authentication()
 RETURNS BOOLEAN AS $$
 DECLARE
@@ -95,11 +96,12 @@ BEGIN
     RETURN false;
   END IF;
 
-  -- Check if credentials exist for this user
+  -- Check if complete credentials exist for this user (role_arn must not be NULL)
   SELECT EXISTS(
     SELECT 1
     FROM public.aws_credentials
     WHERE user_id = v_user_id
+      AND role_arn IS NOT NULL
   ) INTO v_exists;
 
   RETURN v_exists;
