@@ -1180,7 +1180,12 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 			return nil, nil
 		}
 
-		// In interactive mode, transition to auth selection state
+		// AWS has a custom CloudFormation-based auth flow, skip method selection
+		if a.DeployPlan.Platform == AWS {
+			return a.performAWSAuth(ctx, input, out)
+		}
+
+		// In interactive mode, transition to auth selection state for other platforms
 		a.sendSelect(out, "Choose authentication method:", []string{
 			"Interactive login (recommended)",
 			"Enter API key directly",
@@ -1220,6 +1225,7 @@ func (a *Agent) getAuthProvider(out io.Writer) (auth.AuthProvider, error) {
 		return herokuAuth, nil
 	case AWS:
 		awsAuth := auth.NewAWSAuth(out)
+		awsAuth.SetSessionExtractor(CtxSession)
 		return awsAuth, nil
 	default:
 		return nil, errors.Errorf("unsupported platform: %s", a.DeployPlan.Platform)
@@ -1275,6 +1281,32 @@ func (a *Agent) waitForAPIKey(ctx context.Context, input string, out io.Writer) 
 
 	fmt.Fprint(out, "✅ API key validated successfully!\n")
 	fmt.Fprint(out, "💡 API key will only be available for this session.\n")
+
+	// Continue to next state (detection or deployment)
+	if a.nextStateAfterAuth != nil {
+		return a.nextStateAfterAuth(ctx, input, out)
+	}
+	return a.executeDeployment(ctx, input, out)
+}
+
+func (a *Agent) performAWSAuth(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	fmt.Fprint(out, "🚀 Setting up AWS authentication...\n")
+	fmt.Fprint(out, "We'll guide you through creating an IAM role in your AWS account.\n\n")
+
+	// Perform AWS-specific CloudFormation auth flow
+	if err := a.auth.PerformOAuthLogin(ctx); err != nil {
+		fmt.Fprintf(out, "❌ AWS authentication setup failed: %v\n", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"component": "agent",
+			"operation": "aws_auth_setup",
+			"auth_type": "cloudformation",
+			"platform":  "aws",
+			"flow":      "deployment",
+		})
+		return a.checkPrerequisites, err
+	}
+
+	fmt.Fprint(out, "✅ AWS authentication configured successfully!\n")
 
 	// Continue to next state (detection or deployment)
 	if a.nextStateAfterAuth != nil {
