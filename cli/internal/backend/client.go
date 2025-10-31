@@ -347,3 +347,45 @@ func (c *Client) GetBaseDockerImages(ctx context.Context) (map[string]string, er
 
 	return images, nil
 }
+
+func (c *Client) CheckAWSAuthentication(ctx context.Context, authToken string) (bool, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/aws-auth", getBaseURL()), nil)
+	if err != nil {
+		return false, errors.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, errors.Errorf("failed to make request to aws-auth endpoint: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return false, errors.Errorf("unauthorized: invalid or missing auth token")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return false, errors.Errorf("aws-auth endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		Authenticated bool   `json:"authenticated"`
+		Error         string `json:"error,omitempty"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, errors.Errorf("failed to decode aws-auth response: %w", err)
+	}
+
+	if result.Error != "" {
+		return false, errors.Errorf("aws-auth returned error: %s", result.Error)
+	}
+
+	return result.Authenticated, nil
+}

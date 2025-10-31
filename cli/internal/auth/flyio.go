@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"github.com/go-errors/errors"
 	"context"
 	"fmt"
 	"io"
@@ -9,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/manifoldco/promptui"
+	"github.com/go-errors/errors"
 )
 
 // FlyAuth handles authentication checking and login flow for Fly.io
@@ -104,33 +103,6 @@ func (fa *FlyAuth) PerformOAuthLogin(ctx context.Context) error {
 
 func (fa *FlyAuth) APIKeyPrompt() string {
 	return "🔑 Enter your Fly.io API key (get it from https://fly.io/user/personal_access_tokens):"
-}
-
-// offerToPersistToken asks the user if they want to save the token to their shell profile
-func (fa *FlyAuth) offerToPersistToken() error {
-	persistPrompt := promptui.Prompt{
-		Label:     "Save API token to your shell profile for future use? (y/n)",
-		IsConfirm: true,
-		Default:   "y",
-	}
-
-	result, err := persistPrompt.Run()
-	if err != nil && err != promptui.ErrAbort {
-		return err
-	}
-
-	if err == promptui.ErrAbort || (result != "y" && result != "yes") {
-		fmt.Fprintln(fa.out, "💡 API token will only be available for this session.")
-		fmt.Fprintln(fa.out, "   To persist it manually, run: export FLY_API_TOKEN=<your-token>")
-		return nil
-	}
-
-	// Note: We could implement shell profile persistence here similar to render.go
-	// For now, we'll use flyctl's built-in token management
-	fmt.Fprintln(fa.out, "✅ Token saved by flyctl!")
-	fmt.Fprintln(fa.out, "💡 The token will be available in new terminal sessions.")
-
-	return nil
 }
 
 // ensureFlyctl checks if flyctl is installed
