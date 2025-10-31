@@ -696,7 +696,14 @@ jobs:
 
       - name: Get version
         id: version
-        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: |
+          # Try to get the latest tag, fallback to commit hash
+          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$latest_tag" ]; then
+            echo "version=$latest_tag" >> $GITHUB_OUTPUT
+          else
+            echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          fi
         shell: bash
 
       - name: Upload Windows AMD64 artifact
