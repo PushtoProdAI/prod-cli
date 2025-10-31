@@ -117,6 +117,7 @@ const (
 	Netlify
 	Vercel
 	Heroku
+	AWS
 	UnknownPlatform
 )
 
@@ -280,7 +281,7 @@ func (a *Agent) checkPrerequisites(ctx context.Context, input string, out io.Wri
 	return a.plan(ctxWithSession, input, out)
 }
 
-func (a *Agent) promptForConsent(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+func (a *Agent) promptForConsent(_ context.Context, _ string, out io.Writer) (stateFn, error) {
 	a.inConsentFlow = true
 	fmt.Fprint(out, `
 📊 We'd like to collect anonymous diagnostic data to help improve Prod CLI.
@@ -1217,6 +1218,9 @@ func (a *Agent) getAuthProvider(out io.Writer) (auth.AuthProvider, error) {
 		herokuClient := heroku.NewHerokuClient("", output.NewNoOpWriter())
 		herokuAuth := auth.NewHerokuAuth(herokuClient, out)
 		return herokuAuth, nil
+	case AWS:
+		awsAuth := auth.NewAWSAuth(out)
+		return awsAuth, nil
 	default:
 		return nil, errors.Errorf("unsupported platform: %s", a.DeployPlan.Platform)
 	}

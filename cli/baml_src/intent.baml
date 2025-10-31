@@ -118,7 +118,10 @@ You are a strict classifier. Your only job is to analyze deployment requests and
     - Netlify
     - Vercel
     - Heroku
+    - AWS
 
+  NOTE: AWS is Amazon Web Services. So consider strings like "deploy to Amazon" having a target of AWS. 
+  
   If the user mentions one of these explicitly, extract it as `platform`.
   If they mention a platform NOT on this list (e.g. Kubernetes), set:
     "platform": "UNKNOWN"
