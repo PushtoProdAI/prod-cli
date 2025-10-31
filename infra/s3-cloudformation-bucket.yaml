@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'S3 bucket for hosting CloudFormation templates for Prod CLI AWS deployments'
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: Name of the S3 bucket
+    Default: prod-aws-deploy
+  
+  TemplateFileName:
+    Type: String
+    Description: Name of the CloudFormation template file to make public
+    Default: cloudformation-deploy-role-template.yaml
+
+Resources:
+  # S3 Bucket for CloudFormation templates
+  CloudFormationTemplateBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: Purpose
+          Value: CloudFormationTemplateHosting
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Project
+          Value: ProdCLI
+
+  # Bucket Policy to allow public read access to specific template file
+  CloudFormationTemplateBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CloudFormationTemplateBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadCloudFormationTemplate
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub 'arn:aws:s3:::${BucketName}/${TemplateFileName}'
+
+Outputs:
+  BucketName:
+    Description: Name of the S3 bucket
+    Value: !Ref CloudFormationTemplateBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
+  
+  BucketArn:
+    Description: ARN of the S3 bucket
+    Value: !GetAtt CloudFormationTemplateBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketArn'
+  
+  TemplateURL:
+    Description: Public URL for the CloudFormation template
+    Value: !Sub 'https://${BucketName}.s3.amazonaws.com/${TemplateFileName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-TemplateURL'
+  
+  UploadCommand:
+    Description: AWS CLI command to upload the template
+    Value: !Sub 'aws s3 cp cloudformation-deploy-role-template.yaml s3://${BucketName}/${TemplateFileName}'

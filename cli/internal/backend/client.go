@@ -389,3 +389,101 @@ func (c *Client) CheckAWSAuthentication(ctx context.Context, authToken string) (
 
 	return result.Authenticated, nil
 }
+
+type AWSAuthSetup struct {
+	ExternalID string `json:"external_id"`
+	Region     string `json:"region"`
+}
+
+func (c *Client) InitializeAWSAuth(ctx context.Context, authToken string, region string) (*AWSAuthSetup, error) {
+	payload := map[string]string{
+		"action": "initialize",
+		"region": region,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, errors.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/aws-auth", getBaseURL()), bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, errors.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, errors.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, errors.Errorf("initialize aws-auth failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var setup AWSAuthSetup
+	if err := json.NewDecoder(resp.Body).Decode(&setup); err != nil {
+		return nil, errors.Errorf("failed to decode response: %w", err)
+	}
+
+	return &setup, nil
+}
+
+func (c *Client) CompleteAWSAuth(ctx context.Context, authToken string, roleArn string, region string) error {
+	payload := map[string]string{
+		"action":   "complete",
+		"role_arn": roleArn,
+		"region":   region,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return errors.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/aws-auth", getBaseURL()), bytes.NewBuffer(jsonData))
+	if err != nil {
+		return errors.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return errors.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return errors.Errorf("complete aws-auth failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error,omitempty"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return errors.Errorf("failed to decode response: %w", err)
+	}
+
+	if result.Error != "" {
+		return errors.Errorf("aws-auth returned error: %s", result.Error)
+	}
+
+	if !result.Success {
+		return errors.Errorf("failed to complete AWS authentication setup")
+	}
+
+	return nil
+}
