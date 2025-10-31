@@ -946,10 +946,6 @@ jobs:
                     value: "<${{ github.event.head_commit.url || github.event.pull_request.html_url }}|${{ github.sha }}>"
                     short: true
 
-      - name: Get version
-        id: version
-        run: echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
       - name: Download all staging artifacts
         uses: actions/download-artifact@v4
         with:
@@ -964,6 +960,21 @@ jobs:
           mkdir -p release-files
           find artifacts -name "prod-*" -type f -exec cp {} release-files/ \;
           ls -la release-files/
+
+      - name: Get version from binaries
+        id: version
+        run: |
+          # Extract version from the actual binary filenames (source of truth)
+          binary_file=$(ls release-files/prod-* 2>/dev/null | head -1)
+          if [ -n "$binary_file" ]; then
+            # Extract version from filename pattern: prod-VERSION-OS-ARCH[.exe]
+            version=$(basename "$binary_file" | sed -E 's/^prod-([^-]+)-.*/\1/')
+            echo "version=$version" >> $GITHUB_OUTPUT
+            echo "Detected version from binary filename: $version"
+          else
+            echo "ERROR: No binary files found in release-files/"
+            exit 1
+          fi
 
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
@@ -1377,15 +1388,19 @@ jobs:
           find artifacts -name "prod-*" -type f -exec cp {} release-files/ \;
           ls -la release-files/
 
-      - name: Get version for production release
+      - name: Get version from binaries
         id: prod-version
         run: |
-          # Try to get the latest tag, fallback to commit hash
-          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -n "$latest_tag" ]; then
-            echo "version=$latest_tag" >> $GITHUB_OUTPUT
+          # Extract version from the actual binary filenames (source of truth)
+          binary_file=$(ls release-files/prod-* 2>/dev/null | head -1)
+          if [ -n "$binary_file" ]; then
+            # Extract version from filename pattern: prod-VERSION-OS-ARCH[.exe]
+            version=$(basename "$binary_file" | sed -E 's/^prod-([^-]+)-.*/\1/')
+            echo "version=$version" >> $GITHUB_OUTPUT
+            echo "Detected version from binary filename: $version"
           else
-            echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+            echo "ERROR: No binary files found in release-files/"
+            exit 1
           fi
 
       - name: Install Supabase CLI
