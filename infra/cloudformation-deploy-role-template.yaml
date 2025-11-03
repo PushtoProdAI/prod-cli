@@ -15,8 +15,10 @@ Parameters:
   
   RoleName:
     Type: String
-    Description: Name for the deployment role
+    Description: Name for the deployment role (you can customize this if needed)
     Default: ProdDeployRole
+    AllowedPattern: '^[a-zA-Z0-9+=,.@_-]{1,64}$'
+    ConstraintDescription: Role name must be 1-64 characters and contain only alphanumeric characters and +=,.@_-
 
 Resources:
   # Main deployment role that Prod will assume

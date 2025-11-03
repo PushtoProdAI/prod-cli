@@ -37,6 +37,7 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
+          # Allow assuming internal ECR roles in this account
           - Effect: Allow
             Action:
               - sts:AssumeRole
@@ -46,6 +47,15 @@ Resources:
               - !GetAtt ECRPullOnlyRole.Arn
               - !GetAtt ECRPushOnlyRole.Arn
               - !GetAtt ECRRepositoryManagerRole.Arn
+          # Allow assuming customer deployment roles in any AWS account
+          # The actual role ARN is stored in the database after customer setup
+          # Trust policy + External ID in customer account provides the security boundary
+          - Effect: Allow
+            Action:
+              - sts:AssumeRole
+              - sts:TagSession
+            Resource:
+              - 'arn:aws:iam::*:role/*'
       Users:
         - !Ref ECRIAMUser
 
