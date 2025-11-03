@@ -32,14 +32,51 @@ Deno.serve(async (req) => {
   const token = authHeader.replace('Bearer ', '');
   const { data } = await supabaseClient.auth.getUser(token);
 
-  const { name } = await req.json();
+  const { name, location } = await req.json();
 
   if (!name) {
     return new Response("Missing name", { status: 400 });
   }
 
-  const roleArn = Deno.env.get("AWS_PUSH_ROLE_ARN");
-  const result = await ecrTokenRequest(data.user.id, name, roleArn);
+  // Validate location parameter
+  if (location && location !== 'internal' && location !== 'external') {
+    return new Response("Invalid location parameter. Must be 'internal' or 'external'", { status: 400 });
+  }
+
+  // Default to 'internal' for backwards compatibility
+  const deployLocation = location || 'internal';
+
+  let roleArn: string;
+  let region: string;
+  let externalId: string | null = null;
+
+  if (deployLocation === 'external') {
+    // Get customer AWS credentials from database for external deployment
+    const { data: awsCredentials, error: credError } = await supabaseClient
+      .from('aws_credentials')
+      .select('role_arn, region, external_id')
+      .eq('user_id', data.user.id)
+      .single();
+
+    if (credError || !awsCredentials) {
+      return new Response("AWS credentials not found. Please authenticate with AWS first.", { status: 404 });
+    }
+
+    if (!awsCredentials.role_arn) {
+      return new Response("AWS role ARN not configured. Please complete AWS authentication.", { status: 400 });
+    }
+
+    roleArn = awsCredentials.role_arn;
+    region = awsCredentials.region;
+    externalId = awsCredentials.external_id;
+  } else {
+    // Use internal Prod AWS account for internal deployment (Render, etc.)
+    roleArn = Deno.env.get("AWS_PUSH_ROLE_ARN")!;
+    region = Deno.env.get('AWS_REGION') || 'us-east-1';
+    externalId = null;
+  }
+
+  const result = await ecrTokenRequest(data.user.id, name, roleArn, region, externalId);
 
   if (result instanceof Error) {
     console.error("Push token error:", result);
