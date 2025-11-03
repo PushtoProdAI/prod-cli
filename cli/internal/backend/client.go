@@ -181,9 +181,19 @@ func (c *Client) UpdateDeploymentOperation(ctx context.Context, authToken string
 
 // GetPushRegistryCredentials fetches temporary Docker registry credentials for pushing images. These are scoped to JUST being able to push to registries for the specified tenant
 func (c *Client) GetPushRegistryCredentials(ctx context.Context, authToken string, projectName string) (*RegistryCredentials, error) {
+	return c.getPushRegistryCredentialsWithLocation(ctx, authToken, projectName, "internal")
+}
+
+// GetPushRegistryCredentialsExternal fetches registry credentials for pushing to customer's AWS ECR
+func (c *Client) GetPushRegistryCredentialsExternal(ctx context.Context, authToken string, projectName string) (*RegistryCredentials, error) {
+	return c.getPushRegistryCredentialsWithLocation(ctx, authToken, projectName, "external")
+}
+
+func (c *Client) getPushRegistryCredentialsWithLocation(ctx context.Context, authToken string, projectName string, location string) (*RegistryCredentials, error) {
 	// Prepare request payload
 	payload := map[string]string{
-		"name": projectName,
+		"name":     projectName,
+		"location": location,
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -236,9 +246,19 @@ func (c *Client) GetPushRegistryCredentials(ctx context.Context, authToken strin
 
 // GetPullRegistryCredentials fetches temporary Docker registry credentials for pulling images. These are scoped to JUST being able to pull from registries for the specified tenant
 func (c *Client) GetPullRegistryCredentials(ctx context.Context, authToken string, projectName string) (*RegistryCredentials, error) {
+	return c.getPullRegistryCredentialsWithLocation(ctx, authToken, projectName, "internal")
+}
+
+// GetPullRegistryCredentialsExternal fetches registry credentials for pulling from customer's AWS ECR
+func (c *Client) GetPullRegistryCredentialsExternal(ctx context.Context, authToken string, projectName string) (*RegistryCredentials, error) {
+	return c.getPullRegistryCredentialsWithLocation(ctx, authToken, projectName, "external")
+}
+
+func (c *Client) getPullRegistryCredentialsWithLocation(ctx context.Context, authToken string, projectName string, location string) (*RegistryCredentials, error) {
 	// Prepare request payload
 	payload := map[string]string{
-		"name": projectName,
+		"name":     projectName,
+		"location": location,
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -290,13 +310,22 @@ func (c *Client) GetPullRegistryCredentials(ctx context.Context, authToken strin
 }
 
 func (c *Client) CreateDockerRepository(ctx context.Context, authToken string, projectName string) error {
+	return c.createDockerRepositoryWithLocation(ctx, authToken, projectName, "internal")
+}
+
+func (c *Client) CreateDockerRepositoryExternal(ctx context.Context, authToken string, projectName string) error {
+	return c.createDockerRepositoryWithLocation(ctx, authToken, projectName, "external")
+}
+
+func (c *Client) createDockerRepositoryWithLocation(ctx context.Context, authToken string, projectName string, location string) error {
 	data := map[string]any{
-		"name": projectName,
+		"name":     projectName,
+		"location": location,
 	}
 
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		return errors.Errorf("failed to repository name: %w", err)
+		return errors.Errorf("failed to marshal repository name: %w", err)
 	}
 
 	url := fmt.Sprintf("%s/create-repo", getBaseURL())

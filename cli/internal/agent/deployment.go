@@ -11,6 +11,7 @@ import (
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/aws"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/heroku"
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
@@ -46,6 +47,17 @@ func (a *Activities) createDeployable(spec *deployment.DeploymentSpec, platform 
 		deployable, err := herokuAdapter.GenerateArtifacts(spec, deployment.StrategyHeroku)
 		if err != nil {
 			return nil, errors.Errorf("failed to create Heroku deployment: %w", err)
+		}
+		return deployable, nil
+	case AWS:
+		awsClient, err := aws.NewClient("us-east-1")
+		if err != nil {
+			return nil, errors.Errorf("failed to create AWS client: %w", err)
+		}
+		awsAdapter := aws.NewAWSDeploymentAdapter(awsClient, "us-east-1", a.uiWriter, a.llmClient)
+		deployable, err := awsAdapter.GenerateArtifacts(spec, deployment.StrategyAWS)
+		if err != nil {
+			return nil, errors.Errorf("failed to create AWS deployment: %w", err)
 		}
 		return deployable, nil
 	default:
@@ -156,6 +168,20 @@ func (a *Activities) estimateHerokuCosts(ctx context.Context, spec deployment.De
 	return costs, nil
 }
 
+func (a *Activities) estimateAWSCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+	// TODO: Get region from user's AWS credentials in database
+	awsClient, err := aws.NewClient("us-east-1")
+	if err != nil {
+		return deployment.CostEstimate{}, errors.Errorf("failed to create AWS client: %w", err)
+	}
+	aa := aws.NewAWSDeploymentAdapter(awsClient, "us-east-1", a.uiWriter, a.llmClient)
+	costs, err := aa.EstimateCost(ctx, &spec, strategy)
+	if err != nil {
+		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
+	}
+	return costs, nil
+}
+
 func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, dbList []string, envVar analyzer.EnvVarCandidate) (deployment.EnvVar, error) {
 	slog.Info("CategorizeEnvVarsForDeployment input", "envVar", envVar)
 	slog.Info("CategorizeEnvVarsForDeployment dbList", "dbList", dbList)
@@ -241,6 +267,8 @@ func (a *Activities) getProjectDetector(platform Platform) (ProjectDetector, err
 		return NewVercelProjectDetector(a.uiWriter), nil
 	case Heroku:
 		return NewHerokuProjectDetector(a.uiWriter), nil
+	case AWS:
+		return NewAWSProjectDetector(a.uiWriter), nil
 	default:
 		return nil, errors.Errorf("unsupported platform: %s", platform)
 	}
@@ -495,6 +523,30 @@ func (d *HerokuProjectDetector) DetectExistingProject(ctx context.Context, proje
 			}
 		}
 	}
+
+	return result, nil
+}
+
+type AWSProjectDetector struct {
+	uiWriter output.StatusWriter
+}
+
+func NewAWSProjectDetector(uiWriter output.StatusWriter) *AWSProjectDetector {
+	return &AWSProjectDetector{
+		uiWriter: uiWriter,
+	}
+}
+
+func (d *AWSProjectDetector) DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
+	result := ExistingProjectInfo{
+		Exists:            false,
+		Platform:          AWS,
+		ExistingDatabases: []string{},
+	}
+
+	// TODO: Implement AWS App Runner service detection
+	// This will query App Runner to check if a service with this name already exists
+	// For now, we'll return no existing project
 
 	return result, nil
 }

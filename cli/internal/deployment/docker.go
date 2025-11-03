@@ -45,7 +45,15 @@ type DockerBuildResult struct {
 
 type DockerPushResult struct {
 	PushedImageURL string
+	RepositoryURL  string
 	PushOutput     string
+}
+
+type DockerRepositoryInfo struct {
+	RepositoryName string
+	RepositoryURI  string
+	Exists         bool
+	Created        bool
 }
 
 type DockerService struct {
@@ -733,8 +741,16 @@ func createTarFromDir(dir string) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
 }
 
-// GetPushCredentials fetches registry credentials from the push-token endpoint
+// GetPushCredentials fetches registry credentials from the push-token endpoint (internal registry)
 func (dg *DockerGenerator) GetPushCredentials(ctx context.Context, authToken, projectName string) (*backend.RegistryCredentials, error) {
+	return dg.getPushCredentialsWithLocation(ctx, authToken, projectName, "internal")
+}
+
+// getPushCredentialsWithLocation fetches push credentials for specified location (internal or external)
+func (dg *DockerGenerator) getPushCredentialsWithLocation(ctx context.Context, authToken, projectName, location string) (*backend.RegistryCredentials, error) {
+	if location == "external" {
+		return dg.beClient.GetPushRegistryCredentialsExternal(ctx, authToken, projectName)
+	}
 	return dg.beClient.GetPushRegistryCredentials(ctx, authToken, projectName)
 }
 
@@ -804,18 +820,41 @@ func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *Dock
 
 	return &DockerPushResult{
 		PushedImageURL: registryImageTag,
+		RepositoryURL:  creds.URL,
 		PushOutput:     pushOutput.String(),
 	}, nil
 }
 
-// GetPullCredentials fetches registry credentials from the pull-token endpoint
+// GetPullCredentials fetches registry credentials from the pull-token endpoint (internal registry)
 func (dg *DockerGenerator) GetPullCredentials(ctx context.Context, authToken string, projectName string) (*backend.RegistryCredentials, error) {
+	return dg.getPullCredentialsWithLocation(ctx, authToken, projectName, "internal")
+}
+
+// getPullCredentialsWithLocation fetches pull credentials for specified location (internal or external)
+func (dg *DockerGenerator) getPullCredentialsWithLocation(ctx context.Context, authToken, projectName, location string) (*backend.RegistryCredentials, error) {
+	if location == "external" {
+		return dg.beClient.GetPullRegistryCredentialsExternal(ctx, authToken, projectName)
+	}
 	return dg.beClient.GetPullRegistryCredentials(ctx, authToken, projectName)
 }
 
-// BuildAndPush is a convenience method that generates, builds, and pushes a Docker image in one step
+// BuildAndPush is a convenience method that generates, builds, and pushes a Docker image in one step (internal registry)
 func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpec, buildContext string, authToken string) (*DockerBuildResult, *DockerPushResult, error) {
-	fmt.Fprintf(dg.writer, "Starting Docker build and push for %s...\n", spec.Name)
+	return dg.buildAndPushWithLocation(ctx, spec, buildContext, authToken, "internal")
+}
+
+// BuildAndPushExternal builds and pushes to customer's external registry (AWS ECR)
+func (dg *DockerGenerator) BuildAndPushExternal(ctx context.Context, spec *DeploymentSpec, buildContext string, authToken string) (*DockerBuildResult, *DockerPushResult, error) {
+	return dg.buildAndPushWithLocation(ctx, spec, buildContext, authToken, "external")
+}
+
+// buildAndPushWithLocation is the shared implementation for building and pushing to a registry
+func (dg *DockerGenerator) buildAndPushWithLocation(ctx context.Context, spec *DeploymentSpec, buildContext string, authToken string, location string) (*DockerBuildResult, *DockerPushResult, error) {
+	registryType := "internal"
+	if location == "external" {
+		registryType = "customer"
+	}
+	fmt.Fprintf(dg.writer, "Starting Docker build and push to %s registry for %s...\n", registryType, spec.Name)
 
 	// Build the image first
 	buildResult, err := dg.GenerateAndBuild(ctx, spec, buildContext)
@@ -828,8 +867,8 @@ func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpe
 		return buildResult, nil, errors.Errorf("docker client not available - cannot push to registry")
 	}
 
-	// Get push credentials
-	creds, err := dg.GetPushCredentials(ctx, authToken, spec.Name)
+	// Get push credentials for specified location
+	creds, err := dg.getPushCredentialsWithLocation(ctx, authToken, spec.Name, location)
 	if err != nil {
 		return buildResult, nil, errors.Errorf("failed to get push credentials: %w", err)
 	}
@@ -841,6 +880,39 @@ func (dg *DockerGenerator) BuildAndPush(ctx context.Context, spec *DeploymentSpe
 	}
 
 	return buildResult, pushResult, nil
+}
+
+// CreateDockerRepository creates a repository in the internal registry
+func (dg *DockerGenerator) CreateDockerRepository(ctx context.Context, authToken, projectName string) (*DockerRepositoryInfo, error) {
+	return dg.createDockerRepositoryWithLocation(ctx, authToken, projectName, "internal")
+}
+
+// CreateDockerRepositoryExternal creates a repository in customer's external registry
+func (dg *DockerGenerator) CreateDockerRepositoryExternal(ctx context.Context, authToken, projectName string) (*DockerRepositoryInfo, error) {
+	return dg.createDockerRepositoryWithLocation(ctx, authToken, projectName, "external")
+}
+
+// createDockerRepositoryWithLocation creates a repository for the specified location
+func (dg *DockerGenerator) createDockerRepositoryWithLocation(ctx context.Context, authToken, projectName, location string) (*DockerRepositoryInfo, error) {
+	var err error
+	if location == "external" {
+		err = dg.beClient.CreateDockerRepositoryExternal(ctx, authToken, projectName)
+	} else {
+		err = dg.beClient.CreateDockerRepository(ctx, authToken, projectName)
+	}
+
+	if err != nil {
+		return nil, errors.Errorf("failed to create docker repository: %w", err)
+	}
+
+	// TODO: Return actual repository info from backend response
+	// For now return basic info
+	return &DockerRepositoryInfo{
+		RepositoryName: projectName,
+		RepositoryURI:  fmt.Sprintf("%s-ecr/%s", location, projectName),
+		Exists:         false,
+		Created:        true,
+	}, nil
 }
 
 // generatePythonStartupScript creates the startup script for Python applications

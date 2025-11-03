@@ -39,6 +39,7 @@ const (
 	SetupJavaScriptProjectWorkflowName = "agent.setupJavaScriptProject"
 	DeployVercelWorkflowName           = "agent.deploy.vercel"
 	DeployHerokuWorkflowName           = "agent.deploy.heroku"
+	DeployAWSWorkflowName              = "agent.deploy.aws"
 	RollbackDeploymentWorkflowName     = "agent.rollbackDeployment"
 )
 
@@ -148,6 +149,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: SetupJavaScriptProjectWorkflowName, WorkflowFunc: w.setupJavaScriptProject},
 		{Name: DeployVercelWorkflowName, WorkflowFunc: w.deployVercel},
 		{Name: DeployHerokuWorkflowName, WorkflowFunc: w.deployHeroku},
+		{Name: DeployAWSWorkflowName, WorkflowFunc: w.deployAWS},
 		{Name: RollbackDeploymentWorkflowName, WorkflowFunc: w.rollbackDeployment},
 	}
 }
@@ -169,6 +171,8 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input DeployPlan)
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployVercelWorkflowName, time.Now().Unix())}, DeployVercelWorkflowName, input)
 	case Heroku:
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployHerokuWorkflowName, time.Now().Unix())}, DeployHerokuWorkflowName, input)
+	case AWS:
+		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployAWSWorkflowName, time.Now().Unix())}, DeployAWSWorkflowName, input)
 	default:
 		return nil, errors.New("unsupported platform for deployment")
 	}
@@ -1890,6 +1894,122 @@ func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deploy
 	}
 
 	slog.Info("Heroku deployment workflow completed successfully")
+	return deployResult{Url: fullUrl}, nil
+}
+
+func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployResult, error) {
+	slog.Info("deployAWS workflow started", "platform", input.Platform)
+	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
+
+	// Get auth token from session
+	token := ""
+	session := CtxWorkflowSession(ctx)
+	if session != nil {
+		token = session.AccessToken
+	}
+
+	// Use existing project info from DeployPlan
+	existingProject := input.ExistingProjectInfo
+	if existingProject.Exists {
+		slog.Info("Using existing project from detection", "name", existingProject.Name, "id", existingProject.ProjectID, "databases", existingProject.ExistingDatabases)
+	}
+
+	// Log deployment start
+	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "aws", input.Spec, input.Source, input.Action).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to log deployment start", "error", err)
+	}
+
+	// Build deployment spec
+	slog.Info("Building deployment spec")
+	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars)
+	spec, err := db.Build()
+	if err != nil {
+		slog.Info("Failed to build deployment spec", "error", err)
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error": err.Error(), "platform": "aws", "stage": "spec_build",
+			}).Get(ctx)
+		}
+		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to build deployment spec: %v", err)}}, nil
+	}
+
+	spec.Metadata["buildContext"] = input.Source
+	spec.Metadata["authToken"] = token
+	spec.Metadata["platform"] = "aws"
+
+	if existingProject.Exists {
+		spec.IsUpdate = true
+		spec.ExistingProjectID = existingProject.ProjectID
+		spec.ExistingDatabases = existingProject.ExistingDatabases
+	}
+
+	// Estimate costs
+	estimatedCosts, err := workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateAWSCosts, *spec, deployment.StrategyAWS).Get(ctx)
+	if err != nil {
+		slog.Error("Error estimating costs", "error", err)
+	} else {
+		slog.Info("Estimated monthly costs", "total", estimatedCosts.Total, "services", len(estimatedCosts.Services))
+	}
+
+	// Deploy to AWS
+	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
+	if err != nil {
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow": DeployAWSWorkflowName, "activity": AgentDeploySteps,
+			"component": "deployment", "platform": "aws", "project_name": input.Spec.Name,
+		})
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error": err.Error(), "platform": "aws", "stage": "deploy_steps",
+			}).Get(ctx)
+		}
+		return deployResult{Error: deployError{Summary: fmt.Sprintf("Deployment failed: %v", err)}}, nil
+	}
+
+	// Find App Runner service URL
+	var deploymentURL string
+	for _, resource := range createdResources {
+		if resource.Type == "app_runner_service" {
+			if url, ok := resource.Metadata["url"].(string); ok {
+				deploymentURL = url
+			}
+			break
+		}
+	}
+
+	if deploymentURL == "" {
+		deploymentURL = "Deployment completed but URL not available"
+	}
+
+	path, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentDetermineRootPath, input.Spec.Routes).Get(ctx)
+	if err != nil {
+		path = "/"
+	}
+
+	fullUrl, err := url.JoinPath(deploymentURL, path)
+	if err != nil {
+		fullUrl = deploymentURL
+	}
+
+	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
+	if err != nil {
+		slog.Error("Health check failed", "error", err, "url", fullUrl)
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+				"error": err.Error(), "platform": "aws", "stage": "url_verification", "url": fullUrl,
+			}).Get(ctx)
+		}
+		return deployResult{Error: deployError{Summary: fmt.Sprintf("Deployment failed health check at %s", fullUrl)}}, nil
+	}
+
+	if operationId != "" {
+		workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", map[string]any{
+			"url": fullUrl, "platform": "aws", "resources_created": createdResources,
+		}).Get(ctx)
+	}
+
+	slog.Info("AWS deployment workflow completed successfully")
 	return deployResult{Url: fullUrl}, nil
 }
 

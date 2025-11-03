@@ -6,41 +6,25 @@ import (
 	"github.com/go-errors/errors"
 )
 
-// client implements the AWSClient interface using AWS SDK
-// This is a stub implementation that will be filled in later
+// client implements the AWSClient interface
+// AWS operations are coordinated through the backend which handles role assumption
 type client struct {
-	region     string
-	roleARN    string
-	externalID string
-	accountID  string
+	region string
 }
 
-// NewClient creates a new AWS client that assumes the customer's deployment role
-func NewClient(region, roleARN, externalID, accountID string) (AWSClient, error) {
+// NewClient creates a new AWS client
+// Note: Credentials and role assumption are handled by the backend
+func NewClient(region string) (AWSClient, error) {
 	if region == "" {
-		return nil, errors.New("region is required")
-	}
-	if roleARN == "" {
-		return nil, errors.New("roleARN is required")
-	}
-	if externalID == "" {
-		return nil, errors.New("externalID is required")
-	}
-	if accountID == "" {
-		return nil, errors.New("accountID is required")
+		region = "us-east-1" // default
 	}
 
 	// TODO: Initialize AWS SDK clients here
-	// This will involve:
-	// 1. Creating STS client to assume the customer role
-	// 2. Getting temporary credentials
-	// 3. Creating service clients (App Runner, RDS, ElastiCache, ECR, etc.)
+	// The backend will handle assuming customer roles and making AWS API calls
+	// This client mainly coordinates with the backend
 
 	return &client{
-		region:     region,
-		roleARN:    roleARN,
-		externalID: externalID,
-		accountID:  accountID,
+		region: region,
 	}, nil
 }
 
