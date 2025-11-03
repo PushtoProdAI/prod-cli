@@ -26,31 +26,45 @@ export interface EcrTokenResp {
   accountId: string;
 }
 
-export async function ecrTokenRequest(tenantId: string, repoName: string, roleArn: string): Promise<EcrTokenResp | Error> {
+export async function ecrTokenRequest(
+  tenantId: string,
+  repoName: string,
+  roleArn: string,
+  region?: string,
+  externalId?: string | null,
+): Promise<EcrTokenResp | Error> {
   if (!tenantId || !roleArn) {
     return new Error("Missing tenantId or roleArn");
   }
 
-  const region = Deno.env.get("AWS_REGION") || "us-east-1";
+  const awsRegion = region || Deno.env.get("AWS_REGION") || "us-east-1";
   const sanitizedRepoName = repoName.replace(/\s+/g, '-');
   const fullRepoName = `${tenantId}-${sanitizedRepoName}`;
 
   try {
     const stsClient = new STSClient({ 
-      region,
+      region: awsRegion,
       credentials: {
         accessKeyId: Deno.env.get("AWS_ACCESS_KEY_ID") || "",
         secretAccessKey: Deno.env.get("AWS_SECRET_ACCESS_KEY") || "",
       }
     });
 
-    const assumeRoleCommand = new AssumeRoleCommand({
+    // Build assume role command with optional ExternalId
+    const assumeRoleParams: any = {
       RoleArn: roleArn,
       RoleSessionName: `session-${tenantId}`,
       DurationSeconds: 3600,
       Tags: [{ Key: "tenant", Value: tenantId }],
       TransitiveTagKeys: ["tenant"]
-    });
+    };
+
+    // Add ExternalId if provided (required for customer AWS accounts)
+    if (externalId) {
+      assumeRoleParams.ExternalId = externalId;
+    }
+
+    const assumeRoleCommand = new AssumeRoleCommand(assumeRoleParams);
 
     const { Credentials, AssumedRoleUser } = await stsClient.send(assumeRoleCommand);
 
@@ -59,7 +73,7 @@ export async function ecrTokenRequest(tenantId: string, repoName: string, roleAr
     }
 
     const ecrClient = new ECRClient({
-      region,
+      region: awsRegion,
       credentials: {
         accessKeyId: Credentials.AccessKeyId!,
         secretAccessKey: Credentials.SecretAccessKey!,
@@ -115,31 +129,41 @@ export async function checkAndCreateECRRepo(
   tenantId: string,
   repoName: string,
   roleArn: string,
+  region?: string,
+  externalId?: string | null,
 ): Promise<EcrRepoResp | Error> {
   if (!tenantId || !repoName || !roleArn) {
     return new Error('Missing userId, repoName, or roleArn');
   }
 
-  const region = Deno.env.get('AWS_REGION') || 'us-east-1';
+  const awsRegion = region || Deno.env.get('AWS_REGION') || 'us-east-1';
   const sanitizedRepoName = repoName.replace(/\s+/g, '-');
   const fullRepoName = `${tenantId}-${sanitizedRepoName}`;
 
   try {
     const stsClient = new STSClient({
-      region,
+      region: awsRegion,
       credentials: {
         accessKeyId: Deno.env.get('AWS_ACCESS_KEY_ID') || '',
         secretAccessKey: Deno.env.get('AWS_SECRET_ACCESS_KEY') || '',
       },
     });
 
-    const assumeRoleCommand = new AssumeRoleCommand({
+    // Build assume role command with optional ExternalId
+    const assumeRoleParams: any = {
       RoleArn: roleArn,
       RoleSessionName: `session-${tenantId}`,
       DurationSeconds: 3600,
       Tags: [{ Key: 'tenant', Value: tenantId }],
       TransitiveTagKeys: ['tenant'],
-    });
+    };
+
+    // Add ExternalId if provided (required for customer AWS accounts)
+    if (externalId) {
+      assumeRoleParams.ExternalId = externalId;
+    }
+
+    const assumeRoleCommand = new AssumeRoleCommand(assumeRoleParams);
 
     const { Credentials } = await stsClient.send(assumeRoleCommand);
 
@@ -148,7 +172,7 @@ export async function checkAndCreateECRRepo(
     }
 
     const ecrClient = new ECRClient({
-      region,
+      region: awsRegion,
       credentials: {
         accessKeyId: Credentials.AccessKeyId!,
         secretAccessKey: Credentials.SecretAccessKey!,
