@@ -26,6 +26,8 @@ const (
 	StrategyVercel DeploymentStrategy = "vercel"
 
 	StrategyHeroku DeploymentStrategy = "heroku"
+
+	StrategyAWS DeploymentStrategy = "aws"
 )
 
 type CreatedResource struct {
