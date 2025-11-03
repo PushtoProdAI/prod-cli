@@ -60,10 +60,9 @@ Resources:
           - Effect: Allow
             Principal:
               AWS: !GetAtt ECRIAMUser.Arn
-            Action: sts:AssumeRole
-            Condition:
-              StringEquals:
-                'sts:RequestedRegion': !Ref AWS::Region
+            Action:
+              - sts:AssumeRole
+              - sts:TagSession
 
   # ECR Pull Only Policy
   ECRPullOnlyPolicy:
@@ -91,7 +90,7 @@ Resources:
               - ecr:DescribeImages
               - ecr:ListImages
               - ecr:DescribeRepositories
-            Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
+            Resource: !Sub 'arn:aws:ecr:*:${AWS::AccountId}:repository/*'
             Condition:
               StringEquals:
                 'aws:ResourceTag/tenant': '${aws:PrincipalTag/tenant}'
@@ -109,10 +108,9 @@ Resources:
           - Effect: Allow
             Principal:
               AWS: !GetAtt ECRIAMUser.Arn
-            Action: sts:AssumeRole
-            Condition:
-              StringEquals:
-                'sts:RequestedRegion': !Ref AWS::Region
+            Action:
+              - sts:AssumeRole
+              - sts:TagSession
 
   # ECR Push Only Policy
   ECRPushOnlyPolicy:
@@ -144,7 +142,7 @@ Resources:
               - ecr:BatchGetImage
               - ecr:DescribeImages
               - ecr:GetRepositoryPolicy
-            Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
+            Resource: !Sub 'arn:aws:ecr:*:${AWS::AccountId}:repository/*'
             Condition:
               StringEquals:
                 'aws:ResourceTag/tenant': '${aws:PrincipalTag/tenant}'
@@ -162,10 +160,9 @@ Resources:
           - Effect: Allow
             Principal:
               AWS: !GetAtt ECRIAMUser.Arn
-            Action: sts:AssumeRole
-            Condition:
-              StringEquals:
-                'sts:RequestedRegion': !Ref AWS::Region
+            Action:
+              - sts:AssumeRole
+              - sts:TagSession
 
   # ECR Repository Manager Policy
   ECRRepositoryManagerPolicy:
@@ -184,7 +181,7 @@ Resources:
               - ecr:ListTagsForResource
               - ecr:TagResource
               - ecr:UntagResource
-            Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
+            Resource: !Sub 'arn:aws:ecr:*:${AWS::AccountId}:repository/*'
           - Sid: ECRDescribeAccess
             Effect: Allow
             Action:
