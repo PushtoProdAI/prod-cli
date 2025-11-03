@@ -55,13 +55,16 @@ export async function ecrTokenRequest(
       RoleArn: roleArn,
       RoleSessionName: `session-${tenantId}`,
       DurationSeconds: 3600,
-      Tags: [{ Key: "tenant", Value: tenantId }],
-      TransitiveTagKeys: ["tenant"]
     };
 
     // Add ExternalId if provided (required for customer AWS accounts)
     if (externalId) {
       assumeRoleParams.ExternalId = externalId;
+    } else {
+      // Only use session tags for internal roles (our own AWS account)
+      // Customer roles don't need tags and would require sts:TagSession permission
+      assumeRoleParams.Tags = [{ Key: "tenant", Value: tenantId }];
+      assumeRoleParams.TransitiveTagKeys = ["tenant"];
     }
 
     const assumeRoleCommand = new AssumeRoleCommand(assumeRoleParams);
@@ -154,13 +157,16 @@ export async function checkAndCreateECRRepo(
       RoleArn: roleArn,
       RoleSessionName: `session-${tenantId}`,
       DurationSeconds: 3600,
-      Tags: [{ Key: 'tenant', Value: tenantId }],
-      TransitiveTagKeys: ['tenant'],
     };
 
     // Add ExternalId if provided (required for customer AWS accounts)
     if (externalId) {
       assumeRoleParams.ExternalId = externalId;
+    } else {
+      // Only use session tags for internal roles (our own AWS account)
+      // Customer roles don't need tags and would require sts:TagSession permission
+      assumeRoleParams.Tags = [{ Key: 'tenant', Value: tenantId }];
+      assumeRoleParams.TransitiveTagKeys = ['tenant'];
     }
 
     const assumeRoleCommand = new AssumeRoleCommand(assumeRoleParams);

@@ -139,7 +139,7 @@ func (h *RemixHandler) GetConfigFilenames() []string {
 
 func (h *RemixHandler) PatchPackageJSON(origPackageJson []byte, platform Platform) ([]byte, bool, error) {
 	switch platform {
-	case Render, FlyIO, Heroku:
+	case Render, FlyIO, Heroku, AWS:
 		// For Node.js platforms, ensure @remix-run/serve is available as a dependency (not devDependency)
 		updatedPackageJson, err := patchPackageJSONForRemixServe(origPackageJson, "@remix-run/serve", "^2.0.0")
 		if err != nil {
@@ -337,7 +337,7 @@ func (h *RemixHandler) RestoreConfigFromBackup(ctx context.Context, plan DeployP
 func (h *RemixHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
 	// Apply platform-specific deployment configuration for Remix
 	switch plan.Platform {
-	case Render, FlyIO, Heroku:
+	case Render, FlyIO, Heroku, AWS:
 		plan.Spec.StartCommand = "npx remix-serve ./build/server/index.js"
 	}
 	return plan
@@ -359,7 +359,7 @@ func (h *SvelteKitHandler) GetConfigFilenames() []string {
 func (h *SvelteKitHandler) PatchPackageJSON(origPackageJson []byte, platform Platform) ([]byte, bool, error) {
 	// For platforms that need Svelte adapters
 	switch platform {
-	case Render, FlyIO, Heroku:
+	case Render, FlyIO, Heroku, AWS:
 		updatedPackageJson, err := patchPackageJSON(origPackageJson, "@sveltejs/adapter-node", "^5.2.0")
 		if err != nil {
 			return nil, false, err
@@ -400,7 +400,7 @@ func (h *SvelteKitHandler) HandleConfig(projectPath string, platform Platform) (
 	// Determine which adapter to use based on platform
 	var newAdapter string
 	switch platform {
-	case Render, FlyIO, Heroku:
+	case Render, FlyIO, Heroku, AWS:
 		newAdapter = "@sveltejs/adapter-node"
 	case Netlify:
 		newAdapter = "@sveltejs/adapter-netlify"
@@ -535,7 +535,7 @@ func (h *NuxtHandler) HandlePlatformSpecificFiles(projectPath string, platform P
 func (h *NuxtHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
 	// Apply platform-specific deployment configuration for Nuxt
 	switch plan.Platform {
-	case Render, FlyIO, Heroku:
+	case Render, FlyIO, Heroku, AWS:
 		plan.Spec.StartCommand = "node .output/server/index.mjs"
 		plan.CollectedEnvVars = append(plan.CollectedEnvVars, deployment.EnvVar{Name: "NITRO_PRESET", Value: "node-server"})
 	case Netlify:
