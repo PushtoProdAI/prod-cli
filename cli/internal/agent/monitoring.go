@@ -66,6 +66,36 @@ func (a *Activities) waitForRenderDeploy(ctx context.Context, serviceID, deployI
 	return nil
 }
 
+func (a *Activities) waitForAWSStack(ctx context.Context, authToken, stackName string) (map[string]string, error) {
+	a.uiWriter.SendStatus("deploying", "Waiting for CloudFormation stack to complete...")
+
+	status, err := a.beClient.GetAWSStackStatus(ctx, authToken, stackName)
+	if err != nil {
+		return nil, errors.Errorf("failed to get stack status: %w", err)
+	}
+
+	// Check for failure states
+	if status.Status == "CREATE_FAILED" ||
+		status.Status == "ROLLBACK_COMPLETE" ||
+		status.Status == "ROLLBACK_FAILED" ||
+		status.Status == "UPDATE_ROLLBACK_COMPLETE" ||
+		status.Status == "UPDATE_ROLLBACK_FAILED" {
+		errorMsg := "CloudFormation stack failed"
+		if status.Error != "" {
+			errorMsg = status.Error
+		}
+		return nil, errors.Errorf("CloudFormation deployment failed: %s (status: %s)", errorMsg, status.Status)
+	}
+
+	// Check if deployment is complete
+	if status.Status != "CREATE_COMPLETE" && status.Status != "UPDATE_COMPLETE" {
+		return nil, errors.Errorf("CloudFormation stack not yet complete, current status: %s", status.Status)
+	}
+
+	// Return stack outputs on success
+	return status.Outputs, nil
+}
+
 func (a *Activities) getFlyIOAppURL(ctx context.Context, appID string) (string, error) {
 	service, err := a.flyClient.GetApp(ctx, appID)
 	if err != nil {

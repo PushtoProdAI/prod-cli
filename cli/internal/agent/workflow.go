@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -1952,7 +1953,7 @@ func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployRes
 		slog.Info("Estimated monthly costs", "total", estimatedCosts.Total, "services", len(estimatedCosts.Services))
 	}
 
-	// Deploy to AWS
+	// Deploy to AWS (initiates CloudFormation stack)
 	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
 	if err != nil {
 		prod_error.CaptureErrorWithContext(err, map[string]any{
@@ -1967,14 +1968,73 @@ func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployRes
 		return deployResult{Error: deployError{Summary: fmt.Sprintf("Deployment failed: %v", err)}}, nil
 	}
 
-	// Find App Runner service URL
+	// Find CloudFormation stack and poll for completion
+	var stackName string
 	var deploymentURL string
 	for _, resource := range createdResources {
-		if resource.Type == "app_runner_service" {
-			if url, ok := resource.Metadata["url"].(string); ok {
-				deploymentURL = url
+		if resource.Type == "cloudformation_stack" {
+			if name, ok := resource.Metadata["stackName"].(string); ok {
+				stackName = name
 			}
 			break
+		}
+	}
+
+	// Poll for CloudFormation stack completion (similar to Render polling)
+	if stackName != "" {
+		stackCheckOpts := ActivityOpts
+		stackCheckOpts.RetryOptions.MaxAttempts = 60 // CloudFormation can take longer than Render
+		stackOutputs, err := workflow.ExecuteActivity[map[string]string](ctx, stackCheckOpts, AgentWaitForAWSStack, token, stackName).Get(ctx)
+		if err != nil {
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":   DeployAWSWorkflowName,
+				"activity":   AgentWaitForAWSStack,
+				"component":  "deployment",
+				"platform":   "aws",
+				"stack_name": stackName,
+			})
+			summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+			if e1 != nil {
+				prod_error.CaptureErrorWithContext(e1, map[string]any{
+					"workflow":  DeployAWSWorkflowName,
+					"activity":  AgentSummarizeError,
+					"component": "deployment",
+					"platform":  "aws",
+					"operation": "summarize_original_error",
+				})
+				if operationId != "" {
+					workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+						"error":      err.Error(),
+						"platform":   "aws",
+						"stage":      "wait_for_stack",
+						"stack_name": stackName,
+					}).Get(ctx)
+				}
+				return deployResult{Error: deployError{Summary: err.Error()}}, nil
+			}
+			slog.Info("CloudFormation deployment failed", "stackName", stackName, "error", err)
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":      err.Error(),
+					"platform":   "aws",
+					"stage":      "wait_for_stack",
+					"stack_name": stackName,
+				}).Get(ctx)
+			}
+			return deployResult{Error: summary}, nil
+		}
+
+		// Get service URL from stack outputs
+		if serviceURL, ok := stackOutputs["ServiceUrl"]; ok && serviceURL != "" {
+			// App Runner ServiceUrl doesn't include the scheme, add https://
+			if !strings.HasPrefix(serviceURL, "http://") && !strings.HasPrefix(serviceURL, "https://") {
+				deploymentURL = "https://" + serviceURL
+			} else {
+				deploymentURL = serviceURL
+			}
+		} else {
+			// Fallback if ServiceUrl not in outputs
+			deploymentURL = fmt.Sprintf("https://%s.awsapprunner.com", spec.Name)
 		}
 	}
 
