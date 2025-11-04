@@ -278,6 +278,7 @@ Resources:
               - secretsmanager:TagResource
               - secretsmanager:UntagResource
               - secretsmanager:ListSecrets
+              - secretsmanager:GetRandomPassword
             Resource: '*'
 
   # Policy for CloudFormation stack management
@@ -373,12 +374,14 @@ Resources:
               - iam:CreateServiceLinkedRole
             Resource: 
               - 'arn:aws:iam::*:role/aws-service-role/apprunner.amazonaws.com/*'
+              - 'arn:aws:iam::*:role/aws-service-role/networking.apprunner.amazonaws.com/*'
               - 'arn:aws:iam::*:role/aws-service-role/rds.amazonaws.com/*'
               - 'arn:aws:iam::*:role/aws-service-role/elasticache.amazonaws.com/*'
             Condition:
               StringEquals:
                 'iam:AWSServiceName': 
                   - 'apprunner.amazonaws.com'
+                  - 'networking.apprunner.amazonaws.com'
                   - 'rds.amazonaws.com'
                   - 'elasticache.amazonaws.com'
 

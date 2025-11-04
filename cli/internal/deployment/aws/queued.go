@@ -197,6 +197,7 @@ func (ad *AWSDeployment) createAppRunnerServiceStep(stepID int, connectionStepID
 		ServiceName:       ad.spec.Name,
 		ECRStepID:         ecrStepID,
 		EnvVars:           ad.spec.EnvVars,
+		Services:          ad.spec.Services, // Pass backing services (databases, caches)
 		ConnectionStepIDs: connectionStepIDs,
 		CPU:               appRunnerCPU,
 		Memory:            appRunnerMemory,

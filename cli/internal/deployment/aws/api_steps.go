@@ -136,6 +136,7 @@ type CreateAppRunnerServiceStepConfig struct {
 	ServiceName       string
 	ECRStepID         string // Step ID that created/pushed the ECR image
 	EnvVars           []deployment.EnvVar
+	Services          []deployment.Service // Database and cache services
 	ConnectionStepIDs []string
 	CPU               string
 	Memory            string
@@ -147,14 +148,15 @@ type CreateAppRunnerServiceStepConfig struct {
 // CreateAppRunnerServiceStep handles App Runner service creation via CloudFormation
 type CreateAppRunnerServiceStep struct {
 	BaseStep
-	ServiceName       string              `json:"serviceName"`
-	ECRStepID         string              `json:"ecrStepId"`
-	EnvVars           []deployment.EnvVar `json:"envVars"`
-	ConnectionStepIDs []string            `json:"connectionStepIds"`
-	CPU               string              `json:"cpu"`
-	Memory            string              `json:"memory"`
-	Port              int                 `json:"port"`
-	AuthToken         string              `json:"authToken"`
+	ServiceName       string               `json:"serviceName"`
+	ECRStepID         string               `json:"ecrStepId"`
+	EnvVars           []deployment.EnvVar  `json:"envVars"`
+	Services          []deployment.Service `json:"services"`
+	ConnectionStepIDs []string             `json:"connectionStepIds"`
+	CPU               string               `json:"cpu"`
+	Memory            string               `json:"memory"`
+	Port              int                  `json:"port"`
+	AuthToken         string               `json:"authToken"`
 }
 
 func NewCreateAppRunnerServiceStep(config CreateAppRunnerServiceStepConfig) *CreateAppRunnerServiceStep {
@@ -167,6 +169,7 @@ func NewCreateAppRunnerServiceStep(config CreateAppRunnerServiceStepConfig) *Cre
 		ServiceName:       config.ServiceName,
 		ECRStepID:         config.ECRStepID,
 		EnvVars:           config.EnvVars,
+		Services:          config.Services,
 		ConnectionStepIDs: config.ConnectionStepIDs,
 		CPU:               config.CPU,
 		Memory:            config.Memory,
@@ -189,23 +192,58 @@ func (s *CreateAppRunnerServiceStep) Execute(ctx context.Context, client AWSClie
 		return nil, errors.New("pushed image URL not found in ECR step result")
 	}
 
-	// Collect environment variables including database connections
-	envVarMap := make(map[string]string)
+	// Convert EnvVars to backend format with categorization
+	backendEnvVars := make([]backend.EnvVar, 0, len(s.EnvVars))
 	for _, envVar := range s.EnvVars {
-		if envVar.Value != "" {
-			envVarMap[envVar.Name] = envVar.Value
-		}
+		backendEnvVars = append(backendEnvVars, backend.EnvVar{
+			Name:    envVar.Name,
+			Value:   envVar.Value,
+			Role:    envVar.Role,
+			Service: envVar.Service,
+		})
 	}
 
-	// Add connection strings from backing services
-	for _, connStepID := range s.ConnectionStepIDs {
-		if connResult, ok := stepResults[connStepID].(map[string]any); ok {
-			if connStr, ok := connResult["connectionString"].(string); ok {
-				// TODO: Map to appropriate env var name based on service type
-				envVarMap["DATABASE_URL"] = connStr
-			}
+	// Convert deployment services to backing services
+	slog.Info("Converting deployment services to backing services", "count", len(s.Services))
+	backingServices := make([]backend.BackingService, 0, len(s.Services))
+	for _, svc := range s.Services {
+		slog.Info("Processing service", "provider", svc.Provider, "name", svc.Name)
+
+		// Map provider to AWS service type
+		var serviceType string
+		if svc.Provider == "postgresql" || svc.Provider == "mysql" {
+			serviceType = "rds"
+		} else if svc.Provider == "redis" {
+			serviceType = "elasticache"
+		} else {
+			// Skip unsupported service types
+			slog.Warn("Unsupported service provider for AWS", "provider", svc.Provider)
+			continue
 		}
+
+		backingService := backend.BackingService{
+			Type: serviceType, // "rds" or "elasticache"
+			Name: svc.Name,
+		}
+
+		// Set default configurations based on service type
+		if svc.Provider == "postgresql" || svc.Provider == "mysql" {
+			backingService.Engine = "postgres" // TODO: handle mysql
+			if svc.Provider == "mysql" {
+				backingService.Engine = "mysql"
+			}
+			backingService.InstanceClass = "db.t3.micro"
+			backingService.AllocatedStorage = 20
+			slog.Info("Configured RDS backing service", "name", svc.Name, "engine", backingService.Engine)
+		} else if svc.Provider == "redis" {
+			backingService.NodeType = "cache.t3.micro"
+			backingService.NumCacheNodes = 1
+			slog.Info("Configured ElastiCache backing service", "name", svc.Name)
+		}
+
+		backingServices = append(backingServices, backingService)
 	}
+	slog.Info("Total backing services created", "count", len(backingServices))
 
 	// Call backend to initiate CloudFormation stack deployment
 	backendClient := backend.NewClient()
@@ -216,8 +254,8 @@ func (s *CreateAppRunnerServiceStep) Execute(ctx context.Context, client AWSClie
 		CPU:             s.CPU,
 		Memory:          s.Memory,
 		Port:            s.Port,
-		EnvVars:         envVarMap,
-		BackingServices: []backend.BackingService{},
+		EnvVars:         backendEnvVars,
+		BackingServices: backingServices,
 	}
 
 	slog.Info("Calling backend to initiate CloudFormation stack deployment",
@@ -225,6 +263,7 @@ func (s *CreateAppRunnerServiceStep) Execute(ctx context.Context, client AWSClie
 		"image", pushedImageURL,
 		"cpu", s.CPU,
 		"memory", s.Memory,
+		"backingServicesCount", len(backingServices),
 	)
 
 	// Deploy stack - backend returns immediately without polling
