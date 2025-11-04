@@ -18,13 +18,20 @@ import {
 // Initialize Sentry
 initSentry();
 
+interface EnvVar {
+  name: string;
+  value?: string;
+  role?: string;    // "full_uri", "hostname", "port", "username", "password", "database_name", etc.
+  service?: string; // "postgresql", "redis", etc.
+}
+
 interface DeploymentSpec {
   serviceName: string;
   imageUrl: string;
   cpu: string;
   memory: string;
   port: number;
-  envVars: Record<string, string>;
+  envVars: EnvVar[];
   backingServices?: BackingService[];
 }
 
@@ -74,6 +81,13 @@ Deno.serve(async (req) => {
     }
 
     const deploymentSpec: DeploymentSpec = await req.json();
+
+    console.log('Received deployment spec:', {
+      serviceName: deploymentSpec.serviceName,
+      imageUrl: deploymentSpec.imageUrl,
+      backingServicesCount: deploymentSpec.backingServices?.length || 0,
+      backingServices: deploymentSpec.backingServices,
+    });
 
     // Validate required fields
     if (!deploymentSpec.serviceName || !deploymentSpec.imageUrl) {
@@ -207,11 +221,114 @@ Deno.serve(async (req) => {
   }
 });
 
+function buildEnvironmentVariables(spec: DeploymentSpec, resources: any): any[] {
+  const envVars: any[] = [];
+  const addedEnvVars = new Set<string>();
+  
+  // Process PostgreSQL backing services
+  const postgresServices = spec.backingServices?.filter(s => s.type === 'rds') || [];
+  
+  // Build database connection components for each PostgreSQL service
+  const dbConnectionInfo: Record<string, any> = {};
+  for (const service of postgresServices) {
+    const dbName = service.name.replace(/[^a-zA-Z0-9]/g, '');
+    
+    // Use Fn::Sub with proper secret reference
+    // Format: {{resolve:secretsmanager:secret-id:SecretString:json-key::}}
+    dbConnectionInfo[service.name] = {
+      host: { 'Fn::GetAtt': [dbName, 'Endpoint.Address'] },
+      port: { 'Fn::GetAtt': [dbName, 'Endpoint.Port'] },
+      username: 'postgres',
+      password: {
+        'Fn::Sub': [
+          '{{resolve:secretsmanager:${SecretId}:SecretString:password::}}',
+          { SecretId: { Ref: `${dbName}Password` } },
+        ],
+      },
+      database: 'postgres',
+      connectionString: {
+        'Fn::Sub': [
+          'postgresql://postgres:{{resolve:secretsmanager:${SecretId}:SecretString:password::}}@${Endpoint}:${Port}/postgres',
+          {
+            SecretId: { Ref: `${dbName}Password` },
+            Endpoint: { 'Fn::GetAtt': [dbName, 'Endpoint.Address'] },
+            Port: { 'Fn::GetAtt': [dbName, 'Endpoint.Port'] },
+          },
+        ],
+      },
+    };
+  }
+  
+  // Map categorized env vars to their database values
+  for (const envVar of spec.envVars) {
+    // Skip database-related env vars without values (will be populated from RDS)
+    if (envVar.service === 'postgresql' && !envVar.value) {
+      // Find the first PostgreSQL service (or could be smarter about matching)
+      const firstPostgres = postgresServices[0];
+      if (firstPostgres && dbConnectionInfo[firstPostgres.name]) {
+        const dbInfo = dbConnectionInfo[firstPostgres.name];
+        
+        switch (envVar.role) {
+          case 'full_uri':
+            envVars.push({ Name: envVar.name, Value: dbInfo.connectionString });
+            addedEnvVars.add(envVar.name);
+            break;
+          case 'hostname':
+            envVars.push({ Name: envVar.name, Value: dbInfo.host });
+            addedEnvVars.add(envVar.name);
+            break;
+          case 'port':
+            envVars.push({ Name: envVar.name, Value: dbInfo.port });
+            addedEnvVars.add(envVar.name);
+            break;
+          case 'username':
+            envVars.push({ Name: envVar.name, Value: dbInfo.username });
+            addedEnvVars.add(envVar.name);
+            break;
+          case 'password':
+            // For password, we use Fn::Sub to resolve from Secrets Manager
+            envVars.push({ Name: envVar.name, Value: dbInfo.password });
+            addedEnvVars.add(envVar.name);
+            break;
+          case 'database_name':
+            envVars.push({ Name: envVar.name, Value: dbInfo.database });
+            addedEnvVars.add(envVar.name);
+            break;
+        }
+      }
+    } else if (envVar.value) {
+      // Add non-database env vars with values
+      envVars.push({
+        Name: envVar.name,
+        Value: envVar.value,
+      });
+      addedEnvVars.add(envVar.name);
+    }
+  }
+  
+  // Add default DATABASE_URL if not already added and we have a PostgreSQL service
+  if (!addedEnvVars.has('DATABASE_URL') && postgresServices.length > 0) {
+    const firstPostgres = postgresServices[0];
+    if (dbConnectionInfo[firstPostgres.name]) {
+      envVars.push({
+        Name: 'DATABASE_URL',
+        Value: dbConnectionInfo[firstPostgres.name].connectionString,
+      });
+    }
+  }
+  
+  return envVars;
+}
+
 function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string): string {
   const resources: any = {};
 
   // Create VPC and networking if backing services are needed
   const needsVpc = spec.backingServices && spec.backingServices.length > 0;
+  console.log('Generating CloudFormation template:', {
+    backingServicesCount: spec.backingServices?.length || 0,
+    needsVpc: needsVpc,
+  });
 
   if (needsVpc) {
     // VPC
@@ -228,24 +345,30 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
       },
     };
 
-    // Subnets
-    resources.SubnetA = {
+    // Subnets - Private subnets for RDS and other backing services
+    resources.PrivateSubnetAZ1 = {
       Type: 'AWS::EC2::Subnet',
       Properties: {
         VpcId: { Ref: 'VPC' },
         CidrBlock: '10.0.1.0/24',
         AvailabilityZone: { 'Fn::Select': [0, { 'Fn::GetAZs': '' }] },
-        Tags: [{ Key: 'Name', Value: `prod-${spec.serviceName}-subnet-a` }],
+        Tags: [
+          { Key: 'Name', Value: `prod-${spec.serviceName}-private-az1` },
+          { Key: 'Type', Value: 'Private' },
+        ],
       },
     };
 
-    resources.SubnetB = {
+    resources.PrivateSubnetAZ2 = {
       Type: 'AWS::EC2::Subnet',
       Properties: {
         VpcId: { Ref: 'VPC' },
         CidrBlock: '10.0.2.0/24',
         AvailabilityZone: { 'Fn::Select': [1, { 'Fn::GetAZs': '' }] },
-        Tags: [{ Key: 'Name', Value: `prod-${spec.serviceName}-subnet-b` }],
+        Tags: [
+          { Key: 'Name', Value: `prod-${spec.serviceName}-private-az2` },
+          { Key: 'Type', Value: 'Private' },
+        ],
       },
     };
 
@@ -290,7 +413,7 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
         Type: 'AWS::RDS::DBSubnetGroup',
         Properties: {
           DBSubnetGroupDescription: 'Subnet group for RDS',
-          SubnetIds: [{ Ref: 'SubnetA' }, { Ref: 'SubnetB' }],
+          SubnetIds: [{ Ref: 'PrivateSubnetAZ1' }, { Ref: 'PrivateSubnetAZ2' }],
           Tags: [{ Key: 'Name', Value: `prod-${spec.serviceName}-db-subnet` }],
         },
       };
@@ -304,6 +427,7 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
         const dbName = service.name.replace(/[^a-zA-Z0-9]/g, '');
         
         // Generate random password
+        // Exclude characters that have special meaning in URLs or can cause parsing issues
         resources[`${dbName}Password`] = {
           Type: 'AWS::SecretsManager::Secret',
           Properties: {
@@ -312,7 +436,7 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
               SecretStringTemplate: JSON.stringify({ username: 'postgres' }),
               GenerateStringKey: 'password',
               PasswordLength: 32,
-              ExcludeCharacters: '"@/\\',
+              ExcludeCharacters: '"@/:?#[]!$&\'()*+,;=\\% ',
             },
           },
         };
@@ -326,7 +450,10 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
             AllocatedStorage: service.allocatedStorage || 20,
             MasterUsername: 'postgres',
             MasterUserPassword: {
-              'Fn::Sub': `{{resolve:secretsmanager:\${${dbName}Password}::password}}`,
+              'Fn::Sub': [
+                '{{resolve:secretsmanager:${SecretId}:SecretString:password::}}',
+                { SecretId: { Ref: `${dbName}Password` } },
+              ],
             },
             DBSubnetGroupName: { Ref: 'DBSubnetGroup' },
             VPCSecurityGroups: [{ Ref: 'BackingServiceSecurityGroup' }],
@@ -344,7 +471,7 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
           Type: 'AWS::ElastiCache::SubnetGroup',
           Properties: {
             Description: 'Subnet group for ElastiCache',
-            SubnetIds: [{ Ref: 'SubnetA' }, { Ref: 'SubnetB' }],
+            SubnetIds: [{ Ref: 'PrivateSubnetAZ1' }, { Ref: 'PrivateSubnetAZ2' }],
           },
         };
 
@@ -461,7 +588,7 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
       Type: 'AWS::AppRunner::VpcConnector',
       Properties: {
         VpcConnectorName: `prod-${spec.serviceName}-connector`,
-        Subnets: [{ Ref: 'SubnetA' }, { Ref: 'SubnetB' }],
+        Subnets: [{ Ref: 'PrivateSubnetAZ1' }, { Ref: 'PrivateSubnetAZ2' }],
         SecurityGroups: [{ Ref: 'AppRunnerSecurityGroup' }],
         Tags: [{ Key: 'tenant', Value: tenantId }],
       },
@@ -480,10 +607,7 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
         ImageRepositoryType: 'ECR',
         ImageConfiguration: {
           Port: String(spec.port),
-          RuntimeEnvironmentVariables: Object.entries(spec.envVars).map(([key, value]) => ({
-            Name: key,
-            Value: value,
-          })),
+          RuntimeEnvironmentVariables: buildEnvironmentVariables(spec, resources),
         },
       },
     },

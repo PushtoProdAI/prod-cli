@@ -528,15 +528,23 @@ type BackingService struct {
 	NumCacheNodes    int    `json:"numCacheNodes,omitempty"`
 }
 
+// EnvVar represents an environment variable with categorization
+type EnvVar struct {
+	Name    string `json:"name"`
+	Value   string `json:"value,omitempty"`
+	Role    string `json:"role,omitempty"`    // "full_uri", "hostname", "port", etc.
+	Service string `json:"service,omitempty"` // "postgresql", "redis", etc.
+}
+
 // AWSDeploymentSpec represents the specification for deploying to AWS
 type AWSDeploymentSpec struct {
-	ServiceName     string            `json:"serviceName"`
-	ImageURL        string            `json:"imageUrl"`
-	CPU             string            `json:"cpu"`
-	Memory          string            `json:"memory"`
-	Port            int               `json:"port"`
-	EnvVars         map[string]string `json:"envVars"`
-	BackingServices []BackingService  `json:"backingServices,omitempty"`
+	ServiceName     string           `json:"serviceName"`
+	ImageURL        string           `json:"imageUrl"`
+	CPU             string           `json:"cpu"`
+	Memory          string           `json:"memory"`
+	Port            int              `json:"port"`
+	EnvVars         []EnvVar         `json:"envVars"`
+	BackingServices []BackingService `json:"backingServices,omitempty"`
 }
 
 // AWSDeploymentResult represents the result of an AWS deployment

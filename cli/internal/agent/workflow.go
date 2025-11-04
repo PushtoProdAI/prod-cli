@@ -1982,8 +1982,15 @@ func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployRes
 
 	// Poll for CloudFormation stack completion (similar to Render polling)
 	if stackName != "" {
+		// Configure retry options for CloudFormation stack polling
+		// RDS creation can take 10-15 minutes, so we need longer retry window
 		stackCheckOpts := ActivityOpts
-		stackCheckOpts.RetryOptions.MaxAttempts = 60 // CloudFormation can take longer than Render
+		stackCheckOpts.RetryOptions.MaxAttempts = 120                     // More attempts
+		stackCheckOpts.RetryOptions.FirstRetryInterval = time.Second * 10 // Start with longer interval
+		stackCheckOpts.RetryOptions.MaxRetryInterval = time.Second * 30   // Cap at 30 seconds
+		stackCheckOpts.RetryOptions.BackoffCoefficient = 1.0              // Linear backoff is fine for polling
+		stackCheckOpts.RetryOptions.RetryTimeout = time.Minute * 25       // Total timeout: 25 minutes
+
 		stackOutputs, err := workflow.ExecuteActivity[map[string]string](ctx, stackCheckOpts, AgentWaitForAWSStack, token, stackName).Get(ctx)
 		if err != nil {
 			prod_error.CaptureErrorWithContext(err, map[string]any{
