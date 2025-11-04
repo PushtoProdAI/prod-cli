@@ -124,7 +124,7 @@ func (ad *AWSDeployment) createDockerDeploymentSteps(startCounter int) []AWSAPIS
 	ecrRepoStepID := fmt.Sprintf("step-%d", startCounter)
 	ecrRepoStep := NewCreateECRRepositoryStep(CreateECRRepositoryStepConfig{
 		ID:          ecrRepoStepID,
-		Description: "Create ECR repository in customer AWS account",
+		Description: "Create ECR repository in your AWS account",
 		ProjectName: ad.spec.Name,
 		AuthToken:   authToken,
 		DependsOn:   []string{},
@@ -135,7 +135,7 @@ func (ad *AWSDeployment) createDockerDeploymentSteps(startCounter int) []AWSAPIS
 	buildPushStepID := fmt.Sprintf("step-%d", startCounter+1)
 	buildPushStep := NewBuildAndPushECRStep(BuildAndPushECRStepConfig{
 		ID:              buildPushStepID,
-		Description:     "Build and push Docker image to customer ECR",
+		Description:     "Build and push Docker image to your ECR",
 		DeploymentSpec:  ad.spec,
 		DockerGenerator: ad.dockerGenerator,
 		BuildContext:    ad.getBuildContext(),
@@ -184,10 +184,16 @@ func (ad *AWSDeployment) createAppRunnerServiceStep(stepID int, connectionStepID
 	// Find the ECR build/push step ID (should be step-2 if we have Docker steps)
 	ecrStepID := "step-2" // The build and push step
 
-	// Create App Runner service step
+	// Get auth token from spec metadata
+	authToken := ""
+	if token, ok := ad.spec.Metadata["authToken"].(string); ok {
+		authToken = token
+	}
+
+	// Create App Runner service step (which deploys via CloudFormation)
 	appRunnerStep := NewCreateAppRunnerServiceStep(CreateAppRunnerServiceStepConfig{
 		ID:                fmt.Sprintf("step-%d", stepID),
-		Description:       "Create AWS App Runner service",
+		Description:       "Deploy AWS infrastructure via CloudFormation",
 		ServiceName:       ad.spec.Name,
 		ECRStepID:         ecrStepID,
 		EnvVars:           ad.spec.EnvVars,
@@ -195,6 +201,7 @@ func (ad *AWSDeployment) createAppRunnerServiceStep(stepID int, connectionStepID
 		CPU:               appRunnerCPU,
 		Memory:            appRunnerMemory,
 		Port:              8080, // Default port, TODO: make configurable
+		AuthToken:         authToken,
 		DependsOn:         append([]string{ecrStepID}, connectionStepIDs...),
 	})
 

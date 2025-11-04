@@ -2,11 +2,11 @@ package aws
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
 	"github.com/go-errors/errors"
 
+	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/output"
 )
@@ -140,10 +140,11 @@ type CreateAppRunnerServiceStepConfig struct {
 	CPU               string
 	Memory            string
 	Port              int
+	AuthToken         string
 	DependsOn         []string
 }
 
-// CreateAppRunnerServiceStep handles App Runner service creation
+// CreateAppRunnerServiceStep handles App Runner service creation via CloudFormation
 type CreateAppRunnerServiceStep struct {
 	BaseStep
 	ServiceName       string              `json:"serviceName"`
@@ -153,6 +154,7 @@ type CreateAppRunnerServiceStep struct {
 	CPU               string              `json:"cpu"`
 	Memory            string              `json:"memory"`
 	Port              int                 `json:"port"`
+	AuthToken         string              `json:"authToken"`
 }
 
 func NewCreateAppRunnerServiceStep(config CreateAppRunnerServiceStepConfig) *CreateAppRunnerServiceStep {
@@ -169,11 +171,12 @@ func NewCreateAppRunnerServiceStep(config CreateAppRunnerServiceStepConfig) *Cre
 		CPU:               config.CPU,
 		Memory:            config.Memory,
 		Port:              config.Port,
+		AuthToken:         config.AuthToken,
 	}
 }
 
 func (s *CreateAppRunnerServiceStep) Execute(ctx context.Context, client AWSClient, stepResults map[string]any) (any, error) {
-	slog.Info("Creating App Runner service", "name", s.ServiceName)
+	slog.Info("Initiating AWS CloudFormation deployment", "service", s.ServiceName)
 
 	// Get the pushed image URL from ECR step results
 	ecrResult, ok := stepResults[s.ECRStepID].(map[string]any)
@@ -204,36 +207,63 @@ func (s *CreateAppRunnerServiceStep) Execute(ctx context.Context, client AWSClie
 		}
 	}
 
-	// TODO: Call backend or AWS SDK to create App Runner service
-	// For now, return stub
-	slog.Info("Would create App Runner service",
+	// Call backend to initiate CloudFormation stack deployment
+	backendClient := backend.NewClient()
+
+	deploymentSpec := backend.AWSDeploymentSpec{
+		ServiceName:     s.ServiceName,
+		ImageURL:        pushedImageURL,
+		CPU:             s.CPU,
+		Memory:          s.Memory,
+		Port:            s.Port,
+		EnvVars:         envVarMap,
+		BackingServices: []backend.BackingService{},
+	}
+
+	slog.Info("Calling backend to initiate CloudFormation stack deployment",
+		"service", s.ServiceName,
 		"image", pushedImageURL,
 		"cpu", s.CPU,
 		"memory", s.Memory,
-		"envVars", len(envVarMap),
 	)
 
-	// Return stub App Runner service
-	serviceURL := fmt.Sprintf("https://%s.awsapprunner.com", s.ServiceName)
+	// Deploy stack - backend returns immediately without polling
+	result, err := backendClient.DeployAWSStack(ctx, s.AuthToken, deploymentSpec)
+	if err != nil {
+		return nil, errors.Errorf("failed to initiate AWS stack deployment: %w", err)
+	}
 
+	if result.Error != "" {
+		return nil, errors.Errorf("CloudFormation deployment initiation failed: %s", result.Error)
+	}
+
+	slog.Info("CloudFormation stack deployment initiated",
+		"stackId", result.StackID,
+		"stackName", result.StackName,
+		"status", result.Status,
+	)
+
+	// Return immediately with stack info - polling will happen in workflow
 	return deployment.CreatedResource{
-		ID:   fmt.Sprintf("apprunner-%s", s.ServiceName),
-		Type: "app_runner_service",
+		ID:   result.StackID,
+		Type: "cloudformation_stack",
 		Name: s.ServiceName,
 		Metadata: map[string]any{
-			"url":     serviceURL,
-			"image":   pushedImageURL,
-			"cpu":     s.CPU,
-			"memory":  s.Memory,
-			"port":    s.Port,
-			"envVars": len(envVarMap),
-			"status":  "stub",
+			"stackId":   result.StackID,
+			"stackName": result.StackName,
+			"status":    result.Status,
+			"image":     pushedImageURL,
+			"cpu":       s.CPU,
+			"memory":    s.Memory,
+			"port":      s.Port,
 		},
 	}, nil
 }
 
 func (s *CreateAppRunnerServiceStep) Rollback(ctx context.Context, client AWSClient, stepResults map[string]any) error {
-	// TODO: Implement App Runner service deletion
-	slog.Info("Would rollback App Runner service", "name", s.ServiceName)
+	// TODO: Implement CloudFormation stack deletion for rollback
+	slog.Info("Would rollback CloudFormation stack", "service", s.ServiceName)
+	// For now, we'll leave the stack in place for manual cleanup
+	// In production, we would call CloudFormation DeleteStack API
 	return nil
 }

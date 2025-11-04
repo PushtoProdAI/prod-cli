@@ -516,3 +516,125 @@ func (c *Client) CompleteAWSAuth(ctx context.Context, authToken string, roleArn 
 
 	return nil
 }
+
+// BackingService represents a backing service (database, cache, etc.) for AWS deployment
+type BackingService struct {
+	Type             string `json:"type"`
+	Name             string `json:"name"`
+	Engine           string `json:"engine,omitempty"`
+	InstanceClass    string `json:"instanceClass,omitempty"`
+	AllocatedStorage int    `json:"allocatedStorage,omitempty"`
+	NodeType         string `json:"nodeType,omitempty"`
+	NumCacheNodes    int    `json:"numCacheNodes,omitempty"`
+}
+
+// AWSDeploymentSpec represents the specification for deploying to AWS
+type AWSDeploymentSpec struct {
+	ServiceName     string            `json:"serviceName"`
+	ImageURL        string            `json:"imageUrl"`
+	CPU             string            `json:"cpu"`
+	Memory          string            `json:"memory"`
+	Port            int               `json:"port"`
+	EnvVars         map[string]string `json:"envVars"`
+	BackingServices []BackingService  `json:"backingServices,omitempty"`
+}
+
+// AWSDeploymentResult represents the result of an AWS deployment
+type AWSDeploymentResult struct {
+	StackID   string            `json:"stackId"`
+	StackName string            `json:"stackName"`
+	Status    string            `json:"status"`
+	Outputs   map[string]string `json:"outputs,omitempty"`
+	Error     string            `json:"error,omitempty"`
+}
+
+// DeployAWSStack deploys an application stack to AWS using CloudFormation
+func (c *Client) DeployAWSStack(ctx context.Context, authToken string, spec AWSDeploymentSpec) (*AWSDeploymentResult, error) {
+	// Increase timeout for CloudFormation operations (can take several minutes)
+	client := &http.Client{
+		Timeout: 15 * time.Minute,
+	}
+
+	jsonData, err := json.Marshal(spec)
+	if err != nil {
+		return nil, errors.Errorf("failed to marshal deployment spec: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/deploy-aws-stack", getBaseURL())
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, errors.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, errors.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, errors.Errorf("deploy-aws-stack failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result AWSDeploymentResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, errors.Errorf("failed to decode response: %w", err)
+	}
+
+	if result.Error != "" {
+		return &result, errors.Errorf("AWS deployment failed: %s", result.Error)
+	}
+
+	return &result, nil
+}
+
+// GetAWSStackStatus polls the status of a CloudFormation stack
+func (c *Client) GetAWSStackStatus(ctx context.Context, authToken string, stackName string) (*AWSDeploymentResult, error) {
+	payload := map[string]string{
+		"stackName": stackName,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, errors.Errorf("failed to marshal stack status request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/get-aws-stack-status", getBaseURL())
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, errors.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, errors.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, errors.Errorf("CloudFormation stack not found: %s", stackName)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, errors.Errorf("get-aws-stack-status failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result AWSDeploymentResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, errors.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}

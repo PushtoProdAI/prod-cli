@@ -44,6 +44,8 @@ Resources:
         - !Ref ECRAccessPolicy
         - !Ref VPCNetworkingPolicy
         - !Ref SecretsManagerPolicy
+        - !Ref CloudFormationPolicy
+        - !Ref IAMRolePolicy
       Tags:
         - Key: ManagedBy
           Value: Prod
@@ -277,6 +279,108 @@ Resources:
               - secretsmanager:UntagResource
               - secretsmanager:ListSecrets
             Resource: '*'
+
+  # Policy for CloudFormation stack management
+  CloudFormationPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-CloudFormation'
+      Description: 'Permissions for CloudFormation stack management'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: CloudFormationStackManagement
+            Effect: Allow
+            Action:
+              - cloudformation:CreateStack
+              - cloudformation:UpdateStack
+              - cloudformation:DeleteStack
+              - cloudformation:DescribeStacks
+              - cloudformation:DescribeStackEvents
+              - cloudformation:DescribeStackResources
+              - cloudformation:GetTemplate
+              - cloudformation:ValidateTemplate
+              - cloudformation:ListStacks
+              - cloudformation:ListStackResources
+              - cloudformation:GetStackPolicy
+              - cloudformation:SetStackPolicy
+              - cloudformation:DetectStackDrift
+              - cloudformation:DetectStackResourceDrift
+            Resource: !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/prod-*/*'
+          - Sid: CloudFormationChangeSet
+            Effect: Allow
+            Action:
+              - cloudformation:CreateChangeSet
+              - cloudformation:DeleteChangeSet
+              - cloudformation:DescribeChangeSet
+              - cloudformation:ExecuteChangeSet
+            Resource: !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/prod-*/*'
+          - Sid: CloudFormationTemplateValidation
+            Effect: Allow
+            Action:
+              - cloudformation:ValidateTemplate
+              - cloudformation:EstimateTemplateCost
+            Resource: '*'
+
+  # Policy for IAM role creation (needed by CloudFormation for App Runner)
+  IAMRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-IAM'
+      Description: 'Permissions for IAM role creation for App Runner and other services'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: IAMRoleManagement
+            Effect: Allow
+            Action:
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:GetRole
+              - iam:UpdateRole
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:PutRolePolicy
+              - iam:DeleteRolePolicy
+              - iam:GetRolePolicy
+              - iam:ListRolePolicies
+              - iam:ListAttachedRolePolicies
+              - iam:TagRole
+              - iam:UntagRole
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/prod-*'
+          - Sid: IAMPassRoleToServices
+            Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/prod-*'
+            Condition:
+              StringEquals:
+                'iam:PassedToService':
+                  - apprunner.amazonaws.com
+                  - build.apprunner.amazonaws.com
+                  - tasks.apprunner.amazonaws.com
+                  - rds.amazonaws.com
+                  - ec2.amazonaws.com
+                  - cloudformation.amazonaws.com
+          - Sid: IAMPassRoleForCloudFormation
+            Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/prod-*'
+          - Sid: IAMServiceLinkedRoles
+            Effect: Allow
+            Action:
+              - iam:CreateServiceLinkedRole
+            Resource: 
+              - 'arn:aws:iam::*:role/aws-service-role/apprunner.amazonaws.com/*'
+              - 'arn:aws:iam::*:role/aws-service-role/rds.amazonaws.com/*'
+              - 'arn:aws:iam::*:role/aws-service-role/elasticache.amazonaws.com/*'
+            Condition:
+              StringEquals:
+                'iam:AWSServiceName': 
+                  - 'apprunner.amazonaws.com'
+                  - 'rds.amazonaws.com'
+                  - 'elasticache.amazonaws.com'
 
 Outputs:
   RoleArn:
