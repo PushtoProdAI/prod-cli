@@ -33,6 +33,7 @@ interface DeploymentSpec {
   port: number;
   envVars: EnvVar[];
   backingServices?: BackingService[];
+  migrationCommand?: string;
 }
 
 interface BackingService {
@@ -372,6 +373,90 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
       },
     };
 
+    // Public subnets for ECS tasks (need internet access to pull images from ECR)
+    resources.PublicSubnetAZ1 = {
+      Type: 'AWS::EC2::Subnet',
+      Properties: {
+        VpcId: { Ref: 'VPC' },
+        CidrBlock: '10.0.10.0/24',
+        AvailabilityZone: { 'Fn::Select': [0, { 'Fn::GetAZs': '' }] },
+        MapPublicIpOnLaunch: true,
+        Tags: [
+          { Key: 'Name', Value: `prod-${spec.serviceName}-public-az1` },
+          { Key: 'Type', Value: 'Public' },
+        ],
+      },
+    };
+
+    resources.PublicSubnetAZ2 = {
+      Type: 'AWS::EC2::Subnet',
+      Properties: {
+        VpcId: { Ref: 'VPC' },
+        CidrBlock: '10.0.11.0/24',
+        AvailabilityZone: { 'Fn::Select': [1, { 'Fn::GetAZs': '' }] },
+        MapPublicIpOnLaunch: true,
+        Tags: [
+          { Key: 'Name', Value: `prod-${spec.serviceName}-public-az2` },
+          { Key: 'Type', Value: 'Public' },
+        ],
+      },
+    };
+
+    // Internet Gateway for public subnets
+    resources.InternetGateway = {
+      Type: 'AWS::EC2::InternetGateway',
+      Properties: {
+        Tags: [
+          { Key: 'Name', Value: `prod-${spec.serviceName}-igw` },
+        ],
+      },
+    };
+
+    resources.AttachGateway = {
+      Type: 'AWS::EC2::VPCGatewayAttachment',
+      Properties: {
+        VpcId: { Ref: 'VPC' },
+        InternetGatewayId: { Ref: 'InternetGateway' },
+      },
+    };
+
+    // Route table for public subnets
+    resources.PublicRouteTable = {
+      Type: 'AWS::EC2::RouteTable',
+      Properties: {
+        VpcId: { Ref: 'VPC' },
+        Tags: [
+          { Key: 'Name', Value: `prod-${spec.serviceName}-public-rt` },
+        ],
+      },
+    };
+
+    resources.PublicRoute = {
+      Type: 'AWS::EC2::Route',
+      DependsOn: 'AttachGateway',
+      Properties: {
+        RouteTableId: { Ref: 'PublicRouteTable' },
+        DestinationCidrBlock: '0.0.0.0/0',
+        GatewayId: { Ref: 'InternetGateway' },
+      },
+    };
+
+    resources.PublicSubnetRouteTableAssociationAZ1 = {
+      Type: 'AWS::EC2::SubnetRouteTableAssociation',
+      Properties: {
+        SubnetId: { Ref: 'PublicSubnetAZ1' },
+        RouteTableId: { Ref: 'PublicRouteTable' },
+      },
+    };
+
+    resources.PublicSubnetRouteTableAssociationAZ2 = {
+      Type: 'AWS::EC2::SubnetRouteTableAssociation',
+      Properties: {
+        SubnetId: { Ref: 'PublicSubnetAZ2' },
+        RouteTableId: { Ref: 'PublicRouteTable' },
+      },
+    };
+
     // Security Group for backing services
     resources.BackingServiceSecurityGroup = {
       Type: 'AWS::EC2::SecurityGroup',
@@ -582,71 +667,205 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
     },
   };
 
-  // App Runner VPC Connector (if VPC is needed)
-  if (needsVpc) {
-    resources.AppRunnerVPCConnector = {
-      Type: 'AWS::AppRunner::VpcConnector',
+  // ECS resources for running migrations (only if migration command exists)
+  const hasMigrations = spec.migrationCommand && spec.migrationCommand.trim() !== '';
+  
+  if (hasMigrations) {
+    console.log('Creating ECS resources for migration execution');
+    
+    // ECS Cluster for running migrations
+    resources.ECSCluster = {
+      Type: 'AWS::ECS::Cluster',
       Properties: {
-        VpcConnectorName: `prod-${spec.serviceName}-connector`,
-        Subnets: [{ Ref: 'PrivateSubnetAZ1' }, { Ref: 'PrivateSubnetAZ2' }],
-        SecurityGroups: [{ Ref: 'AppRunnerSecurityGroup' }],
+        ClusterName: `prod-${spec.serviceName}-cluster`,
+        Tags: [
+          { Key: 'tenant', Value: tenantId },
+          { Key: 'service', Value: spec.serviceName },
+        ],
+      },
+    };
+
+    // ECS Task Execution Role (for pulling images and logging)
+    resources.ECSTaskExecutionRole = {
+      Type: 'AWS::IAM::Role',
+      Properties: {
+        RoleName: `prod-${spec.serviceName}-ecs-execution`,
+        AssumeRolePolicyDocument: {
+          Version: '2012-10-17',
+          Statement: [
+            {
+              Effect: 'Allow',
+              Principal: { Service: 'ecs-tasks.amazonaws.com' },
+              Action: 'sts:AssumeRole',
+            },
+          ],
+        },
+        ManagedPolicyArns: [
+          'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy',
+        ],
+        Policies: [
+          {
+            PolicyName: 'SecretsManagerAccess',
+            PolicyDocument: {
+              Version: '2012-10-17',
+              Statement: [
+                {
+                  Effect: 'Allow',
+                  Action: [
+                    'secretsmanager:GetSecretValue',
+                    'secretsmanager:DescribeSecret',
+                  ],
+                  Resource: `arn:aws:secretsmanager:*:*:secret:prod-${spec.serviceName}-*`,
+                },
+              ],
+            },
+          },
+          {
+            PolicyName: 'CloudWatchLogsAccess',
+            PolicyDocument: {
+              Version: '2012-10-17',
+              Statement: [
+                {
+                  Effect: 'Allow',
+                  Action: [
+                    'logs:CreateLogGroup',
+                    'logs:CreateLogStream',
+                    'logs:PutLogEvents',
+                  ],
+                  Resource: `arn:aws:logs:*:*:log-group:/ecs/prod-${spec.serviceName}*`,
+                },
+              ],
+            },
+          },
+        ],
         Tags: [{ Key: 'tenant', Value: tenantId }],
       },
     };
-  }
 
-  // App Runner Service
-  const appRunnerProps: any = {
-    ServiceName: `prod-${spec.serviceName}`,
-    SourceConfiguration: {
-      AuthenticationConfiguration: {
-        AccessRoleArn: { 'Fn::GetAtt': ['AppRunnerAccessRole', 'Arn'] },
-      },
-      ImageRepository: {
-        ImageIdentifier: spec.imageUrl,
-        ImageRepositoryType: 'ECR',
-        ImageConfiguration: {
-          Port: String(spec.port),
-          RuntimeEnvironmentVariables: buildEnvironmentVariables(spec, resources),
+    // ECS Task Role (for application permissions - access to secrets, etc)
+    resources.ECSTaskRole = {
+      Type: 'AWS::IAM::Role',
+      Properties: {
+        RoleName: `prod-${spec.serviceName}-ecs-task`,
+        AssumeRolePolicyDocument: {
+          Version: '2012-10-17',
+          Statement: [
+            {
+              Effect: 'Allow',
+              Principal: { Service: 'ecs-tasks.amazonaws.com' },
+              Action: 'sts:AssumeRole',
+            },
+          ],
         },
+        Policies: [
+          {
+            PolicyName: 'SecretsManagerAccess',
+            PolicyDocument: {
+              Version: '2012-10-17',
+              Statement: [
+                {
+                  Effect: 'Allow',
+                  Action: [
+                    'secretsmanager:GetSecretValue',
+                    'secretsmanager:DescribeSecret',
+                  ],
+                  Resource: `arn:aws:secretsmanager:*:*:secret:prod-${spec.serviceName}-*`,
+                },
+              ],
+            },
+          },
+        ],
+        Tags: [{ Key: 'tenant', Value: tenantId }],
       },
-    },
-    InstanceConfiguration: {
-      Cpu: spec.cpu,
-      Memory: spec.memory,
-      InstanceRoleArn: { 'Fn::GetAtt': ['AppRunnerInstanceRole', 'Arn'] },
-    },
-    Tags: [
-      { Key: 'tenant', Value: tenantId },
-      { Key: 'service', Value: spec.serviceName },
-    ],
-  };
+    };
 
-  if (needsVpc) {
-    appRunnerProps.NetworkConfiguration = {
-      EgressConfiguration: {
-        EgressType: 'VPC',
-        VpcConnectorArn: { 'Fn::GetAtt': ['AppRunnerVPCConnector', 'VpcConnectorArn'] },
+    // ECS Task Definition for migrations
+    resources.MigrationTaskDefinition = {
+      Type: 'AWS::ECS::TaskDefinition',
+      Properties: {
+        Family: `prod-${spec.serviceName}-migration`,
+        NetworkMode: 'awsvpc',
+        RequiresCompatibilities: ['FARGATE'],
+        Cpu: '256',
+        Memory: '512',
+        ExecutionRoleArn: { 'Fn::GetAtt': ['ECSTaskExecutionRole', 'Arn'] },
+        TaskRoleArn: { 'Fn::GetAtt': ['ECSTaskRole', 'Arn'] },
+        ContainerDefinitions: [
+          {
+            Name: 'migration',
+            Image: spec.imageUrl,
+            Essential: true,
+            Environment: buildEnvironmentVariables(spec, resources),
+            LogConfiguration: {
+              LogDriver: 'awslogs',
+              Options: {
+                'awslogs-group': `/ecs/prod-${spec.serviceName}`,
+                'awslogs-region': { Ref: 'AWS::Region' },
+                'awslogs-stream-prefix': 'migration',
+                'awslogs-create-group': 'true',
+              },
+            },
+          },
+        ],
+        Tags: [
+          { Key: 'tenant', Value: tenantId },
+          { Key: 'service', Value: spec.serviceName },
+        ],
       },
     };
   }
 
-  resources.AppRunnerService = {
-    Type: 'AWS::AppRunner::Service',
-    Properties: appRunnerProps,
-  };
-
   // Outputs
   const outputs: any = {
-    ServiceUrl: {
-      Description: 'App Runner service URL',
-      Value: { 'Fn::GetAtt': ['AppRunnerService', 'ServiceUrl'] },
+    AppRunnerAccessRoleArn: {
+      Description: 'App Runner Access Role ARN',
+      Value: { 'Fn::GetAtt': ['AppRunnerAccessRole', 'Arn'] },
     },
-    ServiceArn: {
-      Description: 'App Runner service ARN',
-      Value: { 'Fn::GetAtt': ['AppRunnerService', 'ServiceArn'] },
+    AppRunnerInstanceRoleArn: {
+      Description: 'App Runner Instance Role ARN',
+      Value: { 'Fn::GetAtt': ['AppRunnerInstanceRole', 'Arn'] },
     },
   };
+  
+  // Add VPC outputs if VPC was created
+  if (needsVpc) {
+    outputs.VPCId = {
+      Description: 'VPC ID',
+      Value: { Ref: 'VPC' },
+    };
+    outputs.PrivateSubnetAZ1 = {
+      Description: 'Private Subnet AZ1 ID',
+      Value: { Ref: 'PrivateSubnetAZ1' },
+    };
+    outputs.PrivateSubnetAZ2 = {
+      Description: 'Private Subnet AZ2 ID',
+      Value: { Ref: 'PrivateSubnetAZ2' },
+    };
+    outputs.PublicSubnetAZ1 = {
+      Description: 'Public Subnet AZ1 ID',
+      Value: { Ref: 'PublicSubnetAZ1' },
+    };
+    outputs.PublicSubnetAZ2 = {
+      Description: 'Public Subnet AZ2 ID',
+      Value: { Ref: 'PublicSubnetAZ2' },
+    };
+    outputs.AppRunnerSecurityGroupId = {
+      Description: 'Security Group ID for App Runner',
+      Value: { Ref: 'AppRunnerSecurityGroup' },
+    };
+  }
+  
+  // Add ECS outputs if migrations are present
+  if (hasMigrations) {
+    outputs.ECSClusterArn = {
+      Description: 'ECS Cluster ARN for running migrations',
+      Value: { 'Fn::GetAtt': ['ECSCluster', 'Arn'] },
+    };
+    outputs.MigrationTaskDefinitionArn = {
+      Description: 'ECS Task Definition ARN for migrations',
+      Value: { Ref: 'MigrationTaskDefinition' },
+    };
+  }
 
   // Add database connection strings to outputs
   if (spec.backingServices) {

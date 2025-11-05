@@ -1968,13 +1968,27 @@ func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployRes
 		return deployResult{Error: deployError{Summary: fmt.Sprintf("Deployment failed: %v", err)}}, nil
 	}
 
-	// Find CloudFormation stack and poll for completion
+	// Find CloudFormation stack and extract deployment metadata
 	var stackName string
 	var deploymentURL string
+	var imageURL, cpu, memory string
+	var port int
 	for _, resource := range createdResources {
 		if resource.Type == "cloudformation_stack" {
 			if name, ok := resource.Metadata["stackName"].(string); ok {
 				stackName = name
+			}
+			if img, ok := resource.Metadata["image"].(string); ok {
+				imageURL = img
+			}
+			if c, ok := resource.Metadata["cpu"].(string); ok {
+				cpu = c
+			}
+			if m, ok := resource.Metadata["memory"].(string); ok {
+				memory = m
+			}
+			if p, ok := resource.Metadata["port"].(int); ok {
+				port = p
 			}
 			break
 		}
@@ -2031,16 +2045,63 @@ func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployRes
 			return deployResult{Error: summary}, nil
 		}
 
-		// Get service URL from stack outputs
-		if serviceURL, ok := stackOutputs["ServiceUrl"]; ok && serviceURL != "" {
+		// If migration command exists, run ECS migration task before creating App Runner service
+		if input.Spec.MigrationCommand != "" {
+			slog.Info("Running database migration via ECS Fargate", "command", input.Spec.MigrationCommand)
+			migrationResult, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentRunECSMigration, token, stackName, stackOutputs, input.Spec.MigrationCommand).Get(ctx)
+			if err != nil {
+				prod_error.CaptureErrorWithContext(err, map[string]any{
+					"workflow":   DeployAWSWorkflowName,
+					"activity":   "AgentRunECSMigration",
+					"component":  "deployment",
+					"platform":   "aws",
+					"stack_name": stackName,
+				})
+				if operationId != "" {
+					workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+						"error":      err.Error(),
+						"platform":   "aws",
+						"stage":      "run_migration",
+						"stack_name": stackName,
+					}).Get(ctx)
+				}
+				return deployResult{Error: deployError{Summary: fmt.Sprintf("Database migration failed: %v", err)}}, nil
+			}
+			slog.Info("Database migration completed successfully", "logs", migrationResult)
+		}
+
+		// Create App Runner service (after migrations if they exist)
+		slog.Info("Creating App Runner service")
+		appRunnerURL, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentCreateAppRunnerService, token, spec, stackOutputs, imageURL, cpu, memory, port).Get(ctx)
+		if err != nil {
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":   DeployAWSWorkflowName,
+				"activity":   "AgentCreateAppRunnerService",
+				"component":  "deployment",
+				"platform":   "aws",
+				"stack_name": stackName,
+			})
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":      err.Error(),
+					"platform":   "aws",
+					"stage":      "create_apprunner",
+					"stack_name": stackName,
+				}).Get(ctx)
+			}
+			return deployResult{Error: deployError{Summary: fmt.Sprintf("App Runner service creation failed: %v", err)}}, nil
+		}
+
+		// Set deployment URL from App Runner service
+		if appRunnerURL != "" {
 			// App Runner ServiceUrl doesn't include the scheme, add https://
-			if !strings.HasPrefix(serviceURL, "http://") && !strings.HasPrefix(serviceURL, "https://") {
-				deploymentURL = "https://" + serviceURL
+			if !strings.HasPrefix(appRunnerURL, "http://") && !strings.HasPrefix(appRunnerURL, "https://") {
+				deploymentURL = "https://" + appRunnerURL
 			} else {
-				deploymentURL = serviceURL
+				deploymentURL = appRunnerURL
 			}
 		} else {
-			// Fallback if ServiceUrl not in outputs
+			// Fallback if URL not returned
 			deploymentURL = fmt.Sprintf("https://%s.awsapprunner.com", spec.Name)
 		}
 	}

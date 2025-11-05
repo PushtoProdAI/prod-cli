@@ -203,6 +203,7 @@ func (ad *AWSDeployment) createAppRunnerServiceStep(stepID int, connectionStepID
 		Memory:            appRunnerMemory,
 		Port:              8080, // Default port, TODO: make configurable
 		AuthToken:         authToken,
+		MigrationCommand:  ad.spec.MigrationCommand,
 		DependsOn:         append([]string{ecrStepID}, connectionStepIDs...),
 	})
 

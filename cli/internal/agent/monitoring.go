@@ -3,12 +3,15 @@ package agent
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/backend"
+	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 )
 
@@ -144,4 +147,148 @@ func (a *Activities) determineRootPath(ctx context.Context, routes []analyzer.Ro
 	// we can do more verification if needed
 	a.uiWriter.SendStatusComplete("analyzing", "✅ root path determined")
 	return r.Recommended.Path, nil
+}
+
+func (a *Activities) runECSMigration(ctx context.Context, authToken, stackName string, stackOutputs map[string]string, migrationCommand string) (string, error) {
+	a.uiWriter.SendStatus("deploying", "Running database migration via ECS Fargate...")
+
+	// Extract required outputs from CloudFormation stack
+	clusterArn, ok := stackOutputs["ECSClusterArn"]
+	if !ok || clusterArn == "" {
+		return "", errors.Errorf("ECS cluster ARN not found in stack outputs")
+	}
+
+	taskDefArn, ok := stackOutputs["MigrationTaskDefinitionArn"]
+	if !ok || taskDefArn == "" {
+		return "", errors.Errorf("ECS task definition ARN not found in stack outputs")
+	}
+
+	// Extract public subnets for ECS tasks (need internet access for ECR)
+	var subnets []string
+	if subnet1, exists := stackOutputs["PublicSubnetAZ1"]; exists && subnet1 != "" {
+		subnets = append(subnets, subnet1)
+	}
+	if subnet2, exists := stackOutputs["PublicSubnetAZ2"]; exists && subnet2 != "" {
+		subnets = append(subnets, subnet2)
+	}
+	if len(subnets) == 0 {
+		return "", errors.Errorf("no public subnets found in stack outputs")
+	}
+
+	// Extract security group for App Runner (also used for ECS tasks)
+	securityGroup, exists := stackOutputs["AppRunnerSecurityGroupId"]
+	if !exists || securityGroup == "" {
+		return "", errors.Errorf("App Runner security group not found in stack outputs")
+	}
+	securityGroups := []string{securityGroup}
+
+	// Call backend to run ECS migration
+	req := backend.ECSMigrationRequest{
+		StackName:         stackName,
+		ClusterArn:        clusterArn,
+		TaskDefinitionArn: taskDefArn,
+		MigrationCommand:  migrationCommand,
+		Subnets:           subnets,
+		SecurityGroups:    securityGroups,
+	}
+
+	result, err := a.beClient.RunECSMigration(ctx, authToken, req)
+	if err != nil {
+		return "", errors.Errorf("failed to run ECS migration: %w", err)
+	}
+
+	// Join log lines into a single string
+	logsStr := ""
+	if len(result.Logs) > 0 {
+		logsStr = strings.Join(result.Logs, "\n")
+	}
+
+	if !result.Success || result.ExitCode != 0 {
+		return "", errors.Errorf("migration task failed with exit code %d: %s\nLogs:\n%s", result.ExitCode, result.Error, logsStr)
+	}
+
+	a.uiWriter.SendStatusComplete("deploying", "✅ Database migration completed successfully")
+	return logsStr, nil
+}
+
+func (a *Activities) createAppRunnerService(ctx context.Context, authToken string, spec *deployment.DeploymentSpec, stackOutputs map[string]string, imageURL, cpu, memory string, port int) (string, error) {
+	a.uiWriter.SendStatus("deploying", "Creating App Runner service...")
+
+	// Extract VPC configuration from stack outputs
+	vpcId, ok := stackOutputs["VPCId"]
+	if !ok || vpcId == "" {
+		return "", errors.Errorf("VPC ID not found in stack outputs")
+	}
+
+	// Extract subnets - can be either comma-separated in one output or multiple outputs
+	var subnets []string
+	if subnet1, exists := stackOutputs["PrivateSubnetAZ1"]; exists && subnet1 != "" {
+		subnets = append(subnets, subnet1)
+	}
+	if subnet2, exists := stackOutputs["PrivateSubnetAZ2"]; exists && subnet2 != "" {
+		subnets = append(subnets, subnet2)
+	}
+	if len(subnets) == 0 {
+		return "", errors.Errorf("no private subnets found in stack outputs")
+	}
+
+	// Extract security group
+	securityGroup, exists := stackOutputs["AppRunnerSecurityGroupId"]
+	if !exists || securityGroup == "" {
+		return "", errors.Errorf("App Runner security group not found in stack outputs")
+	}
+	securityGroups := []string{securityGroup}
+
+	// Extract IAM role ARNs
+	accessRoleArn, exists := stackOutputs["AppRunnerAccessRoleArn"]
+	if !exists || accessRoleArn == "" {
+		return "", errors.Errorf("App Runner access role ARN not found in stack outputs")
+	}
+
+	instanceRoleArn, exists := stackOutputs["AppRunnerInstanceRoleArn"]
+	if !exists || instanceRoleArn == "" {
+		return "", errors.Errorf("App Runner instance role ARN not found in stack outputs")
+	}
+
+	// Convert deployment spec environment variables to backend.EnvVar format
+	envVars := make([]backend.EnvVar, 0, len(spec.EnvVars))
+	for _, ev := range spec.EnvVars {
+		envVars = append(envVars, backend.EnvVar{
+			Name:    ev.Name,
+			Value:   ev.Value,
+			Role:    ev.Role,
+			Service: ev.Service,
+		})
+	}
+
+	// Build App Runner service request
+	req := backend.AppRunnerServiceRequest{
+		ServiceName: spec.Name,
+		ImageURL:    imageURL,
+		CPU:         cpu,
+		Memory:      memory,
+		Port:        port,
+		EnvVars:     envVars,
+		VPCConfig: &backend.VPCConfig{
+			VpcId:          vpcId,
+			Subnets:        subnets,
+			SecurityGroups: securityGroups,
+		},
+		RoleArns: &backend.RoleArns{
+			AccessRoleArn:   accessRoleArn,
+			InstanceRoleArn: instanceRoleArn,
+		},
+	}
+
+	result, err := a.beClient.CreateAppRunnerService(ctx, authToken, req)
+	if err != nil {
+		return "", errors.Errorf("failed to create App Runner service: %w", err)
+	}
+
+	if !result.Success {
+		return "", errors.Errorf("App Runner service creation failed: %s", result.Error)
+	}
+
+	a.uiWriter.SendStatusComplete("deploying", "✅ App Runner service created successfully")
+	return result.ServiceURL, nil
 }
