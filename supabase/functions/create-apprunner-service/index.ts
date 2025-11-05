@@ -15,8 +15,10 @@ import {
 initSentry();
 
 interface EnvVar {
-  Name: string;
-  Value: any; // Can be string or CloudFormation intrinsic function
+  name: string;
+  value: any; // Can be string or CloudFormation intrinsic function
+  role?: string;
+  service?: string;
 }
 
 interface CreateAppRunnerRequest {
@@ -164,14 +166,16 @@ Deno.serve(async (req) => {
     // Prepare environment variables - convert CloudFormation intrinsic functions to strings
     const runtimeEnvVars: Record<string, string> = {};
     for (const envVar of appRunnerRequest.envVars) {
-      // If Value is an object (CloudFormation function), we need to resolve it
+      // If value is an object (CloudFormation function), we need to resolve it
       // For now, we'll skip these as they should have been resolved by CloudFormation
-      if (typeof envVar.Value === 'string') {
-        runtimeEnvVars[envVar.Name] = envVar.Value;
+      if (typeof envVar.value === 'string') {
+        runtimeEnvVars[envVar.name] = envVar.value;
       } else {
-        console.warn('Skipping env var with non-string value:', envVar.Name);
+        console.warn('Skipping env var with non-string value:', envVar.name, 'type:', typeof envVar.value);
       }
     }
+    
+    console.log('Runtime environment variables configured:', Object.keys(runtimeEnvVars).length, 'vars')
 
     // Create App Runner service
     console.log('Creating App Runner service');

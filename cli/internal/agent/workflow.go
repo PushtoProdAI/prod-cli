@@ -1971,24 +1971,10 @@ func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployRes
 	// Find CloudFormation stack and extract deployment metadata
 	var stackName string
 	var deploymentURL string
-	var imageURL, cpu, memory string
-	var port int
 	for _, resource := range createdResources {
 		if resource.Type == "cloudformation_stack" {
 			if name, ok := resource.Metadata["stackName"].(string); ok {
 				stackName = name
-			}
-			if img, ok := resource.Metadata["image"].(string); ok {
-				imageURL = img
-			}
-			if c, ok := resource.Metadata["cpu"].(string); ok {
-				cpu = c
-			}
-			if m, ok := resource.Metadata["memory"].(string); ok {
-				memory = m
-			}
-			if p, ok := resource.Metadata["port"].(int); ok {
-				port = p
 			}
 			break
 		}
@@ -2070,35 +2056,134 @@ func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployRes
 			slog.Info("Database migration completed successfully", "logs", migrationResult)
 		}
 
-		// Create App Runner service (after migrations if they exist)
-		slog.Info("Creating App Runner service")
-		appRunnerURL, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentCreateAppRunnerService, token, spec, stackOutputs, imageURL, cpu, memory, port).Get(ctx)
-		if err != nil {
-			prod_error.CaptureErrorWithContext(err, map[string]any{
-				"workflow":   DeployAWSWorkflowName,
-				"activity":   "AgentCreateAppRunnerService",
-				"component":  "deployment",
-				"platform":   "aws",
-				"stack_name": stackName,
-			})
+		// Define the appRunnerServiceInfo type here since it's from the activity package
+		type appRunnerServiceInfo struct {
+			ServiceARN string
+			ServiceURL string
+		}
+
+		// Check if App Runner service exists in outputs
+		// If not, this is a first deploy - need to update stack to add App Runner
+		serviceArn, hasAppRunner := stackOutputs["AppRunnerServiceArn"]
+
+		if !hasAppRunner || serviceArn == "" {
+			// First deploy: App Runner doesn't exist yet
+			// Update CloudFormation stack to add App Runner service (post-migration)
+			slog.Info("First deploy detected - updating stack to add App Runner service after migration")
+
+			// Update the spec to enable App Runner creation
+			spec.IsUpdate = true // Stack exists now, this is an update
+
+			// Re-deploy steps with createAppRunner=true to add App Runner to the stack
+			slog.Info("Updating CloudFormation stack to add App Runner service")
+			_, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
+			if err != nil {
+				prod_error.CaptureErrorWithContext(err, map[string]any{
+					"workflow": DeployAWSWorkflowName, "activity": AgentDeploySteps,
+					"component": "deployment", "platform": "aws", "project_name": input.Spec.Name,
+					"stage": "add_apprunner_post_migration",
+				})
+				if operationId != "" {
+					workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+						"error": err.Error(), "platform": "aws", "stage": "add_apprunner",
+					}).Get(ctx)
+				}
+				return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to add App Runner to stack: %v", err)}}, nil
+			}
+
+			// Wait for stack update to complete and get new outputs with App Runner info
+			stackCheckOpts := ActivityOpts
+			stackCheckOpts.RetryOptions.MaxAttempts = 60
+			stackCheckOpts.RetryOptions.FirstRetryInterval = time.Second * 10
+			stackCheckOpts.RetryOptions.MaxRetryInterval = time.Second * 30
+			stackCheckOpts.RetryOptions.BackoffCoefficient = 1.0
+			stackCheckOpts.RetryOptions.RetryTimeout = time.Minute * 15
+
+			stackOutputs, err = workflow.ExecuteActivity[map[string]string](ctx, stackCheckOpts, AgentWaitForAWSStack, token, stackName).Get(ctx)
+			if err != nil {
+				prod_error.CaptureErrorWithContext(err, map[string]any{
+					"workflow":   DeployAWSWorkflowName,
+					"activity":   AgentWaitForAWSStack,
+					"component":  "deployment",
+					"platform":   "aws",
+					"stack_name": stackName,
+					"stage":      "wait_for_apprunner_addition",
+				})
+				if operationId != "" {
+					workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+						"error":      err.Error(),
+						"platform":   "aws",
+						"stage":      "wait_for_apprunner_stack_update",
+						"stack_name": stackName,
+					}).Get(ctx)
+				}
+				return deployResult{Error: deployError{Summary: fmt.Sprintf("Stack update to add App Runner failed: %v", err)}}, nil
+			}
+
+			// Now extract App Runner info from updated stack outputs
+			serviceArn = stackOutputs["AppRunnerServiceArn"]
+			slog.Info("App Runner service added to stack", "arn", serviceArn)
+		}
+
+		// App Runner exists (update deploy) - extract info from outputs
+		slog.Info("App Runner service already exists in stack")
+
+		serviceUrl, ok := stackOutputs["AppRunnerServiceUrl"]
+		if !ok || serviceUrl == "" {
 			if operationId != "" {
 				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
-					"error":      err.Error(),
+					"error":      "App Runner service URL not found in CloudFormation outputs",
 					"platform":   "aws",
-					"stage":      "create_apprunner",
+					"stage":      "extract_apprunner_info",
 					"stack_name": stackName,
 				}).Get(ctx)
 			}
-			return deployResult{Error: deployError{Summary: fmt.Sprintf("App Runner service creation failed: %v", err)}}, nil
+			return deployResult{Error: deployError{Summary: "App Runner service URL not found in CloudFormation outputs"}}, nil
+		}
+
+		serviceInfo := appRunnerServiceInfo{
+			ServiceARN: serviceArn,
+			ServiceURL: serviceUrl,
+		}
+
+		slog.Info("App Runner service info extracted", "arn", serviceArn, "url", serviceUrl)
+
+		// Wait for App Runner service to be ready
+		slog.Info("Waiting for App Runner service deployment", "serviceArn", serviceInfo.ServiceARN)
+		appRunnerWaitOpts := ActivityOpts
+		appRunnerWaitOpts.RetryOptions.MaxAttempts = 60 // Poll for up to 10 minutes
+		appRunnerWaitOpts.RetryOptions.FirstRetryInterval = time.Second * 10
+		appRunnerWaitOpts.RetryOptions.MaxRetryInterval = time.Second * 10
+		appRunnerWaitOpts.RetryOptions.BackoffCoefficient = 1.0
+		appRunnerWaitOpts.RetryOptions.RetryTimeout = time.Minute * 15
+
+		_, err = workflow.ExecuteActivity[any](ctx, appRunnerWaitOpts, AgentWaitForAppRunnerService, token, serviceInfo.ServiceARN).Get(ctx)
+		if err != nil {
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":    DeployAWSWorkflowName,
+				"activity":    AgentWaitForAppRunnerService,
+				"component":   "deployment",
+				"platform":    "aws",
+				"service_arn": serviceInfo.ServiceARN,
+			})
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":       err.Error(),
+					"platform":    "aws",
+					"stage":       "wait_for_apprunner",
+					"service_arn": serviceInfo.ServiceARN,
+				}).Get(ctx)
+			}
+			return deployResult{Error: deployError{Summary: fmt.Sprintf("App Runner service deployment timeout: %v", err)}}, nil
 		}
 
 		// Set deployment URL from App Runner service
-		if appRunnerURL != "" {
+		if serviceInfo.ServiceURL != "" {
 			// App Runner ServiceUrl doesn't include the scheme, add https://
-			if !strings.HasPrefix(appRunnerURL, "http://") && !strings.HasPrefix(appRunnerURL, "https://") {
-				deploymentURL = "https://" + appRunnerURL
+			if !strings.HasPrefix(serviceInfo.ServiceURL, "http://") && !strings.HasPrefix(serviceInfo.ServiceURL, "https://") {
+				deploymentURL = "https://" + serviceInfo.ServiceURL
 			} else {
-				deploymentURL = appRunnerURL
+				deploymentURL = serviceInfo.ServiceURL
 			}
 		} else {
 			// Fallback if URL not returned
