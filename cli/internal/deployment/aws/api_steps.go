@@ -142,6 +142,7 @@ type CreateAppRunnerServiceStepConfig struct {
 	Memory            string
 	Port              int
 	AuthToken         string
+	MigrationCommand  string
 	DependsOn         []string
 }
 
@@ -157,6 +158,7 @@ type CreateAppRunnerServiceStep struct {
 	Memory            string               `json:"memory"`
 	Port              int                  `json:"port"`
 	AuthToken         string               `json:"authToken"`
+	MigrationCommand  string               `json:"migrationCommand"`
 }
 
 func NewCreateAppRunnerServiceStep(config CreateAppRunnerServiceStepConfig) *CreateAppRunnerServiceStep {
@@ -175,6 +177,7 @@ func NewCreateAppRunnerServiceStep(config CreateAppRunnerServiceStepConfig) *Cre
 		Memory:            config.Memory,
 		Port:              config.Port,
 		AuthToken:         config.AuthToken,
+		MigrationCommand:  config.MigrationCommand,
 	}
 }
 
@@ -249,13 +252,14 @@ func (s *CreateAppRunnerServiceStep) Execute(ctx context.Context, client AWSClie
 	backendClient := backend.NewClient()
 
 	deploymentSpec := backend.AWSDeploymentSpec{
-		ServiceName:     s.ServiceName,
-		ImageURL:        pushedImageURL,
-		CPU:             s.CPU,
-		Memory:          s.Memory,
-		Port:            s.Port,
-		EnvVars:         backendEnvVars,
-		BackingServices: backingServices,
+		ServiceName:      s.ServiceName,
+		ImageURL:         pushedImageURL,
+		CPU:              s.CPU,
+		Memory:           s.Memory,
+		Port:             s.Port,
+		EnvVars:          backendEnvVars,
+		BackingServices:  backingServices,
+		MigrationCommand: s.MigrationCommand,
 	}
 
 	slog.Info("Calling backend to initiate CloudFormation stack deployment",

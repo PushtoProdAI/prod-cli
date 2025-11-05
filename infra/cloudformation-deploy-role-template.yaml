@@ -46,6 +46,7 @@ Resources:
         - !Ref SecretsManagerPolicy
         - !Ref CloudFormationPolicy
         - !Ref IAMRolePolicy
+        - !Ref ECSDeploymentPolicy
       Tags:
         - Key: ManagedBy
           Value: Prod
@@ -377,6 +378,7 @@ Resources:
               - 'arn:aws:iam::*:role/aws-service-role/networking.apprunner.amazonaws.com/*'
               - 'arn:aws:iam::*:role/aws-service-role/rds.amazonaws.com/*'
               - 'arn:aws:iam::*:role/aws-service-role/elasticache.amazonaws.com/*'
+              - 'arn:aws:iam::*:role/aws-service-role/ecs.amazonaws.com/*'
             Condition:
               StringEquals:
                 'iam:AWSServiceName': 
@@ -384,6 +386,68 @@ Resources:
                   - 'networking.apprunner.amazonaws.com'
                   - 'rds.amazonaws.com'
                   - 'elasticache.amazonaws.com'
+                  - 'ecs.amazonaws.com'
+
+  # Policy for ECS operations (for running migration tasks)
+  ECSDeploymentPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-ECS'
+      Description: 'Permissions for ECS task management and Fargate deployments'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ECSClusterManagement
+            Effect: Allow
+            Action:
+              - ecs:CreateCluster
+              - ecs:DeleteCluster
+              - ecs:DescribeClusters
+              - ecs:ListClusters
+              - ecs:PutClusterCapacityProviders
+              - ecs:TagResource
+              - ecs:UntagResource
+              - ecs:ListTagsForResource
+            Resource: '*'
+          - Sid: ECSTaskDefinitionManagement
+            Effect: Allow
+            Action:
+              - ecs:RegisterTaskDefinition
+              - ecs:DeregisterTaskDefinition
+              - ecs:DescribeTaskDefinition
+              - ecs:ListTaskDefinitions
+            Resource: '*'
+          - Sid: ECSTaskExecution
+            Effect: Allow
+            Action:
+              - ecs:RunTask
+              - ecs:StopTask
+              - ecs:DescribeTasks
+              - ecs:ListTasks
+            Resource: '*'
+          - Sid: CloudWatchLogsForECS
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogGroups
+              - logs:DescribeLogStreams
+              - logs:DeleteLogGroup
+              - logs:GetLogEvents
+              - logs:FilterLogEvents
+              - logs:TagResource
+              - logs:UntagResource
+              - logs:ListTagsForResource
+            Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/prod-*'
+          - Sid: PassRoleToECSTasks
+            Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/prod-*-ecs-*'
+            Condition:
+              StringEquals:
+                'iam:PassedToService': 'ecs-tasks.amazonaws.com'
 
 Outputs:
   RoleArn:

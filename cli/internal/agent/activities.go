@@ -48,6 +48,8 @@ const (
 	AgentUpdateDeploymentStatus     = "agent.updateDeploymentStatus"
 	AgentRollbackDeployment         = "agent.rollbackDeployment"
 	AgentGetPreviousDeployment      = "agent.getPreviousDeployment"
+	AgentRunECSMigration            = "agent.runECSMigration"
+	AgentCreateAppRunnerService     = "agent.createAppRunnerService"
 )
 
 type Activities struct {
@@ -96,5 +98,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentUpdateDeploymentStatus, ActFunc: a.updateDeploymentStatus},
 		{Name: AgentGetPreviousDeployment, ActFunc: a.getPreviousDeployment},
 		{Name: AgentRollbackDeployment, ActFunc: a.rollbackDeployment},
+		{Name: AgentRunECSMigration, ActFunc: a.runECSMigration},
+		{Name: AgentCreateAppRunnerService, ActFunc: a.createAppRunnerService},
 	}
 }

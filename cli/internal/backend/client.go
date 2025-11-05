@@ -538,13 +538,14 @@ type EnvVar struct {
 
 // AWSDeploymentSpec represents the specification for deploying to AWS
 type AWSDeploymentSpec struct {
-	ServiceName     string           `json:"serviceName"`
-	ImageURL        string           `json:"imageUrl"`
-	CPU             string           `json:"cpu"`
-	Memory          string           `json:"memory"`
-	Port            int              `json:"port"`
-	EnvVars         []EnvVar         `json:"envVars"`
-	BackingServices []BackingService `json:"backingServices,omitempty"`
+	ServiceName      string           `json:"serviceName"`
+	ImageURL         string           `json:"imageUrl"`
+	CPU              string           `json:"cpu"`
+	Memory           string           `json:"memory"`
+	Port             int              `json:"port"`
+	EnvVars          []EnvVar         `json:"envVars"`
+	BackingServices  []BackingService `json:"backingServices,omitempty"`
+	MigrationCommand string           `json:"migrationCommand,omitempty"`
 }
 
 // AWSDeploymentResult represents the result of an AWS deployment
@@ -642,6 +643,150 @@ func (c *Client) GetAWSStackStatus(ctx context.Context, authToken string, stackN
 	var result AWSDeploymentResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, errors.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// ECSMigrationRequest represents the request to run an ECS migration task
+type ECSMigrationRequest struct {
+	StackName         string   `json:"stackName"`
+	ClusterArn        string   `json:"clusterArn"`
+	TaskDefinitionArn string   `json:"taskDefinitionArn"`
+	MigrationCommand  string   `json:"migrationCommand"`
+	Subnets           []string `json:"subnets"`
+	SecurityGroups    []string `json:"securityGroups"`
+}
+
+// ECSMigrationResult represents the result of running an ECS migration
+type ECSMigrationResult struct {
+	Success  bool     `json:"success"`
+	ExitCode int      `json:"exitCode"`
+	Logs     []string `json:"logs"`
+	Error    string   `json:"error,omitempty"`
+	TaskArn  string   `json:"taskArn,omitempty"`
+}
+
+// RunECSMigration runs a database migration as an ECS Fargate task
+func (c *Client) RunECSMigration(ctx context.Context, authToken string, req ECSMigrationRequest) (*ECSMigrationResult, error) {
+	// Use longer timeout for migrations (can take several minutes)
+	client := &http.Client{
+		Timeout: 15 * time.Minute,
+	}
+
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, errors.Errorf("failed to marshal migration request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/run-ecs-migration", getBaseURL())
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, errors.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, errors.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, errors.Errorf("run-ecs-migration failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result ECSMigrationResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, errors.Errorf("failed to decode response: %w", err)
+	}
+
+	if result.Error != "" {
+		return &result, errors.Errorf("ECS migration failed: %s", result.Error)
+	}
+
+	return &result, nil
+}
+
+// AppRunnerServiceRequest represents the request to create an App Runner service
+type AppRunnerServiceRequest struct {
+	ServiceName string     `json:"serviceName"`
+	ImageURL    string     `json:"imageUrl"`
+	CPU         string     `json:"cpu"`
+	Memory      string     `json:"memory"`
+	Port        int        `json:"port"`
+	EnvVars     []EnvVar   `json:"envVars"`
+	VPCConfig   *VPCConfig `json:"vpcConfig,omitempty"`
+	RoleArns    *RoleArns  `json:"roleArns,omitempty"`
+}
+
+// VPCConfig represents VPC configuration for App Runner
+type VPCConfig struct {
+	VpcId          string   `json:"vpcId"`
+	Subnets        []string `json:"subnets"`
+	SecurityGroups []string `json:"securityGroups"`
+}
+
+// RoleArns represents IAM role ARNs for App Runner
+type RoleArns struct {
+	AccessRoleArn   string `json:"accessRoleArn"`
+	InstanceRoleArn string `json:"instanceRoleArn"`
+}
+
+// AppRunnerServiceResult represents the result of creating an App Runner service
+type AppRunnerServiceResult struct {
+	Success    bool   `json:"success"`
+	ServiceArn string `json:"serviceArn"`
+	ServiceURL string `json:"serviceUrl"`
+	Error      string `json:"error,omitempty"`
+}
+
+// CreateAppRunnerService creates an AWS App Runner service
+func (c *Client) CreateAppRunnerService(ctx context.Context, authToken string, req AppRunnerServiceRequest) (*AppRunnerServiceResult, error) {
+	// Use longer timeout for App Runner service creation
+	client := &http.Client{
+		Timeout: 15 * time.Minute,
+	}
+
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, errors.Errorf("failed to marshal app runner request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/create-apprunner-service", getBaseURL())
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, errors.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, errors.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, errors.Errorf("create-apprunner-service failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result AppRunnerServiceResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, errors.Errorf("failed to decode response: %w", err)
+	}
+
+	if result.Error != "" {
+		return &result, errors.Errorf("App Runner service creation failed: %s", result.Error)
 	}
 
 	return &result, nil
