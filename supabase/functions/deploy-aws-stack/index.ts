@@ -34,6 +34,7 @@ interface DeploymentSpec {
   envVars: EnvVar[];
   backingServices?: BackingService[];
   migrationCommand?: string;
+  createAppRunner?: boolean; // If true, create App Runner service (post-migration)
 }
 
 interface BackingService {
@@ -815,6 +816,93 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
     };
   }
 
+  // App Runner Service - only create if explicitly requested (after first migration)
+  // On first deploy: stack creates infrastructure WITHOUT App Runner
+  // After migration runs: stack is updated WITH createAppRunner=true to add App Runner
+  const shouldCreateAppRunner = spec.createAppRunner !== false; // Default to true for backward compatibility
+  
+  if (shouldCreateAppRunner) {
+    console.log('Creating App Runner Service and VPC Connector in CloudFormation');
+    
+    // VPC Connector for App Runner (if VPC exists)
+    if (needsVpc) {
+      resources.AppRunnerVpcConnector = {
+        Type: 'AWS::AppRunner::VpcConnector',
+        Properties: {
+          VpcConnectorName: `${spec.serviceName}-connector`,
+          Subnets: [
+            { Ref: 'PrivateSubnetAZ1' },
+            { Ref: 'PrivateSubnetAZ2' },
+          ],
+          SecurityGroups: [
+            { Ref: 'AppRunnerSecurityGroup' },
+          ],
+          Tags: [
+            { Key: 'tenant', Value: tenantId },
+            { Key: 'service', Value: spec.serviceName },
+          ],
+        },
+      };
+    }
+    
+    // Build dependency list - wait for IAM roles and VPC resources
+    const appRunnerDependsOn: string[] = [
+      'AppRunnerAccessRole',
+      'AppRunnerInstanceRole',
+    ];
+    
+    if (needsVpc) {
+      appRunnerDependsOn.push('VPC', 'PrivateSubnetAZ1', 'PrivateSubnetAZ2', 'AppRunnerSecurityGroup', 'AppRunnerVpcConnector');
+    }
+    
+    // If migrations exist, ensure migration task definition exists
+    if (hasMigrations) {
+      appRunnerDependsOn.push('MigrationTaskDefinition');
+    }
+
+    // Build environment variables array for App Runner
+    // App Runner expects an array of {Name, Value} objects, not a map
+    const runtimeEnvVars = buildEnvironmentVariables(spec, resources);
+
+    resources.AppRunnerService = {
+      Type: 'AWS::AppRunner::Service',
+      DependsOn: appRunnerDependsOn,
+      Properties: {
+        ServiceName: spec.serviceName,
+        SourceConfiguration: {
+          AuthenticationConfiguration: {
+            AccessRoleArn: { 'Fn::GetAtt': ['AppRunnerAccessRole', 'Arn'] },
+          },
+          ImageRepository: {
+            ImageIdentifier: { Ref: 'ImageUrl' },
+            ImageRepositoryType: 'ECR',
+            ImageConfiguration: {
+              Port: String(spec.port),
+              RuntimeEnvironmentVariables: runtimeEnvVars,
+            },
+          },
+        },
+        InstanceConfiguration: {
+          Cpu: spec.cpu,
+          Memory: spec.memory,
+          InstanceRoleArn: { 'Fn::GetAtt': ['AppRunnerInstanceRole', 'Arn'] },
+        },
+        NetworkConfiguration: needsVpc ? {
+          EgressConfiguration: {
+            EgressType: 'VPC',
+            VpcConnectorArn: { 'Fn::GetAtt': ['AppRunnerVpcConnector', 'VpcConnectorArn'] },
+          },
+        } : undefined,
+        Tags: [
+          { Key: 'tenant', Value: tenantId },
+          { Key: 'service', Value: spec.serviceName },
+        ],
+      },
+    };
+  } else {
+    console.log('Skipping App Runner Service creation - will be added after migration');
+  }
+
   // Outputs
   const outputs: any = {
     AppRunnerAccessRoleArn: {
@@ -826,6 +914,22 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
       Value: { 'Fn::GetAtt': ['AppRunnerInstanceRole', 'Arn'] },
     },
   };
+  
+  // Add App Runner service outputs only if the service was created
+  if (shouldCreateAppRunner) {
+    outputs.AppRunnerServiceArn = {
+      Description: 'App Runner Service ARN',
+      Value: { 'Fn::GetAtt': ['AppRunnerService', 'ServiceArn'] },
+    };
+    outputs.AppRunnerServiceUrl = {
+      Description: 'App Runner Service URL',
+      Value: { 'Fn::GetAtt': ['AppRunnerService', 'ServiceUrl'] },
+    };
+    outputs.AppRunnerServiceId = {
+      Description: 'App Runner Service ID',
+      Value: { 'Fn::GetAtt': ['AppRunnerService', 'ServiceId'] },
+    };
+  }
   
   // Add VPC outputs if VPC was created
   if (needsVpc) {
@@ -894,9 +998,20 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
     }
   }
 
+  // Add CloudFormation Parameters for image URL
+  // This allows updating the image without recreating resources
+  const parameters: any = {
+    ImageUrl: {
+      Type: 'String',
+      Description: 'Container image URL from ECR',
+      Default: spec.imageUrl,
+    },
+  };
+
   const template = {
     AWSTemplateFormatVersion: '2010-09-09',
     Description: `Prod deployment for ${spec.serviceName}`,
+    Parameters: parameters,
     Resources: resources,
     Outputs: outputs,
   };

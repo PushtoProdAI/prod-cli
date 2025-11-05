@@ -546,6 +546,7 @@ type AWSDeploymentSpec struct {
 	EnvVars          []EnvVar         `json:"envVars"`
 	BackingServices  []BackingService `json:"backingServices,omitempty"`
 	MigrationCommand string           `json:"migrationCommand,omitempty"`
+	CreateAppRunner  *bool            `json:"createAppRunner,omitempty"` // If false, skip App Runner creation (for first deploy pre-migration)
 }
 
 // AWSDeploymentResult represents the result of an AWS deployment
@@ -641,6 +642,57 @@ func (c *Client) GetAWSStackStatus(ctx context.Context, authToken string, stackN
 	}
 
 	var result AWSDeploymentResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, errors.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// AppRunnerStatusResult represents the result of checking App Runner service status
+type AppRunnerStatusResult struct {
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
+// GetAppRunnerStatus polls the status of an App Runner service
+func (c *Client) GetAppRunnerStatus(ctx context.Context, authToken string, serviceArn string) (*AppRunnerStatusResult, error) {
+	payload := map[string]string{
+		"serviceArn": serviceArn,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, errors.Errorf("failed to marshal App Runner status request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/get-apprunner-status", getBaseURL())
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, errors.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, errors.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, errors.Errorf("App Runner service not found: %s", serviceArn)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, errors.Errorf("get-apprunner-status failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result AppRunnerStatusResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, errors.Errorf("failed to decode response: %w", err)
 	}

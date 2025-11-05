@@ -190,6 +190,9 @@ func (ad *AWSDeployment) createAppRunnerServiceStep(stepID int, connectionStepID
 		authToken = token
 	}
 
+	// Determine the port to use (respects user-defined PORT env var)
+	port := ad.determinePort()
+
 	// Create App Runner service step (which deploys via CloudFormation)
 	appRunnerStep := NewCreateAppRunnerServiceStep(CreateAppRunnerServiceStepConfig{
 		ID:                fmt.Sprintf("step-%d", stepID),
@@ -201,13 +204,48 @@ func (ad *AWSDeployment) createAppRunnerServiceStep(stepID int, connectionStepID
 		ConnectionStepIDs: connectionStepIDs,
 		CPU:               appRunnerCPU,
 		Memory:            appRunnerMemory,
-		Port:              8080, // Default port, TODO: make configurable
+		Port:              port,
 		AuthToken:         authToken,
 		MigrationCommand:  ad.spec.MigrationCommand,
+		IsUpdate:          ad.spec.IsUpdate,
 		DependsOn:         append([]string{ecrStepID}, connectionStepIDs...),
 	})
 
 	return appRunnerStep
+}
+
+// determinePort determines the port for the application
+// Priority: 1) PORT env var from spec, 2) language default, 3) 8080 fallback
+func (ad *AWSDeployment) determinePort() int {
+	// First check if PORT is already defined in env vars
+	for _, ev := range ad.spec.EnvVars {
+		if ev.Name == "PORT" && ev.Value != "" {
+			var portInt int
+			if _, err := fmt.Sscanf(ev.Value, "%d", &portInt); err == nil && portInt > 0 {
+				slog.Info("Using PORT from environment variables", "port", portInt)
+				return portInt
+			}
+		}
+	}
+
+	// Fall back to language-specific default
+	port := ad.getPortForLanguage(ad.spec.Language)
+	slog.Info("Using language-specific default port", "language", ad.spec.Language, "port", port)
+	return port
+}
+
+// getPortForLanguage returns the default port for the given language
+func (ad *AWSDeployment) getPortForLanguage(language string) int {
+	switch language {
+	case "python":
+		return 8000
+	case "node", "nodejs", "javascript":
+		return 3000
+	case "go":
+		return 8080
+	default:
+		return 8080
+	}
 }
 
 // Helper method to generate resource names

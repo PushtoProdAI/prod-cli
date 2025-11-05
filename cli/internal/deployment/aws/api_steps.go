@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/go-errors/errors"
@@ -143,6 +144,7 @@ type CreateAppRunnerServiceStepConfig struct {
 	Port              int
 	AuthToken         string
 	MigrationCommand  string
+	IsUpdate          bool // True if updating existing deployment
 	DependsOn         []string
 }
 
@@ -159,6 +161,7 @@ type CreateAppRunnerServiceStep struct {
 	Port              int                  `json:"port"`
 	AuthToken         string               `json:"authToken"`
 	MigrationCommand  string               `json:"migrationCommand"`
+	IsUpdate          bool                 `json:"isUpdate"`
 }
 
 func NewCreateAppRunnerServiceStep(config CreateAppRunnerServiceStepConfig) *CreateAppRunnerServiceStep {
@@ -178,6 +181,7 @@ func NewCreateAppRunnerServiceStep(config CreateAppRunnerServiceStepConfig) *Cre
 		Port:              config.Port,
 		AuthToken:         config.AuthToken,
 		MigrationCommand:  config.MigrationCommand,
+		IsUpdate:          config.IsUpdate,
 	}
 }
 
@@ -196,7 +200,8 @@ func (s *CreateAppRunnerServiceStep) Execute(ctx context.Context, client AWSClie
 	}
 
 	// Convert EnvVars to backend format with categorization
-	backendEnvVars := make([]backend.EnvVar, 0, len(s.EnvVars))
+	backendEnvVars := make([]backend.EnvVar, 0, len(s.EnvVars)+1)
+	hasPort := false
 	for _, envVar := range s.EnvVars {
 		backendEnvVars = append(backendEnvVars, backend.EnvVar{
 			Name:    envVar.Name,
@@ -204,6 +209,22 @@ func (s *CreateAppRunnerServiceStep) Execute(ctx context.Context, client AWSClie
 			Role:    envVar.Role,
 			Service: envVar.Service,
 		})
+		if envVar.Name == "PORT" {
+			hasPort = true
+		}
+	}
+
+	// Add PORT environment variable if not already present
+	// This ensures the application listens on the correct port that App Runner expects
+	if !hasPort {
+		backendEnvVars = append(backendEnvVars, backend.EnvVar{
+			Name:  "PORT",
+			Value: fmt.Sprintf("%d", s.Port),
+			Role:  "user",
+		})
+		slog.Info("Added PORT environment variable", "port", s.Port)
+	} else {
+		slog.Info("PORT environment variable already defined by user, using existing value")
 	}
 
 	// Convert deployment services to backing services
@@ -251,6 +272,15 @@ func (s *CreateAppRunnerServiceStep) Execute(ctx context.Context, client AWSClie
 	// Call backend to initiate CloudFormation stack deployment
 	backendClient := backend.NewClient()
 
+	// On first deploy, don't create App Runner yet (it will be added after migration)
+	// On updates, App Runner already exists so CreateAppRunner is not set (defaults to true in template)
+	var createAppRunner *bool
+	if !s.IsUpdate {
+		falseVal := false
+		createAppRunner = &falseVal
+		slog.Info("First deploy - App Runner will be created after migration completes")
+	}
+
 	deploymentSpec := backend.AWSDeploymentSpec{
 		ServiceName:      s.ServiceName,
 		ImageURL:         pushedImageURL,
@@ -260,6 +290,7 @@ func (s *CreateAppRunnerServiceStep) Execute(ctx context.Context, client AWSClie
 		EnvVars:          backendEnvVars,
 		BackingServices:  backingServices,
 		MigrationCommand: s.MigrationCommand,
+		CreateAppRunner:  createAppRunner,
 	}
 
 	slog.Info("Calling backend to initiate CloudFormation stack deployment",
