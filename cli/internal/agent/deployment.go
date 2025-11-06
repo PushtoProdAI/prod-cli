@@ -10,6 +10,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/aws"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
@@ -268,7 +269,7 @@ func (a *Activities) getProjectDetector(platform Platform) (ProjectDetector, err
 	case Heroku:
 		return NewHerokuProjectDetector(a.uiWriter), nil
 	case AWS:
-		return NewAWSProjectDetector(a.uiWriter), nil
+		return NewAWSProjectDetector(a.beClient, a.uiWriter), nil
 	default:
 		return nil, errors.Errorf("unsupported platform: %s", platform)
 	}
@@ -528,11 +529,13 @@ func (d *HerokuProjectDetector) DetectExistingProject(ctx context.Context, proje
 }
 
 type AWSProjectDetector struct {
+	beClient *backend.Client
 	uiWriter output.StatusWriter
 }
 
-func NewAWSProjectDetector(uiWriter output.StatusWriter) *AWSProjectDetector {
+func NewAWSProjectDetector(beClient *backend.Client, uiWriter output.StatusWriter) *AWSProjectDetector {
 	return &AWSProjectDetector{
+		beClient: beClient,
 		uiWriter: uiWriter,
 	}
 }
@@ -544,9 +547,55 @@ func (d *AWSProjectDetector) DetectExistingProject(ctx context.Context, projectN
 		ExistingDatabases: []string{},
 	}
 
-	// TODO: Implement AWS App Runner service detection
-	// This will query App Runner to check if a service with this name already exists
-	// For now, we'll return no existing project
+	// Get auth token from context
+	session := CtxSession(ctx)
+	if session == nil {
+		slog.Warn("No session found in context for AWS detection")
+		return result, nil
+	}
+	authToken := session.AccessToken
+
+	// Standard CloudFormation stack naming convention
+	stackName := fmt.Sprintf("prod-%s", projectName)
+	slog.Info("Checking for existing AWS stack", "stackName", stackName)
+
+	// Call backend to check if stack exists
+	response, err := d.beClient.CheckAWSStack(ctx, authToken, stackName)
+	if err != nil {
+		slog.Error("Failed to check for existing AWS stack", "error", err)
+		return result, errors.Errorf("failed to check for existing AWS stack: %w", err)
+	}
+
+	if !response.Exists {
+		slog.Info("No existing AWS stack found", "stackName", stackName)
+		return result, nil
+	}
+
+	// Stack exists - populate existing project info
+	result.Exists = true
+	result.ProjectID = response.StackID
+	result.Name = stackName
+	result.IsUpdate = true
+
+	// Detect existing databases from CloudFormation resources
+	if response.Resources.HasRDS {
+		result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
+		slog.Info("Detected existing RDS instance", "instances", response.Resources.RDSInstances)
+	}
+	if response.Resources.HasElastiCache {
+		result.ExistingDatabases = append(result.ExistingDatabases, "redis")
+		slog.Info("Detected existing ElastiCache cluster", "instances", response.Resources.ElastiCacheInstances)
+	}
+
+	slog.Info("Detected existing AWS stack",
+		"stackName", stackName,
+		"stackId", response.StackID,
+		"status", response.Status,
+		"hasRDS", response.Resources.HasRDS,
+		"hasElastiCache", response.Resources.HasElastiCache,
+		"hasAppRunner", response.Resources.HasAppRunner,
+		"existingDatabases", result.ExistingDatabases,
+	)
 
 	return result, nil
 }

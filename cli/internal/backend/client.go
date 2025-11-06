@@ -649,6 +649,71 @@ func (c *Client) GetAWSStackStatus(ctx context.Context, authToken string, stackN
 	return &result, nil
 }
 
+// AWSStackCheckRequest represents a request to check if a CloudFormation stack exists
+type AWSStackCheckRequest struct {
+	StackName string `json:"stackName"`
+}
+
+// StackResourceInfo contains information about resources in the stack
+type StackResourceInfo struct {
+	HasRDS               bool     `json:"hasRDS"`
+	HasElastiCache       bool     `json:"hasElastiCache"`
+	HasAppRunner         bool     `json:"hasAppRunner"`
+	RDSInstances         []string `json:"rdsInstances,omitempty"`
+	ElastiCacheInstances []string `json:"elastiCacheInstances,omitempty"`
+}
+
+// AWSStackCheckResponse represents the response from checking if a stack exists
+type AWSStackCheckResponse struct {
+	Exists    bool              `json:"exists"`
+	StackID   string            `json:"stackId,omitempty"`
+	Status    string            `json:"status,omitempty"`
+	Outputs   map[string]string `json:"outputs,omitempty"`
+	Resources StackResourceInfo `json:"resources,omitempty"`
+	Error     string            `json:"error,omitempty"`
+}
+
+// CheckAWSStack checks if a CloudFormation stack exists and returns its details
+func (c *Client) CheckAWSStack(ctx context.Context, authToken string, stackName string) (*AWSStackCheckResponse, error) {
+	payload := AWSStackCheckRequest{
+		StackName: stackName,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, errors.Errorf("failed to marshal check stack request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/check-aws-stack", getBaseURL())
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, errors.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, errors.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, errors.Errorf("check-aws-stack failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result AWSStackCheckResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, errors.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // AppRunnerStatusResult represents the result of checking App Runner service status
 type AppRunnerStatusResult struct {
 	Status string `json:"status"`
