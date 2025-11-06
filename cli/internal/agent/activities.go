@@ -26,6 +26,7 @@ const (
 	AgentGetRenderServiceURL        = "agent.getRenderServiceURL"
 	AgentWaitForRenderDeploy        = "agent.waitForRenderDeploy"
 	AgentWaitForAWSStack            = "agent.waitForAWSStack"
+	AgentUpdateAWSStack             = "agent.updateAWSStack"
 	AgentIsURLLive                  = "agent.isURLLive"
 	AgentSendProjectStats           = "agent.sendProjectStats"
 	AgentGetFlyIOAppURL             = "agent.getFlyIOAppURL"
@@ -100,6 +101,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentGetPreviousDeployment, ActFunc: a.getPreviousDeployment},
 		{Name: AgentRollbackDeployment, ActFunc: a.rollbackDeployment},
 		{Name: AgentRunECSMigration, ActFunc: a.runECSMigration},
+		{Name: AgentUpdateAWSStack, ActFunc: a.updateAWSStack},
 		{Name: AgentCreateAppRunnerService, ActFunc: a.createAppRunnerService},
 		{Name: AgentWaitForAppRunnerService, ActFunc: a.waitForAppRunnerService},
 	}

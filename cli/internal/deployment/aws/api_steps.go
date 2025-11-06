@@ -199,106 +199,46 @@ func (s *CreateAppRunnerServiceStep) Execute(ctx context.Context, client AWSClie
 		return nil, errors.New("pushed image URL not found in ECR step result")
 	}
 
-	// Convert EnvVars to backend format with categorization
-	backendEnvVars := make([]backend.EnvVar, 0, len(s.EnvVars)+1)
-	hasPort := false
-	for _, envVar := range s.EnvVars {
-		backendEnvVars = append(backendEnvVars, backend.EnvVar{
-			Name:    envVar.Name,
-			Value:   envVar.Value,
-			Role:    envVar.Role,
-			Service: envVar.Service,
-		})
-		if envVar.Name == "PORT" {
-			hasPort = true
-		}
+	// On first deploy WITH migrations, don't create App Runner yet (it will be added after migration)
+	// On first deploy WITHOUT migrations, create App Runner immediately (single-phase)
+	// On updates, App Runner already exists so CreateAppRunner is not set (defaults to true in template)
+	var createAppRunner *bool
+	if !s.IsUpdate && s.MigrationCommand != "" {
+		// First deploy with migrations: defer App Runner creation until after migration
+		falseVal := false
+		createAppRunner = &falseVal
+		slog.Info("First deploy with migrations - App Runner will be created after migration completes")
+	} else if !s.IsUpdate && s.MigrationCommand == "" {
+		// First deploy without migrations: create App Runner immediately
+		slog.Info("First deploy without migrations - App Runner will be created in initial stack")
+		// createAppRunner stays nil, defaults to true in template
 	}
 
-	// Add PORT environment variable if not already present
-	// This ensures the application listens on the correct port that App Runner expects
-	if !hasPort {
-		backendEnvVars = append(backendEnvVars, backend.EnvVar{
-			Name:  "PORT",
-			Value: fmt.Sprintf("%d", s.Port),
-			Role:  "user",
-		})
-		slog.Info("Added PORT environment variable", "port", s.Port)
-	} else {
-		slog.Info("PORT environment variable already defined by user, using existing value")
+	// Build deployment spec using shared helper
+	deploymentSpec, err := BuildAWSDeploymentSpec(
+		s.ServiceName,
+		pushedImageURL,
+		s.CPU,
+		s.Memory,
+		s.Port,
+		s.EnvVars,
+		s.Services,
+		s.MigrationCommand,
+		createAppRunner,
+	)
+	if err != nil {
+		return nil, errors.Errorf("failed to build deployment spec: %w", err)
 	}
-
-	// Convert deployment services to backing services
-	slog.Info("Converting deployment services to backing services", "count", len(s.Services))
-	backingServices := make([]backend.BackingService, 0, len(s.Services))
-	for _, svc := range s.Services {
-		slog.Info("Processing service", "provider", svc.Provider, "name", svc.Name)
-
-		// Map provider to AWS service type
-		var serviceType string
-		if svc.Provider == "postgresql" || svc.Provider == "mysql" {
-			serviceType = "rds"
-		} else if svc.Provider == "redis" {
-			serviceType = "elasticache"
-		} else {
-			// Skip unsupported service types
-			slog.Warn("Unsupported service provider for AWS", "provider", svc.Provider)
-			continue
-		}
-
-		backingService := backend.BackingService{
-			Type: serviceType, // "rds" or "elasticache"
-			Name: svc.Name,
-		}
-
-		// Set default configurations based on service type
-		if svc.Provider == "postgresql" || svc.Provider == "mysql" {
-			backingService.Engine = "postgres" // TODO: handle mysql
-			if svc.Provider == "mysql" {
-				backingService.Engine = "mysql"
-			}
-			backingService.InstanceClass = "db.t3.micro"
-			backingService.AllocatedStorage = 20
-			slog.Info("Configured RDS backing service", "name", svc.Name, "engine", backingService.Engine)
-		} else if svc.Provider == "redis" {
-			backingService.NodeType = "cache.t3.micro"
-			backingService.NumCacheNodes = 1
-			slog.Info("Configured ElastiCache backing service", "name", svc.Name)
-		}
-
-		backingServices = append(backingServices, backingService)
-	}
-	slog.Info("Total backing services created", "count", len(backingServices))
 
 	// Call backend to initiate CloudFormation stack deployment
 	backendClient := backend.NewClient()
-
-	// On first deploy, don't create App Runner yet (it will be added after migration)
-	// On updates, App Runner already exists so CreateAppRunner is not set (defaults to true in template)
-	var createAppRunner *bool
-	if !s.IsUpdate {
-		falseVal := false
-		createAppRunner = &falseVal
-		slog.Info("First deploy - App Runner will be created after migration completes")
-	}
-
-	deploymentSpec := backend.AWSDeploymentSpec{
-		ServiceName:      s.ServiceName,
-		ImageURL:         pushedImageURL,
-		CPU:              s.CPU,
-		Memory:           s.Memory,
-		Port:             s.Port,
-		EnvVars:          backendEnvVars,
-		BackingServices:  backingServices,
-		MigrationCommand: s.MigrationCommand,
-		CreateAppRunner:  createAppRunner,
-	}
 
 	slog.Info("Calling backend to initiate CloudFormation stack deployment",
 		"service", s.ServiceName,
 		"image", pushedImageURL,
 		"cpu", s.CPU,
 		"memory", s.Memory,
-		"backingServicesCount", len(backingServices),
+		"backingServicesCount", len(deploymentSpec.BackingServices),
 	)
 
 	// Deploy stack - backend returns immediately without polling
@@ -340,4 +280,88 @@ func (s *CreateAppRunnerServiceStep) Rollback(ctx context.Context, client AWSCli
 	// For now, we'll leave the stack in place for manual cleanup
 	// In production, we would call CloudFormation DeleteStack API
 	return nil
+}
+
+// BuildAWSDeploymentSpec creates a backend.AWSDeploymentSpec from deployment configuration
+// This helper is used by both steps (during initial deploy) and activities (during updates)
+func BuildAWSDeploymentSpec(
+	serviceName, imageURL, cpu, memory string,
+	port int,
+	envVars []deployment.EnvVar,
+	services []deployment.Service,
+	migrationCommand string,
+	createAppRunner *bool,
+) (backend.AWSDeploymentSpec, error) {
+	// Convert EnvVars to backend format with PORT injection
+	backendEnvVars := make([]backend.EnvVar, 0, len(envVars)+1)
+	hasPort := false
+	for _, envVar := range envVars {
+		backendEnvVars = append(backendEnvVars, backend.EnvVar{
+			Name:    envVar.Name,
+			Value:   envVar.Value,
+			Role:    envVar.Role,
+			Service: envVar.Service,
+		})
+		if envVar.Name == "PORT" {
+			hasPort = true
+		}
+	}
+
+	// Add PORT environment variable if not already present
+	if !hasPort {
+		backendEnvVars = append(backendEnvVars, backend.EnvVar{
+			Name:  "PORT",
+			Value: fmt.Sprintf("%d", port),
+			Role:  "user",
+		})
+		slog.Info("Added PORT environment variable", "port", port)
+	} else {
+		slog.Info("PORT environment variable already defined by user")
+	}
+
+	// Convert deployment services to backing services
+	backingServices := make([]backend.BackingService, 0, len(services))
+	for _, svc := range services {
+		var serviceType string
+		if svc.Provider == "postgresql" || svc.Provider == "mysql" {
+			serviceType = "rds"
+		} else if svc.Provider == "redis" {
+			serviceType = "elasticache"
+		} else {
+			slog.Warn("Unsupported service provider for AWS", "provider", svc.Provider)
+			continue
+		}
+
+		backingService := backend.BackingService{
+			Type: serviceType,
+			Name: svc.Name,
+		}
+
+		if svc.Provider == "postgresql" {
+			backingService.Engine = "postgres"
+			backingService.InstanceClass = "db.t3.micro"
+			backingService.AllocatedStorage = 20
+		} else if svc.Provider == "mysql" {
+			backingService.Engine = "mysql"
+			backingService.InstanceClass = "db.t3.micro"
+			backingService.AllocatedStorage = 20
+		} else if svc.Provider == "redis" {
+			backingService.NodeType = "cache.t3.micro"
+			backingService.NumCacheNodes = 1
+		}
+
+		backingServices = append(backingServices, backingService)
+	}
+
+	return backend.AWSDeploymentSpec{
+		ServiceName:      serviceName,
+		ImageURL:         imageURL,
+		CPU:              cpu,
+		Memory:           memory,
+		Port:             port,
+		EnvVars:          backendEnvVars,
+		BackingServices:  backingServices,
+		MigrationCommand: migrationCommand,
+		CreateAppRunner:  createAppRunner,
+	}, nil
 }

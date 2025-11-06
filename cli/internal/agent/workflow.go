@@ -1976,6 +1976,19 @@ func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployRes
 			if name, ok := resource.Metadata["stackName"].(string); ok {
 				stackName = name
 			}
+			// Store metadata in spec for later use (stack updates)
+			if image, ok := resource.Metadata["image"].(string); ok {
+				spec.Metadata["pushedImageURL"] = image
+			}
+			if cpu, ok := resource.Metadata["cpu"].(string); ok {
+				spec.Metadata["cpu"] = cpu
+			}
+			if memory, ok := resource.Metadata["memory"].(string); ok {
+				spec.Metadata["memory"] = memory
+			}
+			if port, ok := resource.Metadata["port"].(int); ok {
+				spec.Metadata["port"] = port
+			}
 			break
 		}
 	}
@@ -2074,12 +2087,12 @@ func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployRes
 			// Update the spec to enable App Runner creation
 			spec.IsUpdate = true // Stack exists now, this is an update
 
-			// Re-deploy steps with createAppRunner=true to add App Runner to the stack
+			// Update CloudFormation stack to add App Runner (without rebuilding Docker image)
 			slog.Info("Updating CloudFormation stack to add App Runner service")
-			_, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
+			_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateAWSStack, token, spec).Get(ctx)
 			if err != nil {
 				prod_error.CaptureErrorWithContext(err, map[string]any{
-					"workflow": DeployAWSWorkflowName, "activity": AgentDeploySteps,
+					"workflow": DeployAWSWorkflowName, "activity": AgentUpdateAWSStack,
 					"component": "deployment", "platform": "aws", "project_name": input.Spec.Name,
 					"stage": "add_apprunner_post_migration",
 				})
