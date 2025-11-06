@@ -325,10 +325,16 @@ function buildEnvironmentVariables(spec: DeploymentSpec, resources: any): any[] 
 function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string): string {
   const resources: any = {};
 
-  // Create VPC and networking if backing services are needed
-  const needsVpc = spec.backingServices && spec.backingServices.length > 0;
+  // Create VPC and networking if:
+  // 1. Backing services (databases, caches) are needed
+  // 2. OR migrations need to run (ECS tasks require VPC)
+  const hasMigrations = spec.migrationCommand && spec.migrationCommand.trim() !== '';
+  const hasBackingServices = spec.backingServices && spec.backingServices.length > 0;
+  const needsVpc = hasBackingServices || hasMigrations;
+  
   console.log('Generating CloudFormation template:', {
     backingServicesCount: spec.backingServices?.length || 0,
+    hasMigrations: hasMigrations,
     needsVpc: needsVpc,
   });
 
@@ -375,88 +381,91 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
     };
 
     // Public subnets for ECS tasks (need internet access to pull images from ECR)
-    resources.PublicSubnetAZ1 = {
-      Type: 'AWS::EC2::Subnet',
-      Properties: {
-        VpcId: { Ref: 'VPC' },
-        CidrBlock: '10.0.10.0/24',
-        AvailabilityZone: { 'Fn::Select': [0, { 'Fn::GetAZs': '' }] },
-        MapPublicIpOnLaunch: true,
-        Tags: [
-          { Key: 'Name', Value: `prod-${spec.serviceName}-public-az1` },
-          { Key: 'Type', Value: 'Public' },
-        ],
-      },
-    };
+    // Only create these if migrations are present
+    if (hasMigrations) {
+      resources.PublicSubnetAZ1 = {
+        Type: 'AWS::EC2::Subnet',
+        Properties: {
+          VpcId: { Ref: 'VPC' },
+          CidrBlock: '10.0.10.0/24',
+          AvailabilityZone: { 'Fn::Select': [0, { 'Fn::GetAZs': '' }] },
+          MapPublicIpOnLaunch: true,
+          Tags: [
+            { Key: 'Name', Value: `prod-${spec.serviceName}-public-az1` },
+            { Key: 'Type', Value: 'Public' },
+          ],
+        },
+      };
 
-    resources.PublicSubnetAZ2 = {
-      Type: 'AWS::EC2::Subnet',
-      Properties: {
-        VpcId: { Ref: 'VPC' },
-        CidrBlock: '10.0.11.0/24',
-        AvailabilityZone: { 'Fn::Select': [1, { 'Fn::GetAZs': '' }] },
-        MapPublicIpOnLaunch: true,
-        Tags: [
-          { Key: 'Name', Value: `prod-${spec.serviceName}-public-az2` },
-          { Key: 'Type', Value: 'Public' },
-        ],
-      },
-    };
+      resources.PublicSubnetAZ2 = {
+        Type: 'AWS::EC2::Subnet',
+        Properties: {
+          VpcId: { Ref: 'VPC' },
+          CidrBlock: '10.0.11.0/24',
+          AvailabilityZone: { 'Fn::Select': [1, { 'Fn::GetAZs': '' }] },
+          MapPublicIpOnLaunch: true,
+          Tags: [
+            { Key: 'Name', Value: `prod-${spec.serviceName}-public-az2` },
+            { Key: 'Type', Value: 'Public' },
+          ],
+        },
+      };
 
-    // Internet Gateway for public subnets
-    resources.InternetGateway = {
-      Type: 'AWS::EC2::InternetGateway',
-      Properties: {
-        Tags: [
-          { Key: 'Name', Value: `prod-${spec.serviceName}-igw` },
-        ],
-      },
-    };
+      // Internet Gateway for public subnets
+      resources.InternetGateway = {
+        Type: 'AWS::EC2::InternetGateway',
+        Properties: {
+          Tags: [
+            { Key: 'Name', Value: `prod-${spec.serviceName}-igw` },
+          ],
+        },
+      };
 
-    resources.AttachGateway = {
-      Type: 'AWS::EC2::VPCGatewayAttachment',
-      Properties: {
-        VpcId: { Ref: 'VPC' },
-        InternetGatewayId: { Ref: 'InternetGateway' },
-      },
-    };
+      resources.AttachGateway = {
+        Type: 'AWS::EC2::VPCGatewayAttachment',
+        Properties: {
+          VpcId: { Ref: 'VPC' },
+          InternetGatewayId: { Ref: 'InternetGateway' },
+        },
+      };
 
-    // Route table for public subnets
-    resources.PublicRouteTable = {
-      Type: 'AWS::EC2::RouteTable',
-      Properties: {
-        VpcId: { Ref: 'VPC' },
-        Tags: [
-          { Key: 'Name', Value: `prod-${spec.serviceName}-public-rt` },
-        ],
-      },
-    };
+      // Route table for public subnets
+      resources.PublicRouteTable = {
+        Type: 'AWS::EC2::RouteTable',
+        Properties: {
+          VpcId: { Ref: 'VPC' },
+          Tags: [
+            { Key: 'Name', Value: `prod-${spec.serviceName}-public-rt` },
+          ],
+        },
+      };
 
-    resources.PublicRoute = {
-      Type: 'AWS::EC2::Route',
-      DependsOn: 'AttachGateway',
-      Properties: {
-        RouteTableId: { Ref: 'PublicRouteTable' },
-        DestinationCidrBlock: '0.0.0.0/0',
-        GatewayId: { Ref: 'InternetGateway' },
-      },
-    };
+      resources.PublicRoute = {
+        Type: 'AWS::EC2::Route',
+        DependsOn: 'AttachGateway',
+        Properties: {
+          RouteTableId: { Ref: 'PublicRouteTable' },
+          DestinationCidrBlock: '0.0.0.0/0',
+          GatewayId: { Ref: 'InternetGateway' },
+        },
+      };
 
-    resources.PublicSubnetRouteTableAssociationAZ1 = {
-      Type: 'AWS::EC2::SubnetRouteTableAssociation',
-      Properties: {
-        SubnetId: { Ref: 'PublicSubnetAZ1' },
-        RouteTableId: { Ref: 'PublicRouteTable' },
-      },
-    };
+      resources.PublicSubnetRouteTableAssociationAZ1 = {
+        Type: 'AWS::EC2::SubnetRouteTableAssociation',
+        Properties: {
+          SubnetId: { Ref: 'PublicSubnetAZ1' },
+          RouteTableId: { Ref: 'PublicRouteTable' },
+        },
+      };
 
-    resources.PublicSubnetRouteTableAssociationAZ2 = {
-      Type: 'AWS::EC2::SubnetRouteTableAssociation',
-      Properties: {
-        SubnetId: { Ref: 'PublicSubnetAZ2' },
-        RouteTableId: { Ref: 'PublicRouteTable' },
-      },
-    };
+      resources.PublicSubnetRouteTableAssociationAZ2 = {
+        Type: 'AWS::EC2::SubnetRouteTableAssociation',
+        Properties: {
+          SubnetId: { Ref: 'PublicSubnetAZ2' },
+          RouteTableId: { Ref: 'PublicRouteTable' },
+        },
+      };
+    }
 
     // Security Group for backing services
     resources.BackingServiceSecurityGroup = {
@@ -669,8 +678,6 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
   };
 
   // ECS resources for running migrations (only if migration command exists)
-  const hasMigrations = spec.migrationCommand && spec.migrationCommand.trim() !== '';
-  
   if (hasMigrations) {
     console.log('Creating ECS resources for migration execution');
     
@@ -945,14 +952,19 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
       Description: 'Private Subnet AZ2 ID',
       Value: { Ref: 'PrivateSubnetAZ2' },
     };
-    outputs.PublicSubnetAZ1 = {
-      Description: 'Public Subnet AZ1 ID',
-      Value: { Ref: 'PublicSubnetAZ1' },
-    };
-    outputs.PublicSubnetAZ2 = {
-      Description: 'Public Subnet AZ2 ID',
-      Value: { Ref: 'PublicSubnetAZ2' },
-    };
+    
+    // Only output public subnets if migrations are present
+    if (hasMigrations) {
+      outputs.PublicSubnetAZ1 = {
+        Description: 'Public Subnet AZ1 ID',
+        Value: { Ref: 'PublicSubnetAZ1' },
+      };
+      outputs.PublicSubnetAZ2 = {
+        Description: 'Public Subnet AZ2 ID',
+        Value: { Ref: 'PublicSubnetAZ2' },
+      };
+    }
+    
     outputs.AppRunnerSecurityGroupId = {
       Description: 'Security Group ID for App Runner',
       Value: { Ref: 'AppRunnerSecurityGroup' },

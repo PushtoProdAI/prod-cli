@@ -14,6 +14,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/aws"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 )
 
@@ -365,5 +366,62 @@ func (a *Activities) waitForAppRunnerService(ctx context.Context, authToken, ser
 	}
 
 	// Success
+	return nil
+}
+
+func (a *Activities) updateAWSStack(ctx context.Context, authToken string, spec *deployment.DeploymentSpec) error {
+	a.uiWriter.SendStatus("deploying", "Updating CloudFormation stack to add App Runner...")
+
+	slog.Info("Updating CloudFormation stack", "stackName", spec.Name, "isUpdate", spec.IsUpdate)
+
+	// Extract parameters from spec metadata
+	imageURL, ok := spec.Metadata["pushedImageURL"].(string)
+	if !ok || imageURL == "" {
+		return errors.Errorf("image URL not found in spec metadata")
+	}
+
+	cpu, _ := spec.Metadata["cpu"].(string)
+	memory, _ := spec.Metadata["memory"].(string)
+	port, _ := spec.Metadata["port"].(int)
+
+	if cpu == "" {
+		cpu = "1024"
+	}
+	if memory == "" {
+		memory = "2048"
+	}
+	if port == 0 {
+		port = 8080
+	}
+
+	// Import the AWS deployment package to use the shared helper
+	// We need to reference the package properly
+	deploymentSpec, err := aws.BuildAWSDeploymentSpec(
+		spec.Name,
+		imageURL,
+		cpu,
+		memory,
+		port,
+		spec.EnvVars,
+		spec.Services,
+		spec.MigrationCommand,
+		nil, // CreateAppRunner defaults to true in template
+	)
+	if err != nil {
+		return errors.Errorf("failed to build deployment spec: %w", err)
+	}
+
+	backendClient := backend.NewClient()
+	result, err := backendClient.DeployAWSStack(ctx, authToken, deploymentSpec)
+	if err != nil {
+		return errors.Errorf("failed to update CloudFormation stack: %w", err)
+	}
+
+	if result.Error != "" {
+		return errors.Errorf("CloudFormation stack update failed: %s", result.Error)
+	}
+
+	a.uiWriter.SendStatusComplete("deploying", "✅ CloudFormation stack updated successfully")
+	slog.Info("CloudFormation stack update initiated", "stackId", result.StackID, "status", result.Status)
 	return nil
 }
