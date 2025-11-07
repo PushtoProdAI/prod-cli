@@ -9,6 +9,7 @@ import {
   CloudFormationClient,
   DescribeStacksCommand,
   DescribeStackEventsCommand,
+  DescribeStackResourcesCommand,
   StackStatus,
 } from "npm:@aws-sdk/client-cloudformation";
 
@@ -17,13 +18,24 @@ initSentry();
 
 interface StackStatusRequest {
   stackName: string;
+  includeResources?: boolean; // If true, fetch and return resource details
+}
+
+interface StackResources {
+  hasRDS: boolean;
+  hasElastiCache: boolean;
+  hasAppRunner: boolean;
+  rdsInstances: string[];
+  elastiCacheInstances: string[];
 }
 
 interface StackStatusResponse {
+  exists: boolean; // Added to support detection use case
   stackId: string;
   stackName: string;
   status: string;
   outputs?: Record<string, string>;
+  resources?: StackResources; // Added to support detection use case
   error?: string;
 }
 
@@ -115,40 +127,98 @@ Deno.serve(async (req) => {
     });
 
     // Get stack status
-    const describeResult = await cfnClient.send(
-      new DescribeStacksCommand({ StackName: statusRequest.stackName })
-    );
-
-    const stack = describeResult.Stacks?.[0];
-    if (!stack) {
-      return new Response(
-        JSON.stringify({ error: 'Stack not found' }),
-        { status: 404, headers: { 'Content-Type': 'application/json' } }
+    let stack;
+    try {
+      const describeResult = await cfnClient.send(
+        new DescribeStacksCommand({ StackName: statusRequest.stackName })
       );
+      stack = describeResult.Stacks?.[0];
+    } catch (error: any) {
+      // Stack doesn't exist
+      if (error.name === 'ValidationError' || error.message?.includes('does not exist')) {
+        console.log('Stack does not exist:', statusRequest.stackName);
+        return Response.json({
+          exists: false,
+          stackId: '',
+          stackName: statusRequest.stackName,
+          status: 'NOT_FOUND',
+        });
+      }
+      // Other errors should be thrown
+      throw error;
+    }
+
+    if (!stack) {
+      return Response.json({
+        exists: false,
+        stackId: '',
+        stackName: statusRequest.stackName,
+        status: 'NOT_FOUND',
+      });
     }
 
     const status = stack.StackStatus;
     const response: StackStatusResponse = {
+      exists: true,
       stackId: stack.StackId || statusRequest.stackName,
       stackName: statusRequest.stackName,
       status: status,
     };
 
-    // Check if stack is in a terminal state
-    if (
-      status === StackStatus.CREATE_COMPLETE ||
-      status === StackStatus.UPDATE_COMPLETE
-    ) {
-      // Extract outputs
-      const outputs: Record<string, string> = {};
-      if (stack.Outputs) {
-        for (const output of stack.Outputs) {
-          if (output.OutputKey && output.OutputValue) {
-            outputs[output.OutputKey] = output.OutputValue;
-          }
+    // Extract outputs (always include if available)
+    const outputs: Record<string, string> = {};
+    if (stack.Outputs) {
+      for (const output of stack.Outputs) {
+        if (output.OutputKey && output.OutputValue) {
+          outputs[output.OutputKey] = output.OutputValue;
         }
       }
       response.outputs = outputs;
+    }
+
+    // Get stack resources if requested (for detection use case)
+    if (statusRequest.includeResources) {
+      try {
+        const resourcesResult = await cfnClient.send(
+          new DescribeStackResourcesCommand({ StackName: statusRequest.stackName })
+        );
+
+        const resources: StackResources = {
+          hasRDS: false,
+          hasElastiCache: false,
+          hasAppRunner: false,
+          rdsInstances: [],
+          elastiCacheInstances: [],
+        };
+
+        if (resourcesResult.StackResources) {
+          for (const resource of resourcesResult.StackResources) {
+            const resourceType = resource.ResourceType;
+            const logicalId = resource.LogicalResourceId || '';
+            
+            if (resourceType === 'AWS::RDS::DBInstance') {
+              resources.hasRDS = true;
+              resources.rdsInstances.push(logicalId);
+              console.log('Found RDS instance:', logicalId);
+            } else if (resourceType === 'AWS::ElastiCache::CacheCluster') {
+              resources.hasElastiCache = true;
+              resources.elastiCacheInstances.push(logicalId);
+              console.log('Found ElastiCache cluster:', logicalId);
+            } else if (resourceType === 'AWS::AppRunner::Service') {
+              resources.hasAppRunner = true;
+              console.log('Found App Runner service:', logicalId);
+            }
+          }
+        }
+
+        response.resources = resources;
+        console.log('Stack resources:', resources);
+
+      } catch (error: any) {
+        console.error('Failed to describe stack resources:', error.message);
+        // Don't fail the entire request if we can't get resources
+        // Just return without resources field
+      }
     }
 
     // Check for failure states

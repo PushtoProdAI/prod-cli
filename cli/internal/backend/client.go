@@ -606,8 +606,9 @@ func (c *Client) DeployAWSStack(ctx context.Context, authToken string, spec AWSD
 
 // GetAWSStackStatus polls the status of a CloudFormation stack
 func (c *Client) GetAWSStackStatus(ctx context.Context, authToken string, stackName string) (*AWSDeploymentResult, error) {
-	payload := map[string]string{
+	payload := map[string]any{
 		"stackName": stackName,
+		// Don't request resources for polling (faster)
 	}
 
 	jsonData, err := json.Marshal(payload)
@@ -632,10 +633,6 @@ func (c *Client) GetAWSStackStatus(ctx context.Context, authToken string, stackN
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, errors.Errorf("CloudFormation stack not found: %s", stackName)
-	}
-
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return nil, errors.Errorf("get-aws-stack-status failed with status %d: %s", resp.StatusCode, string(bodyBytes))
@@ -644,6 +641,11 @@ func (c *Client) GetAWSStackStatus(ctx context.Context, authToken string, stackN
 	var result AWSDeploymentResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, errors.Errorf("failed to decode response: %w", err)
+	}
+
+	// Check if stack doesn't exist (status will be NOT_FOUND)
+	if result.Status == "NOT_FOUND" {
+		return nil, errors.Errorf("CloudFormation stack not found: %s", stackName)
 	}
 
 	return &result, nil
@@ -674,9 +676,11 @@ type AWSStackCheckResponse struct {
 }
 
 // CheckAWSStack checks if a CloudFormation stack exists and returns its details
+// This uses the same endpoint as GetAWSStackStatus but with includeResources=true
 func (c *Client) CheckAWSStack(ctx context.Context, authToken string, stackName string) (*AWSStackCheckResponse, error) {
-	payload := AWSStackCheckRequest{
-		StackName: stackName,
+	payload := map[string]any{
+		"stackName":        stackName,
+		"includeResources": true, // Request resource information for detection
 	}
 
 	jsonData, err := json.Marshal(payload)
@@ -684,7 +688,8 @@ func (c *Client) CheckAWSStack(ctx context.Context, authToken string, stackName 
 		return nil, errors.Errorf("failed to marshal check stack request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/check-aws-stack", getBaseURL())
+	// Use the same consolidated endpoint
+	url := fmt.Sprintf("%s/get-aws-stack-status", getBaseURL())
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, errors.Errorf("failed to create request: %w", err)
@@ -703,7 +708,7 @@ func (c *Client) CheckAWSStack(ctx context.Context, authToken string, stackName 
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, errors.Errorf("check-aws-stack failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		return nil, errors.Errorf("get-aws-stack-status failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var result AWSStackCheckResponse
