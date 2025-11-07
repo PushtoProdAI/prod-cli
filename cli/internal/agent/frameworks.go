@@ -548,6 +548,154 @@ func (h *NuxtHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
 	return plan
 }
 
+// patchTanStackStartConfigForVercel adds the Nitro plugin for Vercel to TanStack Start config
+func patchTanStackStartConfigForVercel(config []byte, isAppConfig bool) []byte {
+	configStr := string(config)
+
+	// Check if nitro plugin is already imported and added
+	if strings.Contains(configStr, "nitro") && strings.Contains(configStr, "nitro/vite") {
+		return config // Already configured
+	}
+
+	// Add import for nitro plugin if not present
+	if !strings.Contains(configStr, `import { nitro } from "nitro/vite"`) {
+		// Find existing imports and add the nitro import
+		importRegex := regexp.MustCompile(`(import\s+.*from\s+["'].*["'];?\s*\n)`)
+		matches := importRegex.FindAllStringIndex(configStr, -1)
+
+		nitroImport := `import { nitro } from "nitro/vite";` + "\n"
+
+		if len(matches) > 0 {
+			// Insert after the last import
+			lastImportEnd := matches[len(matches)-1][1]
+			configStr = configStr[:lastImportEnd] + nitroImport + configStr[lastImportEnd:]
+		} else {
+			// No imports found, add at the beginning
+			configStr = nitroImport + configStr
+		}
+	}
+
+	// Add nitro() to plugins array if not present
+	if !strings.Contains(configStr, "nitro(") {
+		if isAppConfig {
+			// For app.config, we need to add to vite: { plugins: [...] }
+			vitePluginsRegex := regexp.MustCompile(`vite:\s*\{[^}]*plugins:\s*\[\s*([^\]]*)\s*\]`)
+			if vitePluginsRegex.MatchString(configStr) {
+				// Add nitro to existing vite.plugins array (after netlify if present, or at the beginning)
+				configStr = vitePluginsRegex.ReplaceAllStringFunc(configStr, func(match string) string {
+					pluginsStart := strings.Index(match, "plugins: [")
+					if pluginsStart != -1 {
+						afterOpenBracket := pluginsStart + len("plugins: [")
+						// Insert nitro() with Vercel preset
+						insertion := "\n      nitro({ config: { preset: 'vercel' } }),"
+						return match[:afterOpenBracket] + insertion + match[afterOpenBracket:]
+					}
+					return match
+				})
+			} else {
+				// Check if vite object exists but without plugins
+				viteRegex := regexp.MustCompile(`vite:\s*\{`)
+				if viteRegex.MatchString(configStr) {
+					// Add plugins array to existing vite object
+					configStr = viteRegex.ReplaceAllString(configStr, `vite: {
+    plugins: [
+      nitro({ config: { preset: 'vercel' } }),
+    ],`)
+				} else {
+					// No vite object, add it to the config
+					defineConfigRegex := regexp.MustCompile(`export\s+default\s+defineConfig\s*\(\s*\{`)
+					if defineConfigRegex.MatchString(configStr) {
+						configStr = defineConfigRegex.ReplaceAllString(configStr, `export default defineConfig({
+  vite: {
+    plugins: [
+      nitro({ config: { preset: 'vercel' } }),
+    ],
+  },`)
+					}
+				}
+			}
+		} else {
+			// For vite.config, add to the main plugins array
+			pluginsStart := strings.Index(configStr, "plugins:")
+			if pluginsStart != -1 {
+				// Find the opening bracket after "plugins:"
+				bracketStart := strings.Index(configStr[pluginsStart:], "[")
+				if bracketStart != -1 {
+					bracketStart += pluginsStart
+
+					// Count brackets to find the matching closing bracket
+					bracketCount := 0
+					bracketEnd := -1
+					inString := false
+					var stringChar rune
+
+					for i := bracketStart; i < len(configStr); i++ {
+						ch := rune(configStr[i])
+
+						// Handle string literals
+						if ch == '"' || ch == '\'' || ch == '`' {
+							if !inString {
+								inString = true
+								stringChar = ch
+							} else if ch == stringChar && (i == 0 || configStr[i-1] != '\\') {
+								inString = false
+							}
+						}
+
+						if !inString {
+							if ch == '[' {
+								bracketCount++
+							} else if ch == ']' {
+								bracketCount--
+								if bracketCount == 0 {
+									bracketEnd = i
+									break
+								}
+							}
+						}
+					}
+
+					if bracketEnd != -1 {
+						// Insert nitro() at the beginning of the plugins array (after tanstackStart)
+						afterOpenBracket := bracketStart + 1
+						// Skip whitespace after opening bracket
+						for afterOpenBracket < len(configStr) && (configStr[afterOpenBracket] == ' ' || configStr[afterOpenBracket] == '\n' || configStr[afterOpenBracket] == '\t') {
+							afterOpenBracket++
+						}
+
+						// Look for tanstackStart() and insert after it
+						tanstackPos := strings.Index(configStr[afterOpenBracket:bracketEnd], "tanstackStart()")
+						if tanstackPos != -1 {
+							// Find the comma after tanstackStart()
+							commaPos := strings.Index(configStr[afterOpenBracket+tanstackPos:bracketEnd], ",")
+							if commaPos != -1 {
+								insertPos := afterOpenBracket + tanstackPos + commaPos + 1
+								newConfig := configStr[:insertPos] + "\n    nitro({ config: { preset: 'vercel' } })," + configStr[insertPos:]
+								return []byte(newConfig)
+							}
+						}
+
+						// If no tanstackStart found, insert at the beginning
+						newConfig := configStr[:afterOpenBracket] + "\n    nitro({ config: { preset: 'vercel' } }),\n    " + configStr[afterOpenBracket:]
+						return []byte(newConfig)
+					}
+				}
+			} else {
+				// No plugins array found, need to add one
+				defineConfigRegex := regexp.MustCompile(`export\s+default\s+defineConfig\s*\(\s*\{`)
+				if defineConfigRegex.MatchString(configStr) {
+					configStr = defineConfigRegex.ReplaceAllString(configStr, `export default defineConfig({
+  plugins: [
+    nitro({ config: { preset: 'vercel' } }),
+  ],`)
+				}
+			}
+		}
+	}
+
+	return []byte(configStr)
+}
+
 // TanStackStartHandler handles TanStack Start-specific operations
 type TanStackStartHandler struct {
 	BaseFrameworkHandler
@@ -571,6 +719,16 @@ func (h *TanStackStartHandler) PatchPackageJSON(origPackageJson []byte, platform
 		// Check if anything changed
 		changed := !bytes.Equal(origPackageJson, updatedPackageJson)
 		return updatedPackageJson, changed, nil
+	case Vercel:
+		// For Vercel, we'll use Nitro v3 as it's the recommended approach
+		// We need to add nitro as a dependency
+		updatedPackageJson, err := patchPackageJSON(origPackageJson, "nitro", "^3.0.0")
+		if err != nil {
+			return nil, false, err
+		}
+		// Check if anything changed
+		changed := !bytes.Equal(origPackageJson, updatedPackageJson)
+		return updatedPackageJson, changed, nil
 	default:
 		// For other platforms, just return the original content unchanged
 		return origPackageJson, false, nil
@@ -584,8 +742,8 @@ func (h *TanStackStartHandler) HandleConfig(projectPath string, platform Platfor
 		return nil, "", nil // No config found, return empty results
 	}
 
-	// Only handle Netlify for now
-	if platform != Netlify {
+	// Only handle Netlify and Vercel for now
+	if platform != Netlify && platform != Vercel {
 		return nil, "", nil
 	}
 
@@ -599,15 +757,24 @@ func (h *TanStackStartHandler) HandleConfig(projectPath string, platform Platfor
 	configFilename := filepath.Base(configPath)
 	var updatedConfig []byte
 	var configName string
+	isAppConfig := strings.HasPrefix(configFilename, "app.config")
 
-	if strings.HasPrefix(configFilename, "app.config") {
-		// TanStack Start unified config
-		updatedConfig = patchTanStackStartAppConfigForNetlify(origConfig)
+	if isAppConfig {
 		configName = "app.config"
 	} else {
-		// Traditional vite.config
-		updatedConfig = patchTanStackStartViteConfigForNetlify(origConfig)
 		configName = "vite.config"
+	}
+
+	// Apply platform-specific patches
+	switch platform {
+	case Netlify:
+		if isAppConfig {
+			updatedConfig = patchTanStackStartAppConfigForNetlify(origConfig)
+		} else {
+			updatedConfig = patchTanStackStartViteConfigForNetlify(origConfig)
+		}
+	case Vercel:
+		updatedConfig = patchTanStackStartConfigForVercel(origConfig, isAppConfig)
 	}
 
 	// Create backup
