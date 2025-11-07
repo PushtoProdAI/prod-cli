@@ -112,7 +112,7 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 	}
 
 	re := regexp.MustCompile(nodeEnvVarRegex)
-	envVars, err := walkProjectForCandidates(n.ProjectFS, []string{".js", ".ts", ".tsx", ".jsx"}, []string{"node_modules", ".next", ".netlify"}, re, 3, 5)
+	envVars, err := walkProjectForCandidates(n.ProjectFS, []string{".js", ".ts", ".tsx", ".jsx"}, []string{"node_modules", ".next", ".netlify", "dist", "build", ".output"}, re, 3, 5)
 	if err != nil {
 		return nil, err
 	}
@@ -409,6 +409,23 @@ func findRuntimeFramework(root string) string {
 		return "Nuxt"
 	}
 
+	// Check for TanStack Start (has app.config.ts/js with TanStack Start config)
+	appConfigPath := ""
+	if exists(filepath.Join(root, "app.config.ts")) {
+		appConfigPath = filepath.Join(root, "app.config.ts")
+	} else if exists(filepath.Join(root, "app.config.js")) {
+		appConfigPath = filepath.Join(root, "app.config.js")
+	}
+	if appConfigPath != "" {
+		if content, err := os.ReadFile(appConfigPath); err == nil {
+			contentStr := string(content)
+			// TanStack Start uses defineConfig from @tanstack/react-start/config or @tanstack/start/config
+			if strings.Contains(contentStr, "@tanstack/react-start/config") || strings.Contains(contentStr, "@tanstack/start/config") {
+				return "TanStack Start"
+			}
+		}
+	}
+
 	// Check for Remix (has remix.config.js|ts or vite.config with remix)
 	if exists(filepath.Join(root, "remix.config.js")) || exists(filepath.Join(root, "remix.config.ts")) {
 		return "Remix"
@@ -426,6 +443,10 @@ func findRuntimeFramework(root string) string {
 			contentStr := string(content)
 			if strings.Contains(contentStr, "@remix-run/dev") || strings.Contains(contentStr, "remix()") {
 				return "Remix"
+			}
+			// Check for TanStack Start in vite.config (for projects not using app.config)
+			if strings.Contains(contentStr, "@tanstack/start") || strings.Contains(contentStr, "tanstackStart()") {
+				return "TanStack Start"
 			}
 		}
 	}
