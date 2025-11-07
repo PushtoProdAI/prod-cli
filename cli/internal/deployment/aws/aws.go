@@ -68,11 +68,10 @@ var fallbackPricing = AWSPricing{
 
 // AWSDeploymentAdapter implements the DeploymentAdapter interface for AWS
 type AWSDeploymentAdapter struct {
-	client          AWSClient
-	dockerGenerator *deployment.DockerGenerator
-	writer          io.Writer
-	llmClient       llm.Client
-	region          string
+	client    AWSClient
+	writer    io.Writer
+	llmClient llm.Client
+	region    string
 }
 
 // NewAWSDeploymentAdapter creates a new AWS deployment adapter
@@ -84,11 +83,10 @@ func NewAWSDeploymentAdapter(client AWSClient, region string, writer io.Writer, 
 		region = defaultRegion
 	}
 	return &AWSDeploymentAdapter{
-		client:          client,
-		dockerGenerator: deployment.NewDockerGenerator(writer, []deployment.EnvVar{}),
-		writer:          writer,
-		llmClient:       llmClient,
-		region:          region,
+		client:    client,
+		writer:    writer,
+		llmClient: llmClient,
+		region:    region,
 	}
 }
 
@@ -106,7 +104,10 @@ func (ada *AWSDeploymentAdapter) GenerateArtifacts(spec *deployment.DeploymentSp
 
 	switch strategy {
 	case deployment.StrategyAWS:
-		deployment := NewAWSDeployment(ada.client, spec, ada.dockerGenerator, useDockerfile, ada.region, ada.writer)
+		// Create a new DockerGenerator with the spec's environment variables
+		// This ensures build-time env vars are available during Docker build
+		dockerGen := deployment.NewDockerGenerator(ada.writer, spec.EnvVars)
+		deployment := NewAWSDeployment(ada.client, spec, dockerGen, useDockerfile, ada.region, ada.writer)
 		return deployment, nil
 	default:
 		return nil, errors.Errorf("unsupported strategy: %s", strategy)

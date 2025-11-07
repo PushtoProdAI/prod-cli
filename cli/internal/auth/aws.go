@@ -40,24 +40,19 @@ func (aa *AWSAuth) CheckAuthentication(ctx context.Context) (bool, error) {
 	}
 
 	if session == nil {
-		fmt.Fprintf(aa.out, "DEBUG: No session found in context\n")
 		return false, errors.Errorf("no session found in context")
 	}
 
 	accessToken := session.GetAccessToken()
 	if accessToken == "" {
-		fmt.Fprintf(aa.out, "DEBUG: No access token in session\n")
 		return false, errors.Errorf("no access token found in session")
 	}
 
-	fmt.Fprintf(aa.out, "DEBUG: Found access token (length: %d)\n", len(accessToken))
 	authenticated, err := aa.client.CheckAWSAuthentication(ctx, accessToken)
 	if err != nil {
-		fmt.Fprintf(aa.out, "DEBUG: Backend check failed: %v\n", err)
 		return false, errors.Errorf("failed to check AWS authentication: %w", err)
 	}
 
-	fmt.Fprintf(aa.out, "DEBUG: Backend returned authenticated=%v\n", authenticated)
 	return authenticated, nil
 }
 
@@ -87,7 +82,7 @@ func (aa *AWSAuth) InitializeSetup(ctx context.Context) error {
 		return errors.Errorf("failed to initialize AWS auth: %w", err)
 	}
 
-	fmt.Fprintf(aa.out, "✓ Generated external ID: %s\n\n", setup.ExternalID)
+	fmt.Fprint(aa.out, "✓ Generated secure external ID\n\n")
 
 	// Step 2: Generate CloudFormation console URL with pre-filled parameters
 	templateURL := config.GetAWSCloudFormationTemplateURL()

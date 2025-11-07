@@ -55,12 +55,10 @@ func (a *Activities) createDeployable(spec *deployment.DeploymentSpec, platform 
 		if err != nil {
 			return nil, errors.Errorf("failed to create AWS client: %w", err)
 		}
-		awsAdapter := aws.NewAWSDeploymentAdapter(awsClient, "us-east-1", a.uiWriter, a.llmClient)
-		deployable, err := awsAdapter.GenerateArtifacts(spec, deployment.StrategyAWS)
-		if err != nil {
-			return nil, errors.Errorf("failed to create AWS deployment: %w", err)
-		}
-		return deployable, nil
+		// Create DockerGenerator with spec's env vars for build-time variable support
+		// This matches the pattern used by Render and FlyIO
+		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
+		return aws.NewAWSDeployment(awsClient, spec, dockerGen, true, "us-east-1", a.uiWriter), nil
 	default:
 		return nil, errors.Errorf("unsupported platform: %s", platform)
 	}
