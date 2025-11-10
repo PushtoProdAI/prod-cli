@@ -27,9 +27,9 @@ type CreateNetlifySiteStep struct {
 func NewCreateNetlifySiteStep(siteName string, envVars map[string]string) *CreateNetlifySiteStep {
 	return &CreateNetlifySiteStep{
 		BaseStep: BaseStep{
-			ID:           "create-site",
-			Description:  fmt.Sprintf("Create Netlify site: %s", siteName),
-			DependsOn: []string{},
+			ID:          "create-site",
+			Description: fmt.Sprintf("Create Netlify site: %s", siteName),
+			DependsOn:   []string{},
 		},
 		siteName: siteName,
 		envVars:  envVars,
@@ -91,9 +91,9 @@ type BuildProjectStep struct {
 func NewBuildProjectStep(buildCommand, sourcePath string, envVars []deployment.EnvVar, writer io.Writer) *BuildProjectStep {
 	return &BuildProjectStep{
 		BaseStep: BaseStep{
-			ID:           "build-project",
-			Description:  fmt.Sprintf("Build project: %s", buildCommand),
-			DependsOn: []string{},
+			ID:          "build-project",
+			Description: fmt.Sprintf("Build project: %s", buildCommand),
+			DependsOn:   []string{},
 		},
 		buildCommand: buildCommand,
 		sourcePath:   sourcePath,
@@ -236,9 +236,9 @@ func NewDeployNetlifySiteStep(siteStepID, buildStepID, publishDir, functionsDir 
 	}
 	return &DeployNetlifySiteStep{
 		BaseStep: BaseStep{
-			ID:           "deploy-site",
-			Description:  "Deploy to Netlify",
-			DependsOn: deps,
+			ID:          "deploy-site",
+			Description: "Deploy to Netlify",
+			DependsOn:   deps,
 		},
 		siteStepID:   siteStepID,
 		buildStepID:  buildStepID,
@@ -352,9 +352,9 @@ type LinkNetlifySiteStep struct {
 func NewLinkNetlifySiteStep(siteStepID string, sourcePath string, writer io.Writer) *LinkNetlifySiteStep {
 	return &LinkNetlifySiteStep{
 		BaseStep: BaseStep{
-			ID:           "link-site",
-			Description:  "Link CLI to Netlify site",
-			DependsOn: []string{siteStepID},
+			ID:          "link-site",
+			Description: "Link CLI to Netlify site",
+			DependsOn:   []string{siteStepID},
 		},
 		siteStepID: siteStepID,
 		sourcePath: sourcePath,
@@ -441,9 +441,9 @@ type SetEnvironmentVariablesStep struct {
 func NewSetEnvironmentVariablesStep(siteStepID string, linkStepID string, sourcePath string, envVars map[string]string, writer io.Writer) *SetEnvironmentVariablesStep {
 	return &SetEnvironmentVariablesStep{
 		BaseStep: BaseStep{
-			ID:           "set-env-vars",
-			Description:  fmt.Sprintf("Set %d environment variables", len(envVars)),
-			DependsOn: []string{siteStepID, linkStepID},
+			ID:          "set-env-vars",
+			Description: fmt.Sprintf("Set %d environment variables", len(envVars)),
+			DependsOn:   []string{siteStepID, linkStepID},
 		},
 		siteStepID: siteStepID,
 		envVars:    envVars,
@@ -465,8 +465,21 @@ func (s *SetEnvironmentVariablesStep) Execute(ctx context.Context, client Netlif
 		return nil, errors.Errorf("could not find site ID from step %s", s.siteStepID)
 	}
 
+	// Change to source directory (where site is linked) before setting env vars
+	originalDir, err := os.Getwd()
+	if err != nil {
+		return nil, errors.Errorf("failed to get current directory: %w", err)
+	}
+
+	if s.sourcePath != "." && s.sourcePath != "" {
+		if err := os.Chdir(s.sourcePath); err != nil {
+			return nil, errors.Errorf("failed to change to source directory: %w", err)
+		}
+		defer os.Chdir(originalDir)
+	}
+
 	// Set environment variables
-	err := client.SetEnvironmentVariables(siteID, s.envVars)
+	err = client.SetEnvironmentVariables(siteID, s.envVars)
 	if err != nil {
 		return nil, errors.Errorf("failed to set environment variables: %w", err)
 	}
@@ -491,11 +504,26 @@ func (s *SetEnvironmentVariablesStep) Rollback(ctx context.Context, client Netli
 		return errors.Errorf("could not find site ID for rollback")
 	}
 
+	// Change to source directory (where site is linked) before unsetting env vars
+	originalDir, err := os.Getwd()
+	if err != nil {
+		slog.Warn("Failed to get current directory during rollback", "error", err)
+		return nil
+	}
+
+	if s.sourcePath != "." && s.sourcePath != "" {
+		if err := os.Chdir(s.sourcePath); err != nil {
+			slog.Warn("Failed to change to source directory during rollback", "error", err)
+			return nil
+		}
+		defer os.Chdir(originalDir)
+	}
+
 	// Unset each environment variable
 	// Note: We're unsetting all vars we tried to set, even if some failed
 	for key := range s.envVars {
 		// Using exec directly since client doesn't have unset method
-		cmd := exec.Command("netlify", "env:unset", key, "--site", siteID)
+		cmd := exec.Command("netlify", "env:unset", key)
 		if err := cmd.Run(); err != nil {
 			// Log error but continue trying to unset others
 			fmt.Fprintf(s.writer, "  ⚠️ Warning: failed to unset env var: %s: %v\n", key, err)
@@ -514,9 +542,9 @@ type InitializeGitRepoStep struct {
 func NewInitializeGitRepoStep(sourcePath string) *InitializeGitRepoStep {
 	return &InitializeGitRepoStep{
 		BaseStep: BaseStep{
-			ID:           "init-git",
-			Description:  "Initialize git repository",
-			DependsOn: []string{},
+			ID:          "init-git",
+			Description: "Initialize git repository",
+			DependsOn:   []string{},
 		},
 		sourcePath: sourcePath,
 	}
@@ -551,9 +579,9 @@ type UpdateBuildSettingsStep struct {
 func NewUpdateBuildSettingsStep(siteStepID, buildCommand, publishDir string) *UpdateBuildSettingsStep {
 	return &UpdateBuildSettingsStep{
 		BaseStep: BaseStep{
-			ID:           "update-build-settings",
-			Description:  "Update build settings",
-			DependsOn: []string{siteStepID},
+			ID:          "update-build-settings",
+			Description: "Update build settings",
+			DependsOn:   []string{siteStepID},
 		},
 		siteStepID:   siteStepID,
 		buildCommand: buildCommand,

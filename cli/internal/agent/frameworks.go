@@ -55,6 +55,7 @@ func NewFrameworkRegistry() *FrameworkRegistry {
 	registry.RegisterHandler(&RemixHandler{})
 	registry.RegisterHandler(&SvelteKitHandler{})
 	registry.RegisterHandler(&NuxtHandler{})
+	registry.RegisterHandler(&TanStackStartHandler{})
 
 	return registry
 }
@@ -499,6 +500,19 @@ func (h *SvelteKitHandler) RestoreConfigFromBackup(ctx context.Context, plan Dep
 	return parseDiffString(diff), nil
 }
 
+func (h *SvelteKitHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
+	// Apply platform-specific deployment configuration for SvelteKit
+	// For Node.js platforms (Render, Fly, Heroku), SvelteKit with adapter-node outputs to build/
+	switch plan.Platform {
+	case Render, FlyIO, Heroku:
+		plan.Spec.StartCommand = "node build"
+	}
+	// For Netlify and Vercel, the platform handles the runtime (no start command needed)
+	// For adapter-static, no start command needed (it's truly static)
+
+	return plan
+}
+
 // NuxtHandler handles Nuxt-specific operations
 type NuxtHandler struct {
 	BaseFrameworkHandler
@@ -543,6 +557,398 @@ func (h *NuxtHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
 		plan.Spec.BuildOutput.Path = "dist"
 	case Vercel:
 		plan.CollectedEnvVars = append(plan.CollectedEnvVars, deployment.EnvVar{Name: "SERVER_PRESET", Value: "vercel_edge"})
+	}
+	return plan
+}
+
+// removeTanStackStartNetlifyPlugin removes the Netlify plugin from TanStack Start config
+func removeTanStackStartNetlifyPlugin(config []byte) []byte {
+	configStr := string(config)
+
+	// Remove the netlify import
+	importRegex := regexp.MustCompile(`import\s+netlify\s+from\s+["']@netlify/vite-plugin-tanstack-start["'];?\s*\n?`)
+	configStr = importRegex.ReplaceAllString(configStr, "")
+
+	// Remove netlify() from plugins array
+	// Try to match: comma + whitespace + netlify() (middle/end of array)
+	pluginRegex1 := regexp.MustCompile(`\s*,\s*netlify\(\)`)
+	configStr = pluginRegex1.ReplaceAllString(configStr, "")
+
+	// Try to match: netlify() + comma + whitespace (beginning/middle of array)
+	pluginRegex2 := regexp.MustCompile(`netlify\(\)\s*,\s*`)
+	configStr = pluginRegex2.ReplaceAllString(configStr, "")
+
+	// Try to match: just netlify() if it's alone (edge case)
+	pluginRegex3 := regexp.MustCompile(`\s*netlify\(\)\s*`)
+	configStr = pluginRegex3.ReplaceAllString(configStr, "")
+
+	return []byte(configStr)
+}
+
+// removeTanStackStartNitroPlugin removes the Nitro plugin from TanStack Start config
+func removeTanStackStartNitroPlugin(config []byte) []byte {
+	configStr := string(config)
+
+	// Remove the nitro import
+	importRegex := regexp.MustCompile(`import\s+{\s*nitro\s*}\s+from\s+["']nitro/vite["'];?\s*\n?`)
+	configStr = importRegex.ReplaceAllString(configStr, "")
+
+	// Remove nitro() with any config from plugins array
+	// Try to match: comma + whitespace + nitro(...) (middle/end of array)
+	pluginRegex1 := regexp.MustCompile(`\s*,\s*nitro\([^)]*\)`)
+	configStr = pluginRegex1.ReplaceAllString(configStr, "")
+
+	// Try to match: nitro(...) + comma + whitespace (beginning/middle of array)
+	pluginRegex2 := regexp.MustCompile(`nitro\([^)]*\)\s*,\s*`)
+	configStr = pluginRegex2.ReplaceAllString(configStr, "")
+
+	// Try to match: just nitro(...) if it's alone (edge case)
+	pluginRegex3 := regexp.MustCompile(`\s*nitro\([^)]*\)\s*`)
+	configStr = pluginRegex3.ReplaceAllString(configStr, "")
+
+	return []byte(configStr)
+}
+
+// patchTanStackStartConfigForNitro adds the Nitro plugin with specified preset to TanStack Start config
+func patchTanStackStartConfigForNitro(config []byte, isAppConfig bool, preset string) []byte {
+	configStr := string(config)
+
+	// Check if nitro plugin is already imported and added
+	if strings.Contains(configStr, "nitro") && strings.Contains(configStr, "nitro/vite") {
+		return config // Already configured
+	}
+
+	// Add import for nitro plugin if not present
+	if !strings.Contains(configStr, `import { nitro } from "nitro/vite"`) {
+		// Find existing imports and add the nitro import
+		importRegex := regexp.MustCompile(`(import\s+.*from\s+["'].*["'];?\s*\n)`)
+		matches := importRegex.FindAllStringIndex(configStr, -1)
+
+		nitroImport := `import { nitro } from "nitro/vite";` + "\n"
+
+		if len(matches) > 0 {
+			// Insert after the last import
+			lastImportEnd := matches[len(matches)-1][1]
+			configStr = configStr[:lastImportEnd] + nitroImport + configStr[lastImportEnd:]
+		} else {
+			// No imports found, add at the beginning
+			configStr = nitroImport + configStr
+		}
+	}
+
+	// Add nitro() to plugins array if not present
+	if !strings.Contains(configStr, "nitro(") {
+		if isAppConfig {
+			// For app.config, we need to add to vite: { plugins: [...] }
+			vitePluginsRegex := regexp.MustCompile(`vite:\s*\{[^}]*plugins:\s*\[\s*([^\]]*)\s*\]`)
+			if vitePluginsRegex.MatchString(configStr) {
+				// Add nitro to existing vite.plugins array (after netlify if present, or at the beginning)
+				configStr = vitePluginsRegex.ReplaceAllStringFunc(configStr, func(match string) string {
+					pluginsStart := strings.Index(match, "plugins: [")
+					if pluginsStart != -1 {
+						afterOpenBracket := pluginsStart + len("plugins: [")
+						// Insert nitro() with specified preset
+						insertion := fmt.Sprintf("\n      nitro({ config: { preset: '%s' } }),", preset)
+						return match[:afterOpenBracket] + insertion + match[afterOpenBracket:]
+					}
+					return match
+				})
+			} else {
+				// Check if vite object exists but without plugins
+				viteRegex := regexp.MustCompile(`vite:\s*\{`)
+				if viteRegex.MatchString(configStr) {
+					// Add plugins array to existing vite object
+					nitroPlugin := fmt.Sprintf("nitro({ config: { preset: '%s' } })", preset)
+					configStr = viteRegex.ReplaceAllString(configStr, fmt.Sprintf(`vite: {
+    plugins: [
+      %s,
+    ],`, nitroPlugin))
+				} else {
+					// No vite object, add it to the config
+					defineConfigRegex := regexp.MustCompile(`export\s+default\s+defineConfig\s*\(\s*\{`)
+					if defineConfigRegex.MatchString(configStr) {
+						nitroPlugin := fmt.Sprintf("nitro({ config: { preset: '%s' } })", preset)
+						configStr = defineConfigRegex.ReplaceAllString(configStr, fmt.Sprintf(`export default defineConfig({
+  vite: {
+    plugins: [
+      %s,
+    ],
+  },`, nitroPlugin))
+					}
+				}
+			}
+		} else {
+			// For vite.config, add to the main plugins array
+			pluginsStart := strings.Index(configStr, "plugins:")
+			if pluginsStart != -1 {
+				// Find the opening bracket after "plugins:"
+				bracketStart := strings.Index(configStr[pluginsStart:], "[")
+				if bracketStart != -1 {
+					bracketStart += pluginsStart
+
+					// Count brackets to find the matching closing bracket
+					bracketCount := 0
+					bracketEnd := -1
+					inString := false
+					var stringChar rune
+
+					for i := bracketStart; i < len(configStr); i++ {
+						ch := rune(configStr[i])
+
+						// Handle string literals
+						if ch == '"' || ch == '\'' || ch == '`' {
+							if !inString {
+								inString = true
+								stringChar = ch
+							} else if ch == stringChar && (i == 0 || configStr[i-1] != '\\') {
+								inString = false
+							}
+						}
+
+						if !inString {
+							if ch == '[' {
+								bracketCount++
+							} else if ch == ']' {
+								bracketCount--
+								if bracketCount == 0 {
+									bracketEnd = i
+									break
+								}
+							}
+						}
+					}
+
+					if bracketEnd != -1 {
+						// Insert nitro() at the beginning of the plugins array (after tanstackStart)
+						afterOpenBracket := bracketStart + 1
+						// Skip whitespace after opening bracket
+						for afterOpenBracket < len(configStr) && (configStr[afterOpenBracket] == ' ' || configStr[afterOpenBracket] == '\n' || configStr[afterOpenBracket] == '\t') {
+							afterOpenBracket++
+						}
+
+						// Look for tanstackStart() and insert after it
+						tanstackPos := strings.Index(configStr[afterOpenBracket:bracketEnd], "tanstackStart()")
+						if tanstackPos != -1 {
+							// Find the comma after tanstackStart()
+							commaPos := strings.Index(configStr[afterOpenBracket+tanstackPos:bracketEnd], ",")
+							if commaPos != -1 {
+								insertPos := afterOpenBracket + tanstackPos + commaPos + 1
+								nitroPlugin := fmt.Sprintf("\n    nitro({ config: { preset: '%s' } }),", preset)
+								newConfig := configStr[:insertPos] + nitroPlugin + configStr[insertPos:]
+								return []byte(newConfig)
+							}
+						}
+
+						// If no tanstackStart found, insert at the beginning
+						nitroPlugin := fmt.Sprintf("\n    nitro({ config: { preset: '%s' } }),\n    ", preset)
+						newConfig := configStr[:afterOpenBracket] + nitroPlugin + configStr[afterOpenBracket:]
+						return []byte(newConfig)
+					}
+				}
+			} else {
+				// No plugins array found, need to add one
+				defineConfigRegex := regexp.MustCompile(`export\s+default\s+defineConfig\s*\(\s*\{`)
+				if defineConfigRegex.MatchString(configStr) {
+					nitroPlugin := fmt.Sprintf("nitro({ config: { preset: '%s' } })", preset)
+					configStr = defineConfigRegex.ReplaceAllString(configStr, fmt.Sprintf(`export default defineConfig({
+  plugins: [
+    %s,
+  ],`, nitroPlugin))
+				}
+			}
+		}
+	}
+
+	return []byte(configStr)
+}
+
+// TanStackStartHandler handles TanStack Start-specific operations
+type TanStackStartHandler struct {
+	BaseFrameworkHandler
+}
+
+func (h *TanStackStartHandler) GetName() string {
+	return "TanStack Start"
+}
+
+func (h *TanStackStartHandler) GetConfigFilenames() []string {
+	return []string{"app.config.ts", "app.config.js", "vite.config.ts", "vite.config.js"}
+}
+
+func (h *TanStackStartHandler) PatchPackageJSON(origPackageJson []byte, platform Platform) ([]byte, bool, error) {
+	switch platform {
+	case Netlify:
+		updatedPackageJson, err := patchPackageJSON(origPackageJson, "@netlify/vite-plugin-tanstack-start", "^1.0.0")
+		if err != nil {
+			return nil, false, err
+		}
+		// Check if anything changed
+		changed := !bytes.Equal(origPackageJson, updatedPackageJson)
+		return updatedPackageJson, changed, nil
+	case Vercel, Render, FlyIO, Heroku:
+		// For Vercel and Node.js platforms, we'll use Nitro v3
+		// We need to add nitro as a dependency
+		updatedPackageJson, err := patchPackageJSON(origPackageJson, "nitro", "^3.0.0")
+		if err != nil {
+			return nil, false, err
+		}
+		// Check if anything changed
+		changed := !bytes.Equal(origPackageJson, updatedPackageJson)
+		return updatedPackageJson, changed, nil
+	default:
+		// For other platforms, just return the original content unchanged
+		return origPackageJson, false, nil
+	}
+}
+
+func (h *TanStackStartHandler) HandleConfig(projectPath string, platform Platform) ([]DiffLine, string, error) {
+	// Find config file (prefer app.config.ts, then app.config.js, then vite.config.ts, then vite.config.js)
+	configPath, err := h.findConfigFile(projectPath, h.GetConfigFilenames())
+	if err != nil {
+		return nil, "", nil // No config found, return empty results
+	}
+
+	// Only handle platforms with specific config requirements
+	if platform != Netlify && platform != Vercel && platform != Render && platform != FlyIO && platform != Heroku {
+		return nil, "", nil
+	}
+
+	// Read original config
+	origConfig, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, "", errors.Errorf("failed to read %s: %w", configPath, err)
+	}
+
+	// Determine config type and patch accordingly
+	configFilename := filepath.Base(configPath)
+	var updatedConfig []byte
+	var configName string
+	isAppConfig := strings.HasPrefix(configFilename, "app.config")
+
+	if isAppConfig {
+		configName = "app.config"
+	} else {
+		configName = "vite.config"
+	}
+
+	// Apply platform-specific patches
+	// First, clean up any existing platform-specific plugins
+	cleanConfig := origConfig
+	switch platform {
+	case Netlify:
+		// Remove Nitro plugin if switching to Netlify
+		cleanConfig = removeTanStackStartNitroPlugin(cleanConfig)
+		if isAppConfig {
+			updatedConfig = patchTanStackStartAppConfigForNetlify(cleanConfig)
+		} else {
+			updatedConfig = patchTanStackStartViteConfigForNetlify(cleanConfig)
+		}
+	case Vercel, Render, FlyIO, Heroku:
+		// Remove Netlify plugin if switching to Nitro-based platforms
+		cleanConfig = removeTanStackStartNetlifyPlugin(cleanConfig)
+		// Also remove any existing Nitro plugin to avoid duplicates
+		cleanConfig = removeTanStackStartNitroPlugin(cleanConfig)
+
+		if platform == Vercel {
+			updatedConfig = patchTanStackStartConfigForNitro(cleanConfig, isAppConfig, "vercel")
+		} else {
+			updatedConfig = patchTanStackStartConfigForNitro(cleanConfig, isAppConfig, "node-server")
+		}
+	}
+
+	// Create backup
+	if err := h.createBackup(projectPath, configFilename, origConfig); err != nil {
+		return nil, "", err
+	}
+
+	// Write updated config
+	if err := os.WriteFile(configPath, updatedConfig, 0644); err != nil {
+		return nil, "", errors.Errorf("failed to write updated config to %s: %w", configPath, err)
+	}
+
+	// Generate diff
+	diff, err := h.generateConfigDiff(origConfig, updatedConfig, configName)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return diff, configPath, nil
+}
+
+func (h *TanStackStartHandler) HandlePlatformSpecificFiles(projectPath string, platform Platform) error {
+	// TanStack Start doesn't need any platform-specific file handling
+	return nil
+}
+
+func (h *TanStackStartHandler) RestoreConfigFromBackup(ctx context.Context, plan DeployPlan) ([]DiffLine, error) {
+	projectPath := plan.Source
+	prodDir := filepath.Join(projectPath, ".prod")
+
+	// Check if .prod directory exists
+	if _, err := os.Stat(prodDir); err != nil {
+		return nil, errors.Errorf("no .prod backup directory found in %s", projectPath)
+	}
+
+	// Find config file that should be restored (prefer app.config, then vite.config)
+	configPath, err := h.findConfigFile(projectPath, h.GetConfigFilenames())
+	if err != nil {
+		return nil, errors.Errorf("no app.config.{ts,js} or vite.config.{ts,js} found to restore in %s", projectPath)
+	}
+
+	configFilename := filepath.Base(configPath)
+
+	// Find the latest backup file
+	backupPath, err := findLatestBackup(prodDir, configFilename)
+	if err != nil {
+		return nil, errors.Errorf("failed to find backup for %s: %w", configFilename, err)
+	}
+
+	// Read current config for diff
+	currentConfig, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, errors.Errorf("failed to read current config %s: %w", configPath, err)
+	}
+
+	// Read backup
+	backupConfig, err := os.ReadFile(backupPath)
+	if err != nil {
+		return nil, errors.Errorf("failed to read backup %s: %w", backupPath, err)
+	}
+
+	// Restore from backup
+	if err := os.WriteFile(configPath, backupConfig, 0644); err != nil {
+		return nil, errors.Errorf("failed to restore config from backup: %w", err)
+	}
+
+	// Determine config name for diff
+	configName := "config"
+	if strings.HasPrefix(configFilename, "app.config") {
+		configName = "app.config"
+	} else if strings.HasPrefix(configFilename, "vite.config") {
+		configName = "vite.config"
+	}
+
+	// Generate diff showing the restoration
+	diff, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
+		A:        difflib.SplitLines(string(currentConfig)),
+		B:        difflib.SplitLines(string(backupConfig)),
+		FromFile: fmt.Sprintf("%s (current)", configName),
+		ToFile:   fmt.Sprintf("%s (restored)", configName),
+		Context:  3,
+	})
+	if err != nil {
+		return nil, errors.Errorf("failed to generate diff: %w", err)
+	}
+
+	return parseDiffString(diff), nil
+}
+
+func (h *TanStackStartHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
+	// Apply platform-specific deployment configuration for TanStack Start
+	switch plan.Platform {
+	case Render, FlyIO, Heroku:
+		// For Node.js platforms, set the start command to run the Nitro output
+		plan.Spec.StartCommand = "node .output/server/index.mjs"
 	}
 	return plan
 }
@@ -1041,6 +1447,187 @@ func cleanupNetlifyScripts(scripts map[string]any) {
 			}
 		}
 	}
+}
+
+// patchTanStackStartAppConfigForNetlify adds the Netlify plugin to TanStack Start app.config
+func patchTanStackStartAppConfigForNetlify(config []byte) []byte {
+	configStr := string(config)
+
+	// Check if netlify plugin is already imported and added
+	if strings.Contains(configStr, "netlify") && strings.Contains(configStr, "@netlify/vite-plugin-tanstack-start") {
+		return config // Already configured
+	}
+
+	// Add import for netlify plugin if not present
+	if !strings.Contains(configStr, `import netlify from "@netlify/vite-plugin-tanstack-start"`) {
+		// Find existing imports and add the netlify import
+		importRegex := regexp.MustCompile(`(import\s+.*from\s+["'].*["'];?\s*\n)`)
+		matches := importRegex.FindAllStringIndex(configStr, -1)
+
+		netlifyImport := `import netlify from "@netlify/vite-plugin-tanstack-start";` + "\n"
+
+		if len(matches) > 0 {
+			// Insert after the last import
+			lastImportEnd := matches[len(matches)-1][1]
+			configStr = configStr[:lastImportEnd] + netlifyImport + configStr[lastImportEnd:]
+		} else {
+			// No imports found, add at the beginning
+			configStr = netlifyImport + configStr
+		}
+	}
+
+	// Add netlify() to vite.plugins array if not present
+	if !strings.Contains(configStr, "netlify()") {
+		// For app.config, we need to add to vite: { plugins: [...] }
+		// First check if vite.plugins exists
+		vitePluginsRegex := regexp.MustCompile(`vite:\s*\{[^}]*plugins:\s*\[\s*([^\]]*)\s*\]`)
+		if vitePluginsRegex.MatchString(configStr) {
+			// Add netlify to existing vite.plugins array
+			configStr = vitePluginsRegex.ReplaceAllStringFunc(configStr, func(match string) string {
+				// Find the plugins array content
+				submatch := vitePluginsRegex.FindStringSubmatch(match)
+				if len(submatch) > 1 {
+					existingPlugins := strings.TrimSpace(submatch[1])
+					if existingPlugins == "" {
+						return strings.Replace(match, "plugins: [", "plugins: [\n      netlify(),", 1)
+					} else {
+						// Add netlify to existing plugins
+						if strings.HasSuffix(existingPlugins, ",") {
+							return strings.Replace(match, "plugins: [", "plugins: [\n      netlify(),\n      ", 1)
+						} else {
+							// Insert netlify before the last plugin
+							pluginsStart := strings.Index(match, "plugins: [")
+							if pluginsStart != -1 {
+								afterBracket := pluginsStart + len("plugins: [")
+								return match[:afterBracket] + "\n      netlify()," + match[afterBracket:]
+							}
+						}
+					}
+				}
+				return match
+			})
+		} else {
+			// Check if vite object exists but without plugins
+			viteRegex := regexp.MustCompile(`vite:\s*\{`)
+			if viteRegex.MatchString(configStr) {
+				// Add plugins array to existing vite object
+				configStr = viteRegex.ReplaceAllString(configStr, `vite: {
+    plugins: [
+      netlify(),
+    ],`)
+			} else {
+				// No vite object, add it to the config
+				defineConfigRegex := regexp.MustCompile(`export\s+default\s+defineConfig\s*\(\s*\{`)
+				if defineConfigRegex.MatchString(configStr) {
+					configStr = defineConfigRegex.ReplaceAllString(configStr, `export default defineConfig({
+  vite: {
+    plugins: [
+      netlify(),
+    ],
+  },`)
+				}
+			}
+		}
+	}
+
+	return []byte(configStr)
+}
+
+// patchTanStackStartViteConfigForNetlify adds the Netlify plugin to TanStack Start vite config
+func patchTanStackStartViteConfigForNetlify(config []byte) []byte {
+	configStr := string(config)
+
+	// Check if netlify plugin is already imported and added
+	if strings.Contains(configStr, "netlify") && strings.Contains(configStr, "@netlify/vite-plugin-tanstack-start") {
+		return config // Already configured
+	}
+
+	// Add import for netlify plugin if not present
+	if !strings.Contains(configStr, `import netlify from "@netlify/vite-plugin-tanstack-start"`) {
+		// Find existing imports and add the netlify import
+		importRegex := regexp.MustCompile(`(import\s+.*from\s+["'].*["'];?\s*\n)`)
+		matches := importRegex.FindAllStringIndex(configStr, -1)
+
+		netlifyImport := `import netlify from "@netlify/vite-plugin-tanstack-start";` + "\n"
+
+		if len(matches) > 0 {
+			// Insert after the last import
+			lastImportEnd := matches[len(matches)-1][1]
+			configStr = configStr[:lastImportEnd] + netlifyImport + configStr[lastImportEnd:]
+		} else {
+			// No imports found, add at the beginning
+			configStr = netlifyImport + configStr
+		}
+	}
+
+	// Add netlify() to plugins array if not present
+	if !strings.Contains(configStr, "netlify()") {
+		// Find the plugins array by looking for "plugins: [" and matching brackets
+		pluginsStart := strings.Index(configStr, "plugins:")
+		if pluginsStart != -1 {
+			// Find the opening bracket after "plugins:"
+			bracketStart := strings.Index(configStr[pluginsStart:], "[")
+			if bracketStart != -1 {
+				bracketStart += pluginsStart
+
+				// Count brackets to find the matching closing bracket
+				bracketCount := 0
+				bracketEnd := -1
+				inString := false
+				var stringChar rune
+
+				for i := bracketStart; i < len(configStr); i++ {
+					ch := rune(configStr[i])
+
+					// Handle string literals
+					if ch == '"' || ch == '\'' || ch == '`' {
+						if !inString {
+							inString = true
+							stringChar = ch
+						} else if ch == stringChar && (i == 0 || configStr[i-1] != '\\') {
+							inString = false
+						}
+					}
+
+					if !inString {
+						if ch == '[' {
+							bracketCount++
+						} else if ch == ']' {
+							bracketCount--
+							if bracketCount == 0 {
+								bracketEnd = i
+								break
+							}
+						}
+					}
+				}
+
+				if bracketEnd != -1 {
+					// Insert netlify() at the beginning of the plugins array
+					afterOpenBracket := bracketStart + 1
+					// Skip whitespace after opening bracket
+					for afterOpenBracket < len(configStr) && (configStr[afterOpenBracket] == ' ' || configStr[afterOpenBracket] == '\n' || configStr[afterOpenBracket] == '\t') {
+						afterOpenBracket++
+					}
+
+					// Build the new config with netlify() inserted
+					newConfig := configStr[:afterOpenBracket] + "\n    netlify(),\n    " + configStr[afterOpenBracket:]
+					return []byte(newConfig)
+				}
+			}
+		} else {
+			// No plugins array found, need to add one
+			defineConfigRegex := regexp.MustCompile(`export\s+default\s+defineConfig\s*\(\s*\{`)
+			if defineConfigRegex.MatchString(configStr) {
+				configStr = defineConfigRegex.ReplaceAllString(configStr, `export default defineConfig({
+  plugins: [
+    netlify(),
+  ],`)
+			}
+		}
+	}
+
+	return []byte(configStr)
 }
 
 // Global framework registry instance

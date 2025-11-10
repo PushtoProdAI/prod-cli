@@ -98,9 +98,20 @@ func (a *Activities) createPackageLockJSON(ctx context.Context, plan DeployPlan,
 			retryOutput, retryErr := retryCmd.CombinedOutput()
 
 			if retryErr != nil {
+				retryOutputStr := string(retryOutput)
+				// Check if the error is due to missing commands in postinstall scripts
+				needsIgnoreScripts := strings.Contains(retryOutputStr, "command not found") ||
+					strings.Contains(retryOutputStr, "patch-package")
+
 				// Second retry with --force flag as last resort
 				a.uiWriter.SendStatus("installing", "Retrying npm install with --force as final attempt...")
-				forceCmd := exec.CommandContext(ctx, "npm", "install", "--force")
+				var forceCmd *exec.Cmd
+				if needsIgnoreScripts {
+					a.uiWriter.SendStatus("installing", "Detected script errors, using --ignore-scripts to skip postinstall scripts...")
+					forceCmd = exec.CommandContext(ctx, "npm", "install", "--force", "--ignore-scripts")
+				} else {
+					forceCmd = exec.CommandContext(ctx, "npm", "install", "--force")
+				}
 				forceCmd.Dir = projectPath
 				forceOutput, forceErr := forceCmd.CombinedOutput()
 
@@ -108,7 +119,11 @@ func (a *Activities) createPackageLockJSON(ctx context.Context, plan DeployPlan,
 					a.uiWriter.SendStatusComplete("installing", "❌ Failed to create package-lock.json with all fallback options")
 					return errors.Errorf("failed to create package-lock.json: %w\nOriginal output: %s\nLegacy-peer-deps output: %s\nForce output: %s", forceErr, outputStr, string(retryOutput), string(forceOutput))
 				} else {
-					a.uiWriter.SendStatusComplete("installing", "⚠️ Package-lock.json created with --force flag (peer dependency conflicts ignored)")
+					if needsIgnoreScripts {
+						a.uiWriter.SendStatusComplete("installing", "⚠️ Package-lock.json created with --force and --ignore-scripts (postinstall scripts skipped)")
+					} else {
+						a.uiWriter.SendStatusComplete("installing", "⚠️ Package-lock.json created with --force flag (peer dependency conflicts ignored)")
+					}
 				}
 			} else {
 				a.uiWriter.SendStatusComplete("installing", "⚠️ Package-lock.json created with --legacy-peer-deps")
