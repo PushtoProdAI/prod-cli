@@ -9,6 +9,11 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Lock files - we generate these fresh in Docker for better compatibility
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
 # Testing
 coverage
 .nyc_output
