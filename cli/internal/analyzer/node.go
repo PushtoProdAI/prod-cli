@@ -112,7 +112,7 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 	}
 
 	re := regexp.MustCompile(nodeEnvVarRegex)
-	envVars, err := walkProjectForCandidates(n.ProjectFS, []string{".js", ".ts", ".tsx", ".jsx"}, []string{"node_modules", ".next", ".netlify", "dist", "build", ".output"}, re, 3, 5)
+	envVars, err := walkProjectForCandidates(n.ProjectFS, []string{".js", ".ts", ".tsx", ".jsx"}, []string{"node_modules", ".next", ".netlify", ".nitro", ".tanstack", ".vercel", "dist", "build", ".output"}, re, 3, 5)
 	if err != nil {
 		return nil, err
 	}
@@ -255,6 +255,20 @@ func findBuildOutputCandidate(root string) (BuildOutputCandidate, error) {
 			Path:           "build",
 			Source:         "remix.config.js",
 			Framework:      "Remix",
+			ConfigContents: string(contents),
+		}, nil
+	}
+
+	// Check for SvelteKit
+	svelteConfigPath := firstExisting(root, []string{"svelte.config.ts", "svelte.config.js"})
+	if svelteConfigPath != "" {
+		contents, _ := os.ReadFile(filepath.Join(root, svelteConfigPath))
+		// SvelteKit with adapter-static outputs to build/ by default
+		// SSR adapters (node, netlify, vercel) are not static and shouldn't use this path
+		return BuildOutputCandidate{
+			Path:           "build",
+			Source:         svelteConfigPath,
+			Framework:      "SvelteKit",
 			ConfigContents: string(contents),
 		}, nil
 	}

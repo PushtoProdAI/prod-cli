@@ -13,11 +13,16 @@ WORKDIR /app
 ARG {{ .Name }}
 {{- end }}
 
-# Copy package files
-COPY package*.json ./
+# Copy only package.json (not package-lock.json)
+# This ensures we generate a fresh lock file in the Docker environment
+COPY package.json ./
 
-# Install all dependencies (including devDependencies for build)
-RUN npm ci
+# Generate package-lock.json and install all dependencies (including devDependencies for build)
+# Using npm install instead of npm ci since we don't have a lock file yet
+RUN npm install
+
+# Now copy the rest of the application (after dependencies are installed)
+# This takes advantage of Docker layer caching - dependencies only reinstall if package.json changes
 
 # Copy source code
 COPY . .
@@ -77,7 +82,8 @@ COPY --from=builder /app .
 RUN rm -rf ./node_modules
 
 # Install only production dependencies, skip prepare scripts
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+# Using npm install instead of npm ci since the lock file includes dev dependencies
+RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
 
 # Expose port
 EXPOSE {{ .Port }}

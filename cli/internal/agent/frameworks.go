@@ -500,6 +500,19 @@ func (h *SvelteKitHandler) RestoreConfigFromBackup(ctx context.Context, plan Dep
 	return parseDiffString(diff), nil
 }
 
+func (h *SvelteKitHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
+	// Apply platform-specific deployment configuration for SvelteKit
+	// For Node.js platforms (Render, Fly, Heroku), SvelteKit with adapter-node outputs to build/
+	switch plan.Platform {
+	case Render, FlyIO, Heroku:
+		plan.Spec.StartCommand = "node build"
+	}
+	// For Netlify and Vercel, the platform handles the runtime (no start command needed)
+	// For adapter-static, no start command needed (it's truly static)
+
+	return plan
+}
+
 // NuxtHandler handles Nuxt-specific operations
 type NuxtHandler struct {
 	BaseFrameworkHandler
@@ -548,8 +561,56 @@ func (h *NuxtHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
 	return plan
 }
 
-// patchTanStackStartConfigForVercel adds the Nitro plugin for Vercel to TanStack Start config
-func patchTanStackStartConfigForVercel(config []byte, isAppConfig bool) []byte {
+// removeTanStackStartNetlifyPlugin removes the Netlify plugin from TanStack Start config
+func removeTanStackStartNetlifyPlugin(config []byte) []byte {
+	configStr := string(config)
+
+	// Remove the netlify import
+	importRegex := regexp.MustCompile(`import\s+netlify\s+from\s+["']@netlify/vite-plugin-tanstack-start["'];?\s*\n?`)
+	configStr = importRegex.ReplaceAllString(configStr, "")
+
+	// Remove netlify() from plugins array
+	// Try to match: comma + whitespace + netlify() (middle/end of array)
+	pluginRegex1 := regexp.MustCompile(`\s*,\s*netlify\(\)`)
+	configStr = pluginRegex1.ReplaceAllString(configStr, "")
+
+	// Try to match: netlify() + comma + whitespace (beginning/middle of array)
+	pluginRegex2 := regexp.MustCompile(`netlify\(\)\s*,\s*`)
+	configStr = pluginRegex2.ReplaceAllString(configStr, "")
+
+	// Try to match: just netlify() if it's alone (edge case)
+	pluginRegex3 := regexp.MustCompile(`\s*netlify\(\)\s*`)
+	configStr = pluginRegex3.ReplaceAllString(configStr, "")
+
+	return []byte(configStr)
+}
+
+// removeTanStackStartNitroPlugin removes the Nitro plugin from TanStack Start config
+func removeTanStackStartNitroPlugin(config []byte) []byte {
+	configStr := string(config)
+
+	// Remove the nitro import
+	importRegex := regexp.MustCompile(`import\s+{\s*nitro\s*}\s+from\s+["']nitro/vite["'];?\s*\n?`)
+	configStr = importRegex.ReplaceAllString(configStr, "")
+
+	// Remove nitro() with any config from plugins array
+	// Try to match: comma + whitespace + nitro(...) (middle/end of array)
+	pluginRegex1 := regexp.MustCompile(`\s*,\s*nitro\([^)]*\)`)
+	configStr = pluginRegex1.ReplaceAllString(configStr, "")
+
+	// Try to match: nitro(...) + comma + whitespace (beginning/middle of array)
+	pluginRegex2 := regexp.MustCompile(`nitro\([^)]*\)\s*,\s*`)
+	configStr = pluginRegex2.ReplaceAllString(configStr, "")
+
+	// Try to match: just nitro(...) if it's alone (edge case)
+	pluginRegex3 := regexp.MustCompile(`\s*nitro\([^)]*\)\s*`)
+	configStr = pluginRegex3.ReplaceAllString(configStr, "")
+
+	return []byte(configStr)
+}
+
+// patchTanStackStartConfigForNitro adds the Nitro plugin with specified preset to TanStack Start config
+func patchTanStackStartConfigForNitro(config []byte, isAppConfig bool, preset string) []byte {
 	configStr := string(config)
 
 	// Check if nitro plugin is already imported and added
@@ -586,8 +647,8 @@ func patchTanStackStartConfigForVercel(config []byte, isAppConfig bool) []byte {
 					pluginsStart := strings.Index(match, "plugins: [")
 					if pluginsStart != -1 {
 						afterOpenBracket := pluginsStart + len("plugins: [")
-						// Insert nitro() with Vercel preset
-						insertion := "\n      nitro({ config: { preset: 'vercel' } }),"
+						// Insert nitro() with specified preset
+						insertion := fmt.Sprintf("\n      nitro({ config: { preset: '%s' } }),", preset)
 						return match[:afterOpenBracket] + insertion + match[afterOpenBracket:]
 					}
 					return match
@@ -597,20 +658,22 @@ func patchTanStackStartConfigForVercel(config []byte, isAppConfig bool) []byte {
 				viteRegex := regexp.MustCompile(`vite:\s*\{`)
 				if viteRegex.MatchString(configStr) {
 					// Add plugins array to existing vite object
-					configStr = viteRegex.ReplaceAllString(configStr, `vite: {
+					nitroPlugin := fmt.Sprintf("nitro({ config: { preset: '%s' } })", preset)
+					configStr = viteRegex.ReplaceAllString(configStr, fmt.Sprintf(`vite: {
     plugins: [
-      nitro({ config: { preset: 'vercel' } }),
-    ],`)
+      %s,
+    ],`, nitroPlugin))
 				} else {
 					// No vite object, add it to the config
 					defineConfigRegex := regexp.MustCompile(`export\s+default\s+defineConfig\s*\(\s*\{`)
 					if defineConfigRegex.MatchString(configStr) {
-						configStr = defineConfigRegex.ReplaceAllString(configStr, `export default defineConfig({
+						nitroPlugin := fmt.Sprintf("nitro({ config: { preset: '%s' } })", preset)
+						configStr = defineConfigRegex.ReplaceAllString(configStr, fmt.Sprintf(`export default defineConfig({
   vite: {
     plugins: [
-      nitro({ config: { preset: 'vercel' } }),
+      %s,
     ],
-  },`)
+  },`, nitroPlugin))
 					}
 				}
 			}
@@ -670,13 +733,15 @@ func patchTanStackStartConfigForVercel(config []byte, isAppConfig bool) []byte {
 							commaPos := strings.Index(configStr[afterOpenBracket+tanstackPos:bracketEnd], ",")
 							if commaPos != -1 {
 								insertPos := afterOpenBracket + tanstackPos + commaPos + 1
-								newConfig := configStr[:insertPos] + "\n    nitro({ config: { preset: 'vercel' } })," + configStr[insertPos:]
+								nitroPlugin := fmt.Sprintf("\n    nitro({ config: { preset: '%s' } }),", preset)
+								newConfig := configStr[:insertPos] + nitroPlugin + configStr[insertPos:]
 								return []byte(newConfig)
 							}
 						}
 
 						// If no tanstackStart found, insert at the beginning
-						newConfig := configStr[:afterOpenBracket] + "\n    nitro({ config: { preset: 'vercel' } }),\n    " + configStr[afterOpenBracket:]
+						nitroPlugin := fmt.Sprintf("\n    nitro({ config: { preset: '%s' } }),\n    ", preset)
+						newConfig := configStr[:afterOpenBracket] + nitroPlugin + configStr[afterOpenBracket:]
 						return []byte(newConfig)
 					}
 				}
@@ -684,10 +749,11 @@ func patchTanStackStartConfigForVercel(config []byte, isAppConfig bool) []byte {
 				// No plugins array found, need to add one
 				defineConfigRegex := regexp.MustCompile(`export\s+default\s+defineConfig\s*\(\s*\{`)
 				if defineConfigRegex.MatchString(configStr) {
-					configStr = defineConfigRegex.ReplaceAllString(configStr, `export default defineConfig({
+					nitroPlugin := fmt.Sprintf("nitro({ config: { preset: '%s' } })", preset)
+					configStr = defineConfigRegex.ReplaceAllString(configStr, fmt.Sprintf(`export default defineConfig({
   plugins: [
-    nitro({ config: { preset: 'vercel' } }),
-  ],`)
+    %s,
+  ],`, nitroPlugin))
 				}
 			}
 		}
@@ -719,8 +785,8 @@ func (h *TanStackStartHandler) PatchPackageJSON(origPackageJson []byte, platform
 		// Check if anything changed
 		changed := !bytes.Equal(origPackageJson, updatedPackageJson)
 		return updatedPackageJson, changed, nil
-	case Vercel:
-		// For Vercel, we'll use Nitro v3 as it's the recommended approach
+	case Vercel, Render, FlyIO, Heroku:
+		// For Vercel and Node.js platforms, we'll use Nitro v3
 		// We need to add nitro as a dependency
 		updatedPackageJson, err := patchPackageJSON(origPackageJson, "nitro", "^3.0.0")
 		if err != nil {
@@ -742,8 +808,8 @@ func (h *TanStackStartHandler) HandleConfig(projectPath string, platform Platfor
 		return nil, "", nil // No config found, return empty results
 	}
 
-	// Only handle Netlify and Vercel for now
-	if platform != Netlify && platform != Vercel {
+	// Only handle platforms with specific config requirements
+	if platform != Netlify && platform != Vercel && platform != Render && platform != FlyIO && platform != Heroku {
 		return nil, "", nil
 	}
 
@@ -766,15 +832,28 @@ func (h *TanStackStartHandler) HandleConfig(projectPath string, platform Platfor
 	}
 
 	// Apply platform-specific patches
+	// First, clean up any existing platform-specific plugins
+	cleanConfig := origConfig
 	switch platform {
 	case Netlify:
+		// Remove Nitro plugin if switching to Netlify
+		cleanConfig = removeTanStackStartNitroPlugin(cleanConfig)
 		if isAppConfig {
-			updatedConfig = patchTanStackStartAppConfigForNetlify(origConfig)
+			updatedConfig = patchTanStackStartAppConfigForNetlify(cleanConfig)
 		} else {
-			updatedConfig = patchTanStackStartViteConfigForNetlify(origConfig)
+			updatedConfig = patchTanStackStartViteConfigForNetlify(cleanConfig)
 		}
-	case Vercel:
-		updatedConfig = patchTanStackStartConfigForVercel(origConfig, isAppConfig)
+	case Vercel, Render, FlyIO, Heroku:
+		// Remove Netlify plugin if switching to Nitro-based platforms
+		cleanConfig = removeTanStackStartNetlifyPlugin(cleanConfig)
+		// Also remove any existing Nitro plugin to avoid duplicates
+		cleanConfig = removeTanStackStartNitroPlugin(cleanConfig)
+
+		if platform == Vercel {
+			updatedConfig = patchTanStackStartConfigForNitro(cleanConfig, isAppConfig, "vercel")
+		} else {
+			updatedConfig = patchTanStackStartConfigForNitro(cleanConfig, isAppConfig, "node-server")
+		}
 	}
 
 	// Create backup
@@ -862,6 +941,16 @@ func (h *TanStackStartHandler) RestoreConfigFromBackup(ctx context.Context, plan
 	}
 
 	return parseDiffString(diff), nil
+}
+
+func (h *TanStackStartHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
+	// Apply platform-specific deployment configuration for TanStack Start
+	switch plan.Platform {
+	case Render, FlyIO, Heroku:
+		// For Node.js platforms, set the start command to run the Nitro output
+		plan.Spec.StartCommand = "node .output/server/index.mjs"
+	}
+	return plan
 }
 
 // patchRemixViteConfigForNetlify adds the Netlify plugin to Remix vite config
