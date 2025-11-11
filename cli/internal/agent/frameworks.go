@@ -504,7 +504,7 @@ func (h *SvelteKitHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
 	// Apply platform-specific deployment configuration for SvelteKit
 	// For Node.js platforms (Render, Fly, Heroku), SvelteKit with adapter-node outputs to build/
 	switch plan.Platform {
-	case Render, FlyIO, Heroku:
+	case Render, FlyIO, Heroku, AWS:
 		plan.Spec.StartCommand = "node build"
 	}
 	// For Netlify and Vercel, the platform handles the runtime (no start command needed)
@@ -785,7 +785,7 @@ func (h *TanStackStartHandler) PatchPackageJSON(origPackageJson []byte, platform
 		// Check if anything changed
 		changed := !bytes.Equal(origPackageJson, updatedPackageJson)
 		return updatedPackageJson, changed, nil
-	case Vercel, Render, FlyIO, Heroku:
+	case Vercel, Render, FlyIO, Heroku, AWS:
 		// For Vercel and Node.js platforms, we'll use Nitro v3
 		// We need to add nitro as a dependency
 		updatedPackageJson, err := patchPackageJSON(origPackageJson, "nitro", "^3.0.0")
@@ -809,7 +809,7 @@ func (h *TanStackStartHandler) HandleConfig(projectPath string, platform Platfor
 	}
 
 	// Only handle platforms with specific config requirements
-	if platform != Netlify && platform != Vercel && platform != Render && platform != FlyIO && platform != Heroku {
+	if platform != Netlify && platform != Vercel && platform != Render && platform != FlyIO && platform != Heroku && platform != AWS {
 		return nil, "", nil
 	}
 
@@ -843,7 +843,7 @@ func (h *TanStackStartHandler) HandleConfig(projectPath string, platform Platfor
 		} else {
 			updatedConfig = patchTanStackStartViteConfigForNetlify(cleanConfig)
 		}
-	case Vercel, Render, FlyIO, Heroku:
+	case Vercel, Render, FlyIO, Heroku, AWS:
 		// Remove Netlify plugin if switching to Nitro-based platforms
 		cleanConfig = removeTanStackStartNetlifyPlugin(cleanConfig)
 		// Also remove any existing Nitro plugin to avoid duplicates
@@ -946,7 +946,7 @@ func (h *TanStackStartHandler) RestoreConfigFromBackup(ctx context.Context, plan
 func (h *TanStackStartHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
 	// Apply platform-specific deployment configuration for TanStack Start
 	switch plan.Platform {
-	case Render, FlyIO, Heroku:
+	case Render, FlyIO, Heroku, AWS:
 		// For Node.js platforms, set the start command to run the Nitro output
 		plan.Spec.StartCommand = "node .output/server/index.mjs"
 	}
