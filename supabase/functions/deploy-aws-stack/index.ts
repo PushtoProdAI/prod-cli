@@ -23,6 +23,8 @@ interface EnvVar {
   value?: string;
   role?: string;    // "full_uri", "hostname", "port", "username", "password", "database_name", etc.
   service?: string; // "postgresql", "redis", etc.
+  sensitive?: boolean; // true if variable contains sensitive data (API keys, passwords, etc.)
+  sensitivityReason?: string; // explanation for why variable is sensitive
 }
 
 interface DeploymentSpec {
@@ -223,6 +225,276 @@ Deno.serve(async (req) => {
   }
 });
 
+// Build Secrets Manager resources for sensitive environment variables
+function buildSecretsManagerResources(spec: DeploymentSpec, resources: any): void {
+  const postgresServices = spec.backingServices?.filter(s => s.type === 'rds') || [];
+  
+  console.log('buildSecretsManagerResources called:', {
+    postgresServicesCount: postgresServices.length,
+    totalEnvVars: spec.envVars.length,
+    sensitiveEnvVars: spec.envVars.filter(ev => ev.sensitive).length,
+  });
+  
+  // Create secrets for user-provided sensitive env vars
+  for (const envVar of spec.envVars) {
+    // Only create secrets for sensitive vars that have values
+    // Skip DB vars without values (they'll be populated from RDS)
+    // But DO create secrets for DB vars WITH values (user-provided external databases)
+    if (envVar.sensitive && envVar.value) {
+      // Sanitize the env var name for use as CloudFormation logical ID
+      const sanitizedName = envVar.name.replace(/[^a-zA-Z0-9]/g, '');
+      const secretId = `Secret${sanitizedName}`;
+      
+      resources[secretId] = {
+        Type: 'AWS::SecretsManager::Secret',
+        Properties: {
+          Name: `/prod/${spec.serviceName}/${envVar.name}`,
+          Description: `Sensitive environment variable: ${envVar.name}`,
+          SecretString: envVar.value,
+          Tags: [
+            { Key: 'service', Value: spec.serviceName },
+            { Key: 'managed-by', Value: 'prod' },
+            { Key: 'env-var', Value: envVar.name },
+          ],
+        },
+      };
+      
+      console.log(`Creating Secrets Manager secret for ${envVar.name} (${envVar.sensitivityReason})`);
+    }
+  }
+  
+  // Create Lambda-backed custom resource to construct DATABASE_URL securely
+  // This is necessary because CloudFormation resolves {{resolve:secretsmanager:...}} during stack creation
+  // Using a Lambda allows us to construct the URL at runtime and store it in Secrets Manager
+  const fullUriVars = spec.envVars.filter(
+    ev => ev.role === 'full_uri' && !ev.value && ev.service === 'postgresql' && ev.sensitive
+  );
+  
+  console.log('Checking for full_uri vars:', {
+    fullUriVarsCount: fullUriVars.length,
+    fullUriVarNames: fullUriVars.map(v => v.name),
+    postgresServicesCount: postgresServices.length,
+    allEnvVars: spec.envVars.map(ev => ({
+      name: ev.name,
+      role: ev.role,
+      service: ev.service,
+      sensitive: ev.sensitive,
+      hasValue: !!ev.value,
+    })),
+  });
+  
+  if (fullUriVars.length > 0 && postgresServices.length > 0) {
+    const firstPostgres = postgresServices[0];
+    const dbName = firstPostgres.name.replace(/[^a-zA-Z0-9]/g, '');
+    
+    // Create IAM role for the Lambda
+    resources.DatabaseUrlConstructorRole = {
+      Type: 'AWS::IAM::Role',
+      Properties: {
+        AssumeRolePolicyDocument: {
+          Version: '2012-10-17',
+          Statement: [{
+            Effect: 'Allow',
+            Principal: { Service: 'lambda.amazonaws.com' },
+            Action: 'sts:AssumeRole',
+          }],
+        },
+        ManagedPolicyArns: [
+          'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole',
+        ],
+        Policies: [{
+          PolicyName: 'SecretsManagerAccess',
+          PolicyDocument: {
+            Version: '2012-10-17',
+            Statement: [{
+              Effect: 'Allow',
+              Action: [
+                'secretsmanager:CreateSecret',
+                'secretsmanager:UpdateSecret',
+                'secretsmanager:DeleteSecret',
+                'secretsmanager:GetSecretValue',
+                'secretsmanager:TagResource',
+              ],
+              Resource: '*',
+            }, {
+              Effect: 'Allow',
+              Action: ['rds:DescribeDBInstances'],
+              Resource: '*',
+            }],
+          },
+        }],
+      },
+    };
+
+    // Inline Lambda function to construct DATABASE_URL
+    const lambdaCode = `
+const {  SecretsManagerClient, CreateSecretCommand, UpdateSecretCommand, DeleteSecretCommand, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
+const { RDSClient, DescribeDBInstancesCommand } = require('@aws-sdk/client-rds');
+const https = require('https');
+const url = require('url');
+
+const secretsManager = new SecretsManagerClient({});
+const rds = new RDSClient({});
+
+async function sendResponse(event, context, status, data) {
+  const responseBody = JSON.stringify({
+    Status: status,
+    Reason: data.Reason || 'See CloudWatch logs',
+    PhysicalResourceId: data.PhysicalResourceId || context.logStreamName,
+    StackId: event.StackId,
+    RequestId: event.RequestId,
+    LogicalResourceId: event.LogicalResourceId,
+    Data: data.Data || {},
+  });
+
+  const parsedUrl = url.parse(event.ResponseURL);
+  const options = {
+    hostname: parsedUrl.hostname,
+    port: 443,
+    path: parsedUrl.path,
+    method: 'PUT',
+    headers: {
+      'Content-Type': '',
+      'Content-Length': responseBody.length,
+    },
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      resolve();
+    });
+    req.on('error', reject);
+    req.write(responseBody);
+    req.end();
+  });
+}
+
+exports.handler = async (event, context) => {
+  console.log('Event:', JSON.stringify(event));
+  
+  try {
+    const { RequestType, ResourceProperties } = event;
+    const { DBInstanceId, PasswordSecretArn, SecretName, ServiceName, EnvVarName } = ResourceProperties;
+
+    if (RequestType === 'Delete') {
+      try {
+        await secretsManager.send(new DeleteSecretCommand({
+          SecretId: SecretName,
+          ForceDeleteWithoutRecovery: true,
+        }));
+      } catch (err) {
+        console.log('Delete error (may not exist):', err.message);
+      }
+      await sendResponse(event, context, 'SUCCESS', { PhysicalResourceId: SecretName });
+      return;
+    }
+
+    // Get DB instance details
+    const dbResponse = await rds.send(new DescribeDBInstancesCommand({
+      DBInstanceIdentifier: DBInstanceId,
+    }));
+    const dbInstance = dbResponse.DBInstances[0];
+    const endpoint = dbInstance.Endpoint.Address;
+    const port = dbInstance.Endpoint.Port;
+
+    // Get password from Secrets Manager
+    const passwordResponse = await secretsManager.send(new GetSecretValueCommand({
+      SecretId: PasswordSecretArn,
+    }));
+    const passwordData = JSON.parse(passwordResponse.SecretString);
+    const password = passwordData.password;
+
+    // Construct DATABASE_URL
+    const databaseUrl = \`postgresql://postgres:\${password}@\${endpoint}:\${port}/postgres\`;
+
+    // Create or update the secret
+    const secretParams = {
+      Name: SecretName,
+      Description: \`Database connection URL for \${EnvVarName}\`,
+      SecretString: databaseUrl,
+      Tags: [
+        { Key: 'service', Value: ServiceName },
+        { Key: 'managed-by', Value: 'prod' },
+        { Key: 'env-var', Value: EnvVarName },
+      ],
+    };
+
+    let secretArn;
+    if (RequestType === 'Create') {
+      const createResponse = await secretsManager.send(new CreateSecretCommand(secretParams));
+      secretArn = createResponse.ARN;
+    } else if (RequestType === 'Update') {
+      const updateResponse = await secretsManager.send(new UpdateSecretCommand({
+        SecretId: SecretName,
+        SecretString: databaseUrl,
+      }));
+      secretArn = updateResponse.ARN;
+    }
+
+    await sendResponse(event, context, 'SUCCESS', {
+      PhysicalResourceId: SecretName,
+      Data: { SecretArn: secretArn },
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    await sendResponse(event, context, 'FAILED', {
+      Reason: error.message,
+      PhysicalResourceId: event.PhysicalResourceId || 'FAILED',
+    });
+  }
+};
+`;
+
+    // Lambda function resource
+    resources.DatabaseUrlConstructorFunction = {
+      Type: 'AWS::Lambda::Function',
+      Properties: {
+        FunctionName: `prod-${spec.serviceName}-db-url-constructor`,
+        Runtime: 'nodejs20.x',
+        Handler: 'index.handler',
+        Role: { 'Fn::GetAtt': ['DatabaseUrlConstructorRole', 'Arn'] },
+        Code: {
+          ZipFile: lambdaCode,
+        },
+        Timeout: 30,
+      },
+    };
+
+    // Create custom resource for each full_uri variable
+    for (const envVar of fullUriVars) {
+      const sanitizedName = envVar.name.replace(/[^a-zA-Z0-9]/g, '');
+      const secretName = `/prod/${spec.serviceName}/${envVar.name}`;
+      const dbInstanceIdentifier = `prod-${spec.serviceName}-${firstPostgres.name}`;
+      
+      resources[`CustomResource${sanitizedName}`] = {
+        Type: 'AWS::CloudFormation::CustomResource',
+        Properties: {
+          ServiceToken: { 'Fn::GetAtt': ['DatabaseUrlConstructorFunction', 'Arn'] },
+          DBInstanceId: dbInstanceIdentifier,
+          PasswordSecretArn: { Ref: `${dbName}Password` },
+          SecretName: secretName,
+          ServiceName: spec.serviceName,
+          EnvVarName: envVar.name,
+        },
+        DependsOn: [dbName, `${dbName}Password`, 'DatabaseUrlConstructorFunction'],
+      };
+
+      // Also create a reference resource that other resources can depend on
+      resources[`Secret${sanitizedName}`] = {
+        Type: 'AWS::CloudFormation::WaitConditionHandle',
+        Metadata: {
+          SecretName: secretName,
+          Description: `Reference to ${envVar.name} secret created by Lambda`,
+        },
+        DependsOn: [`CustomResource${sanitizedName}`],
+      };
+      
+      console.log(`Creating Lambda-backed custom resource for ${envVar.name}`);
+    }
+  }
+}
+
+// Build runtime environment variables (non-sensitive, direct values)
 function buildEnvironmentVariables(spec: DeploymentSpec, resources: any): any[] {
   const envVars: any[] = [];
   const addedEnvVars = new Set<string>();
@@ -272,7 +544,9 @@ function buildEnvironmentVariables(spec: DeploymentSpec, resources: any): any[] 
         
         switch (envVar.role) {
           case 'full_uri':
-            envVars.push({ Name: envVar.name, Value: dbInfo.connectionString });
+            // Full URI is constructed by Lambda and stored in Secrets Manager
+            // It will be added to RuntimeEnvironmentSecrets, not RuntimeEnvironmentVariables
+            // Mark as added so we don't try to add it again
             addedEnvVars.add(envVar.name);
             break;
           case 'hostname':
@@ -288,8 +562,8 @@ function buildEnvironmentVariables(spec: DeploymentSpec, resources: any): any[] 
             addedEnvVars.add(envVar.name);
             break;
           case 'password':
-            // For password, we use Fn::Sub to resolve from Secrets Manager
-            envVars.push({ Name: envVar.name, Value: dbInfo.password });
+            // Database passwords should go to Secrets Manager, not plain env vars
+            // Skip them here - they'll be added to RuntimeEnvironmentSecrets
             addedEnvVars.add(envVar.name);
             break;
           case 'database_name':
@@ -299,7 +573,12 @@ function buildEnvironmentVariables(spec: DeploymentSpec, resources: any): any[] 
         }
       }
     } else if (envVar.value) {
-      // Add non-database env vars with values
+      // Skip sensitive vars - they'll be added to RuntimeEnvironmentSecrets instead
+      if (envVar.sensitive) {
+        continue;
+      }
+      
+      // Add non-sensitive, non-database env vars with values
       envVars.push({
         Name: envVar.name,
         Value: envVar.value,
@@ -308,18 +587,63 @@ function buildEnvironmentVariables(spec: DeploymentSpec, resources: any): any[] 
     }
   }
   
-  // Add default DATABASE_URL if not already added and we have a PostgreSQL service
-  if (!addedEnvVars.has('DATABASE_URL') && postgresServices.length > 0) {
-    const firstPostgres = postgresServices[0];
-    if (dbConnectionInfo[firstPostgres.name]) {
-      envVars.push({
-        Name: 'DATABASE_URL',
-        Value: dbConnectionInfo[firstPostgres.name].connectionString,
+  // Don't add default DATABASE_URL here anymore - it's handled in Secrets Manager
+  // if it's sensitive (which it should be)
+  
+  return envVars;
+}
+
+// Build runtime environment secrets (sensitive vars from Secrets Manager)
+function buildEnvironmentSecrets(spec: DeploymentSpec, resources: any): any[] {
+  const secrets: any[] = [];
+  const addedSecrets = new Set<string>();
+  
+  // Process PostgreSQL backing services for database credentials
+  const postgresServices = spec.backingServices?.filter(s => s.type === 'rds') || [];
+  
+  for (const envVar of spec.envVars) {
+    // Handle database-related sensitive env vars WITHOUT values (will be populated from RDS)
+    if (envVar.service === 'postgresql' && !envVar.value && envVar.sensitive) {
+      const firstPostgres = postgresServices[0];
+      if (!firstPostgres) continue;
+      
+      const dbName = firstPostgres.name.replace(/[^a-zA-Z0-9]/g, '');
+      
+      // Database passwords are already stored in Secrets Manager by RDS resource
+      if (envVar.role === 'password') {
+        secrets.push({
+          Name: envVar.name,
+          ValueFrom: { Ref: `${dbName}Password` },
+        });
+        addedSecrets.add(envVar.name);
+      } else if (envVar.role === 'full_uri') {
+        // Full URI is constructed by Lambda custom resource and stored in Secrets Manager
+        // Get the ARN from the Custom Resource output
+        const sanitizedName = envVar.name.replace(/[^a-zA-Z0-9]/g, '');
+        
+        secrets.push({
+          Name: envVar.name,
+          ValueFrom: { 'Fn::GetAtt': [`CustomResource${sanitizedName}`, 'SecretArn'] },
+        });
+        addedSecrets.add(envVar.name);
+        console.log(`Using Lambda-constructed secret for ${envVar.name}`);
+      }
+    } else if (envVar.sensitive && envVar.value) {
+      // Handle ALL sensitive env vars WITH values (API keys, user-provided DATABASE_URL, etc.)
+      const sanitizedName = envVar.name.replace(/[^a-zA-Z0-9]/g, '');
+      const secretId = `Secret${sanitizedName}`;
+      
+      secrets.push({
+        Name: envVar.name,
+        ValueFrom: { Ref: secretId },
       });
+      addedSecrets.add(envVar.name);
+      
+      console.log(`Using Secrets Manager for ${envVar.name}`);
     }
   }
   
-  return envVars;
+  return secrets;
 }
 
 function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string): string {
@@ -526,6 +850,7 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
         resources[`${dbName}Password`] = {
           Type: 'AWS::SecretsManager::Secret',
           Properties: {
+            Name: `/prod/${spec.serviceName}/${service.name.toUpperCase()}_PASSWORD`,
             Description: `Password for ${service.name}`,
             GenerateSecretString: {
               SecretStringTemplate: JSON.stringify({ username: 'postgres' }),
@@ -533,6 +858,11 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
               PasswordLength: 32,
               ExcludeCharacters: '"@/:?#[]!$&\'()*+,;=\\% ',
             },
+            Tags: [
+              { Key: 'service', Value: spec.serviceName },
+              { Key: 'managed-by', Value: 'prod' },
+              { Key: 'db-service', Value: service.name },
+            ],
           },
         };
 
@@ -638,8 +968,11 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
   // App Runner Instance Role (for container runtime)
   const instanceRolePolicies: any[] = [];
   
-  // Add Secrets Manager access if we have backing services
-  if (spec.backingServices && spec.backingServices.length > 0) {
+  // Check if we need Secrets Manager access (for backing services or sensitive env vars)
+  const hasSensitiveVars = spec.envVars.some(ev => ev.sensitive);
+  
+  // Add Secrets Manager access if we have backing services or sensitive env vars
+  if (hasBackingServices || hasSensitiveVars) {
     instanceRolePolicies.push({
       PolicyName: 'SecretsManagerAccess',
       PolicyDocument: {
@@ -651,11 +984,12 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
               'secretsmanager:GetSecretValue',
               'secretsmanager:DescribeSecret',
             ],
-            Resource: `arn:aws:secretsmanager:*:*:secret:prod-${spec.serviceName}-*`,
+            Resource: `arn:aws:secretsmanager:*:*:secret:/prod/${spec.serviceName}/*`,
           },
         ],
       },
     });
+    console.log('Added Secrets Manager permissions to Instance Role');
   }
 
   resources.AppRunnerInstanceRole = {
@@ -676,6 +1010,10 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
       Tags: [{ Key: 'tenant', Value: tenantId }],
     },
   };
+
+  // Build Secrets Manager resources for sensitive env vars (including Lambda-backed custom resources)
+  // This must be called early so secrets exist for both migrations and App Runner
+  buildSecretsManagerResources(spec, resources);
 
   // ECS resources for running migrations (only if migration command exists)
   if (hasMigrations) {
@@ -723,7 +1061,10 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
                     'secretsmanager:GetSecretValue',
                     'secretsmanager:DescribeSecret',
                   ],
-                  Resource: `arn:aws:secretsmanager:*:*:secret:prod-${spec.serviceName}-*`,
+                  Resource: [
+                    `arn:aws:secretsmanager:*:*:secret:prod-${spec.serviceName}-*`,
+                    `arn:aws:secretsmanager:*:*:secret:/prod/${spec.serviceName}/*`,
+                  ],
                 },
               ],
             },
@@ -777,7 +1118,10 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
                     'secretsmanager:GetSecretValue',
                     'secretsmanager:DescribeSecret',
                   ],
-                  Resource: `arn:aws:secretsmanager:*:*:secret:prod-${spec.serviceName}-*`,
+                  Resource: [
+                    `arn:aws:secretsmanager:*:*:secret:prod-${spec.serviceName}-*`,
+                    `arn:aws:secretsmanager:*:*:secret:/prod/${spec.serviceName}/*`,
+                  ],
                 },
               ],
             },
@@ -787,9 +1131,21 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
       },
     };
 
+    // Build dependencies for custom resources that create DATABASE_URL secrets
+    // (buildSecretsManagerResources was already called earlier)
+    const migrationDependsOn: string[] = [];
+    const fullUriVarsForMigration = spec.envVars.filter(
+      ev => ev.role === 'full_uri' && !ev.value && ev.service === 'postgresql' && ev.sensitive
+    );
+    for (const envVar of fullUriVarsForMigration) {
+      const sanitizedName = envVar.name.replace(/[^a-zA-Z0-9]/g, '');
+      migrationDependsOn.push(`CustomResource${sanitizedName}`);
+    }
+
     // ECS Task Definition for migrations
     resources.MigrationTaskDefinition = {
       Type: 'AWS::ECS::TaskDefinition',
+      DependsOn: migrationDependsOn.length > 0 ? migrationDependsOn : undefined,
       Properties: {
         Family: `prod-${spec.serviceName}-migration`,
         NetworkMode: 'awsvpc',
@@ -804,6 +1160,7 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
             Image: spec.imageUrl,
             Essential: true,
             Environment: buildEnvironmentVariables(spec, resources),
+            Secrets: buildEnvironmentSecrets(spec, resources),
             LogConfiguration: {
               LogDriver: 'awslogs',
               Options: {
@@ -867,9 +1224,39 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
       appRunnerDependsOn.push('MigrationTaskDefinition');
     }
 
+    // Secrets Manager resources are already built earlier (before migration task)
+    // Just add dependencies on custom resources that create DATABASE_URL secrets
+    const fullUriVars = spec.envVars.filter(
+      ev => ev.role === 'full_uri' && !ev.value && ev.service === 'postgresql' && ev.sensitive
+    );
+    for (const envVar of fullUriVars) {
+      const sanitizedName = envVar.name.replace(/[^a-zA-Z0-9]/g, '');
+      appRunnerDependsOn.push(`CustomResource${sanitizedName}`);
+    }
+    
     // Build environment variables array for App Runner
-    // App Runner expects an array of {Name, Value} objects, not a map
+    // Non-sensitive vars go to RuntimeEnvironmentVariables
+    // Sensitive vars go to RuntimeEnvironmentSecrets
     const runtimeEnvVars = buildEnvironmentVariables(spec, resources);
+    const runtimeSecrets = buildEnvironmentSecrets(spec, resources);
+    
+    // Transform secrets for App Runner format (uses "Value" instead of "ValueFrom")
+    const appRunnerSecrets = runtimeSecrets.map(secret => ({
+      Name: secret.Name,
+      Value: secret.ValueFrom,  // App Runner uses "Value" key instead of "ValueFrom"
+    }));
+    
+    // Build ImageConfiguration with both env vars and secrets
+    const imageConfig: any = {
+      Port: String(spec.port),
+      RuntimeEnvironmentVariables: runtimeEnvVars,
+    };
+    
+    // Only add RuntimeEnvironmentSecrets if there are any
+    if (appRunnerSecrets.length > 0) {
+      imageConfig.RuntimeEnvironmentSecrets = appRunnerSecrets;
+      console.log(`App Runner will use ${appRunnerSecrets.length} secrets from Secrets Manager`);
+    }
 
     resources.AppRunnerService = {
       Type: 'AWS::AppRunner::Service',
@@ -883,10 +1270,7 @@ function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string):
           ImageRepository: {
             ImageIdentifier: { Ref: 'ImageUrl' },
             ImageRepositoryType: 'ECR',
-            ImageConfiguration: {
-              Port: String(spec.port),
-              RuntimeEnvironmentVariables: runtimeEnvVars,
-            },
+            ImageConfiguration: imageConfig,
           },
         },
         InstanceConfiguration: {

@@ -297,10 +297,12 @@ func BuildAWSDeploymentSpec(
 	hasPort := false
 	for _, envVar := range envVars {
 		backendEnvVars = append(backendEnvVars, backend.EnvVar{
-			Name:    envVar.Name,
-			Value:   envVar.Value,
-			Role:    envVar.Role,
-			Service: envVar.Service,
+			Name:              envVar.Name,
+			Value:             envVar.Value,
+			Role:              envVar.Role,
+			Service:           envVar.Service,
+			Sensitive:         envVar.Sensitive,
+			SensitivityReason: envVar.SensitivityReason,
 		})
 		if envVar.Name == "PORT" {
 			hasPort = true

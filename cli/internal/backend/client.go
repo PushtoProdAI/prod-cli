@@ -530,10 +530,12 @@ type BackingService struct {
 
 // EnvVar represents an environment variable with categorization
 type EnvVar struct {
-	Name    string `json:"name"`
-	Value   string `json:"value,omitempty"`
-	Role    string `json:"role,omitempty"`    // "full_uri", "hostname", "port", etc.
-	Service string `json:"service,omitempty"` // "postgresql", "redis", etc.
+	Name              string `json:"name"`
+	Value             string `json:"value,omitempty"`
+	Role              string `json:"role,omitempty"`              // "full_uri", "hostname", "port", etc.
+	Service           string `json:"service,omitempty"`           // "postgresql", "redis", etc.
+	Sensitive         bool   `json:"sensitive,omitempty"`         // true if variable contains sensitive data
+	SensitivityReason string `json:"sensitivityReason,omitempty"` // explanation for why variable is sensitive
 }
 
 // AWSDeploymentSpec represents the specification for deploying to AWS
