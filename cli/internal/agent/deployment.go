@@ -195,9 +195,24 @@ func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, dbList 
 	if err != nil {
 		return deployment.EnvVar{}, errors.Errorf("failed to determine env var roles: %w", err)
 	}
+
+	// Log sensitivity detection for visibility
+	if cat.IsSensitive {
+		slog.Info("Detected sensitive environment variable",
+			"name", envVar.VarName,
+			"reason", cat.SensitivityReason)
+	}
+
 	// Send individual completion message (no spinner start/stop to avoid conflicts)
 	a.uiWriter.SendStatus("info", fmt.Sprintf("✅ Environment variable: %s categorized", envVar.VarName))
-	return deployment.EnvVar{Name: envVar.VarName, Role: cat.Role, Service: cat.DbType}, nil
+
+	return deployment.EnvVar{
+		Name:              envVar.VarName,
+		Role:              cat.Role,
+		Service:           cat.DbType,
+		Sensitive:         cat.IsSensitive,
+		SensitivityReason: cat.SensitivityReason,
+	}, nil
 }
 
 func (a *Activities) getEnvVarsFromEnvFiles(_ context.Context, path string) ([]deployment.EnvVar, error) {

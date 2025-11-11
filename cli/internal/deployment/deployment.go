@@ -99,10 +99,12 @@ type CostRequest struct {
 }
 
 type EnvVar struct {
-	Name    string
-	Value   string
-	Role    string
-	Service string
+	Name              string
+	Value             string
+	Role              string
+	Service           string
+	Sensitive         bool
+	SensitivityReason string
 }
 
 const (

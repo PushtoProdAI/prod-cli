@@ -47,6 +47,7 @@ Resources:
         - !Ref CloudFormationPolicy
         - !Ref IAMRolePolicy
         - !Ref ECSDeploymentPolicy
+        - !Ref LambdaDeploymentPolicy
       Tags:
         - Key: ManagedBy
           Value: Prod
@@ -364,6 +365,7 @@ Resources:
                   - rds.amazonaws.com
                   - ec2.amazonaws.com
                   - cloudformation.amazonaws.com
+                  - lambda.amazonaws.com
           - Sid: IAMPassRoleForCloudFormation
             Effect: Allow
             Action:
@@ -448,6 +450,44 @@ Resources:
             Condition:
               StringEquals:
                 'iam:PassedToService': 'ecs-tasks.amazonaws.com'
+
+  # Policy for Lambda operations (for custom resource functions)
+  LambdaDeploymentPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-Lambda'
+      Description: 'Permissions for Lambda function management for custom resources'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: LambdaFunctionManagement
+            Effect: Allow
+            Action:
+              - lambda:CreateFunction
+              - lambda:DeleteFunction
+              - lambda:GetFunction
+              - lambda:GetFunctionConfiguration
+              - lambda:UpdateFunctionCode
+              - lambda:UpdateFunctionConfiguration
+              - lambda:ListFunctions
+              - lambda:ListVersionsByFunction
+              - lambda:PublishVersion
+              - lambda:TagResource
+              - lambda:UntagResource
+              - lambda:ListTags
+              - lambda:InvokeFunction
+              - lambda:AddPermission
+              - lambda:RemovePermission
+              - lambda:GetPolicy
+            Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:prod-*'
+          - Sid: PassRoleToLambda
+            Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/prod-*'
+            Condition:
+              StringEquals:
+                'iam:PassedToService': 'lambda.amazonaws.com'
 
 Outputs:
   RoleArn:
