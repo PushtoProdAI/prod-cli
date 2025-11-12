@@ -599,6 +599,9 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 
 	// Process all environment variables and set their status
 	var pendingCount int
+	var sensitivePending []string
+	var sensitiveAutoPopulated []string
+
 	for _, envVar := range envVars {
 		if envVar.IsNotDBRelated() {
 			// This non-DB var needs user input
@@ -607,24 +610,46 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 				Status: "pending",
 			})
 			pendingCount++
+			if envVar.Sensitive {
+				sensitivePending = append(sensitivePending, envVar.Name)
+			}
 		} else {
 			// DB-related vars - deployment system will handle values
 			a.envVars = append(a.envVars, EnvVarWithStatus{
 				EnvVar: envVar,
 				Status: "db_related",
 			})
+			if envVar.Sensitive {
+				sensitiveAutoPopulated = append(sensitiveAutoPopulated, envVar.Name)
+			}
 		}
 	}
 
+	// Display auto-populated sensitive variables first (these won't be shown again)
+	if len(sensitiveAutoPopulated) > 0 {
+		fmt.Fprintf(out, "🔒 The following sensitive variables will be auto-populated:\n")
+		for _, name := range sensitiveAutoPopulated {
+			fmt.Fprintf(out, "  • %s\n", name)
+		}
+		fmt.Fprint(out, "\n")
+	}
+
+	// Display variables that need input (including sensitive ones)
 	if pendingCount > 0 {
-		fmt.Fprintf(out, "Found %d environment variables that need values:\n", pendingCount)
+		fmt.Fprintf(out, "Found %d environment variable(s) that need values:\n", pendingCount)
 		for _, envVar := range a.envVars {
 			if envVar.Status == "pending" {
-				fmt.Fprintf(out, "  - %s\n", envVar.Name)
+				if envVar.Sensitive {
+					fmt.Fprintf(out, "  • %s 🔒 (sensitive)\n", envVar.Name)
+				} else {
+					fmt.Fprintf(out, "  • %s\n", envVar.Name)
+				}
 			}
 		}
 		fmt.Fprint(out, "\n")
-		fmt.Fprintf(out, "🔒 We'll display the values you enter in plaintext, but don't worry they are handled securely when we deploy!\n")
+		if len(sensitivePending) > 0 {
+			fmt.Fprintf(out, "🔒 Sensitive variables are marked with 🔒. We'll display the values you enter in plaintext, but they are handled securely when we deploy!\n")
+		}
 		return a.promptForEnvVarValue(ctx, input, out)
 	}
 
