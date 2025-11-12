@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
 // CLIVercelClient implements the VercelClient interface using Vercel CLI
@@ -500,14 +501,14 @@ func (c *CLIVercelClient) GetDeployment(deploymentID string) (*VercelDeployment,
 }
 
 // SetEnvironmentVariables sets environment variables for a project
-func (c *CLIVercelClient) SetEnvironmentVariables(projectID string, vars map[string]string) error {
+func (c *CLIVercelClient) SetEnvironmentVariables(projectID string, vars []deployment.EnvVar) error {
 	if err := c.ensureVercelCLI(); err != nil {
 		return err
 	}
 
-	for key, value := range vars {
-		if err := c.setEnvVar(key, value); err != nil {
-			return errors.Errorf("failed to set env var %s: %w", key, err)
+	for _, envVar := range vars {
+		if err := c.setEnvVar(envVar.Name, envVar.Value, envVar.Sensitive); err != nil {
+			return errors.Errorf("failed to set env var %s: %w", envVar.Name, err)
 		}
 	}
 
@@ -515,12 +516,17 @@ func (c *CLIVercelClient) SetEnvironmentVariables(projectID string, vars map[str
 }
 
 // setEnvVar sets a single environment variable, overwriting if it already exists
-func (c *CLIVercelClient) setEnvVar(key, value string) error {
+func (c *CLIVercelClient) setEnvVar(key, value string, sensitive bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), envVarTimeout)
 	defer cancel()
 
-	// Use --force to overwrite existing variables
-	cmd := exec.CommandContext(ctx, "vercel", "env", "add", key, "production", "--force")
+	// Build command with --sensitive flag if needed
+	args := []string{"env", "add", key, "production", "--force"}
+	if sensitive {
+		args = append(args, "--sensitive")
+	}
+
+	cmd := exec.CommandContext(ctx, "vercel", args...)
 	cmd.Stdin = strings.NewReader(value + "\n")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -531,6 +537,10 @@ func (c *CLIVercelClient) setEnvVar(key, value string) error {
 		return errors.Errorf("failed to set env var: %w\nOutput: %s", err, string(output))
 	}
 
-	slog.Info("Successfully set environment variable", "key", key)
+	if sensitive {
+		slog.Info("Successfully set sensitive environment variable", "key", key)
+	} else {
+		slog.Info("Successfully set environment variable", "key", key)
+	}
 	return nil
 }
