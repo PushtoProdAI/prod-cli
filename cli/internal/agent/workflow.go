@@ -2205,9 +2205,19 @@ func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployRes
 	}
 
 	if operationId != "" {
-		workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", map[string]any{
-			"url": fullUrl, "platform": "aws", "resources_created": createdResources,
-		}).Get(ctx)
+		metadata := map[string]any{
+			"url":               fullUrl,
+			"platform":          "aws",
+			"resources_created": createdResources,
+			"stack_name":        stackName,
+		}
+
+		// Store the image URL for rollback purposes
+		if imageURL, ok := spec.Metadata["pushedImageURL"].(string); ok && imageURL != "" {
+			metadata["image_url"] = imageURL
+		}
+
+		workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", metadata).Get(ctx)
 	}
 
 	slog.Info("AWS deployment workflow completed successfully")
@@ -2404,6 +2414,16 @@ func (w *Workflows) rollbackDeployment(ctx workflow.Context, plan DeployPlan) (d
 		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to build deployment spec: %v", err)}}, nil
 	}
 
+	// Get auth token from session for platforms that need it (e.g., AWS)
+	token := ""
+	session := CtxWorkflowSession(ctx)
+	if session != nil {
+		token = session.AccessToken
+	}
+	if token != "" {
+		spec.Metadata["authToken"] = token
+	}
+
 	// Set existing project info and rollback flag
 	spec.IsUpdate = true
 	spec.IsRollback = true
@@ -2478,6 +2498,67 @@ func (w *Workflows) rollbackDeployment(ctx workflow.Context, plan DeployPlan) (d
 				Summary: fmt.Sprintf("Failed to rollback deployment: %v", err),
 			},
 		}, nil
+	}
+
+	workflow.Logger(ctx).Info("Rollback initiated successfully")
+
+	// For AWS, wait for CloudFormation stack update to complete
+	if plan.Platform == AWS {
+		workflow.Logger(ctx).Info("Waiting for AWS CloudFormation stack rollback to complete")
+
+		// Get auth token from session
+		token := ""
+		session := CtxWorkflowSession(ctx)
+		if session != nil {
+			token = session.AccessToken
+		}
+
+		stackName := fmt.Sprintf("prod-%s", spec.Name)
+
+		// Configure retry options for CloudFormation stack polling
+		stackCheckOpts := ActivityOpts
+		stackCheckOpts.RetryOptions.MaxAttempts = 60 // App Runner updates are typically faster than initial deploy
+		stackCheckOpts.RetryOptions.FirstRetryInterval = time.Second * 10
+		stackCheckOpts.RetryOptions.MaxRetryInterval = time.Second * 30
+		stackCheckOpts.RetryOptions.BackoffCoefficient = 1.0
+		stackCheckOpts.RetryOptions.RetryTimeout = time.Minute * 15 // 15 minute timeout for rollback
+
+		stackOutputs, err := workflow.ExecuteActivity[map[string]string](ctx, stackCheckOpts, AgentWaitForAWSStack, token, stackName).Get(ctx)
+		if err != nil {
+			workflow.Logger(ctx).Error("CloudFormation stack rollback failed", "error", err)
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":          RollbackDeploymentWorkflowName,
+				"activity":          AgentWaitForAWSStack,
+				"component":         "workflow",
+				"platform":          "aws",
+				"stack_name":        stackName,
+				"target_deployment": previousDeploy.ID,
+			})
+			if operationId != "" {
+				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
+					"error":             err.Error(),
+					"platform":          "aws",
+					"stage":             "wait_for_stack_rollback",
+					"stack_name":        stackName,
+					"target_deployment": previousDeploy.ID,
+				}).Get(ctx)
+			}
+			return deployResult{
+				Error: deployError{
+					Summary: fmt.Sprintf("CloudFormation stack rollback failed: %v", err),
+				},
+			}, nil
+		}
+
+		// Extract URL from stack outputs
+		if serviceUrl, ok := stackOutputs["AppRunnerServiceUrl"]; ok && serviceUrl != "" {
+			if !strings.HasPrefix(serviceUrl, "http://") && !strings.HasPrefix(serviceUrl, "https://") {
+				previousDeploy.URL = "https://" + serviceUrl
+			} else {
+				previousDeploy.URL = serviceUrl
+			}
+			workflow.Logger(ctx).Info("AWS rollback completed", "url", previousDeploy.URL)
+		}
 	}
 
 	workflow.Logger(ctx).Info("Rollback completed successfully")
