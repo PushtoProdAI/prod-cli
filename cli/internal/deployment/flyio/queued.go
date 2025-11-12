@@ -110,7 +110,22 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 			deployDeps = append(deployDeps, generateDockerfileStepID)
 		}
 
-		// Step 3: Deploy configuration
+		// Step 3: Set/update secrets
+		secretsStepID := "set-secrets"
+		secrets := fqd.extractSecrets()
+		if len(secrets) > 0 {
+			steps = append(steps, &SetSecretsStep{
+				BaseStep: BaseStep{
+					ID:          secretsStepID,
+					Description: fmt.Sprintf("Updating %d secret(s) for app", len(secrets)),
+				},
+				appName: appName,
+				secrets: secrets,
+			})
+			deployDeps = append(deployDeps, secretsStepID)
+		}
+
+		// Step 4: Deploy configuration
 		steps = append(steps, &DeployFlyioConfigStep{
 			BaseStep: BaseStep{
 				ID:          "deploy-config",
@@ -183,11 +198,29 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 		})
 	}
 
-	// Step 5: Deploy app configuration (after Dockerfile generation and attachments are complete)
+	// Step 5: Set secrets (after app creation, before deployment)
+	secretsStepID := "set-secrets"
+	secrets := fqd.extractSecrets()
+	if len(secrets) > 0 {
+		steps = append(steps, &SetSecretsStep{
+			BaseStep: BaseStep{
+				ID:          secretsStepID,
+				Description: fmt.Sprintf("Setting %d secret(s) for app", len(secrets)),
+				DependsOn:   []string{appStepID},
+			},
+			appName: appName,
+			secrets: secrets,
+		})
+	}
+
+	// Step 6: Deploy app configuration (after Dockerfile generation, secrets, and attachments are complete)
 	deployDeps := []string{appStepID}
 	deployDeps = append(deployDeps, attachmentStepIDs...)
 	if fqd.dockerGenerator != nil && deployment.IsDockerAvailable() {
 		deployDeps = append(deployDeps, generateDockerfileStepID)
+	}
+	if len(secrets) > 0 {
+		deployDeps = append(deployDeps, secretsStepID)
 	}
 
 	steps = append(steps, &DeployFlyioConfigStep{
@@ -275,11 +308,14 @@ func (fqd *FlyioQueuedDeployment) createAttachmentStep(service deployment.Servic
 }
 
 // generateFlyConfig generates the Fly.io configuration
+// Sensitive environment variables are excluded and should be set via SetSecrets
 func (fqd *FlyioQueuedDeployment) generateFlyConfig() *FlyioConfig {
 	envVars := make(map[string]string)
 
+	// Only include non-sensitive, non-DB-related environment variables in fly.toml
+	// Sensitive variables will be set using fly secrets
 	for _, ev := range fqd.spec.EnvVars {
-		if ev.IsNotDBRelated() && ev.Value != "" {
+		if ev.IsNotDBRelated() && ev.Value != "" && !ev.Sensitive {
 			envVars[ev.Name] = ev.Value
 		}
 	}
@@ -344,6 +380,21 @@ func (fqd *FlyioQueuedDeployment) determineInternalPort() int {
 func (fqd *FlyioQueuedDeployment) getInternalPortForLanguage(language string) int {
 	config := GetLanguageConfig(language)
 	return config.InternalPort
+}
+
+// extractSecrets extracts sensitive environment variables that should be set as secrets
+func (fqd *FlyioQueuedDeployment) extractSecrets() map[string]string {
+	secrets := make(map[string]string)
+
+	for _, ev := range fqd.spec.EnvVars {
+		// Include all sensitive variables (both DB-related and non-DB-related)
+		// DB-related secrets like DATABASE_URL are also set as secrets
+		if ev.Sensitive && ev.Value != "" {
+			secrets[ev.Name] = ev.Value
+		}
+	}
+
+	return secrets
 }
 
 func (fqd *FlyioQueuedDeployment) getCurrentDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {

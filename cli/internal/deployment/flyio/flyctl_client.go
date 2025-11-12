@@ -890,20 +890,62 @@ func (c *FlyctlClient) parseReleases(output string) ([]FlyioRelease, error) {
 
 // DeployImage deploys a specific Docker image to an app
 func (c *FlyctlClient) DeployImage(ctx context.Context, appID, imageURL string) error {
+	// Check if flyctl is installed
 	if err := c.ensureFlyctl(ctx); err != nil {
 		return err
 	}
 
+	// Use flyctl deploy with specific image
 	args := []string{
 		"deploy",
 		"--app", appID,
 		"--image", imageURL,
+		"--yes", // Auto-confirm
 	}
 
-	_, err := c.executor.ExecuteWithStreaming(ctx, c.writer, "flyctl", args...)
-	if err != nil {
-		return errors.Errorf("failed to deploy image: %w", err)
+	cmd := exec.CommandContext(ctx, "flyctl", args...)
+	cmd.Env = os.Environ()
+	cmd.Stdout = c.writer
+	cmd.Stderr = c.writer
+
+	if err := cmd.Run(); err != nil {
+		return errors.Errorf("failed to deploy image %s: %w", imageURL, err)
 	}
 
+	slog.Info("Image deployed successfully", "image", imageURL)
+	return nil
+}
+
+// SetSecrets sets secrets for a Fly.io app using 'fly secrets set'
+func (c *FlyctlClient) SetSecrets(ctx context.Context, appID string, secrets map[string]string) error {
+	// Check if flyctl is installed
+	if err := c.ensureFlyctl(ctx); err != nil {
+		return err
+	}
+
+	if len(secrets) == 0 {
+		return nil // Nothing to set
+	}
+
+	// Build the secrets command arguments
+	// Format: fly secrets set KEY1=value1 KEY2=value2 --app appID
+	args := []string{"secrets", "set"}
+
+	for key, value := range secrets {
+		args = append(args, fmt.Sprintf("%s=%s", key, value))
+	}
+
+	args = append(args, "--app", appID)
+
+	cmd := exec.CommandContext(ctx, "flyctl", args...)
+	cmd.Env = os.Environ()
+	cmd.Stdout = c.writer
+	cmd.Stderr = c.writer
+
+	if err := cmd.Run(); err != nil {
+		return errors.Errorf("failed to set secrets: %w", err)
+	}
+
+	slog.Info("Secrets set successfully", "count", len(secrets), "app", appID)
 	return nil
 }
