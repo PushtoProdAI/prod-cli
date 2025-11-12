@@ -1,6 +1,10 @@
 package netlify
 
-import "time"
+import (
+	"time"
+
+	"github.com/meroxa/prod/cli/internal/deployment"
+)
 
 // NetlifyClient defines the interface for interacting with Netlify
 type NetlifyClient interface {
@@ -16,7 +20,7 @@ type NetlifyClient interface {
 	GetDeploy(siteID, deployID string) (*NetlifyDeploy, error)
 
 	// Environment variables
-	SetEnvironmentVariables(siteID string, vars map[string]string) error
+	SetEnvironmentVariables(siteID string, vars []deployment.EnvVar) error
 
 	// Build settings
 	UpdateBuildSettings(siteID string, settings BuildSettings) error
