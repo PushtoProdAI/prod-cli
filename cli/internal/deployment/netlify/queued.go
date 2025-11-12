@@ -100,11 +100,8 @@ func (nqd *NetlifyQueuedDeployment) GenerateAPISteps() []NetlifyAPIStep {
 	if nqd.spec.IsUpdate {
 
 		if len(nqd.spec.EnvVars) > 0 {
-			envVars := make(map[string]string)
-			for _, env := range nqd.spec.EnvVars {
-				envVars[env.Name] = env.Value
-			}
-			envStep := NewSetEnvironmentVariablesStep("existing-site", "", nqd.getSourcePath(), envVars, nqd.writer)
+			// Pass the full EnvVar objects so sensitive flag is preserved
+			envStep := NewSetEnvironmentVariablesStep("existing-site", "", nqd.getSourcePath(), nqd.spec.EnvVars, nqd.writer)
 			steps = append(steps, envStep)
 		}
 
@@ -140,11 +137,8 @@ func (nqd *NetlifyQueuedDeployment) GenerateAPISteps() []NetlifyAPIStep {
 
 	// Step 4: Set all environment variables after linking
 	if len(nqd.spec.EnvVars) > 0 {
-		envVars := make(map[string]string)
-		for _, env := range nqd.spec.EnvVars {
-			envVars[env.Name] = env.Value
-		}
-		envStep := NewSetEnvironmentVariablesStep("create-site", "link-site", nqd.getSourcePath(), envVars, nqd.writer)
+		// Pass the full EnvVar objects so sensitive flag is preserved
+		envStep := NewSetEnvironmentVariablesStep("create-site", "link-site", nqd.getSourcePath(), nqd.spec.EnvVars, nqd.writer)
 		steps = append(steps, envStep)
 	}
 
