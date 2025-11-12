@@ -241,3 +241,8 @@ func (c *HTTPFlyioClient) ListReleases(ctx context.Context, appID string) ([]Fly
 func (c *HTTPFlyioClient) DeployImage(ctx context.Context, appID, imageURL string) error {
 	return errors.Errorf("DeployImage is not implemented for HTTP client - use flyctl client instead")
 }
+
+// SetSecrets sets secrets for an app
+func (c *HTTPFlyioClient) SetSecrets(ctx context.Context, appID string, secrets map[string]string) error {
+	return errors.Errorf("SetSecrets is not implemented for HTTP client - use flyctl client instead")
+}
