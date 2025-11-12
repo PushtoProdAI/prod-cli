@@ -31,139 +31,110 @@ const corsHeaders = {
   'Access-Control-Max-Age': '86400',
 }
 
-Deno.serve(async (req) => {
-  
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
-
-  if (req.method !== 'POST' && req.method !== 'GET') {
-    return new Response(
-      JSON.stringify({ error: 'Method not allowed' }),
-      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-  }
-  // Extract access token from custom CLI token or use Authorization header directly
-  let accessToken = req.headers.get('authorization')?.replace('Bearer ', '')
-  
-  // If the token looks like a custom CLI token (base64 JSON), extract the access_token
-  if (accessToken && !accessToken.includes('.')) {
-    try {
-      const tokenData = JSON.parse(atob(accessToken))
-      if (tokenData.access_token) {
-        accessToken = tokenData.access_token
-        console.log('Extracted access token from custom CLI token')
-      }
-    } catch (error) {
-      console.log('Token is not a custom CLI token, using as-is')
-    }
-  }
-
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    {
-      global: {
-        headers: {
-          Authorization: accessToken ? `Bearer ${accessToken}` : undefined
-        }
-      }
-    }
-  )
-
-  if (req.method === 'GET') {
-    try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken)
-      
-      if (authError || !user) {
-        console.error('Authentication error:', authError)
-        return new Response(
-          JSON.stringify({ error: 'Unauthorized' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      const { data: isAdmin, error: adminError } = await supabase.rpc('is_admin_user', {
-        p_user_id: user.id
-      })
-
-      if (adminError || !isAdmin) {
-        console.error('Admin check failed:', adminError)
-        return new Response(
-          JSON.stringify({ error: 'Forbidden: Admin access required' }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      const url = new URL(req.url)
-      const page = parseInt(url.searchParams.get('page') || '1')
-      const limit = parseInt(url.searchParams.get('limit') || '50')
-      const offset = (page - 1) * limit
-
-      if (page < 1 || limit < 1 || limit > 1000) {
-        return new Response(
-          JSON.stringify({ error: 'Invalid pagination parameters. Page must be >= 1, limit must be 1-1000' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      const { data: count, error: countError } = await supabase.rpc('get_deployment_operations_count')
-
-      if (countError) {
-        console.error('Count error:', countError)
-        return new Response(
-          JSON.stringify({ error: 'Failed to fetch deployment count' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      const { data: deployments, error } = await supabase.rpc('get_deployment_operations', {
-        p_limit: limit,
-        p_offset: offset
-      })
-
-      if (error) {
-        console.error('Database error:', error)
-        return new Response(
-          JSON.stringify({ error: 'Failed to fetch deployment data' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      const response = {
-        data: deployments.map(d => ({
-          operation_type: d.operation_type,
-          resource_type: d.resource_type,
-          status: d.status,
-          platform: d.platform,
-          language: d.language,
-          started_at: d.started_at,
-          completed_at: d.completed_at,
-          duration: d.duration_seconds
-        })),
-        pagination: {
-          page,
-          limit,
-          total: count || 0,
-          total_pages: Math.ceil((count || 0) / limit)
-        }
-      }
-
+async function handleGetDeployments(req: Request, supabase: any, accessToken: string) {
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken)
+    
+    if (authError || !user) {
+      console.error('Authentication error:', authError)
       return new Response(
-        JSON.stringify(response),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
+    }
 
-    } catch (error) {
-      console.error('Deployment fetch error:', error)
+    // Check if user is admin
+    const { data: isAdmin, error: adminError } = await supabase.rpc('is_admin_user', {
+      p_user_id: user.id
+    })
+
+    if (adminError) {
+      console.error('Admin check failed:', adminError)
+    }
+
+    const url = new URL(req.url)
+    
+    // Parse query parameters
+    const resourceName = url.searchParams.get('resource_name') || undefined
+    const platform = url.searchParams.get('platform') || undefined
+    const status = url.searchParams.get('status') || undefined
+    const operationType = url.searchParams.get('operation_type') || undefined
+    const page = parseInt(url.searchParams.get('page') || '1')
+    const limit = parseInt(url.searchParams.get('limit') || '50')
+    const offset = (page - 1) * limit
+
+    // Validate pagination parameters
+    if (page < 1 || limit < 1 || limit > 1000) {
       return new Response(
-        JSON.stringify({ error: 'Internal server error' }),
+        JSON.stringify({ error: 'Invalid pagination parameters. Page must be >= 1, limit must be 1-1000' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Determine user scope: admins see all users, regular users see only their own
+    const userIdFilter = isAdmin ? null : user.id
+
+    // Query deployments with unified function
+    const { data: deployments, error } = await supabase.rpc('query_deployment_operations', {
+      p_user_id: userIdFilter,
+      p_resource_name: resourceName || null,
+      p_platform: platform || null,
+      p_status: status || null,
+      p_operation_type: operationType || null,
+      p_limit: limit,
+      p_offset: offset
+    })
+
+    if (error) {
+      console.error('Database error:', error)
+      return new Response(
+        JSON.stringify({ error: 'Failed to fetch deployment data' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-  }
 
+    // Get total count with same filters
+    const { data: count, error: countError } = await supabase.rpc('count_deployment_operations', {
+      p_user_id: userIdFilter,
+      p_resource_name: resourceName || null,
+      p_platform: platform || null,
+      p_status: status || null,
+      p_operation_type: operationType || null
+    })
+
+    if (countError) {
+      console.error('Count error:', countError)
+      return new Response(
+        JSON.stringify({ error: 'Failed to fetch deployment count' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const response = {
+      data: deployments || [],
+      pagination: {
+        page,
+        limit,
+        total: count || 0,
+        total_pages: Math.ceil((count || 0) / limit)
+      }
+    }
+
+    return new Response(
+      JSON.stringify(response),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+
+  } catch (error) {
+    console.error('Deployment fetch error:', error)
+    return new Response(
+      JSON.stringify({ error: 'Internal server error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+  }
+}
+
+async function handlePostDeployments(req: Request, supabase: any) {
   try {
     const body = await req.json()
     const { action, data } = body
@@ -214,6 +185,63 @@ Deno.serve(async (req) => {
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
+}
+
+Deno.serve(async (req) => {
+  
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  if (req.method !== 'POST' && req.method !== 'GET') {
+    return new Response(
+      JSON.stringify({ error: 'Method not allowed' }),
+      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+  }
+
+  // Extract access token from custom CLI token or use Authorization header directly
+  let accessToken = req.headers.get('authorization')?.replace('Bearer ', '')
+  
+  // If the token looks like a custom CLI token (base64 JSON), extract the access_token
+  if (accessToken && !accessToken.includes('.')) {
+    try {
+      const tokenData = JSON.parse(atob(accessToken))
+      if (tokenData.access_token) {
+        accessToken = tokenData.access_token
+        console.log('Extracted access token from custom CLI token')
+      }
+    } catch (error) {
+      console.log('Token is not a custom CLI token, using as-is')
+    }
+  }
+
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    {
+      global: {
+        headers: {
+          Authorization: accessToken ? `Bearer ${accessToken}` : undefined
+        }
+      }
+    }
+  )
+
+  if (req.method === 'GET') {
+    return handleGetDeployments(req, supabase, accessToken)
+  }
+
+  if (req.method === 'POST') {
+    return handlePostDeployments(req, supabase)
+  }
+
+  // Should never reach here due to method check above, but for type safety
+  return new Response(
+    JSON.stringify({ error: 'Method not allowed' }),
+    { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  )
 })
 
 async function logDeploymentOperation(

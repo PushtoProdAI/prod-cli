@@ -179,6 +179,128 @@ func (c *Client) UpdateDeploymentOperation(ctx context.Context, authToken string
 	return nil
 }
 
+// DeploymentHistoryItem represents a single deployment operation from history
+type DeploymentHistoryItem struct {
+	OperationID   string         `json:"operation_id"`
+	UserID        string         `json:"user_id"`
+	OperationType string         `json:"operation_type"`
+	ResourceType  string         `json:"resource_type"`
+	ResourceID    string         `json:"resource_id"`
+	ResourceName  string         `json:"resource_name"`
+	Status        string         `json:"status"`
+	Platform      string         `json:"platform"`
+	Language      string         `json:"language"`
+	StartedAt     string         `json:"started_at"`
+	CompletedAt   string         `json:"completed_at"`
+	Duration      int            `json:"duration_seconds"`
+	Metadata      map[string]any `json:"metadata"`
+}
+
+// DeploymentHistoryResponse represents the paginated response from deployment history queries
+type DeploymentHistoryResponse struct {
+	Data       []DeploymentHistoryItem `json:"data"`
+	Pagination struct {
+		Page       int `json:"page"`
+		Limit      int `json:"limit"`
+		Total      int `json:"total"`
+		TotalPages int `json:"total_pages"`
+	} `json:"pagination"`
+}
+
+// DeploymentQueryOptions allows filtering deployment history queries
+type DeploymentQueryOptions struct {
+	ResourceName  string // Filter by service name (e.g., "my-app")
+	Platform      string // Filter by platform (e.g., "aws", "vercel")
+	Status        string // Filter by status (e.g., "success", "failed")
+	OperationType string // Filter by operation type (e.g., "deploy", "rollback")
+	Limit         int    // Max results per page (default: 50, max: 1000)
+	Page          int    // Page number (default: 1)
+}
+
+// GetDeploymentHistory retrieves deployment history for a specific service
+// Returns the most recent successful deployments, ordered by completion time (newest first)
+func (c *Client) GetDeploymentHistory(ctx context.Context, authToken string, serviceName string, platform string, limit int) ([]DeploymentHistoryItem, error) {
+	// Use the more flexible QueryDeployments method with success filter
+	opts := DeploymentQueryOptions{
+		ResourceName: serviceName,
+		Platform:     platform,
+		Status:       "success",
+		Limit:        limit,
+		Page:         1,
+	}
+
+	response, err := c.QueryDeployments(ctx, authToken, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return response.Data, nil
+}
+
+// QueryDeployments retrieves deployment operations with flexible filtering and pagination
+// This is the unified method that supports all query options
+func (c *Client) QueryDeployments(ctx context.Context, authToken string, opts DeploymentQueryOptions) (*DeploymentHistoryResponse, error) {
+	// Build query parameters
+	params := make([]string, 0)
+
+	if opts.ResourceName != "" {
+		params = append(params, fmt.Sprintf("resource_name=%s", opts.ResourceName))
+	}
+	if opts.Platform != "" {
+		params = append(params, fmt.Sprintf("platform=%s", opts.Platform))
+	}
+	if opts.Status != "" {
+		params = append(params, fmt.Sprintf("status=%s", opts.Status))
+	}
+	if opts.OperationType != "" {
+		params = append(params, fmt.Sprintf("operation_type=%s", opts.OperationType))
+	}
+
+	// Set defaults for pagination
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	page := opts.Page
+	if page <= 0 {
+		page = 1
+	}
+	params = append(params, fmt.Sprintf("limit=%d", limit))
+	params = append(params, fmt.Sprintf("page=%d", page))
+
+	// Build URL with query parameters
+	queryString := strings.Join(params, "&")
+	url := fmt.Sprintf("%s/deployment-logger?%s", getBaseURL(), queryString)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, errors.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, errors.Errorf("deployment query request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result DeploymentHistoryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, errors.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // GetPushRegistryCredentials fetches temporary Docker registry credentials for pushing images. These are scoped to JUST being able to push to registries for the specified tenant
 func (c *Client) GetPushRegistryCredentials(ctx context.Context, authToken string, projectName string) (*RegistryCredentials, error) {
 	return c.getPushRegistryCredentialsWithLocation(ctx, authToken, projectName, "internal")

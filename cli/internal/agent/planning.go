@@ -500,7 +500,7 @@ func (a *Activities) determineMigrationCommand(ctx context.Context, spec analyze
 }
 
 func (a *Activities) detectPlatformsForRollback(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
-	platforms := []Platform{Render, FlyIO, Netlify, Vercel, Heroku}
+	platforms := []Platform{Render, FlyIO, Netlify, Vercel, Heroku, AWS}
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup

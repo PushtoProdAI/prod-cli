@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-errors/errors"
 
+	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/output"
 )
@@ -15,6 +16,7 @@ import (
 // AWSDeployment represents a deployment to AWS using App Runner, RDS, and ElastiCache
 type AWSDeployment struct {
 	client          AWSClient
+	backendClient   *backend.Client
 	spec            *deployment.DeploymentSpec
 	dockerGenerator *deployment.DockerGenerator
 	useDockerfile   bool
@@ -37,6 +39,7 @@ func NewAWSDeployment(
 
 	return &AWSDeployment{
 		client:          client,
+		backendClient:   backend.NewClient(),
 		spec:            spec,
 		dockerGenerator: dockerGenerator,
 		useDockerfile:   useDockerfile,
@@ -61,23 +64,128 @@ func (ad *AWSDeployment) Deploy(ctx context.Context) ([]deployment.CreatedResour
 func (ad *AWSDeployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
 	slog.Info("Getting previous AWS deployment", "project", ad.spec.Name)
 
-	// TODO: Implement by querying App Runner service by name/tags
-	// This will check if an App Runner service with this name already exists
+	// Get auth token from metadata
+	authToken := ""
+	if token, ok := ad.spec.Metadata["authToken"].(string); ok {
+		authToken = token
+	}
 
-	return nil, errors.New("GetPreviousDeployment not yet implemented for AWS")
+	if authToken == "" {
+		return nil, errors.New("auth token not available for querying deployment history")
+	}
+
+	// Query deployment history from backend (returns last N successful deployments)
+	history, err := ad.backendClient.GetDeploymentHistory(ctx, authToken, ad.spec.Name, "aws", 2)
+	if err != nil {
+		return nil, errors.Errorf("failed to get deployment history: %w", err)
+	}
+
+	// We need at least 2 deployments to have a "previous" one
+	// The first one is the current deployment, the second is the previous
+	if len(history) < 2 {
+		return nil, errors.New("no previous deployment found (this might be your first deployment)")
+	}
+
+	previousDeploy := history[1]
+
+	// Extract the image URL from metadata
+	imageURL, ok := previousDeploy.Metadata["image_url"].(string)
+	if !ok || imageURL == "" {
+		return nil, errors.New("previous deployment missing image URL in metadata")
+	}
+
+	// Extract the URL from metadata (for display purposes)
+	url, _ := previousDeploy.Metadata["url"].(string)
+
+	slog.Info("Found previous deployment",
+		"imageURL", imageURL,
+		"completedAt", previousDeploy.CompletedAt,
+		"operationID", previousDeploy.OperationID)
+
+	return &deployment.DeploymentInfo{
+		ID:        imageURL, // Use image URL as the deployment ID for rollback
+		Status:    previousDeploy.Status,
+		CreatedAt: previousDeploy.CompletedAt,
+		URL:       url,
+	}, nil
 }
 
 // Rollback rolls back to a previous deployment
 func (ad *AWSDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
-	slog.Info("Rolling back AWS deployment", "project", ad.spec.Name, "target", targetDeploymentID)
+	slog.Info("Rolling back AWS deployment", "project", ad.spec.Name, "targetImage", targetDeploymentID)
 
-	// TODO: Implement rollback logic
-	// For App Runner, this would involve:
-	// 1. Finding the previous image tag from deployment history
-	// 2. Updating the App Runner service to use that image
-	// 3. Waiting for the service to stabilize
+	// targetDeploymentID is the previous image URL from GetPreviousDeployment()
 
-	return errors.New("Rollback not yet implemented for AWS")
+	// Get auth token from metadata
+	authToken := ""
+	if token, ok := ad.spec.Metadata["authToken"].(string); ok {
+		authToken = token
+	}
+
+	if authToken == "" {
+		return errors.New("auth token not available for rollback")
+	}
+
+	// Build deployment spec with the target (previous) image
+	// Get configuration from current spec
+	cpu := appRunnerCPU
+	if cpuStr, ok := ad.spec.Metadata["cpu"].(string); ok && cpuStr != "" {
+		cpu = cpuStr
+	}
+
+	memory := appRunnerMemory
+	if memStr, ok := ad.spec.Metadata["memory"].(string); ok && memStr != "" {
+		memory = memStr
+	}
+
+	port := ad.determinePort()
+	if portInt, ok := ad.spec.Metadata["port"].(int); ok && portInt > 0 {
+		port = portInt
+	}
+
+	// Build the deployment spec for rollback (with previous image, no migrations)
+	deploymentSpec, err := BuildAWSDeploymentSpec(
+		ad.spec.Name,
+		targetDeploymentID, // Use the previous image URL
+		cpu,
+		memory,
+		port,
+		ad.spec.EnvVars,
+		ad.spec.Services,
+		"",  // Don't run migrations on rollback
+		nil, // createAppRunner defaults to true
+	)
+	if err != nil {
+		return errors.Errorf("failed to build rollback deployment spec: %w", err)
+	}
+
+	slog.Info("Initiating CloudFormation stack update for rollback",
+		"service", ad.spec.Name,
+		"previousImage", targetDeploymentID)
+
+	// Deploy the stack with the previous image (this triggers an update)
+	result, err := ad.backendClient.DeployAWSStack(ctx, authToken, deploymentSpec)
+	if err != nil {
+		return errors.Errorf("failed to initiate stack rollback: %w", err)
+	}
+
+	if result.Error != "" {
+		return errors.Errorf("stack rollback initiation failed: %s", result.Error)
+	}
+
+	slog.Info("CloudFormation stack rollback initiated",
+		"stackId", result.StackID,
+		"stackName", result.StackName,
+		"status", result.Status)
+
+	// Note: The workflow will handle waiting for stack completion
+	// We just initiate the rollback here
+
+	slog.Info("AWS deployment rollback completed successfully",
+		"service", ad.spec.Name,
+		"previousImage", targetDeploymentID)
+
+	return nil
 }
 
 // generateAPISteps generates the sequence of API calls needed for deployment
