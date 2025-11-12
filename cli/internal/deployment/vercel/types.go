@@ -1,6 +1,10 @@
 package vercel
 
-import "time"
+import (
+	"time"
+
+	"github.com/meroxa/prod/cli/internal/deployment"
+)
 
 // VercelClient defines the interface for interacting with Vercel
 type VercelClient interface {
@@ -19,7 +23,7 @@ type VercelClient interface {
 	PromoteDeployment(deploymentURL, projectName string) error
 
 	// Environment variables
-	SetEnvironmentVariables(projectID string, vars map[string]string) error
+	SetEnvironmentVariables(projectID string, vars []deployment.EnvVar) error
 
 	// Build settings
 	BuildProject(envVars []EnvVar, production bool) error

@@ -135,11 +135,8 @@ func (vqd *VercelQueuedDeployment) GenerateAPISteps() []VercelAPIStep {
 	}
 
 	if len(vqd.spec.EnvVars) > 0 {
-		envVars := make(map[string]string)
-		for _, env := range vqd.spec.EnvVars {
-			envVars[env.Name] = env.Value
-		}
-		envStep := NewSetEnvironmentVariablesStep(projectStepID, "link-project", vqd.getSourcePath(), envVars, vqd.writer)
+		// Pass the full EnvVar objects so sensitive flag is preserved
+		envStep := NewSetEnvironmentVariablesStep(projectStepID, "link-project", vqd.getSourcePath(), vqd.spec.EnvVars, vqd.writer)
 		steps = append(steps, envStep)
 	}
 

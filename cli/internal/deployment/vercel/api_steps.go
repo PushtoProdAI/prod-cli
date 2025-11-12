@@ -187,15 +187,28 @@ type SetEnvironmentVariablesStep struct {
 	projectDependency string
 	linkDependency    string
 	sourcePath        string
-	envVars           map[string]string
+	envVars           []deployment.EnvVar
 	writer            io.Writer
 }
 
-func NewSetEnvironmentVariablesStep(projectDependency, linkDependency, sourcePath string, envVars map[string]string, writer io.Writer) *SetEnvironmentVariablesStep {
+func NewSetEnvironmentVariablesStep(projectDependency, linkDependency, sourcePath string, envVars []deployment.EnvVar, writer io.Writer) *SetEnvironmentVariablesStep {
+	// Count sensitive vs non-sensitive for description
+	sensitiveCount := 0
+	for _, ev := range envVars {
+		if ev.Sensitive {
+			sensitiveCount++
+		}
+	}
+
+	description := fmt.Sprintf("Set %d environment variables", len(envVars))
+	if sensitiveCount > 0 {
+		description = fmt.Sprintf("Set %d environment variables (%d sensitive)", len(envVars), sensitiveCount)
+	}
+
 	return &SetEnvironmentVariablesStep{
 		BaseStep: BaseStep{
 			ID:          "set-env-vars",
-			Description: fmt.Sprintf("Set %d environment variables", len(envVars)),
+			Description: description,
 			DependsOn:   []string{projectDependency, linkDependency},
 		},
 		projectDependency: projectDependency,
