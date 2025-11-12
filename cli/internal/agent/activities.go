@@ -50,8 +50,6 @@ const (
 	AgentRollbackDeployment         = "agent.rollbackDeployment"
 	AgentGetPreviousDeployment      = "agent.getPreviousDeployment"
 	AgentRunECSMigration            = "agent.runECSMigration"
-	AgentCreateAppRunnerService     = "agent.createAppRunnerService"
-	AgentWaitForAppRunnerService    = "agent.waitForAppRunnerService"
 )
 
 type Activities struct {
@@ -102,7 +100,5 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentRollbackDeployment, ActFunc: a.rollbackDeployment},
 		{Name: AgentRunECSMigration, ActFunc: a.runECSMigration},
 		{Name: AgentUpdateAWSStack, ActFunc: a.updateAWSStack},
-		{Name: AgentCreateAppRunnerService, ActFunc: a.createAppRunnerService},
-		{Name: AgentWaitForAppRunnerService, ActFunc: a.waitForAppRunnerService},
 	}
 }

@@ -2161,34 +2161,9 @@ func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployRes
 
 		slog.Info("App Runner service info extracted", "arn", serviceArn, "url", serviceUrl)
 
-		// Wait for App Runner service to be ready
-		slog.Info("Waiting for App Runner service deployment", "serviceArn", serviceInfo.ServiceARN)
-		appRunnerWaitOpts := ActivityOpts
-		appRunnerWaitOpts.RetryOptions.MaxAttempts = 60 // Poll for up to 10 minutes
-		appRunnerWaitOpts.RetryOptions.FirstRetryInterval = time.Second * 10
-		appRunnerWaitOpts.RetryOptions.MaxRetryInterval = time.Second * 10
-		appRunnerWaitOpts.RetryOptions.BackoffCoefficient = 1.0
-		appRunnerWaitOpts.RetryOptions.RetryTimeout = time.Minute * 15
-
-		_, err = workflow.ExecuteActivity[any](ctx, appRunnerWaitOpts, AgentWaitForAppRunnerService, token, serviceInfo.ServiceARN).Get(ctx)
-		if err != nil {
-			prod_error.CaptureErrorWithContext(err, map[string]any{
-				"workflow":    DeployAWSWorkflowName,
-				"activity":    AgentWaitForAppRunnerService,
-				"component":   "deployment",
-				"platform":    "aws",
-				"service_arn": serviceInfo.ServiceARN,
-			})
-			if operationId != "" {
-				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
-					"error":       err.Error(),
-					"platform":    "aws",
-					"stage":       "wait_for_apprunner",
-					"service_arn": serviceInfo.ServiceARN,
-				}).Get(ctx)
-			}
-			return deployResult{Error: deployError{Summary: fmt.Sprintf("App Runner service deployment timeout: %v", err)}}, nil
-		}
+		// Note: CloudFormation already waits for App Runner to be RUNNING before
+		// marking the stack as CREATE_COMPLETE/UPDATE_COMPLETE, so no additional
+		// wait is needed here.
 
 		// Set deployment URL from App Runner service
 		if serviceInfo.ServiceURL != "" {
