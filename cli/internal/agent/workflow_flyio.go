@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/url"
 	"time"
@@ -12,6 +13,55 @@ import (
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	prod_error "github.com/meroxa/prod/cli/internal/error"
 )
+
+// extractFlyioStepConfig extracts configuration from a Fly.io deployment step
+func extractFlyioStepConfig(step flyio.FlyioAPIStep) map[string]any {
+	config := make(map[string]any)
+
+	// Since the fields are unexported, we'll just use the step description
+	// and type information that's available through the interface
+	config["step_id"] = step.GetID()
+	config["description"] = step.GetDescription()
+
+	return config
+}
+
+// performFlyioConflictChecks checks for resource conflicts in a Fly.io deployment
+func performFlyioConflictChecks(spec *deployment.DeploymentSpec, client flyio.FlyioClient) []ConflictCheck {
+	var conflicts []ConflictCheck
+
+	// Check for app name conflicts by attempting to get the app
+	// Use a timeout to prevent hanging
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := client.GetApp(ctx, spec.Name)
+	if err == nil {
+		// App exists, this is a conflict
+		conflicts = append(conflicts, ConflictCheck{
+			Resource: "app",
+			Status:   "conflict",
+			Message:  fmt.Sprintf("App name '%s' already exists", spec.Name),
+		})
+	}
+
+	return conflicts
+}
+
+// getFlyioStepType returns the type of a Fly.io deployment step
+func getFlyioStepType(step flyio.FlyioAPIStep) string {
+	switch step.(type) {
+	case *flyio.CreateFlyioAppStep:
+		return "app"
+	case *flyio.CreateFlyioServiceStep:
+		return "service"
+	case *flyio.DeployFlyioConfigStep:
+		return "config"
+	case *flyio.AttachPostgresStep:
+		return "attach"
+	default:
+		return "unknown"
+	}
+}
 
 func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployResult, error) {
 	if w.registry == nil {
