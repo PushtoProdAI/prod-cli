@@ -92,3 +92,12 @@ type MigrationResult struct {
 	Error    string   `json:"error,omitempty"`
 	TaskArn  string   `json:"taskArn,omitempty"`
 }
+
+// TemplatePreviewResponse represents the response from template preview
+type TemplatePreviewResponse struct {
+	Template    string `json:"template"`
+	ServiceName string `json:"serviceName"`
+}
+
+// AWSDeploymentSpec is an alias for DeploymentSpec for clarity
+type AWSDeploymentSpec = DeploymentSpec
