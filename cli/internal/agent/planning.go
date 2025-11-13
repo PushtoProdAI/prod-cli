@@ -233,6 +233,9 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 			case Heroku:
 				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateHerokuCosts, *deploymentSpec, deployment.StrategyHeroku).Get(ctx)
 				activity = AgentEstimateHerokuCosts
+			case AWS:
+				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateAWSCosts, *deploymentSpec, deployment.StrategyAWS).Get(ctx)
+				activity = AgentEstimateAWSCosts
 			}
 
 			if err != nil {

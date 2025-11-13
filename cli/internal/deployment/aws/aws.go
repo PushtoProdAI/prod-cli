@@ -2,14 +2,16 @@ package aws
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"time"
 
 	"github.com/go-errors/errors"
 
+	backend "github.com/meroxa/prod/cli/internal/backend/aws"
+	"github.com/meroxa/prod/cli/internal/config"
 	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/deployment/pricing"
 	"github.com/meroxa/prod/cli/internal/llm"
 	"github.com/meroxa/prod/cli/internal/output"
 )
@@ -44,12 +46,15 @@ type AWSPricing struct {
 	LastFetched time.Time          `json:"last_fetched"`
 }
 
-// fallbackPricing provides static pricing when LLM lookup fails
+// fallbackPricing provides static pricing when AWS Pricing API fails
+// App Runner costs vary based on active vs. provisioned hours
+// These estimates assume ~12 hours active per day (moderate production usage)
+// Actual costs range from ~$10/month (always idle) to ~$57/month (always active) for 1vCPU/2GB
 var fallbackPricing = AWSPricing{
 	AppRunner: map[string]float64{
-		"1vCPU_2GB": 51.84, // $0.007/vCPU-hour + $0.003/GB-hour
-		"2vCPU_4GB": 103.68,
-		"4vCPU_8GB": 207.36,
+		"1vCPU_2GB": 33.12, // ~12hrs active/day: (1vCPU×$0.064 + 2GB×$0.007)×12hrs active + 2GB×$0.007×24hrs provisioned
+		"2vCPU_4GB": 66.24, // Scales linearly with vCPU/memory
+		"4vCPU_8GB": 132.48,
 	},
 	RDS: map[string]float64{
 		"db.t3.micro":  12.41, // ~$0.017/hour
@@ -114,107 +119,93 @@ func (ada *AWSDeploymentAdapter) GenerateArtifacts(spec *deployment.DeploymentSp
 	}
 }
 
-// EstimateCost estimates the monthly cost for deploying to AWS
+// EstimateCost estimates the monthly cost for deploying to AWS using CloudFormation template
 func (ada *AWSDeploymentAdapter) EstimateCost(ctx context.Context, spec *deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
-	slog.Info("Estimating costs for AWS deployment", "spec", spec, "strategy", strategy)
+	slog.Debug("Estimating AWS deployment costs", "name", spec.Name, "region", ada.region)
 
-	cr := deployment.CostRequest{Services: make([]deployment.CostService, 0)}
+	estimate, err := ada.estimateCostFromTemplate(ctx, spec)
+	if err != nil {
+		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
+	}
 
-	// Add backing services (RDS, ElastiCache)
+	return estimate, nil
+}
+
+// estimateCostFromTemplate uses CloudFormation template to calculate pricing
+func (ada *AWSDeploymentAdapter) estimateCostFromTemplate(ctx context.Context, spec *deployment.DeploymentSpec) (deployment.CostEstimate, error) {
+	// Build deployment spec for template generation
+	// Convert deployment.DeploymentSpec to backend.AWSDeploymentSpec
+	backingServices := make([]backend.BackingService, 0, len(spec.Services))
 	for _, service := range spec.Services {
-		cs := deployment.CostService{}
 		switch service.Provider {
 		case "postgresql":
-			cs.Service = service
-			cs.Plan = postgresInstanceClass
-			cs.Storage = postgresStorage
+			backingServices = append(backingServices, backend.BackingService{
+				Type:             "rds",
+				Name:             service.Name,
+				Engine:           postgresEngine,
+				InstanceClass:    postgresInstanceClass,
+				AllocatedStorage: postgresStorage,
+			})
 		case "redis":
-			cs.Service = service
-			cs.Plan = redisNodeType
-		default:
-			continue
+			backingServices = append(backingServices, backend.BackingService{
+				Type:          "elasticache",
+				Name:          service.Name,
+				NodeType:      redisNodeType,
+				NumCacheNodes: 1,
+			})
 		}
-		cr.Services = append(cr.Services, cs)
 	}
 
-	// Add App Runner web service
-	cs := deployment.CostService{
-		Service: deployment.Service{
-			Name:     "web",
-			Provider: "apprunner",
-		},
-		Plan: "1vCPU_2GB",
-	}
-	cr.Services = append(cr.Services, cs)
-
-	ce, _ := ada.estimateCost(ctx, cr)
-	return ce, nil
-}
-
-func (ada *AWSDeploymentAdapter) estimateCost(ctx context.Context, cr deployment.CostRequest) (deployment.CostEstimate, error) {
-	slog.Info("Estimating costs for AWS request", "request", cr)
-
-	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
-	ce.Total = 0.0
-
-	// Create pricing service with AWS pricing provider
-	pricingProvider := NewPricingProvider()
-	pricingService := pricing.NewPricingService(pricingProvider, pricing.DefaultRetries, ada.llmClient)
-
-	for _, service := range cr.Services {
-		result, err := pricingService.EstimateCost(ctx, service)
-		if err != nil {
-			slog.Info("Failed to fetch pricing via LLM, using fallback", "service", service.Name, "error", err)
-			return estimateCostFallback(cr)
+	// Convert env vars
+	backendEnvVars := make([]backend.EnvVar, len(spec.EnvVars))
+	for i, ev := range spec.EnvVars {
+		backendEnvVars[i] = backend.EnvVar{
+			Name:              ev.Name,
+			Value:             ev.Value,
+			Role:              ev.Role,
+			Service:           ev.Service,
+			Sensitive:         ev.Sensitive,
+			SensitivityReason: ev.SensitivityReason,
 		}
-
-		// Apply usage-based costs for storage (AWS specific logic)
-		service.Cost = pricing.ApplyUsageCosts(result.Cost, result.UsageCosts, float64(service.Storage), "GB")
-
-		ce.Total += service.Cost
-		ce.Services = append(ce.Services, service)
 	}
 
-	return ce, nil
-}
-
-func estimateCostFallback(cr deployment.CostRequest) (deployment.CostEstimate, error) {
-	slog.Info("Using fallback pricing", "lastUpdated", fallbackPricing.LastFetched.Format("2006-01-02"))
-
-	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
-	ce.Total = 0.0
-
-	for _, service := range cr.Services {
-		cost := getFallbackServiceCost(service.Provider, service.Plan, service.Storage)
-		service.Cost = cost
-		ce.Total += service.Cost
-		ce.Services = append(ce.Services, service)
+	deploymentSpec := backend.AWSDeploymentSpec{
+		ServiceName:      spec.Name,
+		ImageURL:         "placeholder.dkr.ecr.us-east-1.amazonaws.com/app:latest", // Placeholder for pricing
+		CPU:              appRunnerCPU,
+		Memory:           appRunnerMemory,
+		Port:             8080, // Default port
+		EnvVars:          backendEnvVars,
+		BackingServices:  backingServices,
+		MigrationCommand: spec.MigrationCommand,
 	}
-	return ce, nil
-}
 
-func getFallbackServiceCost(provider, plan string, storage int) float64 {
-	switch provider {
-	case "postgresql":
-		baseCost := fallbackPricing.RDS[plan]
-		if baseCost == 0 {
-			baseCost = fallbackPricing.RDS["db.t3.micro"] // default
-		}
-		storageCost := float64(storage) * fallbackPricing.Storage
-		return baseCost + storageCost
-	case "redis":
-		cost := fallbackPricing.Redis[plan]
-		if cost == 0 {
-			cost = fallbackPricing.Redis["cache.t3.micro"] // default
-		}
-		return cost
-	case "apprunner":
-		cost := fallbackPricing.AppRunner[plan]
-		if cost == 0 {
-			cost = fallbackPricing.AppRunner["1vCPU_2GB"] // default
-		}
-		return cost
-	default:
-		return 0.0
+	// Get auth token from context (assuming it's available)
+	authToken := ""
+	if token, ok := ctx.Value("auth_token").(string); ok {
+		authToken = token
 	}
+
+	// Call edge function to generate template
+	backendURL := fmt.Sprintf("%s/%s", config.GetSupabaseURL(), "functions/v1")
+	backendClient := backend.NewClient(backendURL)
+	templateResp, err := backendClient.PreviewCloudFormationTemplate(ctx, authToken, deploymentSpec)
+	if err != nil {
+		return deployment.CostEstimate{}, errors.Errorf("failed to generate CloudFormation template: %w", err)
+	}
+
+	slog.Info("CloudFormation template generated", "serviceName", templateResp.ServiceName)
+
+	// Parse template and estimate costs using AWS Pricing API
+	pricer, err := NewTemplatePricer(ctx, ada.region)
+	if err != nil {
+		return deployment.CostEstimate{}, errors.Errorf("failed to create template pricer: %w", err)
+	}
+
+	estimate, err := pricer.EstimateCostFromTemplate(ctx, templateResp.Template)
+	if err != nil {
+		return deployment.CostEstimate{}, errors.Errorf("failed to estimate cost from template: %w", err)
+	}
+
+	return estimate, nil
 }

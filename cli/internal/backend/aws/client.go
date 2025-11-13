@@ -212,19 +212,14 @@ func (c *Client) DeployStack(ctx context.Context, authToken string, spec Deploym
 	return &result, nil
 }
 
-// GetStackStatus polls the status of a CloudFormation stack
-func (c *Client) GetStackStatus(ctx context.Context, authToken string, stackName string) (*DeploymentResult, error) {
-	payload := map[string]any{
-		"stackName": stackName,
-		// Don't request resources for polling (faster)
-	}
-
-	jsonData, err := json.Marshal(payload)
+// PreviewCloudFormationTemplate generates a CloudFormation template without deploying
+func (c *Client) PreviewCloudFormationTemplate(ctx context.Context, authToken string, spec AWSDeploymentSpec) (*TemplatePreviewResponse, error) {
+	jsonData, err := json.Marshal(spec)
 	if err != nil {
-		return nil, errors.Errorf("failed to marshal stack status request: %w", err)
+		return nil, errors.Errorf("failed to marshal preview request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/get-aws-stack-status", c.baseURL)
+	url := fmt.Sprintf("%s/preview-aws-template", c.baseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, errors.Errorf("failed to create request: %w", err)
@@ -243,17 +238,12 @@ func (c *Client) GetStackStatus(ctx context.Context, authToken string, stackName
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, errors.Errorf("get-aws-stack-status failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		return nil, errors.Errorf("preview-aws-template failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result DeploymentResult
+	var result TemplatePreviewResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, errors.Errorf("failed to decode response: %w", err)
-	}
-
-	// Check if stack doesn't exist (status will be NOT_FOUND)
-	if result.Status == "NOT_FOUND" {
-		return nil, errors.Errorf("CloudFormation stack not found: %s", stackName)
 	}
 
 	return &result, nil
@@ -344,6 +334,54 @@ func (c *Client) RunMigration(ctx context.Context, authToken string, req Migrati
 
 	if result.Error != "" {
 		return &result, errors.Errorf("ECS migration failed: %s", result.Error)
+	}
+
+	return &result, nil
+}
+
+
+// GetStackStatus polls the status of a CloudFormation stack
+func (c *Client) GetStackStatus(ctx context.Context, authToken string, stackName string) (*DeploymentResult, error) {
+	payload := map[string]any{
+		"stackName": stackName,
+		// Don't request resources for polling (faster)
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, errors.Errorf("failed to marshal stack status request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/get-aws-stack-status", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, errors.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, errors.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, errors.Errorf("get-aws-stack-status failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result DeploymentResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, errors.Errorf("failed to decode response: %w", err)
+	}
+
+	// Check if stack doesn't exist (status will be NOT_FOUND)
+	if result.Status == "NOT_FOUND" {
+		return nil, errors.Errorf("CloudFormation stack not found: %s", stackName)
 	}
 
 	return &result, nil

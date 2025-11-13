@@ -168,6 +168,16 @@ func (a *Activities) estimateHerokuCosts(ctx context.Context, spec deployment.De
 }
 
 func (a *Activities) estimateAWSCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+	// Get auth token from context
+	session := CtxSession(ctx)
+	var authToken string
+	if session != nil {
+		authToken = session.AccessToken
+	}
+
+	// Add auth token to context for use in pricing estimation
+	ctx = context.WithValue(ctx, "auth_token", authToken)
+
 	// TODO: Get region from user's AWS credentials in database
 	awsClient, err := aws.NewClient("us-east-1")
 	if err != nil {

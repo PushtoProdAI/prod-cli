@@ -59,15 +59,8 @@ func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployRes
 		spec.ExistingDatabases = existingProject.ExistingDatabases
 	}
 
-	// Estimate costs
-	estimatedCosts, err := workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateAWSCosts, *spec, deployment.StrategyAWS).Get(ctx)
-	if err != nil {
-		slog.Error("Error estimating costs", "error", err)
-	} else {
-		slog.Info("Estimated monthly costs", "total", estimatedCosts.Total, "services", len(estimatedCosts.Services))
-	}
-
 	// Deploy to AWS (initiates CloudFormation stack)
+	// Note: Cost estimation was already done during the planning phase
 	createdResources, err := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentDeploySteps, *spec, input.Platform).Get(ctx)
 	if err != nil {
 		prod_error.CaptureErrorWithContext(err, map[string]any{

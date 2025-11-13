@@ -480,3 +480,18 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 	slog.Info("JavaScript project setup completed successfully")
 	return result, nil
 }
+
+// validateDeploymentSpec validates a deployment specification
+func validateDeploymentSpec(spec *deployment.DeploymentSpec) []string {
+	var errors []string
+
+	if spec.Name == "" {
+		errors = append(errors, "Application name is required")
+	}
+
+	if spec.Language == "" {
+		errors = append(errors, "Programming language must be specified")
+	}
+
+	return errors
+}
