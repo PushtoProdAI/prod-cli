@@ -180,9 +180,9 @@ func (ada *AWSDeploymentAdapter) estimateCostFromTemplate(ctx context.Context, s
 		MigrationCommand: spec.MigrationCommand,
 	}
 
-	// Get auth token from context (assuming it's available)
+	// Get auth token from spec metadata (same pattern as other providers)
 	authToken := ""
-	if token, ok := ctx.Value("auth_token").(string); ok {
+	if token, ok := spec.Metadata["authToken"].(string); ok {
 		authToken = token
 	}
 

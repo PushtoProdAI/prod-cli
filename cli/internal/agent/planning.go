@@ -214,6 +214,12 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		if err != nil {
 			slog.Info("Failed to build deployment spec for cost estimation", "error", err)
 		} else {
+			// Add auth token to metadata for AWS pricing (follows same pattern as deployment workflows)
+			session := CtxWorkflowSession(ctx)
+			if session != nil && session.AccessToken != "" {
+				deploymentSpec.Metadata["authToken"] = session.AccessToken
+			}
+
 			// Estimate costs based on platform
 			var estimatedCosts deployment.CostEstimate
 			var activity string
