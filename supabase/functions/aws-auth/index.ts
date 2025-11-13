@@ -1,6 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { initSentry, captureException, flushSentry } from '../_shared/sentry.ts'
+import {
+  STSClient,
+  AssumeRoleCommand,
+} from "npm:@aws-sdk/client-sts"
+import {
+  IAMClient,
+  GetRoleCommand,
+} from "npm:@aws-sdk/client-iam"
 
 initSentry()
 
@@ -147,6 +155,117 @@ Deno.serve(async (req) => {
           if (fetchError || !existing) {
             return new Response(
               JSON.stringify({ error: 'AWS auth setup not initialized. Please start the setup process again.' }),
+              { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+
+          // SECURITY: Verify the role has required tags before storing
+          // This ensures only roles created from our CloudFormation template can be used
+          try {
+            // Extract account ID and role name from ARN
+            const arnParts = role_arn.match(/^arn:aws:iam::([0-9]{12}):role\/(.+)$/)
+            if (!arnParts) {
+              return new Response(
+                JSON.stringify({ error: 'Invalid role ARN format' }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              )
+            }
+            const [, accountId, roleName] = arnParts
+
+            // Create IAM client to check role tags
+            // We use our backend credentials to call GetRole on the customer's account
+            const iamClient = new IAMClient({
+              region: region || 'us-east-1',
+              credentials: {
+                accessKeyId: Deno.env.get('AWS_ACCESS_KEY_ID') || '',
+                secretAccessKey: Deno.env.get('AWS_SECRET_ACCESS_KEY') || '',
+              },
+            })
+
+            // First, we need to assume a role that has permission to call iam:GetRole
+            // But we have a chicken-and-egg problem: we can't assume the role until we verify it
+            // Solution: We'll attempt to assume it with the external_id, and if that succeeds,
+            // then check the tags. If assume fails, the role isn't properly configured anyway.
+            const stsClient = new STSClient({
+              region: region || 'us-east-1',
+              credentials: {
+                accessKeyId: Deno.env.get('AWS_ACCESS_KEY_ID') || '',
+                secretAccessKey: Deno.env.get('AWS_SECRET_ACCESS_KEY') || '',
+              },
+            })
+
+            // Try to assume the role to verify external_id and trust relationship
+            const assumeRoleParams = {
+              RoleArn: role_arn,
+              RoleSessionName: `validation-${user.id}`,
+              DurationSeconds: 900, // 15 minutes, just for validation
+              ExternalId: existing.external_id,
+            }
+
+            let credentials
+            try {
+              const assumeResult = await stsClient.send(new AssumeRoleCommand(assumeRoleParams))
+              credentials = assumeResult.Credentials
+            } catch (assumeError: any) {
+              console.error('Failed to assume role during validation:', assumeError)
+              return new Response(
+                JSON.stringify({ 
+                  error: `Unable to assume role. Please verify: 1) The role exists, 2) Trust policy allows account ${Deno.env.get('PROD_AWS_ACCOUNT_ID') || '588738592923'}, 3) External ID matches, 4) Role has been created successfully in CloudFormation`
+                }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              )
+            }
+
+            if (!credentials) {
+              return new Response(
+                JSON.stringify({ error: 'Failed to validate role credentials' }),
+                { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              )
+            }
+
+            // Now use the assumed role credentials to check tags
+            const iamClientAssumed = new IAMClient({
+              region: region || 'us-east-1',
+              credentials: {
+                accessKeyId: credentials.AccessKeyId!,
+                secretAccessKey: credentials.SecretAccessKey!,
+                sessionToken: credentials.SessionToken,
+              },
+            })
+
+            const getRoleResult = await iamClientAssumed.send(
+              new GetRoleCommand({ RoleName: roleName })
+            )
+
+            // Check for required tags
+            const tags = getRoleResult.Role?.Tags || []
+            const managedByTag = tags.find(t => t.Key === 'ManagedBy')
+            const purposeTag = tags.find(t => t.Key === 'Purpose')
+
+            if (managedByTag?.Value !== 'Prod' || purposeTag?.Value !== 'Deployment') {
+              console.warn('Role missing required tags:', { role_arn, tags })
+              return new Response(
+                JSON.stringify({ 
+                  error: 'Role is missing required tags. Please use the official CloudFormation template from https://prod-aws-deploy.s3.amazonaws.com/cloudformation-deploy-role-template.yaml'
+                }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              )
+            }
+
+            console.log('✓ Role validation successful:', { role_arn, tags: { managedByTag, purposeTag } })
+
+          } catch (validationError: any) {
+            console.error('Error validating role:', validationError)
+            captureException(validationError instanceof Error ? validationError : new Error(String(validationError)), {
+              function: 'aws-auth',
+              operation: 'validate_role',
+              user_id: user.id,
+              role_arn: role_arn
+            })
+            return new Response(
+              JSON.stringify({ 
+                error: `Failed to validate role: ${validationError.message || 'Unknown error'}. Please ensure you used the official CloudFormation template.`
+              }),
               { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             )
           }

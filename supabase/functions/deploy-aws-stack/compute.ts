@@ -2,6 +2,7 @@
 
 import type { DeploymentSpec } from './types.ts';
 import { buildEnvironmentVariables, buildEnvironmentSecrets } from './env-builders.ts';
+import { getStandardTags } from './tags.ts';
 
 /**
  * Build ECS Cluster and Task Definition for running migrations
@@ -18,10 +19,7 @@ export function buildECSMigrationResources(
     Type: 'AWS::ECS::Cluster',
     Properties: {
       ClusterName: `prod-${spec.serviceName}-cluster`,
-      Tags: [
-        { Key: 'tenant', Value: tenantId },
-        { Key: 'service', Value: spec.serviceName },
-      ],
+      Tags: getStandardTags(tenantId, spec.serviceName),
     },
   };
 
@@ -65,10 +63,7 @@ export function buildECSMigrationResources(
           },
         },
       ],
-      Tags: [
-        { Key: 'tenant', Value: tenantId },
-        { Key: 'service', Value: spec.serviceName },
-      ],
+      Tags: getStandardTags(tenantId, spec.serviceName),
     },
   };
 }
@@ -106,10 +101,7 @@ export function buildAppRunnerService(
         SecurityGroups: [
           { Ref: 'AppRunnerSecurityGroup' },
         ],
-        Tags: [
-          { Key: 'tenant', Value: tenantId },
-          { Key: 'service', Value: spec.serviceName },
-        ],
+        Tags: getStandardTags(tenantId, spec.serviceName),
       },
     };
   }
@@ -186,10 +178,7 @@ export function buildAppRunnerService(
           VpcConnectorArn: { 'Fn::GetAtt': ['AppRunnerVpcConnector', 'VpcConnectorArn'] },
         },
       } : undefined,
-      Tags: [
-        { Key: 'tenant', Value: tenantId },
-        { Key: 'service', Value: spec.serviceName },
-      ],
+      Tags: getStandardTags(tenantId, spec.serviceName),
     },
   };
 }

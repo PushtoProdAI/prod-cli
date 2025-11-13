@@ -1,0 +1,4 @@
+node_modules/
+function.zip
+*.log
+.DS_Store

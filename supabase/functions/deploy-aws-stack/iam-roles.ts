@@ -1,6 +1,7 @@
 // IAM roles for AWS deployments
 
 import type { DeploymentSpec } from './types.ts';
+import { getStandardTags } from './tags.ts';
 
 /**
  * Build App Runner Access Role for pulling images from ECR
@@ -51,7 +52,7 @@ export function buildAppRunnerAccessRole(
           },
         },
       ],
-      Tags: [{ Key: 'tenant', Value: tenantId }],
+      Tags: getStandardTags(tenantId, serviceName),
     },
   };
 }
@@ -105,7 +106,7 @@ export function buildAppRunnerInstanceRole(
         ],
       },
       Policies: instanceRolePolicies.length > 0 ? instanceRolePolicies : undefined,
-      Tags: [{ Key: 'tenant', Value: tenantId }],
+      Tags: getStandardTags(tenantId, serviceName),
     },
   };
 }
@@ -173,7 +174,7 @@ export function buildECSTaskExecutionRole(
           },
         },
       ],
-      Tags: [{ Key: 'tenant', Value: tenantId }],
+      Tags: getStandardTags(tenantId, serviceName),
     },
   };
 }
@@ -221,7 +222,7 @@ export function buildECSTaskRole(
           },
         },
       ],
-      Tags: [{ Key: 'tenant', Value: tenantId }],
+      Tags: getStandardTags(tenantId, serviceName),
     },
   };
 }

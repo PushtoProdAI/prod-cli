@@ -748,13 +748,13 @@ func (a *Activities) updateAWSStack(ctx context.Context, authToken string, spec 
 	port, _ := spec.Metadata["port"].(int)
 
 	if cpu == "" {
-		cpu = "1024"
+		cpu = aws.DefaultCPU
 	}
 	if memory == "" {
-		memory = "2048"
+		memory = aws.DefaultMemory
 	}
 	if port == 0 {
-		port = 8080
+		port = aws.DefaultPort
 	}
 
 	// Import the AWS deployment package to use the shared helper

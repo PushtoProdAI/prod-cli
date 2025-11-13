@@ -29,9 +29,14 @@ const (
 	redisEngine        = "redis"
 	redisEngineVersion = "7.0"
 
-	// App Runner configuration
+	// App Runner configuration (display format with units)
 	appRunnerCPU    = "1 vCPU"
 	appRunnerMemory = "2 GB"
+
+	// App Runner configuration (numeric format for API calls)
+	DefaultCPU    = "1024" // 1 vCPU in mCPU
+	DefaultMemory = "2048" // 2 GB in MB
+	DefaultPort   = 8080   // Default application port
 
 	// Default region (will be overridden by user selection)
 	defaultRegion = "us-east-1"

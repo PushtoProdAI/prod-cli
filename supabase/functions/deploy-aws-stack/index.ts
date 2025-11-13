@@ -143,6 +143,7 @@ Deno.serve(async (req) => {
           TemplateBody: template,
           Capabilities: ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM'],
           Tags: [
+            { Key: 'ManagedBy', Value: 'Prod' },
             { Key: 'tenant', Value: data.user.id },
             { Key: 'service', Value: deploymentSpec.serviceName },
           ],
@@ -157,6 +158,7 @@ Deno.serve(async (req) => {
           TemplateBody: template,
           Capabilities: ['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM'],
           Tags: [
+            { Key: 'ManagedBy', Value: 'Prod' },
             { Key: 'tenant', Value: data.user.id },
             { Key: 'service', Value: deploymentSpec.serviceName },
           ],

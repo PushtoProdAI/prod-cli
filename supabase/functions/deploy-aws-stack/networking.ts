@@ -1,5 +1,7 @@
 // VPC networking resources for AWS deployments
 
+import { getStandardTags } from './tags.ts';
+
 /**
  * Build VPC networking resources (VPC, subnets, security groups, internet gateway, route tables)
  * This is conditionally created based on whether backing services or migrations are needed
@@ -19,8 +21,8 @@ export function buildNetworkingResources(
       EnableDnsHostnames: true,
       EnableDnsSupport: true,
       Tags: [
+        ...getStandardTags(tenantId, serviceName),
         { Key: 'Name', Value: `prod-${serviceName}-vpc` },
-        { Key: 'tenant', Value: tenantId },
       ],
     },
   };
@@ -33,6 +35,7 @@ export function buildNetworkingResources(
       CidrBlock: '10.0.1.0/24',
       AvailabilityZone: { 'Fn::Select': [0, { 'Fn::GetAZs': '' }] },
       Tags: [
+        ...getStandardTags(tenantId, serviceName),
         { Key: 'Name', Value: `prod-${serviceName}-private-az1` },
         { Key: 'Type', Value: 'Private' },
       ],
@@ -46,6 +49,7 @@ export function buildNetworkingResources(
       CidrBlock: '10.0.2.0/24',
       AvailabilityZone: { 'Fn::Select': [1, { 'Fn::GetAZs': '' }] },
       Tags: [
+        ...getStandardTags(tenantId, serviceName),
         { Key: 'Name', Value: `prod-${serviceName}-private-az2` },
         { Key: 'Type', Value: 'Private' },
       ],
@@ -63,6 +67,7 @@ export function buildNetworkingResources(
         AvailabilityZone: { 'Fn::Select': [0, { 'Fn::GetAZs': '' }] },
         MapPublicIpOnLaunch: true,
         Tags: [
+          ...getStandardTags(tenantId, serviceName),
           { Key: 'Name', Value: `prod-${serviceName}-public-az1` },
           { Key: 'Type', Value: 'Public' },
         ],
@@ -77,6 +82,7 @@ export function buildNetworkingResources(
         AvailabilityZone: { 'Fn::Select': [1, { 'Fn::GetAZs': '' }] },
         MapPublicIpOnLaunch: true,
         Tags: [
+          ...getStandardTags(tenantId, serviceName),
           { Key: 'Name', Value: `prod-${serviceName}-public-az2` },
           { Key: 'Type', Value: 'Public' },
         ],
@@ -88,6 +94,7 @@ export function buildNetworkingResources(
       Type: 'AWS::EC2::InternetGateway',
       Properties: {
         Tags: [
+          ...getStandardTags(tenantId, serviceName),
           { Key: 'Name', Value: `prod-${serviceName}-igw` },
         ],
       },
@@ -107,6 +114,7 @@ export function buildNetworkingResources(
       Properties: {
         VpcId: { Ref: 'VPC' },
         Tags: [
+          ...getStandardTags(tenantId, serviceName),
           { Key: 'Name', Value: `prod-${serviceName}-public-rt` },
         ],
       },
@@ -159,7 +167,10 @@ export function buildNetworkingResources(
           SourceSecurityGroupId: { Ref: 'AppRunnerSecurityGroup' },
         },
       ],
-      Tags: [{ Key: 'Name', Value: `prod-${serviceName}-backing-sg` }],
+      Tags: [
+        ...getStandardTags(tenantId, serviceName),
+        { Key: 'Name', Value: `prod-${serviceName}-backing-sg` },
+      ],
     },
   };
 
@@ -169,7 +180,10 @@ export function buildNetworkingResources(
     Properties: {
       GroupDescription: 'Security group for App Runner',
       VpcId: { Ref: 'VPC' },
-      Tags: [{ Key: 'Name', Value: `prod-${serviceName}-apprunner-sg` }],
+      Tags: [
+        ...getStandardTags(tenantId, serviceName),
+        { Key: 'Name', Value: `prod-${serviceName}-apprunner-sg` },
+      ],
     },
   };
 
@@ -180,7 +194,10 @@ export function buildNetworkingResources(
       Properties: {
         DBSubnetGroupDescription: 'Subnet group for RDS',
         SubnetIds: [{ Ref: 'PrivateSubnetAZ1' }, { Ref: 'PrivateSubnetAZ2' }],
-        Tags: [{ Key: 'Name', Value: `prod-${serviceName}-db-subnet` }],
+        Tags: [
+          ...getStandardTags(tenantId, serviceName),
+          { Key: 'Name', Value: `prod-${serviceName}-db-subnet` },
+        ],
       },
     };
   }
