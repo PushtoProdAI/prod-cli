@@ -1,6 +1,7 @@
 // Backing services (RDS, ElastiCache) for AWS deployments
 
 import type { DeploymentSpec } from './types.ts';
+import { getStandardTags } from './tags.ts';
 
 /**
  * Build backing service resources (RDS databases, ElastiCache clusters)
@@ -48,11 +49,7 @@ function buildRDSInstance(
         PasswordLength: 32,
         ExcludeCharacters: '"@/:?#[]!$&\'()*+,;=\\% ',
       },
-      Tags: [
-        { Key: 'service', Value: serviceName },
-        { Key: 'managed-by', Value: 'prod' },
-        { Key: 'db-service', Value: service.name },
-      ],
+      Tags: getStandardTags(tenantId, serviceName),
     },
   };
 
@@ -74,10 +71,7 @@ function buildRDSInstance(
       DBSubnetGroupName: { Ref: 'DBSubnetGroup' },
       VPCSecurityGroups: [{ Ref: 'BackingServiceSecurityGroup' }],
       PubliclyAccessible: false,
-      Tags: [
-        { Key: 'tenant', Value: tenantId },
-        { Key: 'service', Value: serviceName },
-      ],
+      Tags: getStandardTags(tenantId, serviceName),
     },
   };
 }
@@ -112,10 +106,7 @@ function buildElastiCacheCluster(
       NumCacheNodes: service.numCacheNodes || 1,
       CacheSubnetGroupName: { Ref: `${cacheName}SubnetGroup` },
       VpcSecurityGroupIds: [{ Ref: 'BackingServiceSecurityGroup' }],
-      Tags: [
-        { Key: 'tenant', Value: tenantId },
-        { Key: 'service', Value: serviceName },
-      ],
+      Tags: getStandardTags(tenantId, serviceName),
     },
   };
 }

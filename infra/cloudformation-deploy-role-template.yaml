@@ -27,7 +27,7 @@ Resources:
     Properties:
       RoleName: !Ref RoleName
       Description: 'Allows Prod CLI to deploy App Runner and RDS resources'
-      MaxSessionDuration: 43200  # 12 hours
+      MaxSessionDuration: 3600  # 1 hour - reduced from 12 hours for security
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -48,6 +48,7 @@ Resources:
         - !Ref IAMRolePolicy
         - !Ref ECSDeploymentPolicy
         - !Ref LambdaDeploymentPolicy
+        - !Ref S3LambdaPackagePolicy
       Tags:
         - Key: ManagedBy
           Value: Prod
@@ -63,27 +64,56 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          - Sid: AppRunnerServiceManagement
+          - Sid: AppRunnerServiceCreate
             Effect: Allow
             Action:
               - apprunner:CreateService
+            Resource: !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:service/*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: AppRunnerServiceManagement
+            Effect: Allow
+            Action:
               - apprunner:UpdateService
               - apprunner:DeleteService
               - apprunner:DescribeService
-              - apprunner:ListServices
-              - apprunner:TagResource
-              - apprunner:UntagResource
-              - apprunner:ListTagsForResource
               - apprunner:StartDeployment
               - apprunner:PauseService
               - apprunner:ResumeService
+            Resource: !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:service/*'
+            Condition:
+              StringEquals:
+                'aws:ResourceTag/ManagedBy': 'Prod'
+          - Sid: AppRunnerTagging
+            Effect: Allow
+            Action:
+              - apprunner:TagResource
+              - apprunner:UntagResource
+              - apprunner:ListTagsForResource
+            Resource: 
+              - !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:service/*'
+              - !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:vpcconnector/*'
+              - !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:autoscalingconfiguration/*'
+              - !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:connection/*'
+          - Sid: AppRunnerList
+            Effect: Allow
+            Action:
+              - apprunner:ListServices
             Resource: '*'
           - Sid: AppRunnerAutoScaling
             Effect: Allow
             Action:
-              - apprunner:DescribeAutoScalingConfiguration
               - apprunner:CreateAutoScalingConfiguration
               - apprunner:DeleteAutoScalingConfiguration
+            Resource: !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:autoscalingconfiguration/*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: AppRunnerAutoScalingRead
+            Effect: Allow
+            Action:
+              - apprunner:DescribeAutoScalingConfiguration
               - apprunner:ListAutoScalingConfigurations
             Resource: '*'
           - Sid: AppRunnerVPCConnector
@@ -91,6 +121,13 @@ Resources:
             Action:
               - apprunner:CreateVpcConnector
               - apprunner:DeleteVpcConnector
+            Resource: !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:vpcconnector/*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: AppRunnerVPCConnectorRead
+            Effect: Allow
+            Action:
               - apprunner:DescribeVpcConnector
               - apprunner:ListVpcConnectors
             Resource: '*'
@@ -99,6 +136,13 @@ Resources:
             Action:
               - apprunner:CreateConnection
               - apprunner:DeleteConnection
+            Resource: !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:connection/*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: AppRunnerConnectionRead
+            Effect: Allow
+            Action:
               - apprunner:DescribeConnection
               - apprunner:ListConnections
             Resource: '*'
@@ -112,35 +156,76 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          - Sid: RDSInstanceManagement
+          - Sid: RDSInstanceCreate
             Effect: Allow
             Action:
               - rds:CreateDBInstance
+            Resource: 
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:subgrp:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:pg:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:og:*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: RDSInstanceManagement
+            Effect: Allow
+            Action:
               - rds:DeleteDBInstance
               - rds:ModifyDBInstance
-              - rds:DescribeDBInstances
               - rds:StartDBInstance
               - rds:StopDBInstance
               - rds:RebootDBInstance
+            Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*'
+            Condition:
+              StringEquals:
+                'aws:ResourceTag/ManagedBy': 'Prod'
+          - Sid: RDSTagging
+            Effect: Allow
+            Action:
               - rds:AddTagsToResource
               - rds:RemoveTagsFromResource
               - rds:ListTagsForResource
+            Resource: 
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:subgrp:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:pg:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:secgrp:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:snapshot:*'
+          - Sid: RDSDescribe
+            Effect: Allow
+            Action:
+              - rds:DescribeDBInstances
             Resource: '*'
           - Sid: RDSSubnetGroup
             Effect: Allow
             Action:
               - rds:CreateDBSubnetGroup
               - rds:DeleteDBSubnetGroup
-              - rds:DescribeDBSubnetGroups
               - rds:ModifyDBSubnetGroup
+            Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:subgrp:*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: RDSSubnetGroupRead
+            Effect: Allow
+            Action:
+              - rds:DescribeDBSubnetGroups
             Resource: '*'
           - Sid: RDSParameterGroup
             Effect: Allow
             Action:
               - rds:CreateDBParameterGroup
               - rds:DeleteDBParameterGroup
-              - rds:DescribeDBParameterGroups
               - rds:ModifyDBParameterGroup
+            Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:pg:*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: RDSParameterGroupRead
+            Effect: Allow
+            Action:
+              - rds:DescribeDBParameterGroups
               - rds:DescribeDBParameters
             Resource: '*'
           - Sid: RDSSecurityGroup
@@ -148,17 +233,42 @@ Resources:
             Action:
               - rds:CreateDBSecurityGroup
               - rds:DeleteDBSecurityGroup
-              - rds:DescribeDBSecurityGroups
               - rds:AuthorizeDBSecurityGroupIngress
               - rds:RevokeDBSecurityGroupIngress
+            Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:secgrp:*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: RDSSecurityGroupRead
+            Effect: Allow
+            Action:
+              - rds:DescribeDBSecurityGroups
             Resource: '*'
-          - Sid: RDSSnapshots
+          - Sid: RDSSnapshotCreate
             Effect: Allow
             Action:
               - rds:CreateDBSnapshot
+            Resource: 
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:snapshot:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: RDSSnapshotManagement
+            Effect: Allow
+            Action:
               - rds:DeleteDBSnapshot
-              - rds:DescribeDBSnapshots
               - rds:RestoreDBInstanceFromDBSnapshot
+            Resource: 
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:snapshot:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*'
+            Condition:
+              StringEquals:
+                'aws:ResourceTag/ManagedBy': 'Prod'
+          - Sid: RDSSnapshotsRead
+            Effect: Allow
+            Action:
+              - rds:DescribeDBSnapshots
             Resource: '*'
 
   # Policy for ECR operations
@@ -268,17 +378,41 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          - Sid: SecretsManagement
+          - Sid: SecretsCreate
             Effect: Allow
             Action:
               - secretsmanager:CreateSecret
+            Resource: 
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/prod/*'
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:prod-*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: SecretsManagement
+            Effect: Allow
+            Action:
               - secretsmanager:DeleteSecret
               - secretsmanager:DescribeSecret
               - secretsmanager:GetSecretValue
               - secretsmanager:PutSecretValue
               - secretsmanager:UpdateSecret
+            Resource: 
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/prod/*'
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:prod-*'
+            Condition:
+              StringEquals:
+                'aws:ResourceTag/ManagedBy': 'Prod'
+          - Sid: SecretsTagging
+            Effect: Allow
+            Action:
               - secretsmanager:TagResource
               - secretsmanager:UntagResource
+            Resource: 
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/prod/*'
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:prod-*'
+          - Sid: SecretsUtility
+            Effect: Allow
+            Action:
               - secretsmanager:ListSecrets
               - secretsmanager:GetRandomPassword
             Resource: '*'
@@ -488,6 +622,24 @@ Resources:
             Condition:
               StringEquals:
                 'iam:PassedToService': 'lambda.amazonaws.com'
+
+  # Policy for S3 access to Lambda function packages
+  S3LambdaPackagePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-S3Lambda'
+      Description: 'Permissions to download Lambda function packages from Prod S3 bucket'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: GetLambdaPackages
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource:
+              - 'arn:aws:s3:::prod-aws-deploy/lambda-functions/*'
+              - 'arn:aws:s3:::prod-aws-deploy-staging/lambda-functions/*'
 
 Outputs:
   RoleArn:

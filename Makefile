@@ -116,3 +116,76 @@ supabase-setup:
 	@supabase start
 	@echo "Supabase is ready! Studio available at: http://localhost:54323"
 
+# Infrastructure and Lambda configuration
+INFRA_DIR=infra
+LAMBDA_DIR=lambda
+LAMBDA_BUCKET?=prod-aws-deploy
+S3_STACK_NAME?=prod-s3-infrastructure
+AWS_REGION?=us-east-1
+
+.PHONY: lambda-build
+lambda-build: lambda-build-database-url-constructor
+
+.PHONY: lambda-build-database-url-constructor
+lambda-build-database-url-constructor:
+	@echo "Building database-url-constructor Lambda function..."
+	@cd $(LAMBDA_DIR)/database-url-constructor && \
+		npm install --production && \
+		./build.sh
+	@echo "✓ Lambda function built: $(LAMBDA_DIR)/database-url-constructor/function.zip"
+	@echo ""
+	@echo "To upload to S3, run:"
+	@echo "  aws s3 cp $(LAMBDA_DIR)/database-url-constructor/function.zip \\"
+	@echo "    s3://$(LAMBDA_BUCKET)/lambda-functions/database-url-constructor/function.zip \\"
+	@echo "    --metadata version=\$$(cd $(LAMBDA_DIR)/database-url-constructor && node -p \"require('./package.json').version\")"
+
+.PHONY: lambda-clean
+lambda-clean:
+	@echo "Cleaning Lambda function build artifacts..."
+	@rm -rf $(LAMBDA_DIR)/database-url-constructor/node_modules
+	@rm -f $(LAMBDA_DIR)/database-url-constructor/function.zip
+	@echo "✓ Lambda function artifacts cleaned"
+
+.PHONY: lambda-version
+lambda-version:
+	@echo "Lambda function versions:"
+	@cd $(LAMBDA_DIR)/database-url-constructor && \
+		echo "  database-url-constructor: v$$(node -p "require('./package.json').version")"
+
+# Infrastructure deployment
+.PHONY: infra-deploy-s3
+infra-deploy-s3:
+	@echo "Deploying S3 infrastructure..."
+	@cd $(INFRA_DIR) && ./deploy-s3-infrastructure.sh
+
+.PHONY: help
+help:
+	@echo "Prod CLI Makefile Commands"
+	@echo ""
+	@echo "CLI Build:"
+	@echo "  make build-cli              - Build CLI for current platform"
+	@echo "  make build-cli-linux        - Build CLI for Linux"
+	@echo "  make build-cli-darwin       - Build CLI for macOS (Intel)"
+	@echo "  make build-cli-darwin-arm64 - Build CLI for macOS (Apple Silicon)"
+	@echo "  make clean                  - Clean build artifacts"
+	@echo ""
+	@echo "Supabase:"
+	@echo "  make supabase-start         - Start Supabase local development"
+	@echo "  make supabase-stop          - Stop Supabase local development"
+	@echo "  make supabase-status        - Check Supabase status"
+	@echo "  make supabase-reset         - Reset Supabase database"
+	@echo "  make supabase-setup         - Complete Supabase setup"
+	@echo ""
+	@echo "Lambda Functions:"
+	@echo "  make lambda-build           - Build all Lambda functions"
+	@echo "  make lambda-clean           - Clean Lambda build artifacts"
+	@echo "  make lambda-version         - Show Lambda function versions"
+	@echo ""
+	@echo "Infrastructure:"
+	@echo "  make infra-deploy-s3        - Deploy S3 infrastructure"
+	@echo ""
+	@echo "Environment Variables:"
+	@echo "  LAMBDA_BUCKET               - S3 bucket name (default: prod-aws-deploy)"
+	@echo "  AWS_REGION                  - AWS region (default: us-east-1)"
+	@echo "  S3_STACK_NAME               - CloudFormation stack name (default: prod-s3-infrastructure)"
+

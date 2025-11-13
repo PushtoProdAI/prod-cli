@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'S3 bucket for hosting CloudFormation templates for Prod CLI AWS deployments'
+Description: 'S3 bucket for hosting CloudFormation templates and Lambda functions for Prod CLI AWS deployments'
 
 Parameters:
   BucketName:
@@ -36,7 +36,7 @@ Resources:
         - Key: Project
           Value: ProdCLI
 
-  # Bucket Policy to allow public read access to specific template file
+  # Bucket Policy for CloudFormation templates and Lambda functions
   CloudFormationTemplateBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -44,11 +44,26 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
+          # Allow public read access to CloudFormation template
           - Sid: PublicReadCloudFormationTemplate
             Effect: Allow
             Principal: '*'
             Action: s3:GetObject
             Resource: !Sub 'arn:aws:s3:::${BucketName}/${TemplateFileName}'
+          
+          # Allow customer deployment roles to download Lambda functions
+          # This is needed when CloudFormation creates Lambda functions from S3
+          - Sid: AllowCustomerRoleDownloadLambda
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource: !Sub 'arn:aws:s3:::${BucketName}/lambda-functions/*'
+            Condition:
+              StringLike:
+                'aws:PrincipalArn': 'arn:aws:iam::*:role/ProdDeployRole*'
 
 Outputs:
   BucketName:
@@ -69,6 +84,20 @@ Outputs:
     Export:
       Name: !Sub '${AWS::StackName}-TemplateURL'
   
-  UploadCommand:
-    Description: AWS CLI command to upload the template
-    Value: !Sub 'aws s3 cp cloudformation-deploy-role-template.yaml s3://${BucketName}/${TemplateFileName}'
+  UploadTemplateCommand:
+    Description: AWS CLI command to upload the CloudFormation template
+    Value: !Sub 'aws s3 cp cloudformation-deploy-role-template.yaml s3://${BucketName}/${TemplateFileName} --acl public-read'
+  
+  LambdaBucketName:
+    Description: Bucket name to use for LAMBDA_BUCKET environment variable
+    Value: !Ref CloudFormationTemplateBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaBucketName'
+  
+  UploadLambdaCommand:
+    Description: AWS CLI command to upload Lambda function packages
+    Value: !Sub 'aws s3 cp function.zip s3://${BucketName}/lambda-functions/database-url-constructor/function.zip --metadata version=1.0.0'
+  
+  SetSupabaseSecretCommand:
+    Description: Supabase CLI command to set LAMBDA_BUCKET secret
+    Value: !Sub 'supabase secrets set LAMBDA_BUCKET="${BucketName}"'
