@@ -10,7 +10,9 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/baml_client/types"
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/meroxa/prod/cli/internal/deployment/aws"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/heroku"
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
@@ -48,6 +50,15 @@ func (a *Activities) createDeployable(spec *deployment.DeploymentSpec, platform 
 			return nil, errors.Errorf("failed to create Heroku deployment: %w", err)
 		}
 		return deployable, nil
+	case AWS:
+		awsClient, err := aws.NewClient("us-east-1")
+		if err != nil {
+			return nil, errors.Errorf("failed to create AWS client: %w", err)
+		}
+		// Create DockerGenerator with spec's env vars for build-time variable support
+		// This matches the pattern used by Render and FlyIO
+		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
+		return aws.NewAWSDeployment(awsClient, spec, dockerGen, true, "us-east-1", a.uiWriter), nil
 	default:
 		return nil, errors.Errorf("unsupported platform: %s", platform)
 	}
@@ -156,6 +167,20 @@ func (a *Activities) estimateHerokuCosts(ctx context.Context, spec deployment.De
 	return costs, nil
 }
 
+func (a *Activities) estimateAWSCosts(ctx context.Context, spec deployment.DeploymentSpec, strategy deployment.DeploymentStrategy) (deployment.CostEstimate, error) {
+	// TODO: Get region from user's AWS credentials in database
+	awsClient, err := aws.NewClient("us-east-1")
+	if err != nil {
+		return deployment.CostEstimate{}, errors.Errorf("failed to create AWS client: %w", err)
+	}
+	aa := aws.NewAWSDeploymentAdapter(awsClient, "us-east-1", a.uiWriter, a.llmClient)
+	costs, err := aa.EstimateCost(ctx, &spec, strategy)
+	if err != nil {
+		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
+	}
+	return costs, nil
+}
+
 func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, dbList []string, envVar analyzer.EnvVarCandidate) (deployment.EnvVar, error) {
 	slog.Info("CategorizeEnvVarsForDeployment input", "envVar", envVar)
 	slog.Info("CategorizeEnvVarsForDeployment dbList", "dbList", dbList)
@@ -170,9 +195,24 @@ func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, dbList 
 	if err != nil {
 		return deployment.EnvVar{}, errors.Errorf("failed to determine env var roles: %w", err)
 	}
+
+	// Log sensitivity detection for visibility
+	if cat.IsSensitive {
+		slog.Info("Detected sensitive environment variable",
+			"name", envVar.VarName,
+			"reason", cat.SensitivityReason)
+	}
+
 	// Send individual completion message (no spinner start/stop to avoid conflicts)
 	a.uiWriter.SendStatus("info", fmt.Sprintf("✅ Environment variable: %s categorized", envVar.VarName))
-	return deployment.EnvVar{Name: envVar.VarName, Role: cat.Role, Service: cat.DbType}, nil
+
+	return deployment.EnvVar{
+		Name:              envVar.VarName,
+		Role:              cat.Role,
+		Service:           cat.DbType,
+		Sensitive:         cat.IsSensitive,
+		SensitivityReason: cat.SensitivityReason,
+	}, nil
 }
 
 func (a *Activities) getEnvVarsFromEnvFiles(_ context.Context, path string) ([]deployment.EnvVar, error) {
@@ -241,6 +281,8 @@ func (a *Activities) getProjectDetector(platform Platform) (ProjectDetector, err
 		return NewVercelProjectDetector(a.uiWriter), nil
 	case Heroku:
 		return NewHerokuProjectDetector(a.uiWriter), nil
+	case AWS:
+		return NewAWSProjectDetector(a.beClient, a.uiWriter), nil
 	default:
 		return nil, errors.Errorf("unsupported platform: %s", platform)
 	}
@@ -499,6 +541,78 @@ func (d *HerokuProjectDetector) DetectExistingProject(ctx context.Context, proje
 	return result, nil
 }
 
+type AWSProjectDetector struct {
+	beClient *backend.Client
+	uiWriter output.StatusWriter
+}
+
+func NewAWSProjectDetector(beClient *backend.Client, uiWriter output.StatusWriter) *AWSProjectDetector {
+	return &AWSProjectDetector{
+		beClient: beClient,
+		uiWriter: uiWriter,
+	}
+}
+
+func (d *AWSProjectDetector) DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
+	result := ExistingProjectInfo{
+		Exists:            false,
+		Platform:          AWS,
+		ExistingDatabases: []string{},
+	}
+
+	// Get auth token from context
+	session := CtxSession(ctx)
+	if session == nil {
+		slog.Warn("No session found in context for AWS detection")
+		return result, nil
+	}
+	authToken := session.AccessToken
+
+	// Standard CloudFormation stack naming convention
+	stackName := fmt.Sprintf("prod-%s", projectName)
+	slog.Info("Checking for existing AWS stack", "stackName", stackName)
+
+	// Call backend to check if stack exists
+	response, err := d.beClient.CheckAWSStack(ctx, authToken, stackName)
+	if err != nil {
+		slog.Error("Failed to check for existing AWS stack", "error", err)
+		return result, errors.Errorf("failed to check for existing AWS stack: %w", err)
+	}
+
+	if !response.Exists {
+		slog.Info("No existing AWS stack found", "stackName", stackName)
+		return result, nil
+	}
+
+	// Stack exists - populate existing project info
+	result.Exists = true
+	result.ProjectID = response.StackID
+	result.Name = stackName
+	result.IsUpdate = true
+
+	// Detect existing databases from CloudFormation resources
+	if response.Resources.HasRDS {
+		result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
+		slog.Info("Detected existing RDS instance", "instances", response.Resources.RDSInstances)
+	}
+	if response.Resources.HasElastiCache {
+		result.ExistingDatabases = append(result.ExistingDatabases, "redis")
+		slog.Info("Detected existing ElastiCache cluster", "instances", response.Resources.ElastiCacheInstances)
+	}
+
+	slog.Info("Detected existing AWS stack",
+		"stackName", stackName,
+		"stackId", response.StackID,
+		"status", response.Status,
+		"hasRDS", response.Resources.HasRDS,
+		"hasElastiCache", response.Resources.HasElastiCache,
+		"hasAppRunner", response.Resources.HasAppRunner,
+		"existingDatabases", result.ExistingDatabases,
+	)
+
+	return result, nil
+}
+
 func (a *Activities) rollbackDeployment(ctx context.Context, spec deployment.DeploymentSpec, platform Platform, targetDeploymentID string) error {
 	a.uiWriter.SendStatus("rolling_back", fmt.Sprintf("Rolling back to deployment %s", targetDeploymentID))
 
@@ -524,4 +638,153 @@ func (a *Activities) getPreviousDeployment(ctx context.Context, spec deployment.
 	}
 
 	return deployable.GetPreviousDeployment(ctx)
+}
+
+func (a *Activities) waitForAWSStack(ctx context.Context, authToken, stackName string) (map[string]string, error) {
+	a.uiWriter.SendStatus("deploying", "Waiting for CloudFormation stack to complete...")
+
+	status, err := a.beClient.GetAWSStackStatus(ctx, authToken, stackName)
+	if err != nil {
+		return nil, errors.Errorf("failed to get stack status: %w", err)
+	}
+
+	// Check for failure states
+	if status.Status == "CREATE_FAILED" ||
+		status.Status == "ROLLBACK_COMPLETE" ||
+		status.Status == "ROLLBACK_FAILED" ||
+		status.Status == "UPDATE_ROLLBACK_COMPLETE" ||
+		status.Status == "UPDATE_ROLLBACK_FAILED" {
+		errorMsg := "CloudFormation stack failed"
+		if status.Error != "" {
+			errorMsg = status.Error
+		}
+		return nil, errors.Errorf("CloudFormation deployment failed: %s (status: %s)", errorMsg, status.Status)
+	}
+
+	// Check if deployment is complete
+	if status.Status != "CREATE_COMPLETE" && status.Status != "UPDATE_COMPLETE" {
+		return nil, errors.Errorf("CloudFormation stack not yet complete, current status: %s", status.Status)
+	}
+
+	// Return stack outputs on success
+	return status.Outputs, nil
+}
+
+func (a *Activities) runECSMigration(ctx context.Context, authToken, stackName string, stackOutputs map[string]string, migrationCommand string) (string, error) {
+	a.uiWriter.SendStatus("deploying", "Running database migration via ECS Fargate...")
+
+	// Extract required outputs from CloudFormation stack
+	clusterArn, ok := stackOutputs["ECSClusterArn"]
+	if !ok || clusterArn == "" {
+		return "", errors.Errorf("ECS cluster ARN not found in stack outputs")
+	}
+
+	taskDefArn, ok := stackOutputs["MigrationTaskDefinitionArn"]
+	if !ok || taskDefArn == "" {
+		return "", errors.Errorf("ECS task definition ARN not found in stack outputs")
+	}
+
+	// Extract public subnets for ECS tasks (need internet access for ECR)
+	var subnets []string
+	if subnet1, exists := stackOutputs["PublicSubnetAZ1"]; exists && subnet1 != "" {
+		subnets = append(subnets, subnet1)
+	}
+	if subnet2, exists := stackOutputs["PublicSubnetAZ2"]; exists && subnet2 != "" {
+		subnets = append(subnets, subnet2)
+	}
+	if len(subnets) == 0 {
+		return "", errors.Errorf("no public subnets found in stack outputs")
+	}
+
+	// Extract security group for App Runner (also used for ECS tasks)
+	securityGroup, exists := stackOutputs["AppRunnerSecurityGroupId"]
+	if !exists || securityGroup == "" {
+		return "", errors.Errorf("App Runner security group not found in stack outputs")
+	}
+	securityGroups := []string{securityGroup}
+
+	// Call backend to run ECS migration
+	req := backend.ECSMigrationRequest{
+		StackName:         stackName,
+		ClusterArn:        clusterArn,
+		TaskDefinitionArn: taskDefArn,
+		MigrationCommand:  migrationCommand,
+		Subnets:           subnets,
+		SecurityGroups:    securityGroups,
+	}
+
+	result, err := a.beClient.RunECSMigration(ctx, authToken, req)
+	if err != nil {
+		return "", errors.Errorf("failed to run ECS migration: %w", err)
+	}
+
+	// Join log lines into a single string
+	logsStr := ""
+	if len(result.Logs) > 0 {
+		logsStr = strings.Join(result.Logs, "\n")
+	}
+
+	if !result.Success || result.ExitCode != 0 {
+		return "", errors.Errorf("migration task failed with exit code %d: %s\nLogs:\n%s", result.ExitCode, result.Error, logsStr)
+	}
+
+	a.uiWriter.SendStatusComplete("deploying", "✅ Database migration completed successfully")
+	return logsStr, nil
+}
+
+func (a *Activities) updateAWSStack(ctx context.Context, authToken string, spec *deployment.DeploymentSpec) error {
+	a.uiWriter.SendStatus("deploying", "Updating CloudFormation stack to add App Runner...")
+
+	slog.Info("Updating CloudFormation stack", "stackName", spec.Name, "isUpdate", spec.IsUpdate)
+
+	// Extract parameters from spec metadata
+	imageURL, ok := spec.Metadata["pushedImageURL"].(string)
+	if !ok || imageURL == "" {
+		return errors.Errorf("image URL not found in spec metadata")
+	}
+
+	cpu, _ := spec.Metadata["cpu"].(string)
+	memory, _ := spec.Metadata["memory"].(string)
+	port, _ := spec.Metadata["port"].(int)
+
+	if cpu == "" {
+		cpu = aws.DefaultCPU
+	}
+	if memory == "" {
+		memory = aws.DefaultMemory
+	}
+	if port == 0 {
+		port = aws.DefaultPort
+	}
+
+	// Import the AWS deployment package to use the shared helper
+	// We need to reference the package properly
+	deploymentSpec, err := aws.BuildAWSDeploymentSpec(
+		spec.Name,
+		imageURL,
+		cpu,
+		memory,
+		port,
+		spec.EnvVars,
+		spec.Services,
+		spec.MigrationCommand,
+		nil, // CreateAppRunner defaults to true in template
+	)
+	if err != nil {
+		return errors.Errorf("failed to build deployment spec: %w", err)
+	}
+
+	backendClient := backend.NewClient()
+	result, err := backendClient.DeployAWSStack(ctx, authToken, deploymentSpec)
+	if err != nil {
+		return errors.Errorf("failed to update CloudFormation stack: %w", err)
+	}
+
+	if result.Error != "" {
+		return errors.Errorf("CloudFormation stack update failed: %s", result.Error)
+	}
+
+	a.uiWriter.SendStatusComplete("deploying", "✅ CloudFormation stack updated successfully")
+	slog.Info("CloudFormation stack update initiated", "stackId", result.StackID, "status", result.Status)
+	return nil
 }

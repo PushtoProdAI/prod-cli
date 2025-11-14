@@ -26,6 +26,8 @@ const (
 	StrategyVercel DeploymentStrategy = "vercel"
 
 	StrategyHeroku DeploymentStrategy = "heroku"
+
+	StrategyAWS DeploymentStrategy = "aws"
 )
 
 type CreatedResource struct {
@@ -97,10 +99,12 @@ type CostRequest struct {
 }
 
 type EnvVar struct {
-	Name    string
-	Value   string
-	Role    string
-	Service string
+	Name              string
+	Value             string
+	Role              string
+	Service           string
+	Sensitive         bool
+	SensitivityReason string
 }
 
 const (

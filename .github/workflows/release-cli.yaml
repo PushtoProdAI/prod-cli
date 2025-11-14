@@ -134,6 +134,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_AWS_ACCOUNT: ${{ secrets.PROD_AWS_ACCOUNT }}
+          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
           PROD_DEBUG: true
           ENVIRONMENT: staging
         run: |
@@ -274,6 +276,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_AWS_ACCOUNT: ${{ secrets.PROD_AWS_ACCOUNT }}
+          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
           PROD_DEBUG: false
           ENVIRONMENT: production
         run: |
@@ -412,6 +416,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_AWS_ACCOUNT: ${{ secrets.PROD_AWS_ACCOUNT }}
+          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
           PROD_DEBUG: true
           ENVIRONMENT: staging
         run: |
@@ -544,6 +550,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_AWS_ACCOUNT: ${{ secrets.PROD_AWS_ACCOUNT }}
+          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
           PROD_DEBUG: true
           ENVIRONMENT: staging
         run: |
@@ -686,6 +694,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_AWS_ACCOUNT: ${{ secrets.PROD_AWS_ACCOUNT }}
+          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
           PROD_DEBUG: false
           ENVIRONMENT: production
         run: |
@@ -818,6 +828,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_AWS_ACCOUNT: ${{ secrets.PROD_AWS_ACCOUNT }}
+          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
           PROD_DEBUG: false
           ENVIRONMENT: production
         run: |

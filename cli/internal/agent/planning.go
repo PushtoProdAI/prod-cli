@@ -73,6 +73,8 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		platform = Vercel
 	case "heroku":
 		platform = Heroku
+	case "aws":
+		platform = AWS
 	default:
 		platform = UnknownPlatform
 	}
@@ -212,36 +214,38 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		if err != nil {
 			slog.Info("Failed to build deployment spec for cost estimation", "error", err)
 		} else {
+			// Add auth token to metadata for AWS pricing (follows same pattern as deployment workflows)
+			session := CtxWorkflowSession(ctx)
+			if session != nil && session.AccessToken != "" {
+				deploymentSpec.Metadata["authToken"] = session.AccessToken
+			}
+
 			// Estimate costs based on platform
 			var estimatedCosts deployment.CostEstimate
+			var activity string
 			switch platform {
 			case Render:
 				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateRenderCosts, *deploymentSpec, deployment.StrategyRenderQueued).Get(ctx)
+				activity = AgentEstimateRenderCosts
 			case FlyIO:
 				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateFlyioCosts, *deploymentSpec, deployment.StrategyFlyio).Get(ctx)
+				activity = AgentEstimateFlyioCosts
 			case Netlify:
 				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateNetlifyCosts, *deploymentSpec, deployment.StrategyNetlify).Get(ctx)
+				activity = AgentEstimateNetlifyCosts
 			case Vercel:
 				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateVercelCosts, *deploymentSpec, deployment.StrategyVercel).Get(ctx)
+				activity = AgentEstimateVercelCosts
 			case Heroku:
 				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateHerokuCosts, *deploymentSpec, deployment.StrategyHeroku).Get(ctx)
+				activity = AgentEstimateHerokuCosts
+			case AWS:
+				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateAWSCosts, *deploymentSpec, deployment.StrategyAWS).Get(ctx)
+				activity = AgentEstimateAWSCosts
 			}
 
 			if err != nil {
 				slog.Info("Failed to estimate costs", "error", err)
-				var activity string
-				switch platform {
-				case Render:
-					activity = AgentEstimateRenderCosts
-				case FlyIO:
-					activity = AgentEstimateFlyioCosts
-				case Netlify:
-					activity = AgentEstimateNetlifyCosts
-				case Vercel:
-					activity = AgentEstimateVercelCosts
-				case Heroku:
-					activity = AgentEstimateHerokuCosts
-				}
 				prod_error.CaptureErrorWithContext(err, map[string]any{
 					"workflow":     PlanDeployWorkflowName,
 					"activity":     activity,
@@ -505,7 +509,7 @@ func (a *Activities) determineMigrationCommand(ctx context.Context, spec analyze
 }
 
 func (a *Activities) detectPlatformsForRollback(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
-	platforms := []Platform{Render, FlyIO, Netlify, Vercel, Heroku}
+	platforms := []Platform{Render, FlyIO, Netlify, Vercel, Heroku, AWS}
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup

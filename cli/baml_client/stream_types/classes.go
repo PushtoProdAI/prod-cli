@@ -259,9 +259,11 @@ func (u EnvVarCandidate) BamlEncodeName() *cffi.CFFITypeName {
 }
 
 type EnvVarCategory struct {
-	IsDBRelated *bool   `json:"isDBRelated"`
-	Role        *string `json:"role"`
-	DbType      *string `json:"dbType"`
+	IsDBRelated       *bool   `json:"isDBRelated"`
+	Role              *string `json:"role"`
+	DbType            *string `json:"dbType"`
+	IsSensitive       *bool   `json:"isSensitive"`
+	SensitivityReason *string `json:"sensitivityReason"`
 }
 
 func (c *EnvVarCategory) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -287,6 +289,12 @@ func (c *EnvVarCategory) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMa
 		case "dbType":
 			c.DbType = baml.Decode(valueHolder).Interface().(*string)
 
+		case "isSensitive":
+			c.IsSensitive = baml.Decode(valueHolder).Interface().(*bool)
+
+		case "sensitivityReason":
+			c.SensitivityReason = baml.Decode(valueHolder).Interface().(*string)
+
 		default:
 
 			panic(fmt.Sprintf("unexpected field: %s in class EnvVarCategory", key))
@@ -304,6 +312,10 @@ func (c EnvVarCategory) Encode() (*cffi.CFFIValueHolder, error) {
 	fields["role"] = c.Role
 
 	fields["dbType"] = c.DbType
+
+	fields["isSensitive"] = c.IsSensitive
+
+	fields["sensitivityReason"] = c.SensitivityReason
 
 	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
 }

@@ -34,6 +34,9 @@ type FlyioClient interface {
 	// Releases
 	ListReleases(ctx context.Context, appID string) ([]FlyioRelease, error)
 	DeployImage(ctx context.Context, appID, imageURL string) error
+
+	// Secrets
+	SetSecrets(ctx context.Context, appID string, secrets map[string]string) error
 }
 
 // FlyioApp represents a Fly.io application

@@ -157,3 +157,7 @@ func (m *MockFlyioClient) ListReleases(ctx context.Context, appID string) ([]Fly
 func (m *MockFlyioClient) DeployImage(ctx context.Context, appID, imageURL string) error {
 	return nil
 }
+
+func (m *MockFlyioClient) SetSecrets(ctx context.Context, appID string, secrets map[string]string) error {
+	return nil
+}

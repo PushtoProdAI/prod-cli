@@ -29,7 +29,9 @@ LDFLAGS := -X 'github.com/meroxa/prod/cli/internal/config.SupabaseURL=$(SUPABASE
            -X 'github.com/meroxa/prod/cli/internal/config.SupabaseAnonKey=$(SUPABASE_ANON_KEY)' \
            -X 'github.com/meroxa/prod/cli/internal/config.ProdDebug=$(PROD_DEBUG)' \
 					 -X 'github.com/meroxa/prod/cli/internal/config.Environment=$(ENVIRONMENT)' \
-					 -X 'github.com/meroxa/prod/cli/internal/config.SentryDSN=$(CLI_SENTRY_DSN)'
+					 -X 'github.com/meroxa/prod/cli/internal/config.SentryDSN=$(CLI_SENTRY_DSN)' \
+					 -X 'github.com/meroxa/prod/cli/internal/config.ProdAWSAccountID=$(PROD_AWS_ACCOUNT_ID)' \
+					 -X 'github.com/meroxa/prod/cli/internal/config.AWSCloudFormationTemplateURL=$(AWS_CLOUDFORMATION_TEMPLATE_URL)'
 
 .PHONY: build
 build: build-cli-darwin-arm64

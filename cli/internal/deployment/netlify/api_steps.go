@@ -433,16 +433,29 @@ func (s *LinkNetlifySiteStep) Rollback(ctx context.Context, client NetlifyClient
 type SetEnvironmentVariablesStep struct {
 	BaseStep
 	siteStepID string
-	envVars    map[string]string
+	envVars    []deployment.EnvVar
 	sourcePath string
 	writer     io.Writer
 }
 
-func NewSetEnvironmentVariablesStep(siteStepID string, linkStepID string, sourcePath string, envVars map[string]string, writer io.Writer) *SetEnvironmentVariablesStep {
+func NewSetEnvironmentVariablesStep(siteStepID string, linkStepID string, sourcePath string, envVars []deployment.EnvVar, writer io.Writer) *SetEnvironmentVariablesStep {
+	// Count sensitive vs non-sensitive for description
+	sensitiveCount := 0
+	for _, ev := range envVars {
+		if ev.Sensitive {
+			sensitiveCount++
+		}
+	}
+
+	description := fmt.Sprintf("Set %d environment variables", len(envVars))
+	if sensitiveCount > 0 {
+		description = fmt.Sprintf("Set %d environment variables (%d sensitive)", len(envVars), sensitiveCount)
+	}
+
 	return &SetEnvironmentVariablesStep{
 		BaseStep: BaseStep{
 			ID:          "set-env-vars",
-			Description: fmt.Sprintf("Set %d environment variables", len(envVars)),
+			Description: description,
 			DependsOn:   []string{siteStepID, linkStepID},
 		},
 		siteStepID: siteStepID,
@@ -521,12 +534,12 @@ func (s *SetEnvironmentVariablesStep) Rollback(ctx context.Context, client Netli
 
 	// Unset each environment variable
 	// Note: We're unsetting all vars we tried to set, even if some failed
-	for key := range s.envVars {
+	for _, envVar := range s.envVars {
 		// Using exec directly since client doesn't have unset method
-		cmd := exec.Command("netlify", "env:unset", key)
+		cmd := exec.Command("netlify", "env:unset", envVar.Name)
 		if err := cmd.Run(); err != nil {
 			// Log error but continue trying to unset others
-			fmt.Fprintf(s.writer, "  ⚠️ Warning: failed to unset env var: %s: %v\n", key, err)
+			fmt.Fprintf(s.writer, "  ⚠️ Warning: failed to unset env var: %s: %v\n", envVar.Name, err)
 		}
 	}
 

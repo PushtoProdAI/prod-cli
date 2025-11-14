@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/meroxa/prod/cli/internal/deployment"
 )
 
 // CLINetlifyClient implements the NetlifyClient interface using Netlify CLI
@@ -253,14 +254,14 @@ func (c *CLINetlifyClient) GetDeploy(siteID, deployID string) (*NetlifyDeploy, e
 }
 
 // SetEnvironmentVariables sets environment variables for a site
-func (c *CLINetlifyClient) SetEnvironmentVariables(siteID string, vars map[string]string) error {
+func (c *CLINetlifyClient) SetEnvironmentVariables(siteID string, vars []deployment.EnvVar) error {
 	if err := c.ensureNetlifyCLI(); err != nil {
 		return err
 	}
 
-	for key, value := range vars {
-		if err := c.setEnvVar(siteID, key, value); err != nil {
-			return errors.Errorf("failed to set env var %s: %w", key, err)
+	for _, envVar := range vars {
+		if err := c.setEnvVar(siteID, envVar.Name, envVar.Value, envVar.Sensitive); err != nil {
+			return errors.Errorf("failed to set env var %s: %w", envVar.Name, err)
 		}
 	}
 
@@ -268,11 +269,37 @@ func (c *CLINetlifyClient) SetEnvironmentVariables(siteID string, vars map[strin
 }
 
 // setEnvVar sets a single environment variable
-func (c *CLINetlifyClient) setEnvVar(siteID, key, value string) error {
-	cmd := exec.Command("netlify", "env:set", key, value)
+func (c *CLINetlifyClient) setEnvVar(siteID, key, value string, sensitive bool) error {
+	// Frontend/client-side environment variables should NOT be marked as --secret
+	// even if they're categorized as sensitive, because they need to be inlined
+	// into the client bundle. These are intentionally public variables.
+	isFrontendVar := strings.HasPrefix(key, "VITE_") ||
+		strings.HasPrefix(key, "NEXT_PUBLIC_") ||
+		strings.HasPrefix(key, "REACT_APP_") ||
+		strings.HasPrefix(key, "NUXT_PUBLIC_") ||
+		strings.HasPrefix(key, "VUE_APP_") ||
+		strings.HasPrefix(key, "GATSBY_") ||
+		strings.HasPrefix(key, "EXPO_PUBLIC_")
+
+	// Build command with --secret flag and --context for sensitive variables
+	// BUT not for frontend variables that need to be publicly accessible
+	args := []string{"env:set", key, value}
+	if sensitive && !isFrontendVar {
+		args = append(args, "--secret", "--context", "production")
+	}
+
+	cmd := exec.Command("netlify", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return errors.Errorf("failed to set env var: %w\nOutput: %s", err, string(output))
+	}
+
+	if sensitive && !isFrontendVar {
+		slog.Info("Successfully set sensitive environment variable", "key", key)
+	} else if isFrontendVar {
+		slog.Info("Successfully set frontend environment variable", "key", key)
+	} else {
+		slog.Info("Successfully set environment variable", "key", key)
 	}
 	return nil
 }
