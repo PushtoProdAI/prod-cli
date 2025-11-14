@@ -1,0 +1,132 @@
+# Deploy Lambda Function to S3
+# 
+# Triggers:
+# - Push to main: Staging deployment
+# - Manual dispatch: Choose staging or production
+
+name: Deploy Lambda Function to S3
+
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lambda/database-url-constructor/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Lambda function
+        run: |
+          cd lambda/database-url-constructor
+          make lambda-build
+
+      - name: Verify build output
+        run: |
+          if [ ! -f lambda/database-url-constructor/functions.zip ]; then
+            echo "❌ Error: functions.zip not found after build"
+            exit 1
+          fi
+          echo "✅ Build successful, functions.zip created"
+          ls -lh lambda/database-url-constructor/functions.zip
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::588738592923:role/GitHubActionsRole
+          aws-region: us-east-1
+
+      - name: Upload Lambda function to S3
+        run: |
+          aws s3 cp lambda/database-url-constructor/functions.zip \
+            s3://prod-aws-deploy-staging/lambda-functions/database-url-constructor/functions.zip \
+            --content-type application/zip
+
+      - name: Verify upload
+        run: |
+          echo "✅ Lambda function uploaded successfully to:"
+          echo "s3://prod-aws-deploy-staging/lambda-functions/database-url-constructor/functions.zip"
+          echo ""
+          echo "Environment: Staging"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo ""
+          aws s3 ls s3://prod-aws-deploy-staging/lambda-functions/database-url-constructor/functions.zip
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: prod
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Lambda function
+        run: |
+          cd lambda/database-url-constructor
+          make lambda-build
+
+      - name: Verify build output
+        run: |
+          if [ ! -f lambda/database-url-constructor/functions.zip ]; then
+            echo "❌ Error: functions.zip not found after build"
+            exit 1
+          fi
+          echo "✅ Build successful, functions.zip created"
+          ls -lh lambda/database-url-constructor/functions.zip
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::248877153149:role/GitHubActionsRole
+          aws-region: us-east-1
+
+      - name: Upload Lambda function to S3
+        run: |
+          aws s3 cp lambda/database-url-constructor/functions.zip \
+            s3://prod-aws-deploy/lambda-functions/database-url-constructor/functions.zip \
+            --content-type application/zip
+
+      - name: Verify upload
+        run: |
+          echo "✅ Lambda function uploaded successfully to:"
+          echo "s3://prod-aws-deploy/lambda-functions/database-url-constructor/functions.zip"
+          echo ""
+          echo "Environment: Production"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo ""
+          aws s3 ls s3://prod-aws-deploy/lambda-functions/database-url-constructor/functions.zip
