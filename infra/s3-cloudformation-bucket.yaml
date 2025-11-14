@@ -10,7 +10,7 @@ Parameters:
   TemplateFileName:
     Type: String
     Description: Name of the CloudFormation template file to make public
-    Default: cloudformation-deploy-role-template.yaml
+    Default: cloudformation-templates/cloudformation-deploy-role-template.yaml
 
 Resources:
   # S3 Bucket for CloudFormation templates
@@ -86,7 +86,7 @@ Outputs:
   
   UploadTemplateCommand:
     Description: AWS CLI command to upload the CloudFormation template
-    Value: !Sub 'aws s3 cp cloudformation-deploy-role-template.yaml s3://${BucketName}/${TemplateFileName} --acl public-read'
+    Value: !Sub 'aws s3 cp cloudformation-deploy-role-template.yaml s3://${BucketName}/cloudformation-templates/cloudformation-deploy-role-template.yaml'
   
   LambdaBucketName:
     Description: Bucket name to use for LAMBDA_BUCKET environment variable
