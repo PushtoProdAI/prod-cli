@@ -112,7 +112,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::248877153149:role/GitHubActionsRole
-          aws-region: us-east-1
+          aws-region: us-east-2
 
       - name: Upload Lambda function to S3
         run: |
