@@ -419,6 +419,28 @@ func cleanForClipboard(text string) string {
 	return result.String()
 }
 
+// formatDeploymentHistoryAsTable formats the deployment history data using clean lipgloss tables
+func (m Model) formatDeploymentHistoryAsTable(history DeploymentHistoryDisplayMessage) string {
+	var result strings.Builder
+
+	if len(history.Deployments) == 0 {
+		return "No deployments found."
+	}
+
+	// Create deployment history table
+	header := lipgloss.NewStyle().
+		Margin(1, 0, 0, 0).
+		Render(tableHeaderStyle.Render("🚀 Recent Deployments"))
+	result.WriteString(header)
+	result.WriteString("\n")
+
+	deploymentTable := m.createDeploymentHistoryTable(history.Deployments)
+	result.WriteString(deploymentTable)
+	result.WriteString("\n")
+
+	return result.String()
+}
+
 // copySelectionToClipboard copies the current selection to the system clipboard
 func (m Model) copySelectionToClipboard() tea.Cmd {
 	if !m.selection.Active || len(m.selection.Content) == 0 {
