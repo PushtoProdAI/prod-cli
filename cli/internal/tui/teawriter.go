@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/agent"
+	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/output"
 )
 
@@ -267,6 +268,30 @@ func (w *TeaWriter) Quit() {
 
 func (w *TeaWriter) Search() {
 	w.send(SearchMsg{})
+}
+
+func (w *TeaWriter) SendDeploymentHistory(deployments []backend.DeploymentHistoryItem) {
+	// Convert backend types to TUI types
+	tuiDeployments := make([]DeploymentHistoryEntry, len(deployments))
+	for i, d := range deployments {
+		tuiDeployments[i] = DeploymentHistoryEntry{
+			OperationID:   d.OperationID,
+			ResourceName:  d.ResourceName,
+			OperationType: d.OperationType,
+			Status:        d.Status,
+			Platform:      d.Platform,
+			Language:      d.Language,
+			StartedAt:     d.StartedAt,
+			CompletedAt:   d.CompletedAt,
+			Duration:      d.Duration,
+		}
+	}
+
+	historyMessage := DeploymentHistoryDisplayMessage{
+		Deployments: tuiDeployments,
+	}
+
+	w.send(historyMessage)
 }
 
 // PromptSelection implements AuthInteractor interface

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/v2/textinput"
@@ -475,6 +476,44 @@ func (m Model) handlePlanDisplayMessage(msg PlanDisplayMessage) (tea.Model, tea.
 	}
 
 	tableContent := m.formatPlanAsTable(msg)
+
+	for _, line := range strings.Split(tableContent, "\n") {
+		if line != "" {
+			m.content = append(m.content, line)
+		}
+	}
+
+	if len(m.content) > maxHistoryLength {
+		m.content = m.content[len(m.content)-maxHistoryLength:]
+	}
+
+	// Immediately update viewport content to keep in sync
+	viewportContent := m.renderViewportContent()
+	m.viewport.SetContent(viewportContent)
+
+	// If auto-scroll is enabled, scroll to bottom immediately
+	if m.autoScrollEnabled {
+		m.viewport.GotoBottom()
+	}
+
+	return m, nil
+}
+
+func (m Model) handleDeploymentHistoryDisplayMessage(msg DeploymentHistoryDisplayMessage) (tea.Model, tea.Cmd) {
+	// Display summary header
+	summaryBox := m.formatInfoBox(InfoBoxMessage{
+		Title:   "Deployment History",
+		Content: fmt.Sprintf("Showing %d recent deployments", len(msg.Deployments)),
+		Icon:    "📊",
+	})
+	for _, line := range strings.Split(summaryBox, "\n") {
+		if line != "" {
+			m.content = append(m.content, line)
+		}
+	}
+	m.content = append(m.content, "")
+
+	tableContent := m.formatDeploymentHistoryAsTable(msg)
 
 	for _, line := range strings.Split(tableContent, "\n") {
 		if line != "" {
