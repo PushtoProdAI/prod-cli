@@ -199,6 +199,14 @@ func (t *EnvVarCategoryClassView) PropertyDbType() (ClassPropertyView, error) {
 	return t.inner.Property("dbType")
 }
 
+func (t *EnvVarCategoryClassView) PropertyIsSensitive() (ClassPropertyView, error) {
+	return t.inner.Property("isSensitive")
+}
+
+func (t *EnvVarCategoryClassView) PropertySensitivityReason() (ClassPropertyView, error) {
+	return t.inner.Property("sensitivityReason")
+}
+
 func (t *TypeBuilder) EnvVarCategory() (*EnvVarCategoryClassView, error) {
 	bld, err := t.inner.Class("EnvVarCategory")
 	if err != nil {

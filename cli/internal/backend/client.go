@@ -5,13 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/meroxa/prod/cli/internal/backend/aws"
 	"github.com/meroxa/prod/cli/internal/config"
 )
 
@@ -19,27 +18,27 @@ func getBaseURL() string {
 	return fmt.Sprintf("%s/%s", config.GetSupabaseURL(), "functions/v1")
 }
 
-type RegistryCredentials struct {
-	Username   string `json:"dockerAuthUsername"`
-	Token      string `json:"dockerAuthToken"`
-	URL        string `json:"proxyEndpoint"`
-	Repository string `json:"dockerRepo"`
-	ExpiresAt  string `json:"expiresAt"`
-	AccountID  string `json:"accountId"`
-}
-
+// Client is the main backend API client
 type Client struct {
 	httpClient *http.Client
+	AWS        *aws.Client
 }
 
+// NewClient creates a new backend client
 func NewClient() *Client {
-	client := &http.Client{
+	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
 	}
-	return &Client{httpClient: client}
+	baseURL := getBaseURL()
+
+	return &Client{
+		httpClient: httpClient,
+		AWS:        aws.NewClient(baseURL),
+	}
 }
 
-// RecordRequestedStack sends usage data to the backend service. It will be the stack that we infered from the request so that we can see what users are requesting so we know what to support next
+// RecordRequestedStack sends usage data to the backend service
+// It records the stack that was inferred from the request so we can see what users are requesting
 func (c *Client) RecordRequestedStack(ctx context.Context, authToken string, platform string, language string, serviceRequirements []analyzer.ServiceRequirement) error {
 	data := map[string]any{
 		"platform":            platform,
@@ -76,274 +75,89 @@ func (c *Client) RecordRequestedStack(ctx context.Context, authToken string, pla
 	return nil
 }
 
-// LogDeploymentOperation logs a deployment operation to the audit system
-func (c *Client) LogDeploymentOperation(ctx context.Context, authToken string, operation map[string]any) (string, error) {
-	payload := map[string]any{
-		"action": "log_deployment",
-		"data":   operation,
-	}
+// These delegate to c.AWS.* methods
 
-	jsonData, err := json.Marshal(payload)
-	if err != nil {
-		return "", errors.Errorf("failed to marshal deployment operation data: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/deployment-logger", getBaseURL())
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", errors.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+authToken)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", errors.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", errors.Errorf("deployment logger request failed with status: %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Success bool   `json:"success"`
-		Data    string `json:"data"`
-		Error   string `json:"error,omitempty"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", errors.Errorf("failed to decode response: %w", err)
-	}
-
-	if !result.Success {
-		return "", errors.Errorf("deployment logger returned error: %s", result.Error)
-	}
-
-	return result.Data, nil
+// CheckAWSAuthentication checks if AWS authentication is set up
+func (c *Client) CheckAWSAuthentication(ctx context.Context, authToken string) (bool, error) {
+	return c.AWS.CheckAuthentication(ctx, authToken)
 }
 
-// UpdateDeploymentOperation updates a deployment operation status
-func (c *Client) UpdateDeploymentOperation(ctx context.Context, authToken string, operationId string, status string, metadata map[string]any) error {
-	payload := map[string]any{
-		"action": "update_deployment",
-		"data": map[string]any{
-			"operation_id": operationId,
-			"status":       status,
-			"metadata":     metadata,
-		},
-	}
-
-	jsonData, err := json.Marshal(payload)
-	if err != nil {
-		return errors.Errorf("failed to marshal deployment update data: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/deployment-logger", getBaseURL())
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return errors.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+authToken)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return errors.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return errors.Errorf("deployment logger update request failed with status: %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Success bool   `json:"success"`
-		Error   string `json:"error,omitempty"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return errors.Errorf("failed to decode response: %w", err)
-	}
-
-	if !result.Success {
-		return errors.Errorf("deployment logger update returned error: %s", result.Error)
-	}
-
-	return nil
+// InitializeAWSAuth initializes AWS authentication
+func (c *Client) InitializeAWSAuth(ctx context.Context, authToken string, region string) (*aws.AWSAuthSetup, error) {
+	return c.AWS.InitializeAuth(ctx, authToken, region)
 }
 
-// GetPushRegistryCredentials fetches temporary Docker registry credentials for pushing images. These are scoped to JUST being able to push to registries for the specified tenant
-func (c *Client) GetPushRegistryCredentials(ctx context.Context, authToken string, projectName string) (*RegistryCredentials, error) {
-	// Prepare request payload
-	payload := map[string]string{
-		"name": projectName,
-	}
-
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return nil, errors.Errorf("failed to marshal request payload: %w", err)
-	}
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/push-token", getBaseURL()), bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		return nil, errors.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+authToken)
-	}
-
-	// Make HTTP request
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, errors.Errorf("failed to make request to push-token endpoint: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check response status
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, errors.Errorf("push-token endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	// Parse response
-	var creds RegistryCredentials
-	if err := json.NewDecoder(resp.Body).Decode(&creds); err != nil {
-		return nil, errors.Errorf("failed to decode push-token response: %w", err)
-	}
-
-	// Validate required fields
-	if creds.Username == "" || creds.Token == "" || creds.URL == "" || creds.Repository == "" {
-		return nil, errors.Errorf("incomplete credentials received: username=%s, token present=%t, url=%s, repository=%s",
-			creds.Username, creds.Token != "", creds.URL, creds.Repository)
-	}
-
-	// Strip https:// prefix as Docker doesn't accept it in image references
-	creds.URL = strings.TrimPrefix(creds.URL, "https://")
-	creds.URL = strings.TrimPrefix(creds.URL, "http://")
-
-	return &creds, nil
+// CompleteAWSAuth completes AWS authentication
+func (c *Client) CompleteAWSAuth(ctx context.Context, authToken string, roleArn string, region string) error {
+	return c.AWS.CompleteAuth(ctx, authToken, roleArn, region)
 }
 
-// GetPullRegistryCredentials fetches temporary Docker registry credentials for pulling images. These are scoped to JUST being able to pull from registries for the specified tenant
-func (c *Client) GetPullRegistryCredentials(ctx context.Context, authToken string, projectName string) (*RegistryCredentials, error) {
-	// Prepare request payload
-	payload := map[string]string{
-		"name": projectName,
-	}
-
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return nil, errors.Errorf("failed to marshal request payload: %w", err)
-	}
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/pull-token", getBaseURL()), bytes.NewBuffer(payloadBytes))
-	if err != nil {
-		return nil, errors.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+authToken)
-	}
-
-	// Make HTTP request
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, errors.Errorf("failed to make request to pull-token endpoint: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check response status
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, errors.Errorf("pull-token endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	// Parse response
-	var creds RegistryCredentials
-	if err := json.NewDecoder(resp.Body).Decode(&creds); err != nil {
-		return nil, errors.Errorf("failed to decode pull-token response: %w", err)
-	}
-
-	// Validate required fields
-	if creds.Username == "" || creds.Token == "" || creds.URL == "" || creds.Repository == "" {
-		return nil, errors.Errorf("incomplete credentials received: username=%s, token present=%t, url=%s, repository=%s",
-			creds.Username, creds.Token != "", creds.URL, creds.Repository)
-	}
-
-	// Strip https:// prefix as Docker doesn't accept it in image references
-	creds.URL = strings.TrimPrefix(creds.URL, "https://")
-	creds.URL = strings.TrimPrefix(creds.URL, "http://")
-
-	return &creds, nil
+// DeployAWSStack deploys an application stack to AWS
+func (c *Client) DeployAWSStack(ctx context.Context, authToken string, spec AWSDeploymentSpec) (*AWSDeploymentResult, error) {
+	return c.AWS.DeployStack(ctx, authToken, spec)
 }
 
-func (c *Client) CreateDockerRepository(ctx context.Context, authToken string, projectName string) error {
-	data := map[string]any{
-		"name": projectName,
-	}
-
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		return errors.Errorf("failed to repository name: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/create-repo", getBaseURL())
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return errors.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+authToken)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return errors.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return errors.Errorf("request failed with status: %d", resp.StatusCode)
-	}
-
-	return nil
+// GetAWSStackStatus polls the status of a CloudFormation stack
+func (c *Client) GetAWSStackStatus(ctx context.Context, authToken string, stackName string) (*AWSDeploymentResult, error) {
+	return c.AWS.GetStackStatus(ctx, authToken, stackName)
 }
 
-func (c *Client) GetBaseDockerImages(ctx context.Context) (map[string]string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/base-images", getBaseURL()), nil)
-	if err != nil {
-		return nil, errors.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, errors.Errorf("failed to make request to GetBaseDockerImages endpoint: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, errors.Errorf("base-images endpoint returned status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var images map[string]string
-	if err := json.NewDecoder(resp.Body).Decode(&images); err != nil {
-		return nil, errors.Errorf("failed to decode push-token response: %w", err)
-	}
-
-	return images, nil
+// CheckAWSStack checks if a CloudFormation stack exists
+func (c *Client) CheckAWSStack(ctx context.Context, authToken string, stackName string) (*AWSStackCheckResponse, error) {
+	return c.AWS.CheckStack(ctx, authToken, stackName)
 }
+
+// RunECSMigration runs an ECS Fargate task to execute database migrations
+func (c *Client) RunECSMigration(ctx context.Context, authToken string, req ECSMigrationRequest) (*ECSMigrationResult, error) {
+	return c.AWS.RunMigration(ctx, authToken, req)
+}
+
+// Deployment history types
+type DeploymentHistoryItem struct {
+	OperationID   string         `json:"operation_id"`
+	UserID        string         `json:"user_id"`
+	OperationType string         `json:"operation_type"`
+	ResourceType  string         `json:"resource_type"`
+	ResourceID    string         `json:"resource_id"`
+	ResourceName  string         `json:"resource_name"`
+	Status        string         `json:"status"`
+	Platform      string         `json:"platform"`
+	Language      string         `json:"language"`
+	StartedAt     string         `json:"started_at"`
+	CompletedAt   string         `json:"completed_at"`
+	Duration      int            `json:"duration_seconds"`
+	Metadata      map[string]any `json:"metadata"`
+}
+
+type DeploymentHistoryResponse struct {
+	Data       []DeploymentHistoryItem `json:"data"`
+	Pagination struct {
+		Page       int `json:"page"`
+		Limit      int `json:"limit"`
+		Total      int `json:"total"`
+		TotalPages int `json:"total_pages"`
+	} `json:"pagination"`
+}
+
+type DeploymentQueryOptions struct {
+	ResourceName  string // Filter by service name (e.g., "my-app")
+	Platform      string // Filter by platform (e.g., "aws", "vercel")
+	Status        string // Filter by status (e.g., "success", "failed")
+	OperationType string // Filter by operation type (e.g., "deploy", "rollback")
+	Limit         int    // Max results per page (default: 50, max: 1000)
+	Page          int    // Page number (default: 1)
+}
+
+// Type aliases for AWS types (backward compatibility)
+type (
+	AWSAuthSetup          = aws.AWSAuthSetup
+	BackingService        = aws.BackingService
+	EnvVar                = aws.EnvVar
+	AWSDeploymentSpec     = aws.DeploymentSpec
+	AWSDeploymentResult   = aws.DeploymentResult
+	AWSStackCheckRequest  = aws.StackCheckRequest
+	StackResourceInfo     = aws.StackResourceInfo
+	AWSStackCheckResponse = aws.StackCheckResponse
+	ECSMigrationRequest   = aws.MigrationRequest
+	ECSMigrationResult    = aws.MigrationResult
+)

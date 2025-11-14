@@ -45,7 +45,9 @@ class EnvVarCategory {
   isDBRelated bool
   role string
   dbType string
-  }
+  isSensitive bool
+  sensitivityReason string
+}
 
 class RouteCandidate {
 	method  string
@@ -118,7 +120,10 @@ You are a strict classifier. Your only job is to analyze deployment requests and
     - Netlify
     - Vercel
     - Heroku
+    - AWS
 
+  NOTE: AWS is Amazon Web Services. So consider strings like "deploy to Amazon" having a target of AWS. 
+  
   If the user mentions one of these explicitly, extract it as `platform`.
   If they mention a platform NOT on this list (e.g. Kubernetes), set:
     "platform": "UNKNOWN"
@@ -402,25 +407,34 @@ function DetermineEnvVarRoles(envVar: EnvVarCandidate, dbList: string[]) -> EnvV
   client "ProxyClient"
   prompt #"
 {{_.role("system")}}
-You are an expert at classifying environment variables and configuration values
-into database-related categories.
+You are an expert at classifying environment variables for deployment configuration.
+
+Your tasks:
+1. Determine if the variable is database-related
+2. Determine if the variable contains sensitive data
 
 Classification should be based primarily on:
 - The variable name
 - Its direct usage
 - Context around it in the provided snippet
 
-RULES:
-1. General environment variables that represent the app’s runtime stage or environment 
+DATABASE CLASSIFICATION RULES:
+1. General environment variables that represent the app's runtime stage or environment 
    (e.g., production, development, staging, test) are NOT considered DB-related unless the 
    variable name itself clearly contains database-related terms.
    Examples: NODE_ENV, RAILS_ENV, APP_ENV, ENVIRONMENT
    - These are `not_db_related` unless their name includes keywords like `db`, `database`, 
      `sql`, `mysql`, `postgres`, `mongodb`, `pg`, etc.
 
-2. If a variable name or its value clearly relates to database hostnames, ports, credentials, 
+2. IMPORTANT: Generic server/app configuration variables are NOT database-related:
+   - HOST, PORT, SERVER_HOST, SERVER_PORT → Application server configuration, NOT database
+   - Only database-prefixed versions are DB-related: DB_HOST, PGHOST, MYSQL_HOST, DATABASE_PORT
+   - DATABASE_URL is DB-related (contains full connection string)
+   - But generic HOST/PORT are for the application server itself
+
+3. If a variable name or its value clearly relates to database hostnames, ports, credentials, 
    connection strings, SSL settings, or database names, classify it as DB-related.
-   Include common naming patterns and generic aliases (e.g., DB_USER, PGHOST, DATABASE_URL).
+   Include common naming patterns with database prefixes (e.g., DB_USER, PGHOST, DATABASE_URL, MYSQL_PORT).
    Do not classify variables that relate to app-level configuration (e.g., admin users, 
    API keys, secret keys, app modules) unless they directly configure database access.
    
@@ -430,17 +444,19 @@ RULES:
    - Supabase variables with PUBLIC, ANON_KEY, or API_URL patterns are for API access, not database connections
    - Only SUPABASE_DB_* or DATABASE_URL patterns pointing to direct Postgres connections are DB-related
 
-3. Contextual references to DB usage (e.g., used in a connection object, ORM config, 
-   connection pool setup) are a strong signal — but do not override rule #1 or #2.
+4. Contextual references to DB usage (e.g., used in a connection object, ORM config, 
+   connection pool setup) are a strong signal — but do not override rules #1, #2, or #3.
    Example: if a variable appears in `psycopg.connect(...)` or `mysql.connector.connect(...)`, 
    that is a strong indication it is DB-related.
+   But if HOST appears in `app.listen(HOST, PORT)`, that is application server config, NOT database.
 
-4. Do not guess based on proximity or framework conventions alone.
+5. Do not guess based on proximity or framework conventions alone.
    - Example: `DJANGO_SUPERUSER_EMAIL` is app auth config, not DB config.  
    - Example: `SECRET_KEY` is cryptography, not DB.  
    - Example: `DEBUG` is runtime, not DB.
+   - Example: `HOST` is application server host, not DB (use DB_HOST or PGHOST for database)
 
-Possible categories:
+Database categories:
 - `full_uri` – complete database connection URL (e.g., postgres://user:pass@host:port/dbname)
 - `hostname` – host or server address for the database
 - `port` – database port number
@@ -449,6 +465,33 @@ Possible categories:
 - `database_name` – logical DB name
 - `other_db_config` – database-related but not fitting above categories
 - `not_db_related` – unrelated to databases
+
+SENSITIVITY CLASSIFICATION RULES:
+
+Sensitive variables (should be stored using a provider's secret storage functionality):
+- API keys, tokens, secrets (e.g., API_KEY, STRIPE_SECRET_KEY, OPENAI_API_KEY)
+- Database credentials (passwords, connection strings with credentials)
+- Private keys, certificates (e.g., JWT_SECRET, PRIVATE_KEY, RSA_PRIVATE_KEY)
+- OAuth tokens, session secrets (e.g., OAUTH_TOKEN, SESSION_SECRET, NEXTAUTH_SECRET)
+- Payment gateway credentials (e.g., STRIPE_SECRET_KEY, PAYPAL_SECRET)
+- Authentication tokens (e.g., AUTH_TOKEN, BEARER_TOKEN, ACCESS_TOKEN)
+- Encryption keys (e.g., ENCRYPTION_KEY, AES_KEY)
+
+Non-sensitive variables (can be stored as plain environment variables):
+- Environment names (e.g., NODE_ENV=production, ENVIRONMENT=staging)
+- Port numbers (e.g., PORT=8080, SERVER_PORT=3000)
+- Public URLs (e.g., API_URL=https://api.example.com, PUBLIC_URL=https://example.com)
+- Feature flags (e.g., ENABLE_FEATURE_X=true, DEBUG_MODE=false)
+- Log levels (e.g., LOG_LEVEL=info, LOGGING_ENABLED=true)
+- Public API endpoints (e.g., NEXT_PUBLIC_API_URL, PUBLIC_API_ENDPOINT)
+- Build-time configuration (e.g., BUILD_ID, VERSION, COMMIT_SHA)
+
+IMPORTANT for sensitivity detection:
+- Base your decision on variable NAME patterns (e.g., _KEY, _SECRET, _TOKEN, _PASSWORD suffixes)
+- Consider variable USAGE in code context (e.g., used in authentication headers, encryption)
+- Understand framework conventions (e.g., NEXT_PUBLIC_ prefix means client-side, NOT sensitive)
+- NEVER make assumptions about the actual value - only analyze the name and usage pattern
+- When in doubt, mark as sensitive (better safe than sorry)
 
 {{ _.role("user") }}
 The project uses the following database types: {{dbList}}.
@@ -465,19 +508,26 @@ For the given environment variable, determine:
   - If DB-related → exactly one from the allowed categories.  
   - If not DB-related → return `not_db_related`.  
 - Which database type? (choose from {{dbList}} or "unknown")
+- Is this variable sensitive? (true/false)
+- Provide a brief reason for the sensitivity classification
 
 Examples:
 
-DATABASE_URL = "postgres://user:pass@host:5432/mydb" → full_uri  
-PGHOST = "db.example.com" → hostname  
-MYSQL_PORT = "3306" → port  
-DB_USER = "admin" → username  
-NODE_ENV = "production" → not_db_related  
-PGSSLMODE = "require" → other_db_config  
-SECRET_KEY = "s3cr3t" → not_db_related  
-DJANGO_SUPERUSER_EMAIL = "admin@example.com" → not_db_related
-NEXT_PUBLIC_SUPABASE_URL = "https://xyz.supabase.co" → not_db_related
-NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJ..." → not_db_related 
+DATABASE_URL (used in db connection) → DB: full_uri, postgresql, SENSITIVE: true, "Contains database credentials in connection string"
+PGHOST (used for postgres host) → DB: hostname, postgresql, SENSITIVE: false, "Database hostname is configuration, not a secret"  
+MYSQL_PORT (port number) → DB: port, mysql, SENSITIVE: false, "Port number is public configuration"
+DB_PASSWORD (database auth) → DB: password, unknown, SENSITIVE: true, "Database password credential"
+STRIPE_SECRET_KEY (payment API) → DB: not_db_related, SENSITIVE: true, "Payment gateway API secret key"
+OPENAI_API_KEY (LLM API) → DB: not_db_related, SENSITIVE: true, "Third-party API key"
+JWT_SECRET (auth tokens) → DB: not_db_related, SENSITIVE: true, "Used for signing authentication tokens"
+NODE_ENV (environment) → DB: not_db_related, SENSITIVE: false, "Runtime environment identifier - not sensitive"
+PORT (server port) → DB: not_db_related, SENSITIVE: false, "Server port number - public configuration"
+API_URL (public endpoint) → DB: not_db_related, SENSITIVE: false, "Public API endpoint URL"
+NEXT_PUBLIC_API_URL (client-side) → DB: not_db_related, SENSITIVE: false, "Client-side public URL - exposed to browser"
+SECRET_KEY (cryptography) → DB: not_db_related, SENSITIVE: true, "Cryptographic secret for encryption/signing"
+DJANGO_SUPERUSER_EMAIL (app config) → DB: not_db_related, SENSITIVE: false, "Application configuration - not a secret"
+NEXT_PUBLIC_SUPABASE_URL (client API) → DB: not_db_related, SENSITIVE: false, "Client-side API URL - public"
+NEXT_PUBLIC_SUPABASE_ANON_KEY (client key) → DB: not_db_related, SENSITIVE: false, "Anonymous key for client-side - designed to be public"
     {{ctx.output_format }}
   "#
 

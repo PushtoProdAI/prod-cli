@@ -1,0 +1,657 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM Role for Prod CLI to deploy App Runner and RDS in your AWS account'
+
+Parameters:
+  ExternalId:
+    Type: String
+    Description: External ID for secure role assumption
+    MinLength: 10
+    NoEcho: true
+  
+  ProdAWSAccountId:
+    Type: String
+    Description: AWS Account ID of Prod's backend
+    Default: '588738592923'
+  
+  RoleName:
+    Type: String
+    Description: Name for the deployment role (you can customize this if needed)
+    Default: ProdDeployRole
+    AllowedPattern: '^[a-zA-Z0-9+=,.@_-]{1,64}$'
+    ConstraintDescription: Role name must be 1-64 characters and contain only alphanumeric characters and +=,.@_-
+
+Resources:
+  # Main deployment role that Prod will assume
+  ProdDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: 'Allows Prod CLI to deploy App Runner and RDS resources'
+      MaxSessionDuration: 3600  # 1 hour - reduced from 12 hours for security
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${ProdAWSAccountId}:root'
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref ExternalId
+      ManagedPolicyArns:
+        - !Ref AppRunnerDeploymentPolicy
+        - !Ref RDSDeploymentPolicy
+        - !Ref ECRAccessPolicy
+        - !Ref VPCNetworkingPolicy
+        - !Ref SecretsManagerPolicy
+        - !Ref CloudFormationPolicy
+        - !Ref IAMRolePolicy
+        - !Ref ECSDeploymentPolicy
+        - !Ref LambdaDeploymentPolicy
+        - !Ref S3LambdaPackagePolicy
+      Tags:
+        - Key: ManagedBy
+          Value: Prod
+        - Key: Purpose
+          Value: Deployment
+
+  # Policy for App Runner operations
+  AppRunnerDeploymentPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-AppRunner'
+      Description: 'Permissions for App Runner service management'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AppRunnerServiceCreate
+            Effect: Allow
+            Action:
+              - apprunner:CreateService
+            Resource: !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:service/*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: AppRunnerServiceManagement
+            Effect: Allow
+            Action:
+              - apprunner:UpdateService
+              - apprunner:DeleteService
+              - apprunner:DescribeService
+              - apprunner:StartDeployment
+              - apprunner:PauseService
+              - apprunner:ResumeService
+            Resource: !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:service/*'
+            Condition:
+              StringEquals:
+                'aws:ResourceTag/ManagedBy': 'Prod'
+          - Sid: AppRunnerTagging
+            Effect: Allow
+            Action:
+              - apprunner:TagResource
+              - apprunner:UntagResource
+              - apprunner:ListTagsForResource
+            Resource: 
+              - !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:service/*'
+              - !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:vpcconnector/*'
+              - !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:autoscalingconfiguration/*'
+              - !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:connection/*'
+          - Sid: AppRunnerList
+            Effect: Allow
+            Action:
+              - apprunner:ListServices
+            Resource: '*'
+          - Sid: AppRunnerAutoScaling
+            Effect: Allow
+            Action:
+              - apprunner:CreateAutoScalingConfiguration
+              - apprunner:DeleteAutoScalingConfiguration
+            Resource: !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:autoscalingconfiguration/*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: AppRunnerAutoScalingRead
+            Effect: Allow
+            Action:
+              - apprunner:DescribeAutoScalingConfiguration
+              - apprunner:ListAutoScalingConfigurations
+            Resource: '*'
+          - Sid: AppRunnerVPCConnector
+            Effect: Allow
+            Action:
+              - apprunner:CreateVpcConnector
+              - apprunner:DeleteVpcConnector
+            Resource: !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:vpcconnector/*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: AppRunnerVPCConnectorRead
+            Effect: Allow
+            Action:
+              - apprunner:DescribeVpcConnector
+              - apprunner:ListVpcConnectors
+            Resource: '*'
+          - Sid: AppRunnerConnection
+            Effect: Allow
+            Action:
+              - apprunner:CreateConnection
+              - apprunner:DeleteConnection
+            Resource: !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:connection/*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: AppRunnerConnectionRead
+            Effect: Allow
+            Action:
+              - apprunner:DescribeConnection
+              - apprunner:ListConnections
+            Resource: '*'
+
+  # Policy for RDS operations
+  RDSDeploymentPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-RDS'
+      Description: 'Permissions for RDS database management'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: RDSInstanceCreate
+            Effect: Allow
+            Action:
+              - rds:CreateDBInstance
+            Resource: 
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:subgrp:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:pg:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:og:*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: RDSInstanceManagement
+            Effect: Allow
+            Action:
+              - rds:DeleteDBInstance
+              - rds:ModifyDBInstance
+              - rds:StartDBInstance
+              - rds:StopDBInstance
+              - rds:RebootDBInstance
+            Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*'
+            Condition:
+              StringEquals:
+                'aws:ResourceTag/ManagedBy': 'Prod'
+          - Sid: RDSTagging
+            Effect: Allow
+            Action:
+              - rds:AddTagsToResource
+              - rds:RemoveTagsFromResource
+              - rds:ListTagsForResource
+            Resource: 
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:subgrp:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:pg:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:secgrp:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:snapshot:*'
+          - Sid: RDSDescribe
+            Effect: Allow
+            Action:
+              - rds:DescribeDBInstances
+            Resource: '*'
+          - Sid: RDSSubnetGroup
+            Effect: Allow
+            Action:
+              - rds:CreateDBSubnetGroup
+              - rds:DeleteDBSubnetGroup
+              - rds:ModifyDBSubnetGroup
+            Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:subgrp:*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: RDSSubnetGroupRead
+            Effect: Allow
+            Action:
+              - rds:DescribeDBSubnetGroups
+            Resource: '*'
+          - Sid: RDSParameterGroup
+            Effect: Allow
+            Action:
+              - rds:CreateDBParameterGroup
+              - rds:DeleteDBParameterGroup
+              - rds:ModifyDBParameterGroup
+            Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:pg:*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: RDSParameterGroupRead
+            Effect: Allow
+            Action:
+              - rds:DescribeDBParameterGroups
+              - rds:DescribeDBParameters
+            Resource: '*'
+          - Sid: RDSSecurityGroup
+            Effect: Allow
+            Action:
+              - rds:CreateDBSecurityGroup
+              - rds:DeleteDBSecurityGroup
+              - rds:AuthorizeDBSecurityGroupIngress
+              - rds:RevokeDBSecurityGroupIngress
+            Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:secgrp:*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: RDSSecurityGroupRead
+            Effect: Allow
+            Action:
+              - rds:DescribeDBSecurityGroups
+            Resource: '*'
+          - Sid: RDSSnapshotCreate
+            Effect: Allow
+            Action:
+              - rds:CreateDBSnapshot
+            Resource: 
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:snapshot:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: RDSSnapshotManagement
+            Effect: Allow
+            Action:
+              - rds:DeleteDBSnapshot
+              - rds:RestoreDBInstanceFromDBSnapshot
+            Resource: 
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:snapshot:*'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*'
+            Condition:
+              StringEquals:
+                'aws:ResourceTag/ManagedBy': 'Prod'
+          - Sid: RDSSnapshotsRead
+            Effect: Allow
+            Action:
+              - rds:DescribeDBSnapshots
+            Resource: '*'
+
+  # Policy for ECR operations
+  ECRAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-ECR'
+      Description: 'Permissions for ECR repository and image management'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ECRAuthentication
+            Effect: Allow
+            Action:
+              - ecr:GetAuthorizationToken
+            Resource: '*'
+          - Sid: ECRRepositoryManagement
+            Effect: Allow
+            Action:
+              - ecr:CreateRepository
+              - ecr:DeleteRepository
+              - ecr:DescribeRepositories
+              - ecr:ListTagsForResource
+              - ecr:TagResource
+              - ecr:UntagResource
+            Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
+          - Sid: ECRImageManagement
+            Effect: Allow
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:BatchGetImage
+              - ecr:CompleteLayerUpload
+              - ecr:DescribeImages
+              - ecr:GetDownloadUrlForLayer
+              - ecr:InitiateLayerUpload
+              - ecr:ListImages
+              - ecr:PutImage
+              - ecr:UploadLayerPart
+              - ecr:BatchDeleteImage
+              - ecr:GetRepositoryPolicy
+              - ecr:SetRepositoryPolicy
+              - ecr:DeleteRepositoryPolicy
+            Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
+
+  # Policy for VPC networking
+  VPCNetworkingPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-VPC'
+      Description: 'Permissions for VPC networking setup'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: VPCRead
+            Effect: Allow
+            Action:
+              - ec2:DescribeVpcs
+              - ec2:DescribeSubnets
+              - ec2:DescribeSecurityGroups
+              - ec2:DescribeNetworkInterfaces
+              - ec2:DescribeAvailabilityZones
+              - ec2:DescribeRouteTables
+              - ec2:DescribeInternetGateways
+              - ec2:DescribeNatGateways
+            Resource: '*'
+          - Sid: SecurityGroupManagement
+            Effect: Allow
+            Action:
+              - ec2:CreateSecurityGroup
+              - ec2:DeleteSecurityGroup
+              - ec2:AuthorizeSecurityGroupIngress
+              - ec2:AuthorizeSecurityGroupEgress
+              - ec2:RevokeSecurityGroupIngress
+              - ec2:RevokeSecurityGroupEgress
+              - ec2:UpdateSecurityGroupRuleDescriptionsIngress
+              - ec2:UpdateSecurityGroupRuleDescriptionsEgress
+              - ec2:CreateTags
+              - ec2:DeleteTags
+            Resource: '*'
+          - Sid: VPCCreation
+            Effect: Allow
+            Action:
+              - ec2:CreateVpc
+              - ec2:DeleteVpc
+              - ec2:ModifyVpcAttribute
+              - ec2:CreateSubnet
+              - ec2:DeleteSubnet
+              - ec2:ModifySubnetAttribute
+              - ec2:CreateRouteTable
+              - ec2:DeleteRouteTable
+              - ec2:AssociateRouteTable
+              - ec2:DisassociateRouteTable
+              - ec2:CreateRoute
+              - ec2:DeleteRoute
+              - ec2:CreateInternetGateway
+              - ec2:DeleteInternetGateway
+              - ec2:AttachInternetGateway
+              - ec2:DetachInternetGateway
+            Resource: '*'
+
+  # Policy for Secrets Manager (for DB credentials)
+  SecretsManagerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-Secrets'
+      Description: 'Permissions for Secrets Manager to store database credentials'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SecretsCreate
+            Effect: Allow
+            Action:
+              - secretsmanager:CreateSecret
+            Resource: 
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/prod/*'
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:prod-*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: SecretsManagement
+            Effect: Allow
+            Action:
+              - secretsmanager:DeleteSecret
+              - secretsmanager:DescribeSecret
+              - secretsmanager:GetSecretValue
+              - secretsmanager:PutSecretValue
+              - secretsmanager:UpdateSecret
+            Resource: 
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/prod/*'
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:prod-*'
+            Condition:
+              StringEquals:
+                'aws:ResourceTag/ManagedBy': 'Prod'
+          - Sid: SecretsTagging
+            Effect: Allow
+            Action:
+              - secretsmanager:TagResource
+              - secretsmanager:UntagResource
+            Resource: 
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/prod/*'
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:prod-*'
+          - Sid: SecretsUtility
+            Effect: Allow
+            Action:
+              - secretsmanager:ListSecrets
+              - secretsmanager:GetRandomPassword
+            Resource: '*'
+
+  # Policy for CloudFormation stack management
+  CloudFormationPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-CloudFormation'
+      Description: 'Permissions for CloudFormation stack management'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: CloudFormationStackManagement
+            Effect: Allow
+            Action:
+              - cloudformation:CreateStack
+              - cloudformation:UpdateStack
+              - cloudformation:DeleteStack
+              - cloudformation:DescribeStacks
+              - cloudformation:DescribeStackEvents
+              - cloudformation:DescribeStackResources
+              - cloudformation:GetTemplate
+              - cloudformation:ValidateTemplate
+              - cloudformation:ListStacks
+              - cloudformation:ListStackResources
+              - cloudformation:GetStackPolicy
+              - cloudformation:SetStackPolicy
+              - cloudformation:DetectStackDrift
+              - cloudformation:DetectStackResourceDrift
+            Resource: !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/prod-*/*'
+          - Sid: CloudFormationChangeSet
+            Effect: Allow
+            Action:
+              - cloudformation:CreateChangeSet
+              - cloudformation:DeleteChangeSet
+              - cloudformation:DescribeChangeSet
+              - cloudformation:ExecuteChangeSet
+            Resource: !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/prod-*/*'
+          - Sid: CloudFormationTemplateValidation
+            Effect: Allow
+            Action:
+              - cloudformation:ValidateTemplate
+              - cloudformation:EstimateTemplateCost
+            Resource: '*'
+
+  # Policy for IAM role creation (needed by CloudFormation for App Runner)
+  IAMRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-IAM'
+      Description: 'Permissions for IAM role creation for App Runner and other services'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: IAMRoleManagement
+            Effect: Allow
+            Action:
+              - iam:CreateRole
+              - iam:DeleteRole
+              - iam:GetRole
+              - iam:UpdateRole
+              - iam:AttachRolePolicy
+              - iam:DetachRolePolicy
+              - iam:PutRolePolicy
+              - iam:DeleteRolePolicy
+              - iam:GetRolePolicy
+              - iam:ListRolePolicies
+              - iam:ListAttachedRolePolicies
+              - iam:TagRole
+              - iam:UntagRole
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/prod-*'
+          - Sid: IAMPassRoleToServices
+            Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/prod-*'
+            Condition:
+              StringEquals:
+                'iam:PassedToService':
+                  - apprunner.amazonaws.com
+                  - build.apprunner.amazonaws.com
+                  - tasks.apprunner.amazonaws.com
+                  - rds.amazonaws.com
+                  - ec2.amazonaws.com
+                  - cloudformation.amazonaws.com
+                  - lambda.amazonaws.com
+          - Sid: IAMPassRoleForCloudFormation
+            Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/prod-*'
+          - Sid: IAMServiceLinkedRoles
+            Effect: Allow
+            Action:
+              - iam:CreateServiceLinkedRole
+            Resource: 
+              - 'arn:aws:iam::*:role/aws-service-role/apprunner.amazonaws.com/*'
+              - 'arn:aws:iam::*:role/aws-service-role/networking.apprunner.amazonaws.com/*'
+              - 'arn:aws:iam::*:role/aws-service-role/rds.amazonaws.com/*'
+              - 'arn:aws:iam::*:role/aws-service-role/elasticache.amazonaws.com/*'
+              - 'arn:aws:iam::*:role/aws-service-role/ecs.amazonaws.com/*'
+            Condition:
+              StringEquals:
+                'iam:AWSServiceName': 
+                  - 'apprunner.amazonaws.com'
+                  - 'networking.apprunner.amazonaws.com'
+                  - 'rds.amazonaws.com'
+                  - 'elasticache.amazonaws.com'
+                  - 'ecs.amazonaws.com'
+
+  # Policy for ECS operations (for running migration tasks)
+  ECSDeploymentPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-ECS'
+      Description: 'Permissions for ECS task management and Fargate deployments'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ECSClusterManagement
+            Effect: Allow
+            Action:
+              - ecs:CreateCluster
+              - ecs:DeleteCluster
+              - ecs:DescribeClusters
+              - ecs:ListClusters
+              - ecs:PutClusterCapacityProviders
+              - ecs:TagResource
+              - ecs:UntagResource
+              - ecs:ListTagsForResource
+            Resource: '*'
+          - Sid: ECSTaskDefinitionManagement
+            Effect: Allow
+            Action:
+              - ecs:RegisterTaskDefinition
+              - ecs:DeregisterTaskDefinition
+              - ecs:DescribeTaskDefinition
+              - ecs:ListTaskDefinitions
+            Resource: '*'
+          - Sid: ECSTaskExecution
+            Effect: Allow
+            Action:
+              - ecs:RunTask
+              - ecs:StopTask
+              - ecs:DescribeTasks
+              - ecs:ListTasks
+            Resource: '*'
+          - Sid: CloudWatchLogsForECS
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogGroups
+              - logs:DescribeLogStreams
+              - logs:DeleteLogGroup
+              - logs:GetLogEvents
+              - logs:FilterLogEvents
+              - logs:TagResource
+              - logs:UntagResource
+              - logs:ListTagsForResource
+            Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/prod-*'
+          - Sid: PassRoleToECSTasks
+            Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/prod-*-ecs-*'
+            Condition:
+              StringEquals:
+                'iam:PassedToService': 'ecs-tasks.amazonaws.com'
+
+  # Policy for Lambda operations (for custom resource functions)
+  LambdaDeploymentPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-Lambda'
+      Description: 'Permissions for Lambda function management for custom resources'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: LambdaFunctionManagement
+            Effect: Allow
+            Action:
+              - lambda:CreateFunction
+              - lambda:DeleteFunction
+              - lambda:GetFunction
+              - lambda:GetFunctionConfiguration
+              - lambda:UpdateFunctionCode
+              - lambda:UpdateFunctionConfiguration
+              - lambda:ListFunctions
+              - lambda:ListVersionsByFunction
+              - lambda:PublishVersion
+              - lambda:TagResource
+              - lambda:UntagResource
+              - lambda:ListTags
+              - lambda:InvokeFunction
+              - lambda:AddPermission
+              - lambda:RemovePermission
+              - lambda:GetPolicy
+            Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:prod-*'
+          - Sid: PassRoleToLambda
+            Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/prod-*'
+            Condition:
+              StringEquals:
+                'iam:PassedToService': 'lambda.amazonaws.com'
+
+  # Policy for S3 access to Lambda function packages
+  S3LambdaPackagePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-S3Lambda'
+      Description: 'Permissions to download Lambda function packages from Prod S3 bucket'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: GetLambdaPackages
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource:
+              - 'arn:aws:s3:::prod-aws-deploy/lambda-functions/*'
+              - 'arn:aws:s3:::prod-aws-deploy-staging/lambda-functions/*'
+
+Outputs:
+  RoleArn:
+    Description: 'ARN of the deployment role - paste this into the Prod CLI'
+    Value: !GetAtt ProdDeployRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RoleArn'
+  
+  ExternalId:
+    Description: 'External ID used for this role'
+    Value: !Ref ExternalId
+  
+  RoleName:
+    Description: 'Name of the deployment role'
+    Value: !Ref RoleName

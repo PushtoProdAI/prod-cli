@@ -116,3 +116,39 @@ supabase-setup:
 	@supabase start
 	@echo "Supabase is ready! Studio available at: http://localhost:54323"
 
+# Infrastructure and Lambda configuration
+INFRA_DIR=infra
+LAMBDA_DIR=lambda
+LAMBDA_BUCKET?=prod-aws-deploy
+S3_STACK_NAME?=prod-s3-infrastructure
+AWS_REGION?=us-east-1
+
+.PHONY: lambda-build
+lambda-build: lambda-build-database-url-constructor
+
+.PHONY: lambda-build-database-url-constructor
+lambda-build-database-url-constructor:
+	@echo "Building database-url-constructor Lambda function..."
+	@cd $(LAMBDA_DIR)/database-url-constructor && \
+		npm install --production && \
+		./build.sh
+	@echo "✓ Lambda function built: $(LAMBDA_DIR)/database-url-constructor/function.zip"
+	@echo ""
+	@echo "To upload to S3, run:"
+	@echo "  aws s3 cp $(LAMBDA_DIR)/database-url-constructor/function.zip \\"
+	@echo "    s3://$(LAMBDA_BUCKET)/lambda-functions/database-url-constructor/function.zip \\"
+	@echo "    --metadata version=\$$(cd $(LAMBDA_DIR)/database-url-constructor && node -p \"require('./package.json').version\")"
+
+.PHONY: lambda-clean
+lambda-clean:
+	@echo "Cleaning Lambda function build artifacts..."
+	@rm -rf $(LAMBDA_DIR)/database-url-constructor/node_modules
+	@rm -f $(LAMBDA_DIR)/database-url-constructor/function.zip
+	@echo "✓ Lambda function artifacts cleaned"
+
+.PHONY: lambda-version
+lambda-version:
+	@echo "Lambda function versions:"
+	@cd $(LAMBDA_DIR)/database-url-constructor && \
+		echo "  database-url-constructor: v$$(node -p "require('./package.json').version")"
+

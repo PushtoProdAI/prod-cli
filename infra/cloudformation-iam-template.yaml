@@ -37,6 +37,7 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
+          # Allow assuming internal ECR roles in this account (no tag restrictions needed)
           - Effect: Allow
             Action:
               - sts:AssumeRole
@@ -46,6 +47,21 @@ Resources:
               - !GetAtt ECRPullOnlyRole.Arn
               - !GetAtt ECRPushOnlyRole.Arn
               - !GetAtt ECRRepositoryManagerRole.Arn
+          # Allow assuming customer deployment roles in external AWS accounts
+          # SECURITY: Use External ID (not tags) as the security boundary
+          # Tags can't be used because:
+          # 1. iam:ResourceTag conditions don't work cross-account
+          # 2. We'd need iam:GetRole permission on customer accounts
+          # Instead, rely on:
+          # - External ID (unique per user, stored in our DB)
+          # - Trust policy in customer role (only allows our account)
+          # - Role ARN validation at setup time (see aws-auth function)
+          - Effect: Allow
+            Action:
+              - sts:AssumeRole
+              - sts:TagSession
+            Resource:
+              - 'arn:aws:iam::*:role/*'
       Users:
         - !Ref ECRIAMUser
 

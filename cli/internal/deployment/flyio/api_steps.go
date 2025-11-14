@@ -386,3 +386,45 @@ func (g *GenerateDockerfileStep) Rollback(ctx context.Context, client FlyioClien
 	}
 	return nil
 }
+
+// SetSecretsStep sets secrets for a Fly.io app
+type SetSecretsStep struct {
+	BaseStep
+	appName string
+	secrets map[string]string
+}
+
+func (s *SetSecretsStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
+	if len(s.secrets) == 0 {
+		return map[string]any{
+			"status": "skipped",
+			"reason": "no secrets to set",
+		}, nil
+	}
+
+	err := client.SetSecrets(ctx, s.appName, s.secrets)
+	if err != nil {
+		return nil, errors.Errorf("failed to set secrets: %w", err)
+	}
+
+	return map[string]any{
+		"status":       "success",
+		"secrets_set":  len(s.secrets),
+		"secret_names": getSecretNames(s.secrets),
+	}, nil
+}
+
+// getSecretNames returns a list of secret names (not values) for logging
+func getSecretNames(secrets map[string]string) []string {
+	names := make([]string, 0, len(secrets))
+	for name := range secrets {
+		names = append(names, name)
+	}
+	return names
+}
+
+func (s *SetSecretsStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]any) error {
+	// Secrets cannot be easily rolled back - they would need to be unset individually
+	// For now, we'll leave secrets in place as they don't break anything
+	return nil
+}
