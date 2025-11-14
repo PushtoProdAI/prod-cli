@@ -280,7 +280,7 @@ func (m *Model) updateSelectionContent() {
 	var selectedLines []string
 
 	for i := startLine; i <= endLine && i < len(m.content); i++ {
-		line := stripANSI(m.content[i])
+		line := cleanForClipboard(m.content[i])
 
 		if startLine == endLine {
 			if startCol < len(line) && startCol >= 0 {
@@ -333,6 +333,87 @@ func stripANSI(text string) string {
 			continue
 		}
 		result.WriteRune(char)
+	}
+
+	return result.String()
+}
+
+// cleanForClipboard removes ANSI codes and converts Unicode box drawing to ASCII for clipboard
+func cleanForClipboard(text string) string {
+	// First strip ANSI escape codes
+	cleaned := stripANSI(text)
+
+	// Unicode box drawing character mappings to ASCII equivalents
+	boxCharMap := map[rune]string{
+		// Top borders
+		'┌': "+", // top-left corner
+		'┬': "+", // top junction
+		'┐': "+", // top-right corner
+		'╭': "+", // rounded top-left
+		'╮': "+", // rounded top-right
+
+		// Bottom borders
+		'└': "+", // bottom-left corner
+		'┴': "+", // bottom junction
+		'┘': "+", // bottom-right corner
+		'╰': "+", // rounded bottom-left
+		'╯': "+", // rounded bottom-right
+
+		// Side borders
+		'├': "+", // left junction
+		'┤': "+", // right junction
+		'┼': "+", // cross junction
+
+		// Horizontal lines
+		'─': "-", // horizontal line
+		'━': "-", // thick horizontal line
+
+		// Vertical lines
+		'│': "|", // vertical line
+		'┃': "|", // thick vertical line
+		'║': "|", // double vertical line
+
+		// Double line characters
+		'╔': "+", // double top-left
+		'╦': "+", // double top junction
+		'╗': "+", // double top-right
+		'╠': "+", // double left junction
+		'╬': "+", // double cross
+		'╣': "+", // double right junction
+		'╚': "+", // double bottom-left
+		'╩': "+", // double bottom junction
+		'╝': "+", // double bottom-right
+		'═': "=", // double horizontal
+
+		// Other common characters
+		'•': "*", // bullet point
+		'◦': "-", // white bullet
+		'▸': ">", // triangle
+		'▪': "*", // small square
+		'▫': "-", // small white square
+	}
+
+	var result strings.Builder
+	for _, char := range cleaned {
+		if replacement, exists := boxCharMap[char]; exists {
+			result.WriteString(replacement)
+		} else if char > 127 {
+			// For other Unicode characters, check if they're printable ASCII equivalents
+			// or skip them if they're likely decorative
+			switch {
+			case char >= 0x2500 && char <= 0x257F: // Box Drawing block
+				result.WriteString("+") // Default box char replacement
+			case char >= 0x2580 && char <= 0x259F: // Block Elements
+				result.WriteString("#") // Block replacement
+			case char >= 0x25A0 && char <= 0x25FF: // Geometric Shapes
+				result.WriteString("*") // Shape replacement
+			default:
+				// Keep other Unicode characters as-is (like emojis)
+				result.WriteRune(char)
+			}
+		} else {
+			result.WriteRune(char)
+		}
 	}
 
 	return result.String()
