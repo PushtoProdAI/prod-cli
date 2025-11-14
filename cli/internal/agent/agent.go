@@ -16,6 +16,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/auth"
+	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/heroku"
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
@@ -36,6 +37,7 @@ type TUIWriter interface {
 	SendError(summary string, remediations []Remediation)
 	SendWarning(summary string, remediations []Remediation)
 	SendSuccess(platform string, appName string, url string)
+	SendDeploymentHistory(deployments []backend.DeploymentHistoryItem)
 	StopSpinner()
 	ClearScreen()
 	Quit()

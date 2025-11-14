@@ -218,6 +218,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleUIMessage(msg)
 	case PlanDisplayMessage:
 		return m.handlePlanDisplayMessage(msg)
+	case DeploymentHistoryDisplayMessage:
+		return m.handleDeploymentHistoryDisplayMessage(msg)
 	case ConfirmationPrompt:
 		m.confirmationPrompt = &msg
 		m.setMode(ModeConfirmation)
