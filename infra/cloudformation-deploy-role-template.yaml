@@ -468,6 +468,11 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
+          - Sid: IAMGetSelfRole
+            Effect: Allow
+            Action:
+              - iam:GetRole
+            Resource: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${RoleName}'
           - Sid: IAMRoleManagement
             Effect: Allow
             Action:
