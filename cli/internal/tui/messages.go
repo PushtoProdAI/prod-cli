@@ -195,6 +195,27 @@ func (s SearchMsg) String() string {
 	return "Search"
 }
 
+// DeploymentHistoryDisplayMessage represents deployment history for table display
+type DeploymentHistoryDisplayMessage struct {
+	Deployments []DeploymentHistoryEntry
+}
+
+type DeploymentHistoryEntry struct {
+	OperationID   string
+	ResourceName  string
+	OperationType string
+	Status        string
+	Platform      string
+	Language      string
+	StartedAt     string
+	CompletedAt   string
+	Duration      int
+}
+
+func (d DeploymentHistoryDisplayMessage) String() string {
+	return "Deployment History Display"
+}
+
 var _ tea.Msg = UIMessage{}
 var _ tea.Msg = ConfirmationPrompt{}
 var _ tea.Msg = SpinnerStartMsg{}
@@ -212,3 +233,4 @@ var _ tea.Msg = InfoBoxMessage{}
 var _ tea.Msg = ClearScreenMsg{}
 var _ tea.Msg = QuitMsg{}
 var _ tea.Msg = SearchMsg{}
+var _ tea.Msg = DeploymentHistoryDisplayMessage{}

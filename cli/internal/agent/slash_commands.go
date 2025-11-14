@@ -2,7 +2,10 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"io"
+
+	"github.com/meroxa/prod/cli/internal/backend"
 )
 
 // SlashCommand represents a command that can be executed from the TUI
@@ -19,6 +22,11 @@ func (a *Agent) GetAvailableSlashCommands() []SlashCommand {
 			Name:        "/clear",
 			Description: "Clear the screen",
 			Handler:     a.handleClearCommand,
+		},
+		{
+			Name:        "/deploys",
+			Description: "Show deployment history",
+			Handler:     a.handleDeploysCommand,
 		},
 		{
 			Name:        "/login",
@@ -78,4 +86,51 @@ func (a *Agent) handleSearchCommand(ctx context.Context, out io.Writer) (stateFn
 func (a *Agent) handleLoginCommand(ctx context.Context, out io.Writer) (stateFn, error) {
 	a.authenticateCLI(ctx)
 	return a.sm.currentState, nil
+}
+
+func (a *Agent) handleDeploysCommand(ctx context.Context, out io.Writer) (stateFn, error) {
+	tuiWriter, ok := out.(TUIWriter)
+	if !ok {
+		return a.checkPrerequisites, nil
+	}
+
+	// Check if user is authenticated
+	if !a.internalAuth.IsAuthenticated() {
+		fmt.Fprintln(out, "❌ You must be logged in to view deployment history. Use /login to authenticate.")
+		return a.checkPrerequisites, nil
+	}
+
+	session, err := a.internalAuth.GetSession()
+	if err != nil || session == nil {
+		fmt.Fprintln(out, "❌ Failed to get session. Please login again with /login.")
+		return a.checkPrerequisites, nil
+	}
+
+	// Show message while fetching
+	fmt.Fprintln(out, "📊 Fetching deployment history...")
+
+	// Create backend client and fetch deployment history
+	backendClient := backend.NewClient()
+
+	// Query all deployments (not filtered by service name)
+	opts := backend.DeploymentQueryOptions{
+		Limit: 20, // Show last 20 deployments
+		Page:  1,
+	}
+
+	response, err := backendClient.QueryDeployments(ctx, session.AccessToken, opts)
+	if err != nil {
+		fmt.Fprintf(out, "❌ Failed to fetch deployment history: %v\n", err)
+		return a.checkPrerequisites, nil
+	}
+
+	if len(response.Data) == 0 {
+		fmt.Fprintln(out, "ℹ️  No deployments found.")
+		return a.checkPrerequisites, nil
+	}
+
+	// Send deployment history to TUI for display
+	tuiWriter.SendDeploymentHistory(response.Data)
+
+	return a.checkPrerequisites, nil
 }
