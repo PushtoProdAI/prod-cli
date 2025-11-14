@@ -43,18 +43,16 @@ jobs:
           node-version: '20'
 
       - name: Build Lambda function
-        run: |
-          cd lambda/database-url-constructor
-          make lambda-build
+        run: make lambda-build
 
       - name: Verify build output
         run: |
-          if [ ! -f lambda/database-url-constructor/functions.zip ]; then
-            echo "❌ Error: functions.zip not found after build"
+          if [ ! -f lambda/database-url-constructor/function.zip ]; then
+            echo "❌ Error: function.zip not found after build"
             exit 1
           fi
-          echo "✅ Build successful, functions.zip created"
-          ls -lh lambda/database-url-constructor/functions.zip
+          echo "✅ Build successful, function.zip created"
+          ls -lh lambda/database-url-constructor/function.zip
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -64,20 +62,20 @@ jobs:
 
       - name: Upload Lambda function to S3
         run: |
-          aws s3 cp lambda/database-url-constructor/functions.zip \
-            s3://prod-aws-deploy-staging/lambda-functions/database-url-constructor/functions.zip \
+          aws s3 cp lambda/database-url-constructor/function.zip \
+            s3://prod-aws-deploy-staging/lambda-functions/database-url-constructor/function.zip \
             --content-type application/zip
 
       - name: Verify upload
         run: |
           echo "✅ Lambda function uploaded successfully to:"
-          echo "s3://prod-aws-deploy-staging/lambda-functions/database-url-constructor/functions.zip"
+          echo "s3://prod-aws-deploy-staging/lambda-functions/database-url-constructor/function.zip"
           echo ""
           echo "Environment: Staging"
           echo "Branch: ${{ github.ref_name }}"
           echo "Commit: ${{ github.sha }}"
           echo ""
-          aws s3 ls s3://prod-aws-deploy-staging/lambda-functions/database-url-constructor/functions.zip
+          aws s3 ls s3://prod-aws-deploy-staging/lambda-functions/database-url-constructor/function.zip
 
   deploy-production:
     name: Deploy to Production
@@ -95,18 +93,16 @@ jobs:
           node-version: '20'
 
       - name: Build Lambda function
-        run: |
-          cd lambda/database-url-constructor
-          make lambda-build
+        run: make lambda-build
 
       - name: Verify build output
         run: |
-          if [ ! -f lambda/database-url-constructor/functions.zip ]; then
-            echo "❌ Error: functions.zip not found after build"
+          if [ ! -f lambda/database-url-constructor/function.zip ]; then
+            echo "❌ Error: function.zip not found after build"
             exit 1
           fi
-          echo "✅ Build successful, functions.zip created"
-          ls -lh lambda/database-url-constructor/functions.zip
+          echo "✅ Build successful, function.zip created"
+          ls -lh lambda/database-url-constructor/function.zip
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -116,17 +112,17 @@ jobs:
 
       - name: Upload Lambda function to S3
         run: |
-          aws s3 cp lambda/database-url-constructor/functions.zip \
-            s3://prod-aws-deploy/lambda-functions/database-url-constructor/functions.zip \
+          aws s3 cp lambda/database-url-constructor/function.zip \
+            s3://prod-aws-deploy/lambda-functions/database-url-constructor/function.zip \
             --content-type application/zip
 
       - name: Verify upload
         run: |
           echo "✅ Lambda function uploaded successfully to:"
-          echo "s3://prod-aws-deploy/lambda-functions/database-url-constructor/functions.zip"
+          echo "s3://prod-aws-deploy/lambda-functions/database-url-constructor/function.zip"
           echo ""
           echo "Environment: Production"
           echo "Branch: ${{ github.ref_name }}"
           echo "Commit: ${{ github.sha }}"
           echo ""
-          aws s3 ls s3://prod-aws-deploy/lambda-functions/database-url-constructor/functions.zip
+          aws s3 ls s3://prod-aws-deploy/lambda-functions/database-url-constructor/function.zip
