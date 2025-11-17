@@ -603,6 +603,7 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 	var pendingCount int
 	var sensitivePending []string
 	var sensitiveAutoPopulated []string
+	var nonSensitiveAutoPopulated []string
 
 	for _, envVar := range envVars {
 		if envVar.IsNotDBRelated() {
@@ -623,15 +624,23 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 			})
 			if envVar.Sensitive {
 				sensitiveAutoPopulated = append(sensitiveAutoPopulated, envVar.Name)
+			} else {
+				nonSensitiveAutoPopulated = append(nonSensitiveAutoPopulated, envVar.Name)
 			}
 		}
 	}
 
-	// Display auto-populated sensitive variables first (these won't be shown again)
-	if len(sensitiveAutoPopulated) > 0 {
-		fmt.Fprintf(out, "🔒 The following sensitive variables will be auto-populated:\n")
-		for _, name := range sensitiveAutoPopulated {
+	// Display all auto-populated variables (both sensitive and non-sensitive)
+	totalAutoPopulated := len(sensitiveAutoPopulated) + len(nonSensitiveAutoPopulated)
+	if totalAutoPopulated > 0 {
+		fmt.Fprintf(out, "🔄 The following variables will be auto-populated:\n")
+		// Show non-sensitive first
+		for _, name := range nonSensitiveAutoPopulated {
 			fmt.Fprintf(out, "  • %s\n", name)
+		}
+		// Then sensitive ones with lock icon
+		for _, name := range sensitiveAutoPopulated {
+			fmt.Fprintf(out, "  • %s 🔒 (sensitive)\n", name)
 		}
 		fmt.Fprint(out, "\n")
 	}

@@ -11,14 +11,34 @@ import { buildECSMigrationResources, buildAppRunnerService } from './compute.ts'
  * All user-provided data must pass strict validation before being used in CloudFormation
  */
 function validateDeploymentSpec(spec: DeploymentSpec, tenantId: string): void {
-  // Validate service name (used in resource names, IAM roles, etc.)
+  // Validate and sanitize service name (used in resource names, IAM roles, etc.)
   if (!spec.serviceName || typeof spec.serviceName !== 'string') {
     throw new Error('serviceName is required');
   }
+  
+  // Sanitize: convert underscores to hyphens, lowercase, remove invalid chars
+  const originalName = spec.serviceName;
+  spec.serviceName = spec.serviceName
+    .toLowerCase()
+    .replace(/_/g, '-')  // Convert underscores to hyphens
+    .replace(/[^a-z0-9-]/g, '');  // Remove any other invalid characters
+  
+  // Ensure it starts with a letter
+  if (!/^[a-z]/.test(spec.serviceName)) {
+    throw new Error(
+      `Invalid serviceName: "${originalName}". Must start with a letter (after sanitization: "${spec.serviceName}").`
+    );
+  }
+  
+  // Validate final format
   if (!/^[a-z][a-z0-9-]{0,62}$/.test(spec.serviceName)) {
     throw new Error(
-      `Invalid serviceName: "${spec.serviceName}". Must be lowercase alphanumeric with hyphens, 1-63 characters, starting with a letter.`
+      `Invalid serviceName: "${originalName}" (sanitized to: "${spec.serviceName}"). Must be 1-63 characters, lowercase alphanumeric with hyphens, starting with a letter.`
     );
+  }
+  
+  if (originalName !== spec.serviceName) {
+    console.log(`Service name sanitized: "${originalName}" → "${spec.serviceName}"`);
   }
 
   // Validate image URL (must be from ECR)
