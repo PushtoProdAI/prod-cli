@@ -112,6 +112,40 @@ func FindMigrationFiles(root string) ([]string, error) {
 		}
 	}
 
+	// Search for Django app-level migrations directories
+	// Django apps typically have a migrations/ directory inside each app
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip common directories to avoid
+		if d.IsDir() {
+			name := d.Name()
+			// Skip virtual environments, node_modules, hidden dirs, etc.
+			if name == "venv" || name == ".venv" || name == "env" || name == ".env" ||
+				name == "node_modules" || name == ".git" || name == "__pycache__" ||
+				name == ".pytest_cache" || name == ".mypy_cache" || name == "site-packages" {
+				return filepath.SkipDir
+			}
+
+			// Check if this is a migrations directory
+			if name == "migrations" {
+				// Verify it's a Django migrations directory by checking for __init__.py
+				initPyPath := filepath.Join(path, "__init__.py")
+				if exists, _ := pathExists(initPyPath); exists {
+					migrationFiles = append(migrationFiles, path)
+				}
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return migrationFiles, err
+	}
+
 	return migrationFiles, nil
 }
 

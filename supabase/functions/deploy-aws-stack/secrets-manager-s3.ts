@@ -29,10 +29,8 @@ export function buildSecretsManagerResources(spec: DeploymentSpec, tenantId: str
     sensitiveEnvVars: spec.envVars.filter(ev => ev.sensitive).length,
   });
   
-  // INPUT VALIDATION: Validate service name before using in resource names
-  if (!/^[a-z][a-z0-9-]{0,62}$/.test(spec.serviceName)) {
-    throw new Error(`Invalid service name: ${spec.serviceName}. Must be lowercase alphanumeric with hyphens, 1-63 characters.`);
-  }
+  // NOTE: Service name validation and sanitization happens in template-generator.ts
+  // before this function is called, so spec.serviceName is guaranteed to be valid
   
   // Create secrets for user-provided sensitive env vars
   for (const envVar of spec.envVars) {

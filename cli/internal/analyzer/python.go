@@ -256,7 +256,8 @@ func (p *PythonAnalyzer) extractBuildCommand() (string, error) {
 
 func (p *PythonAnalyzer) filterEnvVarFalsePositives(candidates []EnvVarCandidate) []EnvVarCandidate {
 	// Common false positive patterns - these are typically not environment variables
-	falsePositives := map[string]bool{
+	// when accessed via settings.ATTRIBUTE syntax (e.g., settings.DEBUG)
+	settingsAttributeFalsePositives := map[string]bool{
 		// Framework/library-specific attributes
 		"fastapi_kwargs":  true,
 		"django_settings": true,
@@ -269,19 +270,17 @@ func (p *PythonAnalyzer) filterEnvVarFalsePositives(candidates []EnvVarCandidate
 		"function_name": true,
 
 		// Common configuration attributes that are usually not env vars
-		"debug":    true,
 		"testing":  true,
 		"config":   true,
 		"settings": true,
 
-		// Common application-specific config attributes
+		// Common application-specific config attributes (when accessed via settings.*)
 		"all_cors_origins":         true,
 		"emails_enabled":           true,
 		"cors_origins":             true,
 		"email_backend":            true,
 		"static_url":               true,
 		"media_url":                true,
-		"allowed_hosts":            true,
 		"csrf_cookie":              true,
 		"session_cookie":           true,
 		"login_url":                true,
@@ -299,10 +298,30 @@ func (p *PythonAnalyzer) filterEnvVarFalsePositives(candidates []EnvVarCandidate
 	}
 
 	// Additional heuristics for filtering
-	isLikelyEnvVar := func(name string) bool {
-		// Skip obvious false positives
-		if falsePositives[strings.ToLower(name)] {
-			return false
+	isLikelyEnvVar := func(candidate EnvVarCandidate) bool {
+		name := candidate.VarName
+		context := candidate.Context
+
+		// If the context shows it's from os.environ.get() or os.getenv(), it's definitely an env var
+		// This includes DEBUG and ALLOWED_HOSTS when accessed via os.environ.get()
+		if strings.Contains(context, "os.environ.get") ||
+			strings.Contains(context, "os.getenv") ||
+			strings.Contains(context, "os.environ[") ||
+			strings.Contains(context, "os.environ.setdefault") {
+			// These are explicit environment variable reads, always include them
+			return true
+		}
+
+		// If it's from config() or env() calls, it's also an env var
+		if strings.Contains(context, "config(") || strings.Contains(context, "env(") {
+			return true
+		}
+
+		// For settings.* access, apply the false positives filter
+		if strings.Contains(context, "settings.") {
+			if settingsAttributeFalsePositives[strings.ToLower(name)] {
+				return false
+			}
 		}
 
 		// Environment variables are typically UPPER_CASE or contain underscores
@@ -323,7 +342,7 @@ func (p *PythonAnalyzer) filterEnvVarFalsePositives(candidates []EnvVarCandidate
 
 	filtered := make([]EnvVarCandidate, 0, len(candidates))
 	for _, candidate := range candidates {
-		if isLikelyEnvVar(candidate.VarName) {
+		if isLikelyEnvVar(candidate) {
 			filtered = append(filtered, candidate)
 		}
 	}
