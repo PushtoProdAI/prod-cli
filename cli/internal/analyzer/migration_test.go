@@ -69,6 +69,22 @@ func TestFilterConfiguredMigrationTools(t *testing.T) {
 			expected: []string{"django"},
 		},
 		{
+			name:          "django with manage.py and app-level migrations - should be included",
+			detectedTools: []string{"django"},
+			migrationFiles: []string{
+				"calendar/migrations",
+				"users/migrations",
+			},
+			setupFunc: func(rootPath string) {
+				os.WriteFile(filepath.Join(rootPath, "manage.py"), []byte("#!/usr/bin/env python"), 0755)
+				os.MkdirAll(filepath.Join(rootPath, "calendar/migrations"), 0755)
+				os.WriteFile(filepath.Join(rootPath, "calendar/migrations/__init__.py"), []byte(""), 0644)
+				os.MkdirAll(filepath.Join(rootPath, "users/migrations"), 0755)
+				os.WriteFile(filepath.Join(rootPath, "users/migrations/__init__.py"), []byte(""), 0644)
+			},
+			expected: []string{"django"},
+		},
+		{
 			name:           "prisma in deps but no schema - should be filtered out",
 			detectedTools:  []string{"prisma", "@prisma/client"},
 			migrationFiles: []string{},
@@ -240,6 +256,17 @@ func TestFindMigrationFiles_CustomMigrations(t *testing.T) {
 			expectedFiles: []string{
 				"migrate.ts",
 				"schema.sql",
+			},
+		},
+		{
+			name: "detects Django app-level migrations",
+			setupFiles: []string{
+				"calendar/migrations/__init__.py",
+				"users/migrations/__init__.py",
+			},
+			expectedFiles: []string{
+				"calendar/migrations",
+				"users/migrations",
 			},
 		},
 	}

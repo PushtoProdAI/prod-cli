@@ -125,10 +125,16 @@ export function buildEnvironmentSecrets(spec: DeploymentSpec, resources: any): a
       const dbName = firstPostgres.name.replace(/[^a-zA-Z0-9]/g, '');
       
       // Database passwords are already stored in Secrets Manager by RDS resource
+      // ECS requires the full ARN format with :password:: suffix to extract the password field
       if (envVar.role === 'password') {
         secrets.push({
           Name: envVar.name,
-          ValueFrom: { Ref: `${dbName}Password` },
+          ValueFrom: {
+            'Fn::Sub': [
+              '${SecretArn}:password::',
+              { SecretArn: { Ref: `${dbName}Password` } },
+            ],
+          },
         });
         addedSecrets.add(envVar.name);
       } else if (envVar.role === 'full_uri') {
@@ -145,12 +151,13 @@ export function buildEnvironmentSecrets(spec: DeploymentSpec, resources: any): a
       }
     } else if (envVar.sensitive && envVar.value) {
       // Handle ALL sensitive env vars WITH values (API keys, user-provided DATABASE_URL, etc.)
+      // ECS requires the full ARN, and simple secrets (not JSON) don't need a suffix
       const sanitizedName = envVar.name.replace(/[^a-zA-Z0-9]/g, '');
       const secretId = `Secret${sanitizedName}`;
       
       secrets.push({
         Name: envVar.name,
-        ValueFrom: { Ref: secretId },
+        ValueFrom: { Ref: secretId },  // Ref returns the ARN for AWS::SecretsManager::Secret
       });
       addedSecrets.add(envVar.name);
       

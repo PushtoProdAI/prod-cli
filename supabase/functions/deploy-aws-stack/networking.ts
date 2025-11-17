@@ -148,6 +148,7 @@ export function buildNetworkingResources(
   }
 
   // Security Group for backing services
+  // Allows access from App Runner and ECS migration tasks (both use AppRunnerSecurityGroup)
   resources.BackingServiceSecurityGroup = {
     Type: 'AWS::EC2::SecurityGroup',
     Properties: {
@@ -159,12 +160,14 @@ export function buildNetworkingResources(
           FromPort: 5432,
           ToPort: 5432,
           SourceSecurityGroupId: { Ref: 'AppRunnerSecurityGroup' },
+          Description: 'PostgreSQL from App Runner and ECS',
         },
         {
           IpProtocol: 'tcp',
           FromPort: 6379,
           ToPort: 6379,
           SourceSecurityGroupId: { Ref: 'AppRunnerSecurityGroup' },
+          Description: 'Redis from App Runner and ECS',
         },
       ],
       Tags: [
