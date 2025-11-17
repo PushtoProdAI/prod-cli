@@ -1,72 +1,105 @@
 # Infrastructure
 
-This directory contains AWS CloudFormation templates for production infrastructure components.
+This directory contains AWS CloudFormation templates for managing Prod's AWS infrastructure and customer deployment capabilities.
 
-## Contents
+## Templates
 
-### CloudFormation Templates
+### cloudformation-deploy-role-template.yaml
 
-- **`cloudformation-iam-template.yaml`** - IAM roles and permissions for Amazon ECR (Elastic Container Registry) access
-- **`s3-cloudformation-bucket.yaml`** - S3 bucket for hosting CloudFormation templates used by Prod CLI
-- **`cloudformation-deploy-role-template.yaml`** - IAM role template for customer AWS accounts (hosted in S3)
+IAM role template deployed to customer AWS accounts during authentication setup. This template is deployed to S3 by GitHub Actions and referenced by the Prod CLI when customers authenticate.
 
-## S3 CloudFormation Bucket
+**Deployment:** Automatically uploaded to S3 by GitHub Actions workflow (`.github/workflows/deploy-cloudformation-template.yaml`) when changes are pushed to main or manually triggered for production.
 
-Creates an S3 bucket to host CloudFormation templates that are used by the Prod CLI during AWS authentication setup.
+**Resources Created:**
+- `ProdDeployRole` - Main IAM role that Prod assumes to deploy resources
+- Managed policies for specific AWS services:
+  - App Runner service management (create, update, delete, autoscaling, VPC connectors)
+  - RDS database management (instances, subnet groups, parameter groups, snapshots)
+  - ECR repository and image operations
+  - VPC networking (security groups, subnets, internet gateways)
+  - Secrets Manager (for database credentials under `/prod/*` namespace)
+  - CloudFormation stack management (for `prod-*` stacks)
+  - IAM role management (create/manage `prod-*` roles, pass roles to AWS services)
+  - ECS task execution (for running database migrations via Fargate)
+  - Lambda function management (for CloudFormation custom resources)
+  - S3 access (read-only access to Prod Lambda packages)
 
-### Usage
+**Parameters:**
+- `ExternalId` - Security token for role assumption (required)
+- `ProdAWSAccountId` - AWS account ID of Prod backend (default: 588738592923)
+- `RoleName` - Name for the deployment role (default: ProdDeployRole)
 
-```bash
-# Deploy to staging
-aws cloudformation create-stack \
-  --stack-name prod-cloudformation-bucket \
-  --template-body file://s3-cloudformation-bucket.yaml \
-  --parameters \
-    ParameterKey=BucketName,ParameterValue=prod-aws-deploy
+**Security Features:**
+- External ID required for role assumption
+- 1-hour maximum session duration
+- Resource-level permissions scoped to `prod-*` naming convention
+- Tag-based conditions requiring `ManagedBy: Prod` tag on created resources
 
-# Wait for stack creation
-aws cloudformation wait stack-create-complete \
-  --stack-name prod-cloudformation-bucket
+### s3-cloudformation-bucket.yaml
 
-# Upload the deployment role template
-aws s3 cp cloudformation-deploy-role-template.yaml s3://prod-aws-deploy/cloudformation-deploy-role-template.yaml
+S3 bucket for hosting CloudFormation templates and Lambda function packages used by the Prod CLI during customer deployments.
 
-# Verify public access
-curl https://prod-aws-deploy.s3.amazonaws.com/cloudformation-deploy-role-template.yaml
-```
-
-### What it Creates
-
+**Resources Created:**
 - S3 bucket with versioning enabled
-- Bucket policy allowing public read access to `cloudformation-deploy-role-template.yaml`
-- Bucket owner enforced object ownership
-- Proper tags for management
+- Bucket policy with two access patterns:
+  - Public read access to CloudFormation deploy role template
+  - Conditional access for customer deployment roles to download Lambda packages
 
-## IAM Deployment Role Template
+**Parameters:**
+- `BucketName` - Name of the S3 bucket (default: prod-aws-deploy)
+- `TemplateFileName` - Path to the publicly accessible template (default: cloudformation-templates/cloudformation-deploy-role-template.yaml)
 
-The `cloudformation-deploy-role-template.yaml` template is used by customers during Prod CLI AWS authentication setup. It creates an IAM role in their AWS account that allows Prod to deploy App Runner and RDS resources.
+**Outputs:**
+- Template URL for customer use
+- Upload commands for both CloudFormation templates and Lambda packages
+- Supabase secret configuration command
 
-**This template is hosted in S3 and referenced by the CLI automatically.**
+### cloudformation-github-oidc-template.yaml
 
-### Permissions Included
+GitHub Actions OIDC provider and IAM role for automated S3 uploads from CI/CD pipelines.
 
-- App Runner service management
-- RDS database deployment
-- ECR repository and image management
-- VPC networking setup
-- Secrets Manager for database credentials
+**Resources Created:**
+- GitHub OIDC identity provider
+- IAM role that GitHub Actions can assume via OIDC federation
+- IAM policy granting S3 upload permissions
 
-## ECR IAM Template
+**Parameters:**
+- `GitHubOrg` - GitHub organization or username
+- `GitHubRepo` - GitHub repository name
+- `S3BucketName` - Target S3 bucket for uploads
+- `GitHubOIDCRoleName` - Name for the GitHub Actions role (default: GitHubActionsRole)
 
-The CloudFormation template creates a secure, role-based access control system for ECR with three distinct permission levels:
+**Security Features:**
+- OIDC-based authentication (no long-lived credentials)
+- 1-hour maximum session duration
+- Repository-scoped trust policy (only specified repo can assume role)
 
-### Resources Created
+**Outputs:**
+- OIDC provider ARN
+- GitHub Actions role ARN
+- Workflow configuration instructions
 
-- **IAM User** (`ECRUser`) - Base user that can assume the ECR roles
-- **ECR Pull Only Role** - Read-only access to ECR repositories
-- **ECR Push Only Role** - Write access for pushing images to ECR repositories
-- **ECR Repository Manager Role** - Administrative access for creating/deleting repositories
+### cloudformation-iam-template.yaml
 
-### Usage
+IAM user and role-based access control system for ECR operations and customer deployment role assumption.
 
-Deploy the template using CloudFormation to set up ECR access controls for your AWS account. The template uses parameters for customizable resource names and outputs the ARNs of created resources for reference in other templates.
+**Resources Created:**
+- `ECRUser` - IAM user that can assume ECR roles
+- `ECRPullOnlyRole` - Read-only access to ECR repositories (pull images only)
+- `ECRPushOnlyRole` - Write access to ECR repositories (push images only)
+- `ECRRepositoryManagerRole` - Administrative access (create/delete repositories)
+
+**Parameters:**
+- `IAMUserName` - Name for the IAM user (default: ECRUser)
+- `ECRPullOnlyRoleName` - Name for pull-only role (default: ECRPullOnlyRole)
+- `ECRPushOnlyRoleName` - Name for push-only role (default: ECRPushOnlyRole)
+- `ECRRepositoryManagerRoleName` - Name for repository manager role (default: ECRRepositoryManagerRole)
+
+**Security Features:**
+- Least-privilege access via separate roles for different operations
+- Tag-based access control using tenant tags (principal tag must match resource tag)
+- Cross-account role assumption support with external ID validation
+- User can assume both internal ECR roles and customer deployment roles
+
+**Outputs:**
+- ARNs for the IAM user and all three ECR roles
