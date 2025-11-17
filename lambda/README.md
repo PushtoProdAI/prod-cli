@@ -1,138 +1,57 @@
-# Lambda Functions for AWS Deployments
+# Lambda Functions
 
-This directory contains AWS Lambda functions used by Prod's CloudFormation deployments. These functions are deployed as **S3-hosted packages** rather than inline code to prevent code injection attacks.
+This directory contains AWS Lambda functions used as CloudFormation custom resources during customer deployments. Functions are deployed as S3-hosted packages rather than inline code to prevent code injection attacks.
 
-## Directory Structure
+## Functions
 
-```
-lambda/
-├── README.md                        # This file
-└── database-url-constructor/        # Constructs DATABASE_URL from RDS + password
-    ├── index.js                     # Lambda handler with input validation
-    ├── package.json                 # Dependencies (AWS SDK)
-    ├── build.sh                     # Build script
-    └── README.md                    # Function-specific docs
-```
+### database-url-constructor
 
-## Quick Start
+Constructs a `DATABASE_URL` connection string from RDS instance details and a password stored in Secrets Manager. CloudFormation cannot directly resolve secrets in environment variables, so this Lambda custom resource constructs the URL at runtime and stores it in Secrets Manager.
 
-### Build Lambda Function
+**Location:** `database-url-constructor/`
 
+**Input Parameters:**
+- RDS instance endpoint
+- Database name
+- Username
+- Password (from Secrets Manager)
+- Database engine type
+
+**Output:**
+- Formatted DATABASE_URL string stored in Secrets Manager
+
+**Security:**
+- Input validation for all parameters
+- URL-encodes passwords to handle special characters
+- Scoped IAM permissions (no wildcard resources)
+- Proper error handling and CloudFormation response signaling
+
+See `database-url-constructor/README.md` for implementation details.
+
+## Build Process
+
+Each Lambda function includes a `build.sh` script that:
+1. Installs production dependencies via npm
+2. Creates a zip package containing code and node_modules
+3. Outputs `function.zip`
+
+Build all functions from project root:
 ```bash
-# From project root
 make lambda-build
+```
 
-# Or manually
+Build a specific function:
+```bash
 cd lambda/database-url-constructor
 npm install --production
 ./build.sh
 ```
 
-### Upload to S3
+## Deployment
 
-```bash
-# Upload function.zip to your S3 bucket
-aws s3 cp lambda/database-url-constructor/function.zip \
-  s3://prod-aws-deploy/lambda-functions/database-url-constructor/function.zip \
-  --metadata version=1.0.0
-```
+Lambda packages are deployed to S3 and referenced by CloudFormation templates during customer deployments.
 
-### Configure Supabase
-
-```bash
-# Set the Lambda bucket environment variable
-supabase secrets set LAMBDA_BUCKET=prod-aws-deploy
-
-# Deploy the Edge Function
-supabase functions deploy deploy-aws-stack
-```
-
-## Security
-
-These Lambda functions are deployed as **pre-built packages** (not inline code) to prevent code injection attacks. All user-provided data is passed as CloudFormation parameters and validated before use.
-
-### Why Pre-built Packages?
-
-**Problem**: Inline Lambda code in CloudFormation templates creates a code injection risk when user-provided data (service names, env vars, etc.) is concatenated into code strings.
-
-**Solution**: Pre-built Lambda packages with strict input validation:
-1. Lambda code is written once, reviewed, and tested
-2. User data is passed only as CloudFormation parameters (not in code)
-3. Lambda validates all inputs before processing
-4. Eliminates template injection vectors
-
-## Available Functions
-
-### database-url-constructor
-
-Constructs a `DATABASE_URL` connection string from RDS instance details and a password stored in Secrets Manager.
-
-**Purpose**: CloudFormation can't directly resolve secrets in environment variables, so this Lambda custom resource constructs the URL at runtime and stores it in Secrets Manager.
-
-**Security Features**:
-- ✅ Input validation for all parameters
-- ✅ URL-encodes passwords to handle special characters
-- ✅ Scoped IAM permissions (not `Resource: '*'`)
-- ✅ Proper error handling and CloudFormation response
-
-See: `database-url-constructor/README.md` for details.
-
-## Adding New Lambda Functions
-
-To add a new Lambda function:
-
-1. **Create directory**:
-   ```bash
-   mkdir -p lambda/your-function-name
-   cd lambda/your-function-name
-   ```
-
-2. **Create files**:
-   - `index.js` - Lambda handler
-   - `package.json` - Dependencies
-   - `build.sh` - Build script
-   - `README.md` - Documentation
-
-3. **Add to Makefile**:
-   ```makefile
-   .PHONY: lambda-build-your-function-name
-   lambda-build-your-function-name:
-       @echo "Building your-function-name..."
-       @cd $(LAMBDA_DIR)/your-function-name && \
-           npm install --production && \
-           ./build.sh
-   ```
-
-4. **Update secrets-manager-s3.ts**:
-   ```typescript
-   const LAMBDA_PACKAGES = {
-     yourFunctionName: {
-       bucket: Deno.env.get('LAMBDA_BUCKET') || 'prod-aws-deploy',
-       key: 'lambda-functions/your-function-name/function.zip',
-       version: '1.0.0',
-     },
-   };
-   ```
-
-## Build Process
-
-Each Lambda function has a `build.sh` script that:
-1. Installs production dependencies
-2. Creates a zip package with code + node_modules
-3. Outputs `function.zip`
-
-Example `build.sh`:
-```bash
-#!/bin/bash
-set -e
-rm -rf node_modules function.zip
-npm install --production
-zip -r function.zip index.js package.json node_modules/
-echo "✓ Built function.zip"
-```
-
-## Deployment Workflow
-
+**Deployment Workflow:**
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 1. Build Lambda Package                                 │
@@ -141,8 +60,8 @@ echo "✓ Built function.zip"
              │
              ▼
 ┌─────────────────────────────────────────────────────────┐
-│ 2. Upload to S3                                         │
-│    aws s3 cp function.zip s3://bucket/lambda-...        │
+│ 2. Upload to S3 via GitHub Actions                      │
+│    Automated on push to main or manual trigger          │
 └────────────┬────────────────────────────────────────────┘
              │
              ▼
@@ -153,8 +72,8 @@ echo "✓ Built function.zip"
              │
              ▼
 ┌─────────────────────────────────────────────────────────┐
-│ 4. Deploy Edge Function                                 │
-│    supabase functions deploy deploy-aws-stack           │
+│ 4. Deploy Edge Function via GitHub Actions              │
+│    Automated deployment of Supabase functions           │
 └────────────┬────────────────────────────────────────────┘
              │
              ▼
@@ -164,67 +83,17 @@ echo "✓ Built function.zip"
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Testing
-
-### Local Testing
-
-```bash
-cd lambda/database-url-constructor
-
-# Install dependencies
-npm install
-
-# Run tests (if available)
-npm test
-
-# Test with sample CloudFormation event
-node -e "
-const handler = require('./index').handler;
-const event = { /* CloudFormation event */ };
-handler(event, { logStreamName: 'test' })
-  .then(() => console.log('Success'))
-  .catch(err => console.error('Error:', err));
-"
-```
-
-### Integration Testing
-
-Create a test CloudFormation stack to verify the Lambda function works end-to-end.
-
-## Makefile Commands
-
-```bash
-# Build all Lambda functions
-make lambda-build
-
-# Show Lambda versions
-make lambda-version
-
-# Clean build artifacts
-make lambda-clean
-
-# Show all commands
-make help
-```
-
-## S3 Bucket Structure
-
-After upload, your S3 bucket should have:
-
+**S3 Structure:**
 ```
 s3://prod-aws-deploy/
-├── cloudformation-deploy-role-template.yaml
 └── lambda-functions/
     └── database-url-constructor/
         └── function.zip
 ```
 
-## Customer Access
-
-Customers need S3 permissions to download Lambda packages during CloudFormation deployment. This is configured in their IAM role:
-
+**Customer Access:**
+Customer deployment roles include S3 read permissions for Lambda packages (configured in `cloudformation-deploy-role-template.yaml`):
 ```yaml
-# In cloudformation-deploy-role-template.yaml
 S3LambdaPackagePolicy:
   Action:
     - s3:GetObject
@@ -233,15 +102,25 @@ S3LambdaPackagePolicy:
     - arn:aws:s3:::prod-aws-deploy/lambda-functions/*
 ```
 
+## Security Model
+
+Lambda functions are deployed as pre-built packages to prevent code injection attacks:
+
+1. Lambda code is written, reviewed, and tested before deployment
+2. User-provided data is passed only as CloudFormation parameters
+3. Lambda validates all inputs before processing
+4. No user data is concatenated into code strings
+
+This eliminates template injection vectors that would exist with inline Lambda code in CloudFormation templates.
+
 ## Version Management
 
-Lambda packages are versioned for audit trail and rollback:
+Lambda packages are versioned in three places:
+1. `package.json` - Semantic version
+2. S3 object metadata - Version tag
+3. `supabase/functions/_shared/secrets-manager-s3.ts` - Version field in LAMBDA_PACKAGES config
 
-1. **package.json** - Semantic version (e.g., `1.0.0`)
-2. **S3 metadata** - Version tag on uploaded object
-3. **secrets-manager-s3.ts** - Version field in config
-
-To update:
+To update a Lambda version:
 ```bash
 cd lambda/database-url-constructor
 npm version patch  # or minor, major
@@ -250,31 +129,36 @@ make lambda-build
 # Update version in secrets-manager-s3.ts
 ```
 
-## Troubleshooting
+## Adding New Functions
 
-### Build fails with "npm: command not found"
-Install Node.js: `brew install node` (macOS)
+1. Create directory structure:
+   ```bash
+   mkdir -p lambda/your-function-name
+   cd lambda/your-function-name
+   ```
 
-### Upload fails with "Access Denied"
-Check AWS credentials: `aws sts get-caller-identity`
+2. Create required files:
+   - `index.js` - Lambda handler
+   - `package.json` - Dependencies
+   - `build.sh` - Build script
+   - `README.md` - Documentation
 
-### Lambda execution fails
-Check CloudWatch Logs: `aws logs tail /aws/lambda/prod-SERVICENAME-db-url-constructor`
+3. Add build target to Makefile:
+   ```makefile
+   .PHONY: lambda-build-your-function-name
+   lambda-build-your-function-name:
+       @cd $(LAMBDA_DIR)/your-function-name && \
+           npm install --production && \
+           ./build.sh
+   ```
 
-### Customer deployment fails with S3 403
-Customer needs to update their IAM role with S3 permissions (see Customer Access section)
-
-## Documentation
-
-- **Function Details**: See `database-url-constructor/README.md`
-- **Build Commands**: See `/MAKEFILE_COMMANDS.md`
-- **Deployment Guide**: See `/DEPLOYMENT_GUIDE_S3_LAMBDA.md`
-- **Security Details**: See `/SECURITY_IMPROVEMENTS_SUMMARY.md`
-
-## Support
-
-For issues or questions:
-1. Check CloudWatch Logs for Lambda execution errors
-2. Review input validation patterns in function code
-3. Test locally with sample CloudFormation events
-4. Check S3 bucket permissions and policies
+4. Register in `supabase/functions/_shared/secrets-manager-s3.ts`:
+   ```typescript
+   const LAMBDA_PACKAGES = {
+     yourFunctionName: {
+       bucket: Deno.env.get('LAMBDA_BUCKET'),
+       key: 'lambda-functions/your-function-name/function.zip',
+       version: '1.0.0',
+     },
+   };
+   ```
