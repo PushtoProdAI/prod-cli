@@ -164,7 +164,7 @@ func (m *Model) styleLogMessage(content string) string {
 	}
 
 	// Warning messages
-	if strings.Contains(lower, "warning") || strings.Contains(lower, "⚠️") || strings.Contains(lower, "dry run") {
+	if strings.Contains(lower, "warning") || strings.Contains(lower, "⚠️") {
 		return warningLogStyle.Render(content)
 	}
 
@@ -474,11 +474,6 @@ func (m Model) copySelectionToClipboard() tea.Cmd {
 // formatPlanAsTable formats the deployment plan data using clean lipgloss tables
 func (m Model) formatPlanAsTable(plan PlanDisplayMessage) string {
 	var result strings.Builder
-
-	// Add dry run indicator if applicable
-	if plan.DryRun {
-		result.WriteString("🔍 DRY RUN MODE - No changes will be made\n\n")
-	}
 
 	// Create main deployment configuration table
 	header := lipgloss.NewStyle().
