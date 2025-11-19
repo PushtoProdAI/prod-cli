@@ -83,7 +83,6 @@ type PlanDisplayMessage struct {
 	Source            string
 	Name              string
 	Language          string
-	DryRun            bool
 	Services          []ServiceRequirement
 	EnvVars           []EnvVarRequirement
 	Routes            []RouteRequirement

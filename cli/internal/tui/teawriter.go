@@ -190,7 +190,6 @@ func (w *TeaWriter) SendPlan(plan agent.DeployPlan) {
 		Source:            plan.Source,
 		Name:              plan.Spec.Name,
 		Language:          plan.Spec.Language,
-		DryRun:            false,
 		Services:          tuiServices,
 		EnvVars:           tuiEnvVars,
 		Routes:            tuiRoutes,
