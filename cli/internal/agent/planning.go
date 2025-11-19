@@ -162,7 +162,6 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		Source:              intent.Source,
 		Spec:                spec,
 		Summary:             summary,
-		DryRunFromPrompt:    intent.DryRun,
 		ExistingProjectInfo: existingProjectInfo,
 	}
 

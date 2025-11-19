@@ -24,14 +24,10 @@ import (
 const (
 	PlanDeployWorkflowName             = "agent.planDeploy"
 	DeployRenderWorkflowName           = "agent.deploy.render"
-	DryRunDeployWorkflowName           = "agent.dryRun.render"
 	DeployFlyioWorkflowName            = "agent.deploy.flyio"
 	CategorizeEnvVarsWorkflowName      = "agent.categorizeEnvVars"
 	DetectExistingWorkflowName         = "agent.detectExisting"
-	DryRunRenderWorkflowName           = "agent.dryrun.render"
-	DryRunFlyioWorkflowName            = "agent.dryrun.flyio"
 	DeployNetlifyWorkflowName          = "agent.deploy.netlify"
-	DryRunNetlifyWorkflowName          = "agent.dryrun.netlify"
 	SetupJavaScriptProjectWorkflowName = "agent.setupJavaScriptProject"
 	DeployVercelWorkflowName           = "agent.deploy.vercel"
 	DeployHerokuWorkflowName           = "agent.deploy.heroku"
@@ -134,14 +130,10 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 	return []workflowext.Workflow{
 		{Name: PlanDeployWorkflowName, WorkflowFunc: w.planDeploy},
 		{Name: DeployRenderWorkflowName, WorkflowFunc: w.deployRender},
-		{Name: DryRunDeployWorkflowName, WorkflowFunc: w.dryRunDeployRender},
 		{Name: DeployFlyioWorkflowName, WorkflowFunc: w.deployFly},
 		{Name: CategorizeEnvVarsWorkflowName, WorkflowFunc: w.categorizeEnvVars},
 		{Name: DetectExistingWorkflowName, WorkflowFunc: w.detectExistingWorkflow},
-		{Name: DryRunRenderWorkflowName, WorkflowFunc: w.dryRunDeployRender},
-		{Name: DryRunFlyioWorkflowName, WorkflowFunc: w.dryRunDeployFly},
 		{Name: DeployNetlifyWorkflowName, WorkflowFunc: w.deployNetlify},
-		{Name: DryRunNetlifyWorkflowName, WorkflowFunc: w.dryRunNetlify},
 		{Name: SetupJavaScriptProjectWorkflowName, WorkflowFunc: w.setupJavaScriptProject},
 		{Name: DeployVercelWorkflowName, WorkflowFunc: w.deployVercel},
 		{Name: DeployHerokuWorkflowName, WorkflowFunc: w.deployHeroku},
@@ -171,18 +163,6 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input DeployPlan)
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployAWSWorkflowName, time.Now().Unix())}, DeployAWSWorkflowName, input)
 	default:
 		return nil, errors.New("unsupported platform for deployment")
-	}
-}
-
-func (Workflows) DryRunDeploy(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
-	slog.Info("Dry run", "platform", input.Platform, "action", input.Action)
-	switch input.Platform {
-	case Render:
-		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DryRunDeployWorkflowName, time.Now().Unix())}, DryRunDeployWorkflowName, input)
-	case FlyIO:
-		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DryRunFlyioWorkflowName, time.Now().Unix())}, DryRunFlyioWorkflowName, input)
-	default:
-		return nil, errors.New("unsupported platform for dry-run deployment")
 	}
 }
 
@@ -479,19 +459,4 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 	result.UpdatedPlan = plan
 	slog.Info("JavaScript project setup completed successfully")
 	return result, nil
-}
-
-// validateDeploymentSpec validates a deployment specification
-func validateDeploymentSpec(spec *deployment.DeploymentSpec) []string {
-	var errors []string
-
-	if spec.Name == "" {
-		errors = append(errors, "Application name is required")
-	}
-
-	if spec.Language == "" {
-		errors = append(errors, "Programming language must be specified")
-	}
-
-	return errors
 }

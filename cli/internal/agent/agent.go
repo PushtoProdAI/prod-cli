@@ -33,7 +33,7 @@ type TUIWriter interface {
 	SendSelect(message string, options []string)
 	SendTextPrompt(message string)
 	SendTextPromptWithDefault(message string, defaultValue string)
-	SendPlan(plan DeployPlan, dryRun bool)
+	SendPlan(plan DeployPlan)
 	SendError(summary string, remediations []Remediation)
 	SendWarning(summary string, remediations []Remediation)
 	SendSuccess(platform string, appName string, url string)
@@ -54,7 +54,6 @@ type Agent struct {
 	wfClient             *client.Client
 	interactive          bool
 	DeployPlan           *DeployPlan
-	dryRun               bool
 	UIOutput             io.Writer
 	auth                 auth.AuthProvider
 	envVars              []EnvVarWithStatus
@@ -89,7 +88,6 @@ type DeployPlan struct {
 	Source              string
 	Spec                analyzer.ProjectSpec
 	Summary             string
-	DryRunFromPrompt    bool
 	CollectedEnvVars    []deployment.EnvVar
 	Pricing             deployment.CostEstimate
 	ExistingProjectInfo ExistingProjectInfo
@@ -154,10 +152,6 @@ func (sm *deploySM) next(ctx context.Context, input string, out io.Writer) error
 	return nil
 }
 
-func (a *Agent) SetDryRun(dryRun bool) {
-	a.dryRun = dryRun
-}
-
 func (a *Agent) SetInteractive(interactive bool) {
 	a.interactive = interactive
 }
@@ -167,9 +161,9 @@ func (a *Agent) IsErrorTrackingEnabled() bool {
 }
 
 // Helper methods for TUI operations - direct TUI calls
-func (a *Agent) sendPlan(out io.Writer, plan DeployPlan, dryRun bool) {
+func (a *Agent) sendPlan(out io.Writer, plan DeployPlan) {
 	tuiWriter := out.(TUIWriter)
-	tuiWriter.SendPlan(plan, dryRun)
+	tuiWriter.SendPlan(plan)
 }
 
 func (a *Agent) sendConfirmation(out io.Writer, message string) {
@@ -381,25 +375,13 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 		})
 	}
 
-	// Check if dry-run was inferred from the prompt and merge with existing flag
-	if plan.DryRunFromPrompt && !a.dryRun {
-		a.dryRun = true
-		fmt.Fprint(out, "🔍 Detected dry-run request from your prompt - simulating execution without making changes\n")
-	}
-
-	a.sendPlan(out, plan, a.dryRun)
+	a.sendPlan(out, plan)
 
 	if !shouldProceed(plan) {
 		fmt.Fprintf(out, "Cannot proceed with deployment plan\n")
 		return a.checkPrerequisites, nil
 	}
 	a.DeployPlan = &plan
-
-	// Skip confirmation prompt in dry-run mode
-	if a.dryRun {
-		fmt.Fprintf(out, "Executing a dry-run deployment. Please wait as we calculate pricing and identify potential issues before you deploy...\n")
-		return a.deploy(ctx, input, out)
-	}
 
 	if a.interactive {
 		// automatically advance the next state, don't need to wait for input here
@@ -841,10 +823,6 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 }
 
 func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	if a.dryRun {
-		return a.dryRunDeploy(ctx, input, out)
-	}
-
 	// Check authentication before deployment
 	return a.checkAuthentication(ctx, input, out)
 }
@@ -1060,15 +1038,6 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 	return a.checkPrerequisites, nil
 }
 
-func (a *Agent) dryRunDeploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	// Check authentication before dry run deployment
-	if a.DeployPlan.Platform == Render {
-		return a.checkRenderAuthenticationForDryRun(ctx, input, out)
-	}
-
-	return a.executeDryRun(ctx, input, out)
-}
-
 func shouldProceed(plan DeployPlan) bool {
 	if plan.Action == UnknownAction {
 		slog.Info("Validation failed", "reason", "unknown action", "action", plan.Action)
@@ -1091,104 +1060,6 @@ func shouldProceed(plan DeployPlan) bool {
 
 	slog.Info("Validation passed", "status", "successful")
 	return true
-}
-
-type DryRunResult struct {
-	Steps            []DryRunStep            `json:"steps"`
-	EstimatedCosts   deployment.CostEstimate `json:"estimatedCosts"`
-	CredentialStatus map[string]bool         `json:"credentialStatus"`
-	ConflictChecks   []ConflictCheck         `json:"conflictChecks"`
-	ValidationErrors []string                `json:"validationErrors"`
-}
-
-type DryRunStep struct {
-	ID          string         `json:"id"`
-	Description string         `json:"description"`
-	Type        string         `json:"type"`
-	Config      map[string]any `json:"config"`
-	DependsOn   []string       `json:"dependsOn"`
-}
-
-type ConflictCheck struct {
-	Resource string `json:"resource"`
-	Status   string `json:"status"` // "ok", "conflict", "warning"
-	Message  string `json:"message"`
-}
-
-func (a *Agent) displayDryRunResult(out io.Writer, result DryRunResult) {
-	fmt.Fprint(out, "\n🔍 DRY RUN PREVIEW\n")
-	fmt.Fprint(out, "==================\n\n")
-
-	// Show validation errors first
-	if len(result.ValidationErrors) > 0 {
-		fmt.Fprint(out, "❌ VALIDATION ERRORS:\n")
-		for _, err := range result.ValidationErrors {
-			fmt.Fprintf(out, "  • %s\n", err)
-		}
-		fmt.Fprint(out, "\n")
-	}
-
-	// Show credential status
-	fmt.Fprint(out, "🔑 CREDENTIAL STATUS:\n")
-	for service, valid := range result.CredentialStatus {
-		status := "✅"
-		if !valid {
-			status = "❌"
-		}
-		fmt.Fprintf(out, "  %s %s\n", status, service)
-	}
-	fmt.Fprint(out, "\n")
-
-	// Show conflict checks
-	if len(result.ConflictChecks) > 0 {
-		fmt.Fprint(out, "🔍 CONFLICT CHECKS:\n")
-		for _, check := range result.ConflictChecks {
-			var icon string
-			switch check.Status {
-			case "ok":
-				icon = "✅"
-			case "conflict":
-				icon = "❌"
-			case "warning":
-				icon = "⚠️"
-			default:
-				icon = "❓"
-			}
-			fmt.Fprintf(out, "  %s %s: %s\n", icon, check.Resource, check.Message)
-		}
-		fmt.Fprint(out, "\n")
-	}
-
-	// Show planned actions
-	fmt.Fprint(out, "📋 PLANNED ACTIONS:\n")
-	for i, step := range result.Steps {
-		fmt.Fprintf(out, "%d. %s\n", i+1, step.Description)
-		fmt.Fprintf(out, "   Type: %s\n", step.Type)
-		if len(step.DependsOn) > 0 {
-			fmt.Fprintf(out, "   Depends on: %v\n", step.DependsOn)
-		}
-	}
-	fmt.Fprint(out, "\n")
-
-	// Show estimated costs
-	if result.EstimatedCosts.Total > 0 {
-		fmt.Fprint(out, "💰 ESTIMATED MONTHLY COSTS:\n")
-		for _, service := range result.EstimatedCosts.Services {
-			var description string
-			if service.Plan != "" {
-				if service.Storage > 0 {
-					description = fmt.Sprintf("%s (%s, %dGB storage)", service.Provider, service.Plan, service.Storage)
-				} else {
-					description = fmt.Sprintf("%s (%s)", service.Provider, service.Plan)
-				}
-			} else {
-				description = service.Provider
-			}
-			fmt.Fprintf(out, "  • %s: $%.2f\n", description, service.Cost)
-		}
-		fmt.Fprintf(out, "  Total: $%.2f/month\n", result.EstimatedCosts.Total)
-		fmt.Fprint(out, "\n")
-	}
 }
 
 func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -1460,188 +1331,6 @@ func (a *Agent) performOAuthLogin(ctx context.Context, input string, out io.Writ
 		return a.nextStateAfterAuth(ctx, input, out)
 	}
 	return a.executeDeployment(ctx, input, out)
-}
-
-func (a *Agent) checkRenderAuthenticationForDryRun(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	fmt.Fprint(out, "Checking Render authentication...\n")
-
-	// Get the render client from the workflow
-	apiKey := os.Getenv("RENDER_API_KEY")
-	renderClient := render.NewHTTPRenderClient(apiKey, output.NewNoOpWriter())
-	renderAuth := auth.NewRenderAuth(renderClient, out)
-
-	// Check if already authenticated
-	authenticated, err := renderAuth.CheckAuthentication(ctx)
-	if err != nil {
-		fmt.Fprintf(out, "Error checking authentication: %v\n", err)
-		return a.checkPrerequisites, err
-	}
-
-	if !authenticated {
-		fmt.Fprint(out, "🔐 Authentication required for Render deployment\n\n")
-
-		// Store the render auth for use in authentication states
-		a.auth = renderAuth
-
-		// In non-interactive mode, default to API key mode
-		if !a.interactive {
-			// Continue with dry run after API key setup
-			return a.executeDryRun, nil
-		}
-
-		// In interactive mode, transition to auth selection state
-		a.sendSelect(out, "Choose authentication method:", []string{
-			"Interactive login (recommended)",
-			"Enter API key directly",
-		})
-		// Transition to waiting for auth selection (but for dry run)
-		return a.waitForAuthSelectionDryRun, nil
-	}
-
-	// Already authenticated, proceed with dry run
-	return a.executeDryRun(ctx, input, out)
-}
-
-func (a *Agent) waitForAuthSelectionDryRun(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	input = strings.TrimSpace(input)
-
-	switch input {
-	case "0": // First option - Interactive login
-		return a.performOAuthLoginDryRun(ctx, input, out)
-	case "1": // Second option - API key
-		return a.promptForAPIKeyDryRun(ctx, input, out)
-	default:
-		// Invalid selection, ask again
-		a.sendSelect(out, "Choose authentication method:", []string{
-			"Interactive login (recommended)",
-			"Enter API key directly",
-		})
-		return a.waitForAuthSelectionDryRun, nil
-	}
-}
-
-func (a *Agent) promptForAPIKeyDryRun(_ context.Context, _ string, out io.Writer) (stateFn, error) {
-	// Send API key prompt
-	a.sendAPIKeyPrompt(out, "🔑 Enter your Render API key (get it from https://dashboard.render.com/account/settings):")
-	return a.waitForAPIKeyDryRun, nil
-}
-
-func (a *Agent) waitForAPIKeyDryRun(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	apiKey := strings.TrimSpace(input)
-
-	// Validate API key format
-	if len(apiKey) == 0 {
-		fmt.Fprint(out, "❌ API key cannot be empty\n")
-		return a.promptForAPIKeyDryRun(ctx, "", out)
-	}
-
-	if len(apiKey) < 20 {
-		fmt.Fprint(out, "❌ API key seems too short (should be at least 20 characters)\n")
-		return a.promptForAPIKeyDryRun(ctx, "", out)
-	}
-
-	if !strings.HasPrefix(apiKey, "rnd_") {
-		fmt.Fprint(out, "❌ Render API keys typically start with 'rnd_'\n")
-		return a.promptForAPIKeyDryRun(ctx, "", out)
-	}
-
-	// Set the API key in the environment
-	os.Setenv("RENDER_API_KEY", apiKey)
-
-	// Validate the API key by making a test call
-	fmt.Fprint(out, "🔍 Validating API key...\n")
-	valid, err := a.auth.ValidateAPIKey(ctx, apiKey)
-	if err != nil {
-		fmt.Fprintf(out, "❌ Failed to validate API key: %v\n", err)
-		prod_error.CaptureErrorWithContext(err, map[string]any{
-			"component": "agent",
-			"operation": "api_key_validation",
-			"auth_type": "api_key",
-			"platform":  a.DeployPlan.Platform.String(),
-			"flow":      "dry_run",
-		})
-		os.Unsetenv("RENDER_API_KEY")
-		return a.promptForAPIKeyDryRun(ctx, "", out)
-	}
-
-	if !valid {
-		fmt.Fprint(out, "❌ Invalid API key - please check your key and try again\n")
-		os.Unsetenv("RENDER_API_KEY")
-		return a.promptForAPIKeyDryRun(ctx, "", out)
-	}
-
-	fmt.Fprint(out, "✅ API key validated successfully!\n")
-	fmt.Fprint(out, "💡 API key will only be available for this session.\n")
-	fmt.Fprint(out, "   To persist it manually, run: export RENDER_API_KEY=your_key_here\n")
-
-	// Continue with dry run
-	return a.executeDryRun(ctx, input, out)
-}
-
-func (a *Agent) performOAuthLoginDryRun(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	fmt.Fprint(out, "🚀 Starting authentication flow...\n")
-
-	// Perform OAuth login using the auth package
-	if err := a.auth.PerformOAuthLogin(ctx); err != nil {
-		fmt.Fprintf(out, "❌ Authentication failed: %v\n", err)
-		prod_error.CaptureErrorWithContext(err, map[string]any{
-			"component": "agent",
-			"operation": "oauth_login",
-			"auth_type": "oauth",
-			"platform":  a.DeployPlan.Platform.String(),
-			"flow":      "dry_run",
-		})
-		fmt.Fprint(out, "🔧 You can try option 2 (Manual API key setup) instead\n")
-		return a.waitForAuthSelectionDryRun, nil
-	}
-
-	fmt.Fprint(out, "✅ Authentication successful!\n")
-
-	// Continue with dry run
-	return a.executeDryRun(ctx, input, out)
-}
-
-func (a *Agent) executeDryRun(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	wf, err := Workflows{}.DryRunDeploy(ctx, a.wfClient, *a.DeployPlan)
-	if err != nil {
-		slog.Info("Dry-run workflow execution result", "error", err)
-		prod_error.CaptureErrorWithContext(err, map[string]any{
-			"workflow":     "dry_run_deploy",
-			"component":    "agent",
-			"operation":    "workflow_execution",
-			"platform":     a.DeployPlan.Platform,
-			"project_name": a.DeployPlan.Spec.Name,
-			"language":     a.DeployPlan.Spec.Language,
-		})
-		fmt.Fprint(out, "Sorry, couldn't create a dry-run deployment plan \n")
-		return a.checkPrerequisites, nil
-	}
-
-	// get the dry-run result with a longer timeout to accommodate LLM operations
-	result, err := client.GetWorkflowResult[DryRunResult](ctx, a.wfClient, wf, 5*time.Minute)
-	if err != nil {
-		prod_error.CaptureErrorWithContext(err, map[string]any{
-			"workflow":     "dry_run_deploy",
-			"component":    "agent",
-			"operation":    "get_workflow_result",
-			"platform":     a.DeployPlan.Platform,
-			"project_name": a.DeployPlan.Spec.Name,
-			"language":     a.DeployPlan.Spec.Language,
-		})
-		a.wfClient.CancelWorkflowInstance(ctx, wf)
-		fmt.Fprint(out, "Sorry that we had trouble creating the dry-run preview \n")
-		return a.checkPrerequisites, nil
-	}
-
-	// Display the dry-run preview
-	a.displayDryRunResult(out, result)
-
-	// In non-interactive mode, end the state machine
-	if !a.interactive {
-		return nil, nil
-	}
-	// In interactive mode, return to input processing state for more commands
-	return a.checkPrerequisites, nil
 }
 
 func (a *Agent) ensureAuthenticated(ctx context.Context, out io.Writer) bool {
