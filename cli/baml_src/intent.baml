@@ -4,7 +4,6 @@ class Intent {
     action string
     platform string
     source string
-    dryRun bool
   }
 
 class Summary {
@@ -134,23 +133,6 @@ You are a strict classifier. Your only job is to analyze deployment requests and
   Extract the source path if one is given (e.g., a full path like `/Users/alice/project/app`). If not, set:
     "source": "pwd"
 
-  ## DRY RUN DETECTION
-  Check if the user wants to perform a dry run (simulation without making changes). Look for keywords like:
-    - "dry run", "dry-run"
-    - "simulate", "simulation" 
-    - "preview", "preview changes"
-    - "test", "test deployment"
-    - "check", "verify"
-    - "what would happen"
-    - "without making changes"
-    - "just show me"
-
-  If any of these patterns are found, set:
-    "dryRun": true
-
-  Otherwise, set:
-    "dryRun": false
-
   ## OUTPUT FORMAT
   Respond ONLY with a JSON object in this format:
   {{ctx.output_format}}
@@ -216,8 +198,7 @@ function SummarizeIntent(intent: Intent, name: string, language: string, detecte
       - Generate a clear and friendly summary of the request.
       - Include the action, platform, project name, language, and source path.
       - Do **not** include any warnings or "check your code" suggestions.
-      - If this is a dry-run request (intent.dryRun is true), end with: "We'll show you what would happen without making any changes."
-      - If this is NOT a dry-run request (intent.dryRun is false), end with: "If everything looks good, we'll take care of deploying it for you."
+      - End with: "If everything looks good, we'll take care of deploying it for you."
 
   ## STYLE
   - Keep it friendly and simple.
@@ -701,14 +682,7 @@ test intentSummary
   }
 }
 
-test testDryRunIntent {
-  functions [ExtractIntent]
-  args {
-    request #"
-     Can you simulate deploying /Users/raulbarroso/code/meroxa/prod/test-projects/fastapi-app to render without making any changes?
-    "#
-  }
-}
+
 
 test errorSummary {
   functions [SummarizeDeployError]
@@ -717,7 +691,6 @@ test errorSummary {
       action "DEPLOY"
       platform "Render"
       source "/path/to/app"
-      dryRun false
     }
     errorMsg "failed to execute render steps: failed to execute step step-1: failed to create postgres: API request failed with status 409: {\"message\":\"name: (hockey-pool-app_db) already in use\"}\n"
     os "darwin"

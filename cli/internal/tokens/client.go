@@ -201,7 +201,6 @@ func EstimateCost(operation string, metadata Metadata) int {
 	// Base costs (should match server-side rules)
 	baseCosts := map[string]float64{
 		OperationDeploy:   1.0,
-		OperationDryRun:   0.5,
 		OperationRollback: 0.25,
 		OperationStatus:   0.1,
 	}
