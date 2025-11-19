@@ -145,13 +145,6 @@ func getDefaultRules() map[string]*TokenRule {
 			Priority: 100,
 			Active:   true,
 		},
-		OperationDryRun: {
-			Operation:   OperationDryRun,
-			BaseCost:    0.5,
-			Multipliers: []CostMultiplier{},
-			Priority:    90,
-			Active:      true,
-		},
 		OperationRollback: {
 			Operation:   OperationRollback,
 			BaseCost:    0.25,
@@ -191,7 +184,6 @@ func (re *RulesEngine) GetRule(operation string) (*TokenRule, bool) {
 func ValidateOperation(operation string) bool {
 	validOps := []string{
 		OperationDeploy,
-		OperationDryRun,
 		OperationRollback,
 		OperationStatus,
 	}

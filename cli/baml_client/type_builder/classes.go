@@ -283,10 +283,6 @@ func (t *IntentClassView) PropertySource() (ClassPropertyView, error) {
 	return t.inner.Property("source")
 }
 
-func (t *IntentClassView) PropertyDryRun() (ClassPropertyView, error) {
-	return t.inner.Property("dryRun")
-}
-
 func (t *TypeBuilder) Intent() (*IntentClassView, error) {
 	bld, err := t.inner.Class("Intent")
 	if err != nil {

@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"fmt"
 	"log/slog"
 	"net/url"
 
@@ -11,73 +10,6 @@ import (
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	prod_error "github.com/meroxa/prod/cli/internal/error"
 )
-
-// getStepType returns the type of a Render deployment step
-func getStepType(step render.RenderAPIStep) string {
-	switch step.(type) {
-	case *render.CreatePostgresStep:
-		return "postgres"
-	case *render.CreateRedisStep:
-		return "redis"
-	case *render.GetConnectionInfoStep:
-		return "connection"
-	case *render.BuildAndPushStep:
-		return "docker_build"
-	case *render.CreateRegistryCredentialStep:
-		return "registry_credential"
-	case *render.CreateWebServiceStep:
-		return "web_service"
-	default:
-		return "unknown"
-	}
-}
-
-// extractStepConfig extracts configuration from a Render deployment step
-func extractStepConfig(step render.RenderAPIStep) map[string]any {
-	config := make(map[string]any)
-
-	switch s := step.(type) {
-	case *render.CreatePostgresStep:
-		config["name"] = s.Name
-		config["databaseName"] = s.DatabaseName
-		config["plan"] = "basic_256mb"
-		config["version"] = "16"
-	case *render.CreateRedisStep:
-		config["name"] = s.Name
-		config["plan"] = "standard"
-	case *render.CreateWebServiceStep:
-		config["name"] = s.Name
-		config["buildCommand"] = s.BuildCommand
-		config["startCommand"] = s.StartCommand
-		config["environment"] = s.Environment
-	}
-
-	return config
-}
-
-// performConflictChecks checks for resource conflicts in a Render deployment
-func performConflictChecks(_ string, spec *deployment.DeploymentSpec, _ render.RenderClient) []ConflictCheck {
-	var checks []ConflictCheck
-
-	checks = append(checks, ConflictCheck{
-		Resource: fmt.Sprintf("Web service '%s-web'", spec.Name),
-		Status:   "ok",
-		Message:  "No conflicts detected",
-	})
-
-	serviceCounts := spec.ServiceCounts()
-	for provider, count := range serviceCounts {
-		for i := 1; i <= count; i++ {
-			checks = append(checks, ConflictCheck{
-				Resource: fmt.Sprintf("%s service '%s-%s-%d'", provider, spec.Name, provider, i),
-				Status:   "ok",
-				Message:  "No conflicts detected",
-			})
-		}
-	}
-
-	return checks
-}
 
 func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deployResult, error) {
 	if w.registry == nil {
@@ -441,76 +373,4 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	}
 
 	return deployResult{Url: fullUrl}, nil
-}
-
-func (w *Workflows) dryRunDeployRender(ctx workflow.Context, input DeployPlan) (DryRunResult, error) {
-	if w.registry == nil {
-		return DryRunResult{}, errors.New("workflow registry is not set")
-	}
-
-	token := ""
-	session := CtxWorkflowSession(ctx)
-	if session != nil {
-		token = session.AccessToken
-	}
-
-	credentialStatus := make(map[string]bool)
-	workspaceID, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetRenderWorkspace).Get(ctx)
-	if err != nil {
-		credentialStatus["Render API"] = false
-	} else {
-		credentialStatus["Render API"] = true
-	}
-
-	envVars := input.CollectedEnvVars
-
-	db := deployment.NewDeploymentBuilder(&input.Spec, envVars)
-	spec, err := db.Build()
-	if err != nil {
-		return DryRunResult{}, errors.Errorf("failed to build deployment spec: %w", err)
-	}
-	dockerGen := deployment.NewDockerGenerator(w.uiWriter, spec.EnvVars)
-
-	spec.Metadata["buildContext"] = input.Source
-	spec.Metadata["tenantID"] = "test"
-	spec.Metadata["authToken"] = token
-
-	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true, w.uiWriter)
-	steps := d.GenerateAPISteps(workspaceID)
-
-	dryRunSteps := make([]DryRunStep, len(steps))
-	for i, step := range steps {
-		dryRunSteps[i] = DryRunStep{
-			ID:          step.GetID(),
-			Description: step.GetDescription(),
-			Type:        getStepType(step),
-			Config:      extractStepConfig(step),
-			DependsOn:   step.GetDependencies(),
-		}
-	}
-
-	estimatedCosts, err := workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateRenderCosts, spec, deployment.StrategyRenderQueued).Get(ctx)
-	if err != nil {
-		slog.Error("Error estimating costs", "error", err)
-		prod_error.CaptureErrorWithContext(err, map[string]any{
-			"workflow":     DryRunRenderWorkflowName,
-			"activity":     AgentEstimateRenderCosts,
-			"component":    "deployment",
-			"platform":     "render",
-			"project_name": input.Spec.Name,
-			"language":     input.Spec.Language,
-		})
-		return DryRunResult{}, errors.Errorf("failed to estimate costs: %w", err)
-	}
-
-	conflictChecks := performConflictChecks(workspaceID, spec, w.renderClient)
-	validationErrors := validateDeploymentSpec(spec)
-
-	return DryRunResult{
-		Steps:            dryRunSteps,
-		EstimatedCosts:   estimatedCosts,
-		CredentialStatus: credentialStatus,
-		ConflictChecks:   conflictChecks,
-		ValidationErrors: validationErrors,
-	}, nil
 }

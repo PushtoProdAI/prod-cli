@@ -217,13 +217,4 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 	}, nil
 }
 
-func (w *Workflows) dryRunNetlify(ctx workflow.Context, input DeployPlan) (deployResult, error) {
-	slog.Info("dryRunNetlify workflow started", "platform", input.Platform)
-	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
-
-	// TODO: Implement Netlify dry run
-	slog.Info("Netlify dry run not yet implemented")
-	return deployResult{Error: deployError{Summary: "Netlify dry run not yet implemented"}}, nil
-}
-
 // setupJavaScriptProject sets up a JavaScript/Node.js project for deployment

@@ -150,7 +150,7 @@ func (w *TeaWriter) SendTextPromptWithDefault(message string, defaultValue strin
 	})
 }
 
-func (w *TeaWriter) SendPlan(plan agent.DeployPlan, dryRun bool) {
+func (w *TeaWriter) SendPlan(plan agent.DeployPlan) {
 	// Convert agent types to TUI types
 	tuiServices := make([]ServiceRequirement, len(plan.Spec.ServiceRequirements))
 	for i, s := range plan.Spec.ServiceRequirements {
@@ -190,7 +190,7 @@ func (w *TeaWriter) SendPlan(plan agent.DeployPlan, dryRun bool) {
 		Source:            plan.Source,
 		Name:              plan.Spec.Name,
 		Language:          plan.Spec.Language,
-		DryRun:            dryRun,
+		DryRun:            false,
 		Services:          tuiServices,
 		EnvVars:           tuiEnvVars,
 		Routes:            tuiRoutes,

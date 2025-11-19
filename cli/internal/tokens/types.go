@@ -103,10 +103,10 @@ type CostMultiplier struct {
 
 // ConsumeResult represents the result of a token consumption operation
 type ConsumeResult struct {
-	Success          bool
-	TransactionID    *uuid.UUID
-	TokensRemaining  int
-	ErrorMessage     *string
+	Success         bool
+	TransactionID   *uuid.UUID
+	TokensRemaining int
+	ErrorMessage    *string
 }
 
 // RefundResult represents the result of a token refund operation
@@ -131,7 +131,6 @@ type TokenSummary struct {
 // Operation type constants for type safety
 const (
 	OperationDeploy       = "deploy"
-	OperationDryRun       = "dry_run"
 	OperationRollback     = "rollback"
 	OperationStatus       = "status"
 	OperationRefund       = "refund"
