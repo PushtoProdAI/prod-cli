@@ -3,8 +3,10 @@ package flyio
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -20,13 +22,50 @@ type CreateFlyioAppStep struct {
 }
 
 func (c *CreateFlyioAppStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
+	// First check if app already exists in your organization
+	existingApp, err := client.GetApp(ctx, c.appName)
+	if err == nil && existingApp != nil {
+		// App already exists, use it instead of creating
+		slog.Info("App already exists, using existing app", "name", c.appName, "id", existingApp.ID)
+		return deployment.CreatedResource{
+			ID:   existingApp.ID,
+			Type: "app",
+			Name: existingApp.Name,
+		}, nil
+	}
+
+	// Try to create the app with the original name
+	appName := c.appName
 	app, err := client.CreateApp(ctx, CreateAppRequest{
-		Name:    c.appName,
+		Name:    appName,
 		Region:  c.region,
 		OrgSlug: defaultOrg,
 	})
 	if err != nil {
-		return nil, err
+		// Check if it's a "name already taken" error
+		if strings.Contains(err.Error(), "already been taken") || strings.Contains(err.Error(), "Name has already been taken") {
+			// The name is globally reserved by another Fly.io user or in a zombie state
+			// Try to get the existing app one more time (in case it's in our org)
+			existingApp, getErr := client.GetApp(ctx, appName)
+			if getErr == nil && existingApp != nil {
+				slog.Info("App was created by another process, using existing app", "name", appName, "id", existingApp.ID)
+				return deployment.CreatedResource{
+					ID:   existingApp.ID,
+					Type: "app",
+					Name: existingApp.Name,
+				}, nil
+			}
+
+			// App name is taken globally - provide a clear error message
+			return nil, errors.Errorf("app name %q is already taken globally on Fly.io. This could be:\n"+
+				"1. Taken by another Fly.io user\n"+
+				"2. Reserved from a previous failed deployment\n\n"+
+				"Solutions:\n"+
+				"- Rename your project directory to something more unique\n"+
+				"- Or manually choose a unique name for your app", appName)
+		} else {
+			return nil, err
+		}
 	}
 
 	// Return as CreatedResource for consistency
@@ -50,25 +89,32 @@ func (c *CreateFlyioAppStep) Rollback(ctx context.Context, client FlyioClient, s
 // DeployFlyioConfigStep deploys configuration to a Fly.io app
 type DeployFlyioConfigStep struct {
 	BaseStep
-	appName string // Changed from appID to appName since flyctl uses names
+	appName string // App name (known upfront from spec)
 	config  *FlyioConfig
 }
 
 func (d *DeployFlyioConfigStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
-	// Use the app name directly (no template resolution needed)
-	err := client.DeployApp(ctx, d.appName, d.config)
+	appName := d.appName
+	if appName == "" {
+		return nil, errors.Errorf("app name is required")
+	}
+
+	slog.Info("Deploying app configuration", "app", appName)
+
+	// Deploy using the actual app name
+	err := client.DeployApp(ctx, appName, d.config)
 	if err != nil {
 		return nil, err
 	}
 
 	// Fetch the app information to get the URL
-	app, err := client.GetApp(ctx, d.appName)
+	app, err := client.GetApp(ctx, appName)
 	if err != nil {
 		// Don't fail the deployment if we can't fetch app info, just log it
 		return deployment.CreatedResource{
-			ID:   d.appName,
+			ID:   appName,
 			Type: "app",
-			Name: d.appName,
+			Name: appName,
 		}, nil
 	}
 
@@ -202,12 +248,24 @@ func (c *CreateFlyioServiceStep) Rollback(ctx context.Context, client FlyioClien
 // AttachPostgresStep attaches a PostgreSQL database to a Fly.io app
 type AttachPostgresStep struct {
 	BaseStep
-	appName       string
+	appStepID     string // ID of the step that created the app
 	serviceStepID string // ID of the step that created the postgres cluster
 	variableName  string
 }
 
 func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
+	// Get the actual app name from the create-app step results
+	appName := ""
+	if appResult, ok := stepResults[s.appStepID]; ok {
+		if resource, ok := appResult.(deployment.CreatedResource); ok {
+			appName = resource.Name
+		}
+	}
+
+	if appName == "" {
+		return nil, errors.Errorf("could not find app name from step %s", s.appStepID)
+	}
+
 	// Get the cluster ID from the previous step
 	clusterID := ""
 	if serviceResult, ok := stepResults[s.serviceStepID]; ok {
@@ -222,9 +280,11 @@ func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, st
 		return nil, errors.Errorf("could not find cluster ID from step %s", s.serviceStepID)
 	}
 
+	slog.Info("Attaching Postgres to app", "app", appName, "cluster", clusterID)
+
 	// Attach using cluster ID
 	err := client.AttachPostgres(ctx, AttachPostgresRequest{
-		AppName:      s.appName,
+		AppName:      appName,
 		ClusterID:    clusterID,
 		VariableName: s.variableName,
 	})
@@ -235,7 +295,7 @@ func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, st
 	// Return success indicator
 	return map[string]string{
 		"status":       "attached",
-		"app":          s.appName,
+		"app":          appName,
 		"cluster_id":   clusterID,
 		"variableName": s.variableName,
 	}, nil
@@ -250,15 +310,29 @@ func (s *AttachPostgresStep) Rollback(ctx context.Context, client FlyioClient, s
 // AttachRedisStep attaches a Redis database to a Fly.io app
 type AttachRedisStep struct {
 	BaseStep
-	appName      string
+	appStepID    string // ID of the step that created the app
 	redisName    string
 	variableName string
 }
 
 func (s *AttachRedisStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
+	// Get the actual app name from the create-app step results
+	appName := ""
+	if appResult, ok := stepResults[s.appStepID]; ok {
+		if resource, ok := appResult.(deployment.CreatedResource); ok {
+			appName = resource.Name
+		}
+	}
+
+	if appName == "" {
+		return nil, errors.Errorf("could not find app name from step %s", s.appStepID)
+	}
+
+	slog.Info("Attaching Redis to app", "app", appName, "redis", s.redisName)
+
 	// Attach the Redis database to the app
 	err := client.AttachRedis(ctx, AttachRedisRequest{
-		AppName:      s.appName,
+		AppName:      appName,
 		RedisName:    s.redisName,
 		VariableName: s.variableName,
 	})
@@ -269,7 +343,7 @@ func (s *AttachRedisStep) Execute(ctx context.Context, client FlyioClient, stepR
 	// Return success indicator
 	return map[string]string{
 		"status":       "attached",
-		"app":          s.appName,
+		"app":          appName,
 		"redis":        s.redisName,
 		"variableName": s.variableName,
 	}, nil
@@ -390,7 +464,7 @@ func (g *GenerateDockerfileStep) Rollback(ctx context.Context, client FlyioClien
 // SetSecretsStep sets secrets for a Fly.io app
 type SetSecretsStep struct {
 	BaseStep
-	appName string
+	appName string // App name (known upfront from spec)
 	secrets map[string]string
 }
 
@@ -402,7 +476,14 @@ func (s *SetSecretsStep) Execute(ctx context.Context, client FlyioClient, stepRe
 		}, nil
 	}
 
-	err := client.SetSecrets(ctx, s.appName, s.secrets)
+	appName := s.appName
+	if appName == "" {
+		return nil, errors.Errorf("app name is required")
+	}
+
+	slog.Info("Setting secrets for app", "app", appName, "count", len(s.secrets))
+
+	err := client.SetSecrets(ctx, appName, s.secrets)
 	if err != nil {
 		return nil, errors.Errorf("failed to set secrets: %w", err)
 	}

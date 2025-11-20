@@ -69,6 +69,7 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 		// For updates, create missing services and deploy the new configuration
 
 		// Step 1: Create only missing backing services
+		// Note: App already exists for updates, so no app step ID dependency needed
 		for i, service := range fqd.spec.Services {
 			exists := false
 			for _, existingDB := range fqd.spec.ExistingDatabases {
@@ -79,7 +80,8 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 			}
 			if !exists {
 				stepID := fmt.Sprintf("create-service-%d", i)
-				step := fqd.createServiceStep(service, stepID)
+				// Pass empty string for appStepID since app already exists
+				step := fqd.createServiceStep(service, stepID, "")
 				if step != nil {
 					steps = append(steps, step)
 					serviceStepIDs = append(serviceStepIDs, stepID)
@@ -140,10 +142,11 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 
 	// Fresh deployment flow below
 
-	// Step 1: Create backing services first (they're independent apps)
+	// Step 1: Create backing services first (they're independent)
+	// Redis now uses getDefaultOrganization() so doesn't need apps to exist
 	for i, service := range fqd.spec.Services {
 		stepID := fmt.Sprintf("create-service-%d", i)
-		step := fqd.createServiceStep(service, stepID)
+		step := fqd.createServiceStep(service, stepID, "")
 		if step != nil {
 			steps = append(steps, step)
 			serviceStepIDs = append(serviceStepIDs, stepID)
@@ -237,9 +240,10 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 }
 
 // createServiceStep creates a deployment step for a service
-func (fqd *FlyioQueuedDeployment) createServiceStep(service deployment.Service, stepID string) FlyioAPIStep {
+func (fqd *FlyioQueuedDeployment) createServiceStep(service deployment.Service, stepID string, appStepID string) FlyioAPIStep {
 	switch service.Provider {
 	case "postgresql":
+		// Postgres is independent - doesn't need to wait for app
 		return &CreateFlyioServiceStep{
 			BaseStep: BaseStep{
 				ID:          stepID,
@@ -251,6 +255,7 @@ func (fqd *FlyioQueuedDeployment) createServiceStep(service deployment.Service, 
 			size:        postgresVolumeSizeGB,
 		}
 	case "redis":
+		// Redis uses getDefaultOrganization() so is independent
 		return &CreateFlyioServiceStep{
 			BaseStep: BaseStep{
 				ID:          stepID,
@@ -286,7 +291,7 @@ func (fqd *FlyioQueuedDeployment) createAttachmentStep(service deployment.Servic
 				Description: fmt.Sprintf("Attaching PostgreSQL to app: %s", appName),
 				DependsOn:   []string{appStepID, serviceStepID}, // Depends on both app and service creation
 			},
-			appName:       appName,
+			appStepID:     appStepID, // Pass the app step ID to retrieve actual app name
 			variableName:  pgURLVar,
 			serviceStepID: serviceStepID, // Pass the service step ID to retrieve cluster ID
 		}
@@ -297,7 +302,7 @@ func (fqd *FlyioQueuedDeployment) createAttachmentStep(service deployment.Servic
 				Description: fmt.Sprintf("Attaching Redis to app: %s", appName),
 				DependsOn:   []string{appStepID, serviceStepID}, // Depends on both app and service creation
 			},
-			appName:      appName,
+			appStepID:    appStepID, // Pass the app step ID to retrieve actual app name
 			redisName:    fmt.Sprintf("%s-redis", fqd.spec.Name),
 			variableName: "REDIS_URL",
 		}

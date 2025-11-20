@@ -119,8 +119,12 @@ func GetEstimatedPricing() FlyioPricing {
 			"scale":   962.00,
 		},
 		Redis: map[string]float64{
-			"redis-shared":    5.00,  // Shared Redis instance (Upstash)
-			"redis-dedicated": 15.00, // Dedicated Redis instance
+			// Fallback pricing - actual pricing fetched dynamically from flyctl
+			"pay-as-you-go": 0.0,   // Variable pricing based on usage
+			"starter":       10.0,  // $10/month
+			"standard":      50.0,  // $50/month
+			"pro-2k":        280.0, // $280/month
+			"pro-10k":       680.0, // $680/month
 		},
 		Storage: 0.15, // Per GB per month
 	}
