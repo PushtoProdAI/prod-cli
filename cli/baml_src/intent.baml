@@ -559,7 +559,7 @@ You will receive a list of candidate routes, each with:
 - The HTTP method
 - The path
 - The file name and line number
-- A snippet of code (the “context”) showing how the route is implemented
+- A snippet of code (the "context") showing how the route is implemented
 
 Your job is to:
 Categorize each route as one of:
@@ -577,11 +577,28 @@ Assign a confidence score between 0.0 and 1.0 for how well the route fits that c
 Choose the most appropriate default route to probe in order to confirm a newly deployed 
 app is live. General rules:
 
-Prefer a root (/) or homepage route if one exists.
-Otherwise prefer a health/status route.
-Otherwise prefer a GET route likely to return something harmless (like /index.html or a read-only API).
+CRITICAL: The recommended route MUST be publicly accessible without authentication.
 
-Avoid routes that look destructive (/delete, /reset, /admin/*, etc.).
+Prefer routes in this order:
+1. Root (/) or homepage route - typically serves the main application or static files
+2. Health/status check endpoints (e.g., /health, /status, /ping, /api/health)
+3. Public authentication endpoints (e.g., /api/auth/signin, /login) 
+4. Other public GET routes that don't require authentication
+
+AVOID these types of routes:
+- Routes with authentication middleware (e.g., authenticateToken, requireAuth, @authenticated decorators)
+- Routes requiring API keys, tokens, or credentials
+- Destructive routes (/delete, /reset, /admin/*)
+- Routes that modify data (POST/PUT/DELETE to non-auth endpoints)
+
+When examining the code context, look for:
+- Authentication middleware functions (authenticateToken, requireAuth, passport.authenticate, etc.)
+- Auth decorators (@authenticated, @require_auth, etc.)
+- Auth checks in the route handler (checking for headers, tokens, sessions)
+
+For Single Page Applications (SPAs):
+- The root route (/) often serves index.html and should be preferred
+- This is typically implemented as a catch-all route or static file server
 
 Return results in structured JSON.
 {{ _.role("user") }}
