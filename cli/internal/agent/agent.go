@@ -589,7 +589,7 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 
 	for _, envVar := range envVars {
 		if envVar.IsNotDBRelated() {
-			// This non-DB var needs user input
+			// This application-level var needs user input
 			a.envVars = append(a.envVars, EnvVarWithStatus{
 				EnvVar: envVar,
 				Status: "pending",
@@ -599,7 +599,7 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 				sensitivePending = append(sensitivePending, envVar.Name)
 			}
 		} else {
-			// DB-related vars - deployment system will handle values
+			// Backing service vars (DB, Redis) - deployment system will auto-populate values
 			a.envVars = append(a.envVars, EnvVarWithStatus{
 				EnvVar: envVar,
 				Status: "db_related",

@@ -553,7 +553,35 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 					resolvedEnvVars["DATABASE_URL"] = connInfo.InternalConnectionString
 				}
 			case *RedisConnectionInfo:
-				resolvedEnvVars["REDIS_URL"] = connInfo.InternalConnectionString
+				var host, port, password string
+				url, err := dburl.Parse(connInfo.InternalConnectionString)
+				if err != nil {
+					slog.Warn("Failed to parse Redis connection string", "connectionString", connInfo.InternalConnectionString, "error", err)
+				} else {
+					host = url.Hostname()
+					port = url.Port()
+					if url.User != nil {
+						password, _ = url.User.Password()
+					}
+				}
+				for _, envVar := range s.EnvVars {
+					if envVar.Service == "redis" {
+						switch envVar.Role {
+						case deployment.EnvRoleRedisURI:
+							resolvedEnvVars[envVar.Name] = connInfo.InternalConnectionString
+						case deployment.EnvRoleRedisHost:
+							resolvedEnvVars[envVar.Name] = host
+						case deployment.EnvRoleRedisPort:
+							resolvedEnvVars[envVar.Name] = port
+						case deployment.EnvRoleRedisPassword:
+							resolvedEnvVars[envVar.Name] = password
+						}
+					}
+				}
+				// fallback - if no Redis env vars were resolved, set REDIS_URL as default
+				if len(resolvedEnvVars) == 0 {
+					resolvedEnvVars["REDIS_URL"] = connInfo.InternalConnectionString
+				}
 			}
 		}
 	}

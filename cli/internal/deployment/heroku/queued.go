@@ -251,12 +251,13 @@ func (qd *QueuedDeployment) createMissingAddonSteps(steps *[]HerokuAPIStep, appS
 	return addonStepIDs
 }
 
-// filterNonDBEnvVars returns environment variables that are not database-related
+// filterNonDBEnvVars returns environment variables that are not database-related or Redis-related
+// (i.e., not related to any backing service that gets auto-populated)
 func (qd *QueuedDeployment) filterNonDBEnvVars() map[string]string {
 	envVars := make(map[string]string)
 
 	for _, envVar := range qd.spec.EnvVars {
-		if !envVar.IsDBRelated() {
+		if !envVar.IsBackingServiceRelated() {
 			envVars[envVar.Name] = envVar.Value
 		}
 	}
