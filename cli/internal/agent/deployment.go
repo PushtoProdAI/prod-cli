@@ -424,9 +424,22 @@ func (d *FlyIOProjectDetector) DetectExistingProject(ctx context.Context, projec
 			}
 		}
 
-		redisApp, err := flyio.DetectExistingProject(ctx, d.client, fmt.Sprintf("%s-redis", projectName))
-		if err == nil && redisApp != nil {
-			result.ExistingDatabases = append(result.ExistingDatabases, "redis")
+		// Check for Redis databases (Upstash Redis, not apps)
+		redisList, err := d.client.ListRedis(ctx)
+		if err != nil {
+			slog.Error("Failed to list Redis databases", "error", err)
+		} else {
+			slog.Info("Listed Redis databases", "count", len(redisList))
+			expectedRedisName := fmt.Sprintf("%s-redis", projectName)
+			slog.Info("Looking for Redis database", "expectedName", expectedRedisName)
+			for _, redis := range redisList {
+				slog.Info("Checking Redis database", "name", redis.Name, "expected", expectedRedisName)
+				if redis.Name == expectedRedisName {
+					result.ExistingDatabases = append(result.ExistingDatabases, "redis")
+					slog.Info("Matched existing Redis database", "name", redis.Name)
+					break
+				}
+			}
 		}
 	}
 
