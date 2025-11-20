@@ -391,13 +391,15 @@ function DetermineEnvVarRoles(envVar: EnvVarCandidate, dbList: string[]) -> EnvV
 You are an expert at classifying environment variables for deployment configuration.
 
 Your tasks:
-1. Determine if the variable is database-related
+1. Determine if the variable is database-related or Redis/cache-related
 2. Determine if the variable contains sensitive data
 
 Classification should be based primarily on:
 - The variable name
 - Its direct usage
 - Context around it in the provided snippet
+
+BACKING SERVICE CLASSIFICATION RULES (DATABASE AND REDIS):
 
 DATABASE CLASSIFICATION RULES:
 1. General environment variables that represent the app's runtime stage or environment 
@@ -437,6 +439,22 @@ DATABASE CLASSIFICATION RULES:
    - Example: `DEBUG` is runtime, not DB.
    - Example: `HOST` is application server host, not DB (use DB_HOST or PGHOST for database)
 
+REDIS/CACHE CLASSIFICATION RULES:
+1. Redis variables should be classified with Redis-specific roles:
+   - REDIS_URL, REDIS_CONNECTION_STRING → `redis_uri` (complete Redis connection URL)
+   - REDIS_HOST, REDIS_HOSTNAME → `redis_host` (Redis server hostname)
+   - REDIS_PORT → `redis_port` (Redis server port)
+   - REDIS_PASSWORD, REDIS_AUTH → `redis_password` (Redis authentication)
+   - REDIS_DB, REDIS_TLS, REDIS_SSL → `other_redis_config` (other Redis configuration)
+
+2. Variables used in Redis client connections should be classified as Redis-related:
+   - Example: if a variable appears in `redis.createClient(...)` or `Redis(...)`, classify as Redis
+   - Variables used for cache configuration, session stores backed by Redis, or queue systems (Bull, Kue) backed by Redis
+
+3. IMPORTANT: Generic CACHE_* variables may or may not be Redis:
+   - If the context shows Redis usage (e.g., redis package imports, redis:// URLs), classify as Redis
+   - If unclear, use `other_redis_config` for cache-related variables when Redis is detected in the project
+
 Database categories:
 - `full_uri` – complete database connection URL (e.g., postgres://user:pass@host:port/dbname)
 - `hostname` – host or server address for the database
@@ -445,13 +463,23 @@ Database categories:
 - `password` – database password or auth token
 - `database_name` – logical DB name
 - `other_db_config` – database-related but not fitting above categories
-- `not_db_related` – unrelated to databases
+
+Redis/Cache categories:
+- `redis_uri` – complete Redis connection URL (e.g., redis://user:password@host:port/db)
+- `redis_host` – Redis server hostname
+- `redis_port` – Redis server port
+- `redis_password` – Redis authentication password
+- `other_redis_config` – Redis-related but not fitting above categories
+
+General:
+- `not_db_related` – unrelated to databases or backing services
 
 SENSITIVITY CLASSIFICATION RULES:
 
 Sensitive variables (should be stored using a provider's secret storage functionality):
 - API keys, tokens, secrets (e.g., API_KEY, STRIPE_SECRET_KEY, OPENAI_API_KEY)
 - Database credentials (passwords, connection strings with credentials)
+- Redis credentials (passwords, connection strings with credentials)
 - Private keys, certificates (e.g., JWT_SECRET, PRIVATE_KEY, RSA_PRIVATE_KEY)
 - OAuth tokens, session secrets (e.g., OAUTH_TOKEN, SESSION_SECRET, NEXTAUTH_SECRET)
 - Payment gateway credentials (e.g., STRIPE_SECRET_KEY, PAYPAL_SECRET)
@@ -475,7 +503,7 @@ IMPORTANT for sensitivity detection:
 - When in doubt, mark as sensitive (better safe than sorry)
 
 {{ _.role("user") }}
-The project uses the following database types: {{dbList}}.
+The project uses the following backing services: {{dbList}}.
 
 Variable name: {{envVar.varName}}
 File it was found in: {{envVar.file}}
@@ -484,11 +512,12 @@ Code snippet:
   {{envVar.context}}
 
 For the given environment variable, determine:
-- Is this variable related to database configuration? (true/false)  
+- Is this variable related to database or Redis/cache configuration? (true/false)  
 - Always provide a **Role** value:  
-  - If DB-related → exactly one from the allowed categories.  
-  - If not DB-related → return `not_db_related`.  
-- Which database type? (choose from {{dbList}} or "unknown")
+  - If DB-related → exactly one from the database categories.
+  - If Redis-related → exactly one from the Redis/cache categories.
+  - If neither → return `not_db_related`.  
+- Which service type? (choose from {{dbList}} or "unknown")
 - Is this variable sensitive? (true/false)
 - Provide a brief reason for the sensitivity classification
 
@@ -498,6 +527,11 @@ DATABASE_URL (used in db connection) → DB: full_uri, postgresql, SENSITIVE: tr
 PGHOST (used for postgres host) → DB: hostname, postgresql, SENSITIVE: false, "Database hostname is configuration, not a secret"  
 MYSQL_PORT (port number) → DB: port, mysql, SENSITIVE: false, "Port number is public configuration"
 DB_PASSWORD (database auth) → DB: password, unknown, SENSITIVE: true, "Database password credential"
+REDIS_URL (used in redis connection) → REDIS: redis_uri, redis, SENSITIVE: true, "Contains Redis credentials in connection string"
+REDIS_HOST (redis server) → REDIS: redis_host, redis, SENSITIVE: false, "Redis hostname is configuration, not a secret"
+REDIS_PORT (redis port) → REDIS: redis_port, redis, SENSITIVE: false, "Port number is public configuration"
+REDIS_PASSWORD (redis auth) → REDIS: redis_password, redis, SENSITIVE: true, "Redis password credential"
+CACHE_URL (redis cache) → REDIS: redis_uri, redis, SENSITIVE: true, "Cache connection string with Redis"
 STRIPE_SECRET_KEY (payment API) → DB: not_db_related, SENSITIVE: true, "Payment gateway API secret key"
 OPENAI_API_KEY (LLM API) → DB: not_db_related, SENSITIVE: true, "Third-party API key"
 JWT_SECRET (auth tokens) → DB: not_db_related, SENSITIVE: true, "Used for signing authentication tokens"
@@ -525,7 +559,7 @@ You will receive a list of candidate routes, each with:
 - The HTTP method
 - The path
 - The file name and line number
-- A snippet of code (the “context”) showing how the route is implemented
+- A snippet of code (the "context") showing how the route is implemented
 
 Your job is to:
 Categorize each route as one of:
@@ -543,11 +577,28 @@ Assign a confidence score between 0.0 and 1.0 for how well the route fits that c
 Choose the most appropriate default route to probe in order to confirm a newly deployed 
 app is live. General rules:
 
-Prefer a root (/) or homepage route if one exists.
-Otherwise prefer a health/status route.
-Otherwise prefer a GET route likely to return something harmless (like /index.html or a read-only API).
+CRITICAL: The recommended route MUST be publicly accessible without authentication.
 
-Avoid routes that look destructive (/delete, /reset, /admin/*, etc.).
+Prefer routes in this order:
+1. Root (/) or homepage route - typically serves the main application or static files
+2. Health/status check endpoints (e.g., /health, /status, /ping, /api/health)
+3. Public authentication endpoints (e.g., /api/auth/signin, /login) 
+4. Other public GET routes that don't require authentication
+
+AVOID these types of routes:
+- Routes with authentication middleware (e.g., authenticateToken, requireAuth, @authenticated decorators)
+- Routes requiring API keys, tokens, or credentials
+- Destructive routes (/delete, /reset, /admin/*)
+- Routes that modify data (POST/PUT/DELETE to non-auth endpoints)
+
+When examining the code context, look for:
+- Authentication middleware functions (authenticateToken, requireAuth, passport.authenticate, etc.)
+- Auth decorators (@authenticated, @require_auth, etc.)
+- Auth checks in the route handler (checking for headers, tokens, sessions)
+
+For Single Page Applications (SPAs):
+- The root route (/) often serves index.html and should be preferred
+- This is typically implemented as a catch-all route or static file server
 
 Return results in structured JSON.
 {{ _.role("user") }}

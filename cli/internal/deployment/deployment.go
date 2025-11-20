@@ -115,11 +115,33 @@ const (
 	EnvRolePassword      = "password"        // database password or auth token
 	EnvRoleDatabaseName  = "database_name"   // logical DB name
 	EnvRoleOtherDBConfig = "other_db_config" // database-related but not fitting above categories
-	EnvRoleNotDBRelated  = "not_db_related"  // unrelated to databases
+
+	// Redis/Cache-specific roles
+	EnvRoleRedisURI         = "redis_uri"          // complete Redis connection URL
+	EnvRoleRedisHost        = "redis_host"         // Redis server hostname
+	EnvRoleRedisPort        = "redis_port"         // Redis server port
+	EnvRoleRedisPassword    = "redis_password"     // Redis authentication password
+	EnvRoleOtherRedisConfig = "other_redis_config" // Redis-related but not fitting above categories
+
+	EnvRoleNotDBRelated = "not_db_related" // unrelated to databases or backing services
 )
 
 // IsDBRelated returns true if the environment variable role is database-related
 func (e EnvVar) IsDBRelated() bool {
+	return e.Role != EnvRoleNotDBRelated && !e.IsRedisRelated()
+}
+
+// IsRedisRelated returns true if the environment variable role is Redis-related
+func (e EnvVar) IsRedisRelated() bool {
+	return e.Role == EnvRoleRedisURI ||
+		e.Role == EnvRoleRedisHost ||
+		e.Role == EnvRoleRedisPort ||
+		e.Role == EnvRoleRedisPassword ||
+		e.Role == EnvRoleOtherRedisConfig
+}
+
+// IsBackingServiceRelated returns true if the variable is related to any backing service (DB or Redis)
+func (e EnvVar) IsBackingServiceRelated() bool {
 	return e.Role != EnvRoleNotDBRelated
 }
 

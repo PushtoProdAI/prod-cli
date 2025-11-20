@@ -71,7 +71,18 @@ func (s *CreatePostgresStep) Execute(ctx context.Context, client RenderClient, s
 	return postgres, nil
 }
 
-func (s *CreatePostgresStep) waitForPostgresReady(ctx context.Context, client RenderClient, serviceID string) error {
+// serviceStatusChecker is an interface for checking if a service is ready
+type serviceStatusChecker interface {
+	// GetStatus fetches the current status of a service
+	GetStatus(ctx context.Context, client RenderClient, serviceID string) (string, error)
+	// IsReady checks if the given status indicates the service is ready
+	IsReady(status string) bool
+	// ServiceName returns a human-readable name for the service type (for error messages)
+	ServiceName() string
+}
+
+// waitForServiceReady is a generic function that waits for a service to become ready
+func waitForServiceReady(ctx context.Context, client RenderClient, serviceID string, checker serviceStatusChecker) error {
 	const (
 		maxRetries    = 20
 		initialDelay  = 5 * time.Second
@@ -83,21 +94,22 @@ func (s *CreatePostgresStep) waitForPostgresReady(ctx context.Context, client Re
 	timeoutCtx, cancel := context.WithTimeout(ctx, totalTimeout)
 	defer cancel()
 
+	serviceName := checker.ServiceName()
 	delay := initialDelay
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		select {
 		case <-timeoutCtx.Done():
-			return errors.Errorf("timeout waiting for postgres service %s to be ready after %v", serviceID, totalTimeout)
+			return errors.Errorf("timeout waiting for %s service %s to be ready after %v", serviceName, serviceID, totalTimeout)
 		default:
 		}
 
-		postgresService, err := client.GetPostgres(timeoutCtx, serviceID)
+		status, err := checker.GetStatus(timeoutCtx, client, serviceID)
 		if err != nil {
 			if attempt == maxRetries {
-				return errors.Errorf("failed to get postgres service status after %d attempts: %w", maxRetries, err)
+				return errors.Errorf("failed to get %s service status after %d attempts: %w", serviceName, maxRetries, err)
 			}
 		} else {
-			if s.isPostgresReady(postgresService) {
+			if checker.IsReady(status) {
 				return nil
 			}
 		}
@@ -105,25 +117,42 @@ func (s *CreatePostgresStep) waitForPostgresReady(ctx context.Context, client Re
 		// Wait before retrying with exponential backoff
 		select {
 		case <-timeoutCtx.Done():
-			return errors.Errorf("timeout waiting for postgres service %s to be ready after %v", serviceID, totalTimeout)
+			return errors.Errorf("timeout waiting for %s service %s to be ready after %v", serviceName, serviceID, totalTimeout)
 		case <-time.After(delay):
 			delay = min(time.Duration(float64(delay)*backoffFactor), maxDelay)
 		}
 	}
 
-	return errors.Errorf("postgres service %s did not become ready after %d attempts over %v", serviceID, maxRetries, totalTimeout)
+	return errors.Errorf("%s service %s did not become ready after %d attempts over %v", serviceName, serviceID, maxRetries, totalTimeout)
 }
 
-func (s *CreatePostgresStep) isPostgresReady(postgres *RenderPostgres) bool {
-	readyStates := []string{"available"} // can add some more states if needed
+// postgresStatusChecker implements serviceStatusChecker for Postgres
+type postgresStatusChecker struct{}
 
+func (p postgresStatusChecker) GetStatus(ctx context.Context, client RenderClient, serviceID string) (string, error) {
+	postgres, err := client.GetPostgres(ctx, serviceID)
+	if err != nil {
+		return "", err
+	}
+	return postgres.Status, nil
+}
+
+func (p postgresStatusChecker) IsReady(status string) bool {
+	readyStates := []string{"available"}
 	for _, readyState := range readyStates {
-		if strings.EqualFold(postgres.Status, readyState) {
+		if strings.EqualFold(status, readyState) {
 			return true
 		}
 	}
-
 	return false
+}
+
+func (p postgresStatusChecker) ServiceName() string {
+	return "postgres"
+}
+
+func (s *CreatePostgresStep) waitForPostgresReady(ctx context.Context, client RenderClient, serviceID string) error {
+	return waitForServiceReady(ctx, client, serviceID, postgresStatusChecker{})
 }
 
 func (s *CreatePostgresStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error {
@@ -174,7 +203,41 @@ func (s *CreateRedisStep) Execute(ctx context.Context, client RenderClient, step
 	if err != nil {
 		return nil, errors.Errorf("failed to create redis: %w", err)
 	}
+
+	if err := s.waitForRedisReady(ctx, client, redis.ID); err != nil {
+		return nil, errors.Errorf("redis service created but failed to become ready: %w", err)
+	}
+
 	return redis, nil
+}
+
+// redisStatusChecker implements serviceStatusChecker for Redis/Key Value
+type redisStatusChecker struct{}
+
+func (r redisStatusChecker) GetStatus(ctx context.Context, client RenderClient, serviceID string) (string, error) {
+	keyValue, err := client.GetKeyValue(ctx, serviceID)
+	if err != nil {
+		return "", err
+	}
+	return keyValue.Status, nil
+}
+
+func (r redisStatusChecker) IsReady(status string) bool {
+	readyStates := []string{"available"}
+	for _, readyState := range readyStates {
+		if strings.EqualFold(status, readyState) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r redisStatusChecker) ServiceName() string {
+	return "redis"
+}
+
+func (s *CreateRedisStep) waitForRedisReady(ctx context.Context, client RenderClient, serviceID string) error {
+	return waitForServiceReady(ctx, client, serviceID, redisStatusChecker{})
 }
 
 func (s *CreateRedisStep) Rollback(ctx context.Context, client RenderClient, stepResults map[string]any) error {
@@ -553,7 +616,35 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 					resolvedEnvVars["DATABASE_URL"] = connInfo.InternalConnectionString
 				}
 			case *RedisConnectionInfo:
-				resolvedEnvVars["REDIS_URL"] = connInfo.InternalConnectionString
+				var host, port, password string
+				url, err := dburl.Parse(connInfo.InternalConnectionString)
+				if err != nil {
+					slog.Warn("Failed to parse Redis connection string", "connectionString", connInfo.InternalConnectionString, "error", err)
+				} else {
+					host = url.Hostname()
+					port = url.Port()
+					if url.User != nil {
+						password, _ = url.User.Password()
+					}
+				}
+				for _, envVar := range s.EnvVars {
+					if envVar.Service == "redis" {
+						switch envVar.Role {
+						case deployment.EnvRoleRedisURI:
+							resolvedEnvVars[envVar.Name] = connInfo.InternalConnectionString
+						case deployment.EnvRoleRedisHost:
+							resolvedEnvVars[envVar.Name] = host
+						case deployment.EnvRoleRedisPort:
+							resolvedEnvVars[envVar.Name] = port
+						case deployment.EnvRoleRedisPassword:
+							resolvedEnvVars[envVar.Name] = password
+						}
+					}
+				}
+				// fallback - if no Redis env vars were resolved, set REDIS_URL as default
+				if len(resolvedEnvVars) == 0 {
+					resolvedEnvVars["REDIS_URL"] = connInfo.InternalConnectionString
+				}
 			}
 		}
 	}
