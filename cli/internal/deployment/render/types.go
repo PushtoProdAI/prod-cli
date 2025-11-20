@@ -94,10 +94,19 @@ type CreatePostgresRequest struct {
 	EnableHighAvailability bool   `json:"enableHighAvailability"`
 }
 
+// CreateRedisRequest is kept for API compatibility but uses Key Value under the hood
 type CreateRedisRequest struct {
 	Name    string `json:"name"`
 	OwnerID string `json:"ownerId"`
 	Plan    string `json:"plan"`
+}
+
+// CreateKeyValueRequest creates a new Key Value instance on Render
+type CreateKeyValueRequest struct {
+	Name    string `json:"name"`
+	OwnerID string `json:"ownerId"`
+	Plan    string `json:"plan"`
+	Region  string `json:"region,omitempty"`
 }
 
 type PostgresConnectionInfo struct {
@@ -107,6 +116,12 @@ type PostgresConnectionInfo struct {
 }
 
 type RedisConnectionInfo struct {
+	InternalConnectionString string `json:"internalConnectionString"`
+	ExternalConnectionString string `json:"externalConnectionString"`
+}
+
+// KeyValueConnectionInfo is the response from the Key Value connection info endpoint
+type KeyValueConnectionInfo struct {
 	InternalConnectionString string `json:"internalConnectionString"`
 	ExternalConnectionString string `json:"externalConnectionString"`
 }
@@ -146,6 +161,15 @@ type RenderPostgres struct {
 	DiskSizeGB   int    `json:"diskSizeGB"`
 	CreatedAt    string `json:"createdAt"`
 	UpdatedAt    string `json:"updatedAt"`
+}
+
+type RenderKeyValue struct {
+	RenderService
+	Status    string `json:"status"`
+	Plan      string `json:"plan"`
+	Region    string `json:"region"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
 }
 
 type ServiceDetails struct {
@@ -193,6 +217,7 @@ type RenderClient interface {
 	CreateRedis(ctx context.Context, req CreateRedisRequest) (*RenderService, error)
 	GetWebService(ctx context.Context, serviceID string) (*RenderWebService, error)
 	GetPostgres(ctx context.Context, serviceID string) (*RenderPostgres, error)
+	GetKeyValue(ctx context.Context, serviceID string) (*RenderKeyValue, error)
 	ListServices(ctx context.Context, name string) ([]RenderService, error)
 	ListPostgres(ctx context.Context) ([]RenderPostgres, error)
 	ListRedis(ctx context.Context) ([]RenderService, error)
