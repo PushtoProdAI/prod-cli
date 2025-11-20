@@ -330,8 +330,8 @@ func (d *RenderProjectDetector) DetectExistingProject(ctx context.Context, proje
 		expectedPGServiceNamePrefix := fmt.Sprintf("%s-postgres", projectName)
 		expectedPGServiceNameUnderscores := fmt.Sprintf("%s_db", normalizedProjectName)
 		expectedPGDatabaseName := fmt.Sprintf("%s_db", projectName)
-		expectedRedisName := fmt.Sprintf("%s-redis", projectName)
-		slog.Info("Looking for databases", "expectedPGServiceNamePrefix", expectedPGServiceNamePrefix, "expectedPGServiceNameUnderscores", expectedPGServiceNameUnderscores, "expectedPGDatabaseName", expectedPGDatabaseName, "expectedRedisName", expectedRedisName)
+		expectedRedisNamePrefix := fmt.Sprintf("%s-redis", projectName)
+		slog.Info("Looking for databases", "expectedPGServiceNamePrefix", expectedPGServiceNamePrefix, "expectedPGServiceNameUnderscores", expectedPGServiceNameUnderscores, "expectedPGDatabaseName", expectedPGDatabaseName, "expectedRedisNamePrefix", expectedRedisNamePrefix)
 
 		pgList, err := d.client.ListPostgres(ctx)
 		if err != nil {
@@ -357,7 +357,8 @@ func (d *RenderProjectDetector) DetectExistingProject(ctx context.Context, proje
 			slog.Info("Listed Render redis databases", "count", len(redisList))
 			for _, red := range redisList {
 				slog.Info("Checking Render redis", "name", red.Name, "type", red.Type, "id", red.ID)
-				if red.Name == expectedRedisName {
+				// Match redis with pattern: {projectName}-redis-{number}
+				if strings.HasPrefix(red.Name, expectedRedisNamePrefix) {
 					result.ExistingDatabases = append(result.ExistingDatabases, "redis")
 					slog.Info("Matched existing Redis database", "name", red.Name)
 				}
