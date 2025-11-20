@@ -312,10 +312,11 @@ func (fqd *FlyioQueuedDeployment) createAttachmentStep(service deployment.Servic
 func (fqd *FlyioQueuedDeployment) generateFlyConfig() *FlyioConfig {
 	envVars := make(map[string]string)
 
-	// Only include non-sensitive, non-DB-related environment variables in fly.toml
+	// Only include non-sensitive, non-backing-service environment variables in fly.toml
 	// Sensitive variables will be set using fly secrets
+	// Backing service variables (DB, Redis) are auto-populated by the platform
 	for _, ev := range fqd.spec.EnvVars {
-		if ev.IsNotDBRelated() && ev.Value != "" && !ev.Sensitive {
+		if !ev.IsBackingServiceRelated() && ev.Value != "" && !ev.Sensitive {
 			envVars[ev.Name] = ev.Value
 		}
 	}
