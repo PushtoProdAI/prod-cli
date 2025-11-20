@@ -491,7 +491,7 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 		summaryText += fmt.Sprintf("• Application: %s (will be updated)\n", result.Name)
 
 		if len(result.ExistingDatabases) > 0 {
-			summaryText += "\n• Databases (will be reused):\n"
+			summaryText += "\n• Backing Services (will be reused):\n"
 			for _, db := range result.ExistingDatabases {
 				summaryText += fmt.Sprintf("  - %s\n", db)
 			}
@@ -511,7 +511,7 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 		if len(needsToCreate) > 0 {
 			summaryText += "\n📦 New Resources to Create:\n"
 			for _, service := range needsToCreate {
-				summaryText += fmt.Sprintf("• %s database\n", service)
+				summaryText += fmt.Sprintf("• %s\n", service)
 			}
 		}
 	} else {
@@ -519,19 +519,19 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 		summaryText += fmt.Sprintf("• Application: %s (new)\n", a.DeployPlan.Spec.Name)
 
 		// Count only actual infrastructure resources (database, cache)
-		databases := []string{}
+		backingServices := []string{}
 		for _, service := range a.DeployPlan.Spec.ServiceRequirements {
 			// Only include actual infrastructure resources
 			if service.Type != "database" && service.Type != "cache" {
 				continue
 			}
-			databases = append(databases, service.Provider)
+			backingServices = append(backingServices, service.Provider)
 		}
 
-		if len(databases) > 0 {
-			summaryText += "\n• Databases (new):\n"
-			for _, db := range databases {
-				summaryText += fmt.Sprintf("  - %s\n", db)
+		if len(backingServices) > 0 {
+			summaryText += "\n• Backing Services (new):\n"
+			for _, svc := range backingServices {
+				summaryText += fmt.Sprintf("  - %s\n", svc)
 			}
 		}
 	}

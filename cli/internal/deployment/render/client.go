@@ -296,12 +296,21 @@ func (c *HTTPRenderClient) CreatePostgres(ctx context.Context, req CreatePostgre
 	return &service, nil
 }
 
-// CreateRedis creates a new Redis key-value store service on Render
-// Based on: https://api-docs.render.com/reference/create-redis
+// CreateRedis creates a new Redis key-value store service on Render using the Key Value API
+// Note: This uses the Key Value API under the hood, as the Redis API is deprecated
+// Based on: https://api-docs.render.com/reference/create-key-value
 func (c *HTTPRenderClient) CreateRedis(ctx context.Context, req CreateRedisRequest) (*RenderService, error) {
-	resp, err := c.makeRequest(ctx, "POST", "/v1/redis", req)
+	// Convert to Key Value request
+	kvReq := CreateKeyValueRequest{
+		Name:    req.Name,
+		OwnerID: req.OwnerID,
+		Plan:    req.Plan,
+		Region:  "virginia", // Default region
+	}
+
+	resp, err := c.makeRequest(ctx, "POST", "/v1/key-value", kvReq)
 	if err != nil {
-		return nil, errors.Errorf("failed to create redis service: %w", err)
+		return nil, errors.Errorf("failed to create key-value service: %w", err)
 	}
 
 	var service RenderService
@@ -328,20 +337,25 @@ func (c *HTTPRenderClient) GetPostgresConnectionInfo(ctx context.Context, servic
 	return &connectionInfo, nil
 }
 
-// GetRedisConnectionInfo retrieves the connection strings for a Redis service
-// Based on: https://api-docs.render.com/reference/retrieve-redis-connection-info
+// GetRedisConnectionInfo retrieves the connection strings for a Redis/Key Value service
+// Note: This uses the Key Value API under the hood, as the Redis API is deprecated
+// Based on: https://api-docs.render.com/reference/retrieve-key-value-connection-info
 func (c *HTTPRenderClient) GetRedisConnectionInfo(ctx context.Context, serviceID string) (*RedisConnectionInfo, error) {
-	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/redis/%s/connection-info", serviceID), nil)
+	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/key-value/%s/connection-info", serviceID), nil)
 	if err != nil {
-		return nil, errors.Errorf("failed to get redis connection info: %w", err)
+		return nil, errors.Errorf("failed to get key-value connection info: %w", err)
 	}
 
-	var connectionInfo RedisConnectionInfo
+	var connectionInfo KeyValueConnectionInfo
 	if err := c.handleResponse(resp, &connectionInfo); err != nil {
 		return nil, err
 	}
 
-	return &connectionInfo, nil
+	// Convert to RedisConnectionInfo for API compatibility
+	return &RedisConnectionInfo{
+		InternalConnectionString: connectionInfo.InternalConnectionString,
+		ExternalConnectionString: connectionInfo.ExternalConnectionString,
+	}, nil
 }
 
 func (c *HTTPRenderClient) GetWebService(ctx context.Context, serviceID string) (*RenderWebService, error) {
@@ -356,6 +370,22 @@ func (c *HTTPRenderClient) GetWebService(ctx context.Context, serviceID string) 
 	}
 	slog.Info("Retrieved web service", "service", webService)
 	return &webService, nil
+}
+
+// GetKeyValue retrieves details about a Key Value (Redis) service
+// Based on: https://api-docs.render.com/reference/retrieve-key-value
+func (c *HTTPRenderClient) GetKeyValue(ctx context.Context, serviceID string) (*RenderKeyValue, error) {
+	resp, err := c.makeRequest(ctx, "GET", fmt.Sprintf("/v1/key-value/%s", serviceID), nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to get key-value service info: %w", err)
+	}
+
+	var keyValue RenderKeyValue
+	if err := c.handleResponse(resp, &keyValue); err != nil {
+		return nil, err
+	}
+
+	return &keyValue, nil
 }
 
 func (c *HTTPRenderClient) GetPostgres(ctx context.Context, serviceID string) (*RenderPostgres, error) {
@@ -503,25 +533,28 @@ func (c *HTTPRenderClient) ListPostgres(ctx context.Context) ([]RenderPostgres, 
 	return postgres, nil
 }
 
+// ListRedis lists all Key Value (Redis) instances
+// Note: This uses the Key Value API under the hood, as the Redis API is deprecated
+// Based on: https://api-docs.render.com/reference/list-key-value
 func (c *HTTPRenderClient) ListRedis(ctx context.Context) ([]RenderService, error) {
-	resp, err := c.makeRequest(ctx, "GET", "/v1/redis", nil)
+	resp, err := c.makeRequest(ctx, "GET", "/v1/key-value", nil)
 	if err != nil {
-		return nil, errors.Errorf("failed to list redis: %w", err)
+		return nil, errors.Errorf("failed to list key-value services: %w", err)
 	}
 
-	var wrappedRedis []struct {
-		Redis RenderService `json:"redis"`
+	var wrappedKeyValue []struct {
+		KeyValue RenderService `json:"keyValue"`
 	}
-	if err := c.handleResponse(resp, &wrappedRedis); err != nil {
+	if err := c.handleResponse(resp, &wrappedKeyValue); err != nil {
 		return nil, err
 	}
 
-	redis := make([]RenderService, len(wrappedRedis))
-	for i, wrapped := range wrappedRedis {
-		redis[i] = wrapped.Redis
+	keyValues := make([]RenderService, len(wrappedKeyValue))
+	for i, wrapped := range wrappedKeyValue {
+		keyValues[i] = wrapped.KeyValue
 	}
 
-	return redis, nil
+	return keyValues, nil
 }
 
 func (c *HTTPRenderClient) TriggerDeploy(ctx context.Context, serviceID string) (*RenderDeploy, error) {
