@@ -40,7 +40,7 @@ Resources:
                 'sts:ExternalId': !Ref ExternalId
       ManagedPolicyArns:
         - !Ref AppRunnerDeploymentPolicy
-        - !Ref RDSDeploymentPolicy
+        - !Ref BackingServicesPolicy
         - !Ref ECRAccessPolicy
         - !Ref VPCNetworkingPolicy
         - !Ref SecretsManagerPolicy
@@ -116,15 +116,19 @@ Resources:
               - apprunner:DescribeAutoScalingConfiguration
               - apprunner:ListAutoScalingConfigurations
             Resource: '*'
-          - Sid: AppRunnerVPCConnector
+          - Sid: AppRunnerVPCConnectorCreate
             Effect: Allow
             Action:
               - apprunner:CreateVpcConnector
-              - apprunner:DeleteVpcConnector
             Resource: !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:vpcconnector/*'
             Condition:
               StringEquals:
                 'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: AppRunnerVPCConnectorDelete
+            Effect: Allow
+            Action:
+              - apprunner:DeleteVpcConnector
+            Resource: !Sub 'arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:vpcconnector/*'
           - Sid: AppRunnerVPCConnectorRead
             Effect: Allow
             Action:
@@ -147,12 +151,12 @@ Resources:
               - apprunner:ListConnections
             Resource: '*'
 
-  # Policy for RDS operations
-  RDSDeploymentPolicy:
+  # Policy for backing services (RDS and ElastiCache)
+  BackingServicesPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      ManagedPolicyName: !Sub '${RoleName}-RDS'
-      Description: 'Permissions for RDS database management'
+      ManagedPolicyName: !Sub '${RoleName}-BackingServices'
+      Description: 'Permissions for RDS database and ElastiCache management'
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -250,10 +254,7 @@ Resources:
               - rds:CreateDBSnapshot
             Resource: 
               - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:snapshot:*'
-              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*'
-            Condition:
-              StringEquals:
-                'aws:RequestTag/ManagedBy': 'Prod'
+              - !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:prod-*'
           - Sid: RDSSnapshotManagement
             Effect: Allow
             Action:
@@ -270,6 +271,63 @@ Resources:
             Action:
               - rds:DescribeDBSnapshots
             Resource: '*'
+          - Sid: ElastiCacheServerlessCreate
+            Effect: Allow
+            Action:
+              - elasticache:CreateServerlessCache
+            Resource: !Sub 'arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:serverlesscache:*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: ElastiCacheServerlessManagement
+            Effect: Allow
+            Action:
+              - elasticache:DeleteServerlessCache
+              - elasticache:ModifyServerlessCache
+              - elasticache:DescribeServerlessCaches
+            Resource: !Sub 'arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:serverlesscache:*'
+            Condition:
+              StringEquals:
+                'aws:ResourceTag/ManagedBy': 'Prod'
+          - Sid: ElastiCacheTagging
+            Effect: Allow
+            Action:
+              - elasticache:AddTagsToResource
+              - elasticache:RemoveTagsFromResource
+              - elasticache:ListTagsForResource
+            Resource:
+              - !Sub 'arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:serverlesscache:*'
+              - !Sub 'arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:subnetgroup:*'
+          - Sid: ElastiCacheDescribe
+            Effect: Allow
+            Action:
+              - elasticache:DescribeServerlessCaches
+              - elasticache:DescribeCacheClusters
+            Resource: '*'
+          - Sid: ElastiCacheSubnetGroup
+            Effect: Allow
+            Action:
+              - elasticache:CreateCacheSubnetGroup
+              - elasticache:DeleteCacheSubnetGroup
+              - elasticache:ModifyCacheSubnetGroup
+            Resource: !Sub 'arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:subnetgroup:*'
+            Condition:
+              StringEquals:
+                'aws:RequestTag/ManagedBy': 'Prod'
+          - Sid: ElastiCacheSubnetGroupRead
+            Effect: Allow
+            Action:
+              - elasticache:DescribeCacheSubnetGroups
+            Resource: '*'
+          - Sid: ElastiCacheSnapshotManagement
+            Effect: Allow
+            Action:
+              - elasticache:CreateServerlessCacheSnapshot
+              - elasticache:DeleteServerlessCacheSnapshot
+              - elasticache:DescribeServerlessCacheSnapshots
+            Resource:
+              - !Sub 'arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:serverlesscache:*'
+              - !Sub 'arn:aws:elasticache:${AWS::Region}:${AWS::AccountId}:snapshot:*'
 
   # Policy for ECR operations
   ECRAccessPolicy:
@@ -333,6 +391,7 @@ Resources:
               - ec2:DescribeRouteTables
               - ec2:DescribeInternetGateways
               - ec2:DescribeNatGateways
+              - ec2:DescribeVpcEndpoints
             Resource: '*'
           - Sid: SecurityGroupManagement
             Effect: Allow
@@ -367,6 +426,15 @@ Resources:
               - ec2:DeleteInternetGateway
               - ec2:AttachInternetGateway
               - ec2:DetachInternetGateway
+            Resource: '*'
+          - Sid: VPCEndpointManagement
+            Effect: Allow
+            Action:
+              - ec2:CreateVpcEndpoint
+              - ec2:DeleteVpcEndpoints
+              - ec2:ModifyVpcEndpoint
+              - ec2:DescribeVpcEndpoints
+              - ec2:DescribeVpcEndpointServices
             Resource: '*'
 
   # Policy for Secrets Manager (for DB credentials)

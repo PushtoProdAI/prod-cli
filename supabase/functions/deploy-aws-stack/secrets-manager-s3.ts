@@ -22,9 +22,11 @@ const LAMBDA_PACKAGES = {
  */
 export function buildSecretsManagerResources(spec: DeploymentSpec, tenantId: string, resources: any): void {
   const postgresServices = spec.backingServices?.filter(s => s.type === 'rds') || [];
+  const redisServices = spec.backingServices?.filter(s => s.type === 'serverless-cache') || [];
   
   console.log('buildSecretsManagerResources called:', {
     postgresServicesCount: postgresServices.length,
+    redisServicesCount: redisServices.length,
     totalEnvVars: spec.envVars.length,
     sensitiveEnvVars: spec.envVars.filter(ev => ev.sensitive).length,
   });
@@ -117,8 +119,8 @@ export function buildSecretsManagerResources(spec: DeploymentSpec, tenantId: str
             }, {
               Effect: 'Allow',
               Action: ['rds:DescribeDBInstances'],
-              // SCOPED: Only allow describing this specific RDS instance
-              Resource: { 'Fn::Sub': `arn:aws:rds:\${AWS::Region}:\${AWS::AccountId}:db:prod-${spec.serviceName}-*` },
+              // DescribeDBInstances requires wildcard resource
+              Resource: '*',
             }],
           },
         }],
@@ -185,6 +187,143 @@ export function buildSecretsManagerResources(spec: DeploymentSpec, tenantId: str
       };
       
       console.log(`Creating Lambda-backed custom resource for ${envVar.name}`);
+    }
+  }
+  
+  // Create Lambda-backed custom resource to construct REDIS_URL securely
+  // Similar to DATABASE_URL, but for Redis connections
+  const redisUriVars = spec.envVars.filter(
+    ev => ev.role === 'redis_uri' && !ev.value && ev.service === 'redis' && ev.sensitive
+  );
+  
+  console.log('Checking for redis_uri vars:', {
+    redisUriVarsCount: redisUriVars.length,
+    redisUriVarNames: redisUriVars.map(v => v.name),
+    redisServicesCount: redisServices.length,
+  });
+  
+  if (redisUriVars.length > 0 && redisServices.length > 0) {
+    const firstRedis = redisServices[0];
+    
+    // INPUT VALIDATION: Validate redis service name
+    if (!/^[a-z][a-z0-9-]{0,62}$/.test(firstRedis.name)) {
+      throw new Error(`Invalid redis service name: ${firstRedis.name}`);
+    }
+    
+    const cacheName = firstRedis.name.replace(/[^a-zA-Z0-9]/g, '');
+    
+    // Create IAM role for the Lambda with scoped permissions (if not already created)
+    if (!resources.DatabaseUrlConstructorRole) {
+      resources.DatabaseUrlConstructorRole = {
+        Type: 'AWS::IAM::Role',
+        Properties: {
+          AssumeRolePolicyDocument: {
+            Version: '2012-10-17',
+            Statement: [{
+              Effect: 'Allow',
+              Principal: { Service: 'lambda.amazonaws.com' },
+              Action: 'sts:AssumeRole',
+            }],
+          },
+          ManagedPolicyArns: [
+            'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole',
+          ],
+          Policies: [{
+            PolicyName: 'SecretsManagerAccess',
+            PolicyDocument: {
+              Version: '2012-10-17',
+              Statement: [{
+                Effect: 'Allow',
+                Action: [
+                  'secretsmanager:CreateSecret',
+                  'secretsmanager:UpdateSecret',
+                  'secretsmanager:DeleteSecret',
+                  'secretsmanager:GetSecretValue',
+                  'secretsmanager:TagResource',
+                ],
+                Resource: { 'Fn::Sub': `arn:aws:secretsmanager:\${AWS::Region}:\${AWS::AccountId}:secret:/prod/${spec.serviceName}/*` },
+              }, {
+                Effect: 'Allow',
+                Action: ['rds:DescribeDBInstances'],
+                Resource: '*', // DescribeDBInstances requires wildcard resource
+              }, {
+                Effect: 'Allow',
+                Action: ['elasticache:DescribeCacheClusters', 'elasticache:DescribeServerlessCaches'],
+                Resource: '*', // ElastiCache describe operations require wildcard
+              }],
+            },
+          }],
+        },
+      };
+    } else {
+      // Add ElastiCache permissions to existing role
+      const existingPolicy = resources.DatabaseUrlConstructorRole.Properties.Policies[0];
+      existingPolicy.PolicyDocument.Statement.push({
+        Effect: 'Allow',
+        Action: ['elasticache:DescribeCacheClusters', 'elasticache:DescribeServerlessCaches'],
+        Resource: '*',
+      });
+    }
+
+    // Create Lambda function (if not already created)
+    if (!resources.DatabaseUrlConstructorFunction) {
+      resources.DatabaseUrlConstructorFunction = {
+        Type: 'AWS::Lambda::Function',
+        Properties: {
+          FunctionName: `prod-${spec.serviceName}-db-url-constructor`,
+          Runtime: 'nodejs20.x',
+          Handler: 'index.handler',
+          Role: { 'Fn::GetAtt': ['DatabaseUrlConstructorRole', 'Arn'] },
+          Code: {
+            S3Bucket: LAMBDA_PACKAGES.databaseUrlConstructor.bucket,
+            S3Key: LAMBDA_PACKAGES.databaseUrlConstructor.key,
+          },
+          Timeout: 30,
+          Description: `URL constructor for ${spec.serviceName} (v${LAMBDA_PACKAGES.databaseUrlConstructor.version})`,
+          Tags: getStandardTags(tenantId, spec.serviceName),
+        },
+      };
+    }
+
+    // Create custom resource for each redis_uri variable
+    for (const envVar of redisUriVars) {
+      // INPUT VALIDATION: Validate env var name
+      if (!/^[A-Z_][A-Z0-9_]{0,254}$/.test(envVar.name)) {
+        throw new Error(`Invalid environment variable name: ${envVar.name}`);
+      }
+      
+      const sanitizedName = envVar.name.replace(/[^a-zA-Z0-9]/g, '');
+      const secretName = `/prod/${spec.serviceName}/${envVar.name}`;
+      const cacheIdentifier = `prod-${spec.serviceName}-${firstRedis.name}`;
+      
+      // Using Serverless ElastiCache
+      const cacheType = 'serverless';
+      
+      resources[`CustomResource${sanitizedName}`] = {
+        Type: 'AWS::CloudFormation::CustomResource',
+        Properties: {
+          ServiceToken: { 'Fn::GetAtt': ['DatabaseUrlConstructorFunction', 'Arn'] },
+          CacheIdentifier: cacheIdentifier,
+          CacheType: cacheType,
+          SecretName: secretName,
+          ServiceName: spec.serviceName,
+          EnvVarName: envVar.name,
+          ResourceType: 'redis', // Indicate this is a Redis resource
+        },
+        DependsOn: [cacheName, 'DatabaseUrlConstructorFunction'],
+      };
+
+      // Also create a reference resource that other resources can depend on
+      resources[`Secret${sanitizedName}`] = {
+        Type: 'AWS::CloudFormation::WaitConditionHandle',
+        Metadata: {
+          SecretName: secretName,
+          Description: `Reference to ${envVar.name} secret created by Lambda`,
+        },
+        DependsOn: [`CustomResource${sanitizedName}`],
+      };
+      
+      console.log(`Creating Lambda-backed custom resource for Redis ${envVar.name}`);
     }
   }
 }

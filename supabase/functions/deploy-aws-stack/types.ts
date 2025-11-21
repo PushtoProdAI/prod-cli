@@ -22,13 +22,23 @@ export interface DeploymentSpec {
 }
 
 export interface BackingService {
-  type: 'rds' | 'elasticache';
+  type: 'rds' | 'serverless-cache';
   name: string;
   engine?: string;
   instanceClass?: string;
   allocatedStorage?: number;
-  nodeType?: string;
-  numCacheNodes?: number;
+  // Serverless cache specific options
+  cacheUsageLimits?: {
+    dataStorage?: {
+      maximum?: number;
+      unit?: 'GB';
+    };
+    ecpuPerSecond?: {
+      maximum?: number;
+    };
+  };
+  dailySnapshotTime?: string;
+  majorEngineVersion?: string;
 }
 
 export interface DeploymentResult {

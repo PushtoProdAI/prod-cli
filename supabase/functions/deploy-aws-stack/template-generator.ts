@@ -150,8 +150,8 @@ function validateDeploymentSpec(spec: DeploymentSpec, tenantId: string): void {
           `Invalid backing service name: "${service.name}". Must be lowercase alphanumeric with hyphens.`
         );
       }
-      if (service.type !== 'rds' && service.type !== 'elasticache') {
-        throw new Error(`Invalid backing service type: "${service.type}". Must be "rds" or "elasticache"`);
+      if (service.type !== 'rds' && service.type !== 'serverless-cache') {
+        throw new Error(`Invalid backing service type: "${service.type}". Must be "rds" or "serverless-cache"`);
       }
     }
   }
@@ -314,15 +314,15 @@ export function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: s
           Description: `${service.name} port`,
           Value: { 'Fn::GetAtt': [dbName, 'Endpoint.Port'] },
         };
-      } else if (service.type === 'elasticache') {
+      } else if (service.type === 'serverless-cache') {
         const cacheName = service.name.replace(/[^a-zA-Z0-9]/g, '');
         outputs[`${cacheName}Endpoint`] = {
           Description: `${service.name} endpoint`,
-          Value: { 'Fn::GetAtt': [cacheName, 'RedisEndpoint.Address'] },
+          Value: { 'Fn::GetAtt': [cacheName, 'Endpoint.Address'] },
         };
         outputs[`${cacheName}Port`] = {
           Description: `${service.name} port`,
-          Value: { 'Fn::GetAtt': [cacheName, 'RedisEndpoint.Port'] },
+          Value: { 'Fn::GetAtt': [cacheName, 'Endpoint.Port'] },
         };
       }
     }

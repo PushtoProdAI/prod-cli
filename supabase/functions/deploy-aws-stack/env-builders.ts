@@ -44,6 +44,34 @@ export function buildEnvironmentVariables(spec: DeploymentSpec, resources: any):
     };
   }
   
+  // Process Redis backing services (serverless-cache only)
+  const redisServices = spec.backingServices?.filter(s => s.type === 'serverless-cache') || [];
+  
+  // Build Redis connection components for each service
+  const redisConnectionInfo: Record<string, any> = {};
+  for (const service of redisServices) {
+    const cacheName = service.name.replace(/[^a-zA-Z0-9]/g, '');
+    
+    // Serverless ElastiCache uses Endpoint.Address and Endpoint.Port
+    const endpointAttr = 'Endpoint.Address';
+    const portAttr = 'Endpoint.Port';
+    
+    redisConnectionInfo[service.name] = {
+      host: { 'Fn::GetAtt': [cacheName, endpointAttr] },
+      port: { 'Fn::GetAtt': [cacheName, portAttr] },
+      // Build redis:// connection string
+      connectionString: {
+        'Fn::Sub': [
+          'redis://${Endpoint}:${Port}',
+          {
+            Endpoint: { 'Fn::GetAtt': [cacheName, endpointAttr] },
+            Port: { 'Fn::GetAtt': [cacheName, portAttr] },
+          },
+        ],
+      },
+    };
+  }
+  
   // Map categorized env vars to their database values
   for (const envVar of spec.envVars) {
     // Skip database-related env vars without values (will be populated from RDS)
@@ -83,6 +111,38 @@ export function buildEnvironmentVariables(spec: DeploymentSpec, resources: any):
             break;
         }
       }
+    } else if (envVar.service === 'redis' && !envVar.value) {
+      // Handle Redis-related env vars without values (will be populated from ElastiCache)
+      const firstRedis = redisServices[0];
+      if (firstRedis && redisConnectionInfo[firstRedis.name]) {
+        const redisInfo = redisConnectionInfo[firstRedis.name];
+        
+        switch (envVar.role) {
+          case 'redis_uri':
+            // Redis URI will be added to RuntimeEnvironmentSecrets if sensitive
+            // Otherwise add to regular env vars
+            if (envVar.sensitive) {
+              addedEnvVars.add(envVar.name);
+            } else {
+              envVars.push({ Name: envVar.name, Value: redisInfo.connectionString });
+              addedEnvVars.add(envVar.name);
+            }
+            break;
+          case 'redis_host':
+            envVars.push({ Name: envVar.name, Value: redisInfo.host });
+            addedEnvVars.add(envVar.name);
+            break;
+          case 'redis_port':
+            envVars.push({ Name: envVar.name, Value: redisInfo.port });
+            addedEnvVars.add(envVar.name);
+            break;
+          case 'redis_password':
+            // Redis passwords (if any) should go to Secrets Manager
+            // For now, Serverless ElastiCache doesn't require auth by default in VPC
+            addedEnvVars.add(envVar.name);
+            break;
+        }
+      }
     } else if (envVar.value) {
       // Skip sensitive vars - they'll be added to RuntimeEnvironmentSecrets instead
       if (envVar.sensitive) {
@@ -116,6 +176,9 @@ export function buildEnvironmentSecrets(spec: DeploymentSpec, resources: any): a
   // Process PostgreSQL backing services for database credentials
   const postgresServices = spec.backingServices?.filter(s => s.type === 'rds') || [];
   
+  // Process Redis backing services (serverless-cache only)
+  const redisServices = spec.backingServices?.filter(s => s.type === 'serverless-cache') || [];
+  
   for (const envVar of spec.envVars) {
     // Handle database-related sensitive env vars WITHOUT values (will be populated from RDS)
     if (envVar.service === 'postgresql' && !envVar.value && envVar.sensitive) {
@@ -148,6 +211,24 @@ export function buildEnvironmentSecrets(spec: DeploymentSpec, resources: any): a
         });
         addedSecrets.add(envVar.name);
         console.log(`Using Lambda-constructed secret for ${envVar.name}`);
+      }
+    } else if (envVar.service === 'redis' && !envVar.value && envVar.sensitive) {
+      // Handle Redis-related sensitive env vars WITHOUT values (will be populated from ElastiCache)
+      const firstRedis = redisServices[0];
+      if (!firstRedis) continue;
+      
+      const cacheName = firstRedis.name.replace(/[^a-zA-Z0-9]/g, '');
+      
+      if (envVar.role === 'redis_uri') {
+        // Redis URI is constructed by Lambda custom resource and stored in Secrets Manager
+        const sanitizedName = envVar.name.replace(/[^a-zA-Z0-9]/g, '');
+        
+        secrets.push({
+          Name: envVar.name,
+          ValueFrom: { 'Fn::GetAtt': [`CustomResource${sanitizedName}`, 'SecretArn'] },
+        });
+        addedSecrets.add(envVar.name);
+        console.log(`Using Lambda-constructed secret for Redis ${envVar.name}`);
       }
     } else if (envVar.sensitive && envVar.value) {
       // Handle ALL sensitive env vars WITH values (API keys, user-provided DATABASE_URL, etc.)
