@@ -48,27 +48,16 @@ export function buildEnvironmentVariables(spec: DeploymentSpec, resources: any):
   const redisServices = spec.backingServices?.filter(s => s.type === 'serverless-cache') || [];
   
   // Build Redis connection components for each service
+  // Note: Only host/port are built here for non-sensitive env vars
+  // Redis URIs with TLS (rediss://) are constructed by Lambda custom resource
   const redisConnectionInfo: Record<string, any> = {};
   for (const service of redisServices) {
     const cacheName = service.name.replace(/[^a-zA-Z0-9]/g, '');
     
     // Serverless ElastiCache uses Endpoint.Address and Endpoint.Port
-    const endpointAttr = 'Endpoint.Address';
-    const portAttr = 'Endpoint.Port';
-    
     redisConnectionInfo[service.name] = {
-      host: { 'Fn::GetAtt': [cacheName, endpointAttr] },
-      port: { 'Fn::GetAtt': [cacheName, portAttr] },
-      // Build redis:// connection string
-      connectionString: {
-        'Fn::Sub': [
-          'redis://${Endpoint}:${Port}',
-          {
-            Endpoint: { 'Fn::GetAtt': [cacheName, endpointAttr] },
-            Port: { 'Fn::GetAtt': [cacheName, portAttr] },
-          },
-        ],
-      },
+      host: { 'Fn::GetAtt': [cacheName, 'Endpoint.Address'] },
+      port: { 'Fn::GetAtt': [cacheName, 'Endpoint.Port'] },
     };
   }
   
@@ -119,26 +108,23 @@ export function buildEnvironmentVariables(spec: DeploymentSpec, resources: any):
         
         switch (envVar.role) {
           case 'redis_uri':
-            // Redis URI will be added to RuntimeEnvironmentSecrets if sensitive
-            // Otherwise add to regular env vars
-            if (envVar.sensitive) {
-              addedEnvVars.add(envVar.name);
-            } else {
-              envVars.push({ Name: envVar.name, Value: redisInfo.connectionString });
-              addedEnvVars.add(envVar.name);
-            }
+            // Redis URI is ALWAYS constructed by Lambda with TLS (rediss://)
+            // Mark as added - it will be handled in RuntimeEnvironmentSecrets
+            addedEnvVars.add(envVar.name);
             break;
           case 'redis_host':
+            // Host can be non-sensitive (useful for debugging, monitoring)
             envVars.push({ Name: envVar.name, Value: redisInfo.host });
             addedEnvVars.add(envVar.name);
             break;
           case 'redis_port':
+            // Port can be non-sensitive (useful for debugging, monitoring)
             envVars.push({ Name: envVar.name, Value: redisInfo.port });
             addedEnvVars.add(envVar.name);
             break;
           case 'redis_password':
-            // Redis passwords (if any) should go to Secrets Manager
-            // For now, Serverless ElastiCache doesn't require auth by default in VPC
+            // Serverless ElastiCache in VPC doesn't use passwords
+            // Mark as added but don't populate (would go to Secrets Manager if needed)
             addedEnvVars.add(envVar.name);
             break;
         }
@@ -212,24 +198,20 @@ export function buildEnvironmentSecrets(spec: DeploymentSpec, resources: any): a
         addedSecrets.add(envVar.name);
         console.log(`Using Lambda-constructed secret for ${envVar.name}`);
       }
-    } else if (envVar.service === 'redis' && !envVar.value && envVar.sensitive) {
-      // Handle Redis-related sensitive env vars WITHOUT values (will be populated from ElastiCache)
+    } else if (envVar.service === 'redis' && !envVar.value && envVar.role === 'redis_uri') {
+      // Handle Redis URI - ALWAYS use Lambda custom resource for TLS support
+      // Redis URIs require TLS (rediss://) for Serverless ElastiCache
       const firstRedis = redisServices[0];
       if (!firstRedis) continue;
       
-      const cacheName = firstRedis.name.replace(/[^a-zA-Z0-9]/g, '');
+      const sanitizedName = envVar.name.replace(/[^a-zA-Z0-9]/g, '');
       
-      if (envVar.role === 'redis_uri') {
-        // Redis URI is constructed by Lambda custom resource and stored in Secrets Manager
-        const sanitizedName = envVar.name.replace(/[^a-zA-Z0-9]/g, '');
-        
-        secrets.push({
-          Name: envVar.name,
-          ValueFrom: { 'Fn::GetAtt': [`CustomResource${sanitizedName}`, 'SecretArn'] },
-        });
-        addedSecrets.add(envVar.name);
-        console.log(`Using Lambda-constructed secret for Redis ${envVar.name}`);
-      }
+      secrets.push({
+        Name: envVar.name,
+        ValueFrom: { 'Fn::GetAtt': [`CustomResource${sanitizedName}`, 'SecretArn'] },
+      });
+      addedSecrets.add(envVar.name);
+      console.log(`Using Lambda-constructed TLS Redis URL for ${envVar.name}`);
     } else if (envVar.sensitive && envVar.value) {
       // Handle ALL sensitive env vars WITH values (API keys, user-provided DATABASE_URL, etc.)
       // ECS requires the full ARN, and simple secrets (not JSON) don't need a suffix

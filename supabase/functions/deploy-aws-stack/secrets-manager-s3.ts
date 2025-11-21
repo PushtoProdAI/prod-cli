@@ -190,16 +190,17 @@ export function buildSecretsManagerResources(spec: DeploymentSpec, tenantId: str
     }
   }
   
-  // Create Lambda-backed custom resource to construct REDIS_URL securely
-  // Similar to DATABASE_URL, but for Redis connections
+  // Create Lambda-backed custom resource to construct REDIS_URL with TLS
+  // ALL redis_uri variables use Lambda (not just sensitive ones) to ensure TLS (rediss://)
   const redisUriVars = spec.envVars.filter(
-    ev => ev.role === 'redis_uri' && !ev.value && ev.service === 'redis' && ev.sensitive
+    ev => ev.role === 'redis_uri' && !ev.value && ev.service === 'redis'
   );
   
   console.log('Checking for redis_uri vars:', {
     redisUriVarsCount: redisUriVars.length,
     redisUriVarNames: redisUriVars.map(v => v.name),
     redisServicesCount: redisServices.length,
+    note: 'All redis_uri vars use Lambda for TLS support (rediss://)',
   });
   
   if (redisUriVars.length > 0 && redisServices.length > 0) {
