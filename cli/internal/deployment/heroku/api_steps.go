@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/xo/dburl"
 
 	heroku "github.com/heroku/heroku-go/v6"
 	"github.com/meroxa/prod/cli/internal/deployment"
@@ -221,12 +222,13 @@ func (s *CreateHerokuAddonStep) Rollback(ctx context.Context, client *HerokuClie
 // ConfigureHerokuEnvStep sets environment variables
 type ConfigureHerokuEnvStep struct {
 	BaseStep
-	AppID      string            `json:"appId"`
-	EnvVars    map[string]string `json:"envVars"`
-	DBMappings map[string]string `json:"dbMappings,omitempty"` // Maps custom var names to Heroku defaults
+	AppID      string              `json:"appId"`
+	EnvVars    map[string]string   `json:"envVars"`
+	DBMappings map[string]string   `json:"dbMappings,omitempty"` // Maps custom var names to Heroku defaults
+	AllEnvVars []deployment.EnvVar `json:"allEnvVars,omitempty"` // Full env vars with roles for Redis-specific handling
 }
 
-func NewConfigureHerokuEnvStep(id, description, appID string, envVars, dbMappings map[string]string, deps []string) *ConfigureHerokuEnvStep {
+func NewConfigureHerokuEnvStep(id, description, appID string, envVars, dbMappings map[string]string, allEnvVars []deployment.EnvVar, deps []string) *ConfigureHerokuEnvStep {
 	return &ConfigureHerokuEnvStep{
 		BaseStep: BaseStep{
 			ID:          id,
@@ -236,6 +238,7 @@ func NewConfigureHerokuEnvStep(id, description, appID string, envVars, dbMapping
 		AppID:      appID,
 		EnvVars:    envVars,
 		DBMappings: dbMappings,
+		AllEnvVars: allEnvVars,
 	}
 }
 
@@ -252,18 +255,117 @@ func (s *ConfigureHerokuEnvStep) Execute(ctx context.Context, client *HerokuClie
 		configVars[k] = &value
 	}
 
-	// Handle database URL mappings
+	// Handle database URL mappings and Redis-specific env vars
 	// Fetch current config vars to get addon-provided URLs
-	if len(s.DBMappings) > 0 {
+	if len(s.DBMappings) > 0 || len(s.AllEnvVars) > 0 {
 		currentVars, err := client.GetConfigVars(ctx, appName)
 		if err != nil {
 			return nil, errors.Errorf("failed to get config vars for DB mappings: %w", err)
 		}
 
-		// Map custom DB var names to their Heroku default values
+		// Map custom DB var names to their Heroku default values (for full_uri role)
 		for customName, herokuDefaultName := range s.DBMappings {
 			if defaultValue, ok := currentVars[herokuDefaultName]; ok && defaultValue != nil {
 				configVars[customName] = defaultValue
+			}
+		}
+
+		// Handle PostgreSQL-specific env var roles (hostname, port, username, password, database_name)
+		// Parse DATABASE_URL if we have PostgreSQL env vars with specific roles
+		if dbURL, ok := currentVars["DATABASE_URL"]; ok && dbURL != nil {
+			parsedURL, err := dburl.Parse(*dbURL)
+			if err != nil {
+				// Log warning but continue
+				fmt.Printf("Warning: failed to parse DATABASE_URL: %v\n", err)
+			} else {
+				var host, port, username, password, dbName string
+				host = parsedURL.Hostname()
+				port = parsedURL.Port()
+				if parsedURL.User != nil {
+					username = parsedURL.User.Username()
+					password, _ = parsedURL.User.Password()
+				}
+				// Extract database name from path (e.g., /mydatabase -> mydatabase)
+				dbName = strings.TrimPrefix(parsedURL.Path, "/")
+
+				// Set PostgreSQL-specific env vars based on their roles
+				hasPostgresVars := false
+				for _, envVar := range s.AllEnvVars {
+					if envVar.Service == "postgresql" {
+						hasPostgresVars = true
+						var value string
+						switch envVar.Role {
+						case deployment.EnvRoleFullURI:
+							value = *dbURL
+						case deployment.EnvRoleHostname:
+							value = host
+						case deployment.EnvRolePort:
+							value = port
+						case deployment.EnvRoleUsername:
+							value = username
+						case deployment.EnvRolePassword:
+							value = password
+						case deployment.EnvRoleDatabaseName:
+							value = dbName
+						default:
+							continue
+						}
+						if value != "" {
+							configVars[envVar.Name] = &value
+						}
+					}
+				}
+
+				// Fallback: if no PostgreSQL env vars were resolved, set DATABASE_URL as default
+				if !hasPostgresVars {
+					configVars["DATABASE_URL"] = dbURL
+				}
+			}
+		}
+
+		// Handle Redis-specific env var roles (redis_uri, redis_host, redis_port, redis_password)
+		// Parse REDIS_URL if we have Redis env vars with specific roles
+		if redisURL, ok := currentVars["REDIS_URL"]; ok && redisURL != nil {
+			parsedURL, err := dburl.Parse(*redisURL)
+			if err != nil {
+				// Log warning but continue
+				fmt.Printf("Warning: failed to parse REDIS_URL: %v\n", err)
+			} else {
+				var host, port, password string
+				host = parsedURL.Hostname()
+				port = parsedURL.Port()
+				if parsedURL.User != nil {
+					password, _ = parsedURL.User.Password()
+				}
+
+				// Set Redis-specific env vars based on their roles
+				hasRedisVars := false
+				for _, envVar := range s.AllEnvVars {
+					if envVar.Service == "redis" {
+						hasRedisVars = true
+						var value string
+						switch envVar.Role {
+						case deployment.EnvRoleRedisURI:
+							value = *redisURL
+						case deployment.EnvRoleRedisHost:
+							value = host
+						case deployment.EnvRoleRedisPort:
+							value = port
+						case deployment.EnvRoleRedisPassword:
+							value = password
+						default:
+							continue
+						}
+						if value != "" {
+							configVars[envVar.Name] = &value
+						}
+					}
+				}
+
+				// Fallback: if no Redis env vars were resolved, set REDIS_URL as default
+				if !hasRedisVars {
+					configVars["REDIS_URL"] = redisURL
+				}
 			}
 		}
 	}
