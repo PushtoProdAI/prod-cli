@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/xo/dburl"
 
 	heroku "github.com/heroku/heroku-go/v6"
 	"github.com/meroxa/prod/cli/internal/deployment"
@@ -273,8 +273,11 @@ func (s *ConfigureHerokuEnvStep) Execute(ctx context.Context, client *HerokuClie
 		// Handle PostgreSQL-specific env var roles (hostname, port, username, password, database_name)
 		// Parse DATABASE_URL if we have PostgreSQL env vars with specific roles
 		if dbURL, ok := currentVars["DATABASE_URL"]; ok && dbURL != nil {
-			parsedURL, err := url.Parse(*dbURL)
-			if err == nil {
+			parsedURL, err := dburl.Parse(*dbURL)
+			if err != nil {
+				// Log warning but continue
+				fmt.Printf("Warning: failed to parse DATABASE_URL: %v\n", err)
+			} else {
 				var host, port, username, password, dbName string
 				host = parsedURL.Hostname()
 				port = parsedURL.Port()
@@ -283,13 +286,13 @@ func (s *ConfigureHerokuEnvStep) Execute(ctx context.Context, client *HerokuClie
 					password, _ = parsedURL.User.Password()
 				}
 				// Extract database name from path (e.g., /mydatabase -> mydatabase)
-				if parsedURL.Path != "" && len(parsedURL.Path) > 1 {
-					dbName = parsedURL.Path[1:] // Remove leading slash
-				}
+				dbName = strings.TrimPrefix(parsedURL.Path, "/")
 
 				// Set PostgreSQL-specific env vars based on their roles
+				hasPostgresVars := false
 				for _, envVar := range s.AllEnvVars {
 					if envVar.Service == "postgresql" {
+						hasPostgresVars = true
 						var value string
 						switch envVar.Role {
 						case deployment.EnvRoleFullURI:
@@ -312,14 +315,22 @@ func (s *ConfigureHerokuEnvStep) Execute(ctx context.Context, client *HerokuClie
 						}
 					}
 				}
+
+				// Fallback: if no PostgreSQL env vars were resolved, set DATABASE_URL as default
+				if !hasPostgresVars {
+					configVars["DATABASE_URL"] = dbURL
+				}
 			}
 		}
 
 		// Handle Redis-specific env var roles (redis_uri, redis_host, redis_port, redis_password)
 		// Parse REDIS_URL if we have Redis env vars with specific roles
 		if redisURL, ok := currentVars["REDIS_URL"]; ok && redisURL != nil {
-			parsedURL, err := url.Parse(*redisURL)
-			if err == nil {
+			parsedURL, err := dburl.Parse(*redisURL)
+			if err != nil {
+				// Log warning but continue
+				fmt.Printf("Warning: failed to parse REDIS_URL: %v\n", err)
+			} else {
 				var host, port, password string
 				host = parsedURL.Hostname()
 				port = parsedURL.Port()
@@ -328,8 +339,10 @@ func (s *ConfigureHerokuEnvStep) Execute(ctx context.Context, client *HerokuClie
 				}
 
 				// Set Redis-specific env vars based on their roles
+				hasRedisVars := false
 				for _, envVar := range s.AllEnvVars {
 					if envVar.Service == "redis" {
+						hasRedisVars = true
 						var value string
 						switch envVar.Role {
 						case deployment.EnvRoleRedisURI:
@@ -347,6 +360,11 @@ func (s *ConfigureHerokuEnvStep) Execute(ctx context.Context, client *HerokuClie
 							configVars[envVar.Name] = &value
 						}
 					}
+				}
+
+				// Fallback: if no Redis env vars were resolved, set REDIS_URL as default
+				if !hasRedisVars {
+					configVars["REDIS_URL"] = redisURL
 				}
 			}
 		}
