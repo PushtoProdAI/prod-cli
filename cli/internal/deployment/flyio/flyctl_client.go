@@ -48,14 +48,21 @@ func (e *DefaultCommandExecutor) Execute(ctx context.Context, name string, args 
 		cmd.Env = append(os.Environ(), fmt.Sprintf("FLY_API_TOKEN=%s", token))
 	}
 	op, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, err
-	}
+
 	msg := string(op)
 	// even when returning JSON, there is some time plain text "Warning" attached to the message
 	msg, _, _ = strings.Cut(msg, "Warning")
 	msg = strings.TrimSpace(msg)
-	return []byte(msg), err
+
+	if err != nil {
+		// Include the output in the error for better debugging
+		if msg != "" {
+			return []byte(msg), fmt.Errorf("%w: %s", err, msg)
+		}
+		return []byte(msg), err
+	}
+
+	return []byte(msg), nil
 }
 
 func (e *DefaultCommandExecutor) ExecuteWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error) {
@@ -93,11 +100,8 @@ func (e *DefaultCommandExecutor) ExecuteWithStreaming(ctx context.Context, write
 	cmd.Stderr = io.MultiWriter(writer, &stderr)
 
 	err := cmd.Run()
-	if err != nil {
-		return nil, err
-	}
 
-	// Return combined output for parsing
+	// Return combined output for parsing (even on error)
 	combined := stdout.String()
 	if stderr.Len() > 0 {
 		combined += "\n" + stderr.String()
@@ -106,6 +110,14 @@ func (e *DefaultCommandExecutor) ExecuteWithStreaming(ctx context.Context, write
 	// Strip warning messages (same as Execute method)
 	combined, _, _ = strings.Cut(combined, "Warning")
 	combined = strings.TrimSpace(combined)
+
+	if err != nil {
+		// Include the output in the error for better debugging
+		if combined != "" {
+			return []byte(combined), fmt.Errorf("%w: %s", err, combined)
+		}
+		return []byte(combined), err
+	}
 
 	return []byte(combined), nil
 }
@@ -141,6 +153,46 @@ func (c *FlyctlClient) ensureFlyctl(ctx context.Context) error {
 		return errors.Errorf("flyctl is not installed or not in PATH. Please install it from https://fly.io/docs/flyctl/install/")
 	}
 	return nil
+}
+
+// getDefaultOrganization gets the default/personal organization slug
+func (c *FlyctlClient) getDefaultOrganization(ctx context.Context) (string, error) {
+	output, err := c.executor.Execute(ctx, "flyctl", "orgs", "list", "--json")
+	if err != nil {
+		return "", errors.Errorf("failed to list organizations: %w", err)
+	}
+
+	// Parse the orgs list - returns map of slug -> name
+	var orgs map[string]string
+	if err := json.Unmarshal(output, &orgs); err != nil {
+		return "", errors.Errorf("failed to parse organizations list: %w", err)
+	}
+
+	if len(orgs) == 0 {
+		return "", errors.Errorf("no organizations found. Please check your Fly.io account.")
+	}
+
+	// If there's only one org, use it
+	if len(orgs) == 1 {
+		for slug := range orgs {
+			slog.Info("Using organization", "slug", slug, "name", orgs[slug])
+			return slug, nil
+		}
+	}
+
+	// If there are multiple orgs, prefer "personal" if it exists
+	if _, hasPersonal := orgs["personal"]; hasPersonal {
+		slog.Info("Using personal organization", "name", orgs["personal"])
+		return "personal", nil
+	}
+
+	// Otherwise, use the first one (arbitrary but consistent)
+	for slug, name := range orgs {
+		slog.Info("Using first available organization", "slug", slug, "name", name)
+		return slug, nil
+	}
+
+	return "", errors.Errorf("failed to determine organization")
 }
 
 // CreateApp creates a new app on Fly.io
@@ -312,28 +364,10 @@ func (c *FlyctlClient) ListPostgres(ctx context.Context) ([]FlyioPostgresCluster
 		return nil, err
 	}
 
-	slog.Info("Listing Fly.io apps to get organization")
-	output, err := c.executor.Execute(ctx, "flyctl", "apps", "list", "--json")
+	slog.Info("Getting Fly.io organization for Postgres list")
+	orgSlug, err := c.getDefaultOrganization(ctx)
 	if err != nil {
-		return nil, errors.Errorf("failed to list apps to get organization: %w", err)
-	}
-
-	var apps []FlyioApp
-	if err := json.Unmarshal(output, &apps); err != nil {
-		return nil, errors.Errorf("failed to parse apps list: %w", err)
-	}
-
-	slog.Info("Found apps", "count", len(apps))
-	if len(apps) == 0 {
-		slog.Warn("No apps found, cannot determine organization for postgres list")
-		return []FlyioPostgresCluster{}, nil
-	}
-
-	orgSlug := apps[0].Organization.Slug
-	slog.Info("Using organization", "slug", orgSlug)
-	if orgSlug == "" {
-		slog.Warn("Organization slug is empty")
-		return []FlyioPostgresCluster{}, nil
+		return nil, errors.Errorf("failed to get organization: %w", err)
 	}
 
 	slog.Info("Listing managed postgres clusters", "org", orgSlug)
@@ -464,26 +498,77 @@ func (c *FlyctlClient) CreateRedis(ctx context.Context, req CreateRedisRequest) 
 	if err := c.ensureFlyctl(ctx); err != nil {
 		return nil, err
 	}
-	// Note: Fly.io uses Upstash Redis, which is created differently
+
+	// Get organization from orgs list (redis create requires --org)
+	slog.Info("Getting Fly.io organization for Redis creation")
+	orgSlug, err := c.getDefaultOrganization(ctx)
+	if err != nil {
+		return nil, errors.Errorf("failed to get organization: %w", err)
+	}
+
+	slog.Info("Creating Redis database", "name", req.Name, "region", req.Region, "org", orgSlug)
+
+	// Note: Fly.io uses Upstash Redis
+	// The command doesn't support --json yet, so we parse text output
 	args := []string{
 		"redis", "create",
 		"--name", req.Name,
 		"--region", req.Region,
-		"--no-replicas", // Start with no replicas
-		"--json",
+		"--org", orgSlug,
+		"--no-replicas",     // Start with no replicas
+		"--enable-eviction", // Enable eviction (useful for caching) and avoid interactive prompt
 	}
 
-	output, err := c.executor.Execute(ctx, "flyctl", args...)
+	// Execute with streaming output to show progress
+	output, err := c.executor.ExecuteWithStreaming(ctx, c.writer, "flyctl", args...)
 	if err != nil {
 		return nil, errors.Errorf("failed to create Redis database %q in region %q: %w", req.Name, req.Region, err)
 	}
 
-	var redis FlyioRedis
-	if err := json.Unmarshal(output, &redis); err != nil {
-		return nil, errors.Errorf("failed to parse redis response: %w", err)
+	// Parse the output to extract Redis information
+	redis, err := c.parseRedisCreateOutput(string(output), req.Name)
+	if err != nil {
+		return nil, errors.Errorf("failed to parse redis creation output: %w", err)
 	}
 
-	return &redis, nil
+	redis.Organization.Slug = orgSlug
+	redis.Region = req.Region
+
+	return redis, nil
+}
+
+// parseRedisCreateOutput parses the redis create command output
+func (c *FlyctlClient) parseRedisCreateOutput(output string, requestedName string) (*FlyioRedis, error) {
+	redis := &FlyioRedis{
+		Status: "ready",       // Assume ready after creation
+		Name:   requestedName, // Default to requested name
+	}
+
+	// Parse the output for Redis details
+	// Example output format:
+	// Your Upstash Redis database my-redis-db is ready.
+	// Set one or more of the following secrets on your target app.
+	// REDIS_URL: redis://...
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Extract name from success message
+		// "Your Upstash Redis database <name> is ready."
+		if strings.Contains(line, "Upstash Redis database") && strings.Contains(line, "is ready") {
+			parts := strings.Split(line, "Upstash Redis database")
+			if len(parts) > 1 {
+				namePart := strings.TrimSpace(parts[1])
+				namePart = strings.TrimSuffix(namePart, "is ready.")
+				redis.Name = strings.TrimSpace(namePart)
+			}
+		}
+	}
+
+	// Generate an ID (Upstash Redis uses the name as the identifier)
+	redis.ID = redis.Name
+
+	return redis, nil
 }
 
 // GetPostgresConnectionInfo retrieves PostgreSQL connection information
@@ -532,31 +617,128 @@ func (c *FlyctlClient) GetPostgresConnectionInfo(ctx context.Context, appID stri
 	}, nil
 }
 
+// ListRedis lists all Redis databases in the organization
+func (c *FlyctlClient) ListRedis(ctx context.Context) ([]FlyioRedis, error) {
+	if err := c.ensureFlyctl(ctx); err != nil {
+		return nil, err
+	}
+
+	// Get organization
+	slog.Info("Getting Fly.io organization for Redis list")
+	orgSlug, err := c.getDefaultOrganization(ctx)
+	if err != nil {
+		return nil, errors.Errorf("failed to get organization: %w", err)
+	}
+
+	// List Redis databases
+	slog.Info("Listing Redis databases", "org", orgSlug)
+	redisOutput, err := c.executor.Execute(ctx, "flyctl", "redis", "list", "-o", orgSlug)
+	if err != nil {
+		return nil, errors.Errorf("failed to list redis databases: %w", err)
+	}
+
+	return c.parseRedisList(string(redisOutput), orgSlug)
+}
+
+// parseRedisList parses the output of `flyctl redis list`
+func (c *FlyctlClient) parseRedisList(output string, orgSlug string) ([]FlyioRedis, error) {
+	var redisList []FlyioRedis
+
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Skip header and empty lines
+		if line == "" || strings.HasPrefix(line, "NAME") {
+			continue
+		}
+
+		// Parse table format: NAME  ORGANIZATION  PRIMARY REGION
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+
+		redis := FlyioRedis{
+			Name:   fields[0],
+			ID:     fields[0], // Name is used as ID for Upstash Redis
+			Status: "ready",   // Listed databases are typically ready
+			Region: fields[2], // Primary region
+		}
+
+		redis.Organization.Slug = orgSlug
+		redisList = append(redisList, redis)
+	}
+
+	slog.Info("Found Redis databases", "count", len(redisList))
+	for _, redis := range redisList {
+		slog.Info("Redis database", "name", redis.Name, "region", redis.Region)
+	}
+
+	return redisList, nil
+}
+
 // GetRedisConnectionInfo retrieves Redis connection information
-func (c *FlyctlClient) GetRedisConnectionInfo(ctx context.Context, appID string) (*RedisConnectionInfo, error) {
+func (c *FlyctlClient) GetRedisConnectionInfo(ctx context.Context, redisName string) (*RedisConnectionInfo, error) {
 	// Check if flyctl is installed
 	if err := c.ensureFlyctl(ctx); err != nil {
 		return nil, err
 	}
-	// Get Redis connection info
-	output, err := c.executor.Execute(ctx, "flyctl", "redis", "status", appID, "--json")
+
+	// Get Redis status
+	// The redis status command shows connection details
+	output, err := c.executor.Execute(ctx, "flyctl", "redis", "status", redisName)
 	if err != nil {
 		return nil, errors.Errorf("failed to get redis connection info: %w", err)
 	}
 
-	var status struct {
-		ConnectionString string `json:"connection_string"`
+	// Parse the output to extract connection string
+	// Example output:
+	// Status
+	// Database: my-redis-db
+	// Status: ready
+	// ...
+	// Connection URLs
+	// Primary: redis://default:password@host:port
+	connectionString := c.parseRedisConnectionString(string(output))
+	if connectionString == "" {
+		return nil, errors.Errorf("could not find connection string in redis status output")
 	}
 
-	if err := json.Unmarshal(output, &status); err != nil {
-		return nil, errors.Errorf("failed to parse redis status: %w", err)
-	}
-
-	// For Redis, internal and external are typically the same
+	// For Upstash Redis, the connection string works from anywhere
 	return &RedisConnectionInfo{
-		InternalConnectionString: status.ConnectionString,
-		ExternalConnectionString: status.ConnectionString,
+		InternalConnectionString: connectionString,
+		ExternalConnectionString: connectionString,
 	}, nil
+}
+
+// parseRedisConnectionString extracts the connection string from redis status output
+func (c *FlyctlClient) parseRedisConnectionString(output string) string {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Look for "Private URL" (actual format from flyctl redis status)
+		if strings.Contains(line, "Private URL") {
+			// Format: "Private URL    = redis://..."
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				url := strings.TrimSpace(parts[1])
+				if strings.HasPrefix(url, "redis://") {
+					return url
+				}
+			}
+		}
+
+		// Legacy fallback formats
+		if strings.HasPrefix(line, "Primary:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "Primary:"))
+		}
+		if strings.HasPrefix(line, "REDIS_URL:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "REDIS_URL:"))
+		}
+	}
+	return ""
 }
 
 // AttachPostgres attaches a managed PostgreSQL cluster to an app
@@ -589,36 +771,37 @@ func (c *FlyctlClient) AttachPostgres(ctx context.Context, req AttachPostgresReq
 	return nil
 }
 
-// AttachRedis attaches a Redis database to an app
+// AttachRedis attaches a Redis database to an app by setting the connection string as a secret
 func (c *FlyctlClient) AttachRedis(ctx context.Context, req AttachRedisRequest) error {
 	// Check if flyctl is installed
 	if err := c.ensureFlyctl(ctx); err != nil {
 		return err
 	}
-	// Note: Fly.io uses Upstash Redis which has a different attachment process
-	// The redis attach command sets up the connection automatically
-	args := []string{
-		"redis", "attach",
-		req.RedisName,
-		"--app", req.AppName,
-	}
 
-	// Add variable name (default is REDIS_URL)
-	if req.VariableName != "" {
-		args = append(args, "--variable-name", req.VariableName)
-	} else {
-		args = append(args, "--variable-name", "REDIS_URL")
-	}
-
-	// Auto-confirm the attachment
-	args = append(args, "-y")
-
-	// Use ExecuteInteractive to show output to user
-	err := c.executor.ExecuteInteractive(ctx, c.writer, "flyctl", args...)
+	// For Upstash Redis, there's no "attach" command
+	// We need to get the connection string and set it as a secret
+	slog.Info("Getting Redis connection info", "redis", req.RedisName)
+	connInfo, err := c.GetRedisConnectionInfo(ctx, req.RedisName)
 	if err != nil {
-		return errors.Errorf("failed to attach Redis %q to app %q: %w", req.RedisName, req.AppName, err)
+		return errors.Errorf("failed to get Redis connection info: %w", err)
 	}
 
+	// Set the connection string as a secret
+	variableName := req.VariableName
+	if variableName == "" {
+		variableName = "REDIS_URL"
+	}
+
+	slog.Info("Setting Redis connection string as secret", "app", req.AppName, "variable", variableName)
+	secrets := map[string]string{
+		variableName: connInfo.InternalConnectionString,
+	}
+
+	if err := c.SetSecrets(ctx, req.AppName, secrets); err != nil {
+		return errors.Errorf("failed to set Redis secret: %w", err)
+	}
+
+	slog.Info("Redis attached successfully", "app", req.AppName, "redis", req.RedisName)
 	return nil
 }
 
@@ -914,6 +1097,89 @@ func (c *FlyctlClient) DeployImage(ctx context.Context, appID, imageURL string) 
 
 	slog.Info("Image deployed successfully", "image", imageURL)
 	return nil
+}
+
+// GetRedisPricing fetches Redis pricing from flyctl redis plans
+func (c *FlyctlClient) GetRedisPricing(ctx context.Context) (map[string]float64, error) {
+	if err := c.ensureFlyctl(ctx); err != nil {
+		return nil, err
+	}
+
+	output, err := c.executor.Execute(ctx, "flyctl", "redis", "plans")
+	if err != nil {
+		return nil, errors.Errorf("failed to get redis plans: %w", err)
+	}
+
+	return parseRedisPricing(string(output)), nil
+}
+
+// parseRedisPricing parses the output of flyctl redis plans
+func parseRedisPricing(output string) map[string]float64 {
+	pricing := make(map[string]float64)
+
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Skip header and empty lines
+		if line == "" || strings.HasPrefix(line, "NAME") || strings.HasPrefix(line, "Redis databases") || strings.HasPrefix(line, "Other limits") {
+			continue
+		}
+
+		// Parse format: "Pro 2k       	$280 per month, per region..."
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+
+		// Get plan name (might be multiple words like "Pro 2k")
+		var planName string
+		var priceStr string
+
+		for i, field := range fields {
+			if strings.HasPrefix(field, "$") {
+				// Found the price, everything before is the plan name
+				planName = strings.Join(fields[0:i], " ")
+				priceStr = field
+				break
+			}
+		}
+
+		if planName == "" || priceStr == "" {
+			continue
+		}
+
+		// Parse price: "$280" or "$0.2"
+		priceStr = strings.TrimPrefix(priceStr, "$")
+		var price float64
+		if _, err := fmt.Sscanf(priceStr, "%f", &price); err == nil {
+			// Normalize plan names to lowercase with hyphens
+			normalizedName := strings.ToLower(strings.ReplaceAll(planName, " ", "-"))
+
+			// Check if this is usage-based pricing (pay-as-you-go)
+			// Look for "per 100K commands" or similar usage-based indicators in the line
+			if strings.Contains(strings.ToLower(line), "per 100k") ||
+				strings.Contains(strings.ToLower(line), "per command") ||
+				strings.Contains(strings.ToLower(normalizedName), "pay-as-you-go") {
+				// Usage-based pricing has $0 base cost
+				pricing[normalizedName] = 0.0
+			} else {
+				pricing[normalizedName] = price
+			}
+		}
+	}
+
+	// Add fallback pricing if parsing failed
+	if len(pricing) == 0 {
+		slog.Warn("Failed to parse Redis pricing, using defaults")
+		pricing["pay-as-you-go"] = 0.0 // Pay as you go is variable
+		pricing["starter"] = 10.0
+		pricing["standard"] = 50.0
+		pricing["pro-2k"] = 280.0
+		pricing["pro-10k"] = 680.0
+	}
+
+	return pricing
 }
 
 // SetSecrets sets secrets for a Fly.io app using 'fly secrets set'
