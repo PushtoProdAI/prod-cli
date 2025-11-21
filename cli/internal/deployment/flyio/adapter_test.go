@@ -14,7 +14,8 @@ func TestFlyioDeploymentAdapter_EstimateCost(t *testing.T) {
 
 	// Create a mock pricing service to avoid LLM calls
 	mockPricingService := pricing.NewMockServiceWithCostFunc(func(service deployment.CostService) float64 {
-		return getFlyioFallbackServiceCost(service.Provider, service.Plan, service.Storage)
+		adapter := NewFlyioDeploymentAdapterWithPricing(mockClient, nil, nil)
+		return adapter.getFlyioFallbackServiceCost(service.Provider, service.Plan, service.Storage, nil)
 	})
 
 	// Create the adapter with mock pricing service
@@ -55,10 +56,11 @@ func TestFlyioDeploymentAdapter_EstimateCost(t *testing.T) {
 		t.Errorf("Expected 3 services, got %d", len(costEstimate.Services))
 	}
 
-	// Check that each service has a cost
+	// Check that each service has a cost (except pay-as-you-go Redis which is $0 base)
 	for i, service := range costEstimate.Services {
-		if service.Cost <= 0 {
-			t.Errorf("Service %d (%s) has no cost: $%.2f", i, service.Service.Name, service.Cost)
+		// Allow $0 cost for pay-as-you-go Redis
+		if service.Cost < 0 || (service.Cost == 0 && service.Plan != "pay-as-you-go") {
+			t.Errorf("Service %d (%s) has invalid cost: $%.2f", i, service.Service.Name, service.Cost)
 		}
 	}
 
@@ -78,12 +80,15 @@ func TestGetFlyioFallbackServiceCost(t *testing.T) {
 		{"web", "shared-cpu-1x", 0, 5.70},
 		{"web", "shared-cpu-2x", 0, 11.40},
 		{"postgresql", "basic", 10, 39.50}, // 38.00 + (10 * 0.15)
-		{"redis", "redis-shared", 0, 5.00},
+		{"redis", "pay-as-you-go", 0, 0.0}, // Updated to use new default
 		{"unknown", "unknown", 0, 0.0},
 	}
 
+	mockClient := &MockFlyioClient{}
+	adapter := NewFlyioDeploymentAdapterWithPricing(mockClient, nil, nil)
+
 	for _, test := range tests {
-		cost := getFlyioFallbackServiceCost(test.provider, test.plan, test.storage)
+		cost := adapter.getFlyioFallbackServiceCost(test.provider, test.plan, test.storage, nil)
 		if cost != test.expected {
 			t.Errorf("For %s/%s/%dGB, expected $%.2f, got $%.2f",
 				test.provider, test.plan, test.storage, test.expected, cost)
@@ -148,6 +153,10 @@ func (m *MockFlyioClient) GetAppMetrics(ctx context.Context, appID string) (*App
 
 func (m *MockFlyioClient) ListPostgres(ctx context.Context) ([]FlyioPostgresCluster, error) {
 	return []FlyioPostgresCluster{}, nil
+}
+
+func (m *MockFlyioClient) ListRedis(ctx context.Context) ([]FlyioRedis, error) {
+	return []FlyioRedis{}, nil
 }
 
 func (m *MockFlyioClient) ListReleases(ctx context.Context, appID string) ([]FlyioRelease, error) {

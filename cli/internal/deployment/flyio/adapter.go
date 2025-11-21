@@ -96,7 +96,7 @@ func (fda *FlyioDeploymentAdapter) EstimateCost(ctx context.Context, spec *deplo
 			cs.Storage = 10   // Default 10GB storage
 		case "redis":
 			cs.Service = service
-			cs.Plan = "redis-shared" // Default plan
+			cs.Plan = "pay-as-you-go" // Default plan (Upstash Redis - pay per use)
 		default:
 			continue
 		}
@@ -123,6 +123,18 @@ func (fda *FlyioDeploymentAdapter) estimateFlyioCost(ctx context.Context, cr dep
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 
+	// Fetch live Redis pricing once for all services
+	var redisPricing map[string]float64
+	if flyctlClient, ok := fda.client.(*FlyctlClient); ok {
+		livePricing, err := flyctlClient.GetRedisPricing(ctx)
+		if err != nil {
+			slog.Warn("Failed to fetch live Redis pricing", "error", err)
+		} else {
+			redisPricing = livePricing
+			slog.Info("Fetched live Redis pricing", "plans", len(redisPricing))
+		}
+	}
+
 	var pricingService pricing.Service
 	if fda.pricingService != nil {
 		// Use injected pricing service (for testing)
@@ -134,10 +146,20 @@ func (fda *FlyioDeploymentAdapter) estimateFlyioCost(ctx context.Context, cr dep
 	}
 
 	for _, service := range cr.Services {
+		// For Redis, use deterministic pricing from flyctl instead of LLM
+		if service.Service.Provider == "redis" && redisPricing != nil {
+			cost := fda.getFlyioFallbackServiceCost(service.Service.Provider, service.Plan, service.Storage, redisPricing)
+			service.Cost = cost
+			ce.Total += service.Cost
+			ce.Services = append(ce.Services, service)
+			continue
+		}
+
+		// For non-Redis services, use LLM pricing
 		result, err := pricingService.EstimateCost(ctx, service)
 		if err != nil {
-			slog.Info("Failed to fetch pricing via LLM, using fallback", "service", service.Name, "error", err)
-			return estimateFlyioCostFallback(cr)
+			slog.Info("Failed to fetch pricing via LLM, using fallback", "service", service.Service.Name, "error", err)
+			return fda.estimateFlyioCostFallback(ctx, cr)
 		}
 
 		// Apply usage-based costs for storage (Flyio specific logic)
@@ -150,14 +172,26 @@ func (fda *FlyioDeploymentAdapter) estimateFlyioCost(ctx context.Context, cr dep
 	return ce, nil
 }
 
-func estimateFlyioCostFallback(cr deployment.CostRequest) (deployment.CostEstimate, error) {
+func (fda *FlyioDeploymentAdapter) estimateFlyioCostFallback(ctx context.Context, cr deployment.CostRequest) (deployment.CostEstimate, error) {
 	slog.Info("Using Fly.io fallback pricing")
 
 	ce := deployment.CostEstimate{Services: make([]deployment.CostService, 0, len(cr.Services))}
 	ce.Total = 0.0
 
+	// Fetch live Redis pricing if available
+	var redisPricing map[string]float64
+	if flyctlClient, ok := fda.client.(*FlyctlClient); ok {
+		livePricing, err := flyctlClient.GetRedisPricing(ctx)
+		if err != nil {
+			slog.Warn("Failed to fetch live Redis pricing, using defaults", "error", err)
+		} else {
+			redisPricing = livePricing
+			slog.Info("Fetched live Redis pricing", "plans", len(redisPricing))
+		}
+	}
+
 	for _, service := range cr.Services {
-		cost := getFlyioFallbackServiceCost(service.Provider, service.Plan, service.Storage)
+		cost := fda.getFlyioFallbackServiceCost(service.Provider, service.Plan, service.Storage, redisPricing)
 		service.Cost = cost
 		ce.Total += service.Cost
 		ce.Services = append(ce.Services, service)
@@ -165,7 +199,7 @@ func estimateFlyioCostFallback(cr deployment.CostRequest) (deployment.CostEstima
 	return ce, nil
 }
 
-func getFlyioFallbackServiceCost(provider, plan string, storage int) float64 {
+func (fda *FlyioDeploymentAdapter) getFlyioFallbackServiceCost(provider, plan string, storage int, liveRedisPricing map[string]float64) float64 {
 	pricing := GetEstimatedPricing()
 
 	switch provider {
@@ -182,10 +216,22 @@ func getFlyioFallbackServiceCost(provider, plan string, storage int) float64 {
 		}
 		return pricing.Databases["basic"] + (float64(storage) * pricing.Storage) // Default
 	case "redis":
+		// Use live pricing if available
+		if liveRedisPricing != nil {
+			// Try exact match first
+			if cost, ok := liveRedisPricing[plan]; ok {
+				return cost
+			}
+			// Default to pay-as-you-go if available
+			if cost, ok := liveRedisPricing["pay-as-you-go"]; ok {
+				return cost
+			}
+		}
+		// Fall back to static pricing
 		if cost, ok := pricing.Redis[plan]; ok {
 			return cost
 		}
-		return pricing.Redis["redis-shared"] // Default
+		return pricing.Redis["pay-as-you-go"] // Default to pay-as-you-go
 	default:
 		return 0.0
 	}

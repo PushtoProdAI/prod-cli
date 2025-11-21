@@ -195,6 +195,11 @@ func (c *HTTPFlyioClient) CreateRedis(ctx context.Context, req CreateRedisReques
 	return nil, errors.Errorf("CreateRedis is not implemented for HTTP client - use flyctl client instead")
 }
 
+// ListRedis lists all Redis databases
+func (c *HTTPFlyioClient) ListRedis(ctx context.Context) ([]FlyioRedis, error) {
+	return nil, errors.Errorf("ListRedis is not implemented for HTTP client - use flyctl client instead")
+}
+
 // GetPostgresConnectionInfo retrieves PostgreSQL connection information
 func (c *HTTPFlyioClient) GetPostgresConnectionInfo(ctx context.Context, appID string) (*PostgresConnectionInfo, error) {
 	return nil, errors.Errorf("GetPostgresConnectionInfo is not implemented for HTTP client - use flyctl client instead")

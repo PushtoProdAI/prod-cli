@@ -19,8 +19,9 @@ type FlyioClient interface {
 	CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*FlyioPostgresCluster, error)
 	ListPostgres(ctx context.Context) ([]FlyioPostgresCluster, error)
 	CreateRedis(ctx context.Context, req CreateRedisRequest) (*FlyioRedis, error)
+	ListRedis(ctx context.Context) ([]FlyioRedis, error)
 	GetPostgresConnectionInfo(ctx context.Context, appID string) (*PostgresConnectionInfo, error)
-	GetRedisConnectionInfo(ctx context.Context, appID string) (*RedisConnectionInfo, error)
+	GetRedisConnectionInfo(ctx context.Context, redisName string) (*RedisConnectionInfo, error)
 	AttachPostgres(ctx context.Context, req AttachPostgresRequest) error
 	AttachRedis(ctx context.Context, req AttachRedisRequest) error
 
@@ -132,12 +133,15 @@ type CreatePostgresRequest struct {
 	Plan       string `json:"plan"`        // "basic", "production", etc.
 }
 
-// FlyioRedis represents a Fly.io Redis database
+// FlyioRedis represents a Fly.io Redis database (Upstash)
 type FlyioRedis struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	AppID  string `json:"app_id"`
+	ID               string            `json:"id"`                // Redis database name (used as ID)
+	Name             string            `json:"name"`              // User-friendly name
+	Status           string            `json:"status"`            // "ready", "creating", etc.
+	Organization     FlyioOrganization `json:"organization"`      // Organization info
+	Region           string            `json:"region"`            // Primary region
+	Plan             string            `json:"plan"`              // Plan type
+	ConnectionString string            `json:"connection_string"` // Redis connection URL
 }
 
 // CreateRedisRequest for creating a Redis database
