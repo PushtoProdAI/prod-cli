@@ -92,6 +92,14 @@ func (tp *TemplatePricer) EstimateCostFromTemplate(ctx context.Context, template
 			}
 			costs = append(costs, cost)
 
+		case "AWS::ElastiCache::ServerlessCache":
+			cost, err := tp.priceServerlessElastiCache(ctx, resourceName, resource.Properties)
+			if err != nil {
+				slog.Warn("Failed to price Serverless ElastiCache", "error", err)
+				continue
+			}
+			costs = append(costs, cost)
+
 		case "AWS::EC2::NatGateway":
 			hasNATGateway = true
 
@@ -284,6 +292,76 @@ func (tp *TemplatePricer) priceElastiCacheCluster(ctx context.Context, name stri
 		},
 		Plan: nodeType,
 		Cost: totalCost,
+	}, nil
+}
+
+// priceServerlessElastiCache estimates cost for Serverless ElastiCache
+func (tp *TemplatePricer) priceServerlessElastiCache(ctx context.Context, name string, props map[string]interface{}) (deployment.CostService, error) {
+	// Extract cache usage limits
+	var dataStorageGB int = 10 // default
+	var ecpuMax int = 5000     // default
+
+	if cacheUsageLimits, ok := props["CacheUsageLimits"].(map[string]interface{}); ok {
+		if dataStorage, ok := cacheUsageLimits["DataStorage"].(map[string]interface{}); ok {
+			if maximum, ok := dataStorage["Maximum"].(float64); ok {
+				dataStorageGB = int(maximum)
+			} else if maximum, ok := dataStorage["Maximum"].(int); ok {
+				dataStorageGB = maximum
+			}
+		}
+		if ecpuPerSecond, ok := cacheUsageLimits["ECPUPerSecond"].(map[string]interface{}); ok {
+			if maximum, ok := ecpuPerSecond["Maximum"].(float64); ok {
+				ecpuMax = int(maximum)
+			} else if maximum, ok := ecpuPerSecond["Maximum"].(int); ok {
+				ecpuMax = maximum
+			}
+		}
+	}
+
+	// Get pricing from API
+	pricing, err := tp.pricingClient.GetServerlessElastiCachePricing(ctx, tp.region)
+	if err != nil {
+		// Fall back to static pricing
+		// Based on AWS pricing as of Jan 2025:
+		// - Data storage: ~$0.125/GB-month
+		// - ECPU: ~$0.0034/ECPU-hour
+		//
+		// IMPORTANT: ECPU is billed on actual usage, not max capacity
+		// For a typical low-traffic application (like a chat app):
+		// - Average consumption: ~5-10 ECPU (not 1000+)
+		// - Max capacity is for burst handling, not continuous use
+		//
+		// Conservative estimate: assume ~0.1% of max capacity for average usage
+		storageCost := float64(dataStorageGB) * 0.125
+		avgECPU := float64(ecpuMax) * 0.001 // 0.1% average utilization (5 ECPU for 5000 max)
+		ecpuCost := avgECPU * 0.0034 * 730  // $/ECPU-hour × hours/month
+
+		return deployment.CostService{
+			Service: deployment.Service{
+				Name:     name,
+				Type:     "cache",
+				Provider: "serverless-elasticache",
+			},
+			Plan:    fmt.Sprintf("%dGB storage, %d ECPU max (~%.0f avg)", dataStorageGB, ecpuMax, avgECPU),
+			Storage: dataStorageGB,
+			Cost:    storageCost + ecpuCost,
+		}, nil
+	}
+
+	// Calculate actual costs from API pricing
+	storageCost := float64(dataStorageGB) * pricing.DataStorageGBMonthlyCost
+	avgECPU := float64(ecpuMax) * 0.001 // Assume 0.1% average utilization (conservative for low-traffic apps)
+	ecpuCost := avgECPU * pricing.ECPUHourlyCost * 730
+
+	return deployment.CostService{
+		Service: deployment.Service{
+			Name:     name,
+			Type:     "cache",
+			Provider: "serverless-elasticache",
+		},
+		Plan:    fmt.Sprintf("%dGB storage, %d ECPU max (~%.0f avg)", dataStorageGB, ecpuMax, avgECPU),
+		Storage: dataStorageGB,
+		Cost:    storageCost + ecpuCost,
 	}, nil
 }
 

@@ -8,11 +8,13 @@
 
 const { SecretsManagerClient, CreateSecretCommand, UpdateSecretCommand, DeleteSecretCommand, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
 const { RDSClient, DescribeDBInstancesCommand } = require('@aws-sdk/client-rds');
+const { ElastiCacheClient, DescribeServerlessCachesCommand, DescribeCacheClustersCommand } = require('@aws-sdk/client-elasticache');
 const https = require('https');
 const url = require('url');
 
 const secretsManager = new SecretsManagerClient({});
 const rds = new RDSClient({});
+const elasticache = new ElastiCacheClient({});
 
 /**
  * Send response back to CloudFormation
@@ -54,11 +56,29 @@ async function sendResponse(event, context, status, data) {
  * Validate input parameters to prevent injection attacks
  */
 function validateInputs(properties) {
-  const { DBInstanceId, PasswordSecretArn, SecretName, ServiceName, EnvVarName } = properties;
+  const { DBInstanceId, PasswordSecretArn, SecretName, ServiceName, EnvVarName, ResourceType, CacheIdentifier, CacheType } = properties;
   
-  // Validate DB instance identifier format
-  if (!/^[a-zA-Z][a-zA-Z0-9-]{0,62}$/.test(DBInstanceId)) {
-    throw new Error('Invalid DBInstanceId format');
+  // Validate resource type
+  const resourceType = ResourceType || 'postgres'; // Default to postgres for backward compatibility
+  if (!['postgres', 'redis'].includes(resourceType)) {
+    throw new Error('Invalid ResourceType. Must be "postgres" or "redis"');
+  }
+  
+  // Validate based on resource type
+  if (resourceType === 'postgres') {
+    // Validate DB instance identifier format
+    if (!DBInstanceId || !/^[a-zA-Z][a-zA-Z0-9-]{0,62}$/.test(DBInstanceId)) {
+      throw new Error('Invalid DBInstanceId format');
+    }
+  } else if (resourceType === 'redis') {
+    // Validate cache identifier format
+    if (!CacheIdentifier || !/^[a-zA-Z][a-zA-Z0-9-]{0,62}$/.test(CacheIdentifier)) {
+      throw new Error('Invalid CacheIdentifier format');
+    }
+    // Validate cache type
+    if (!CacheType || !['serverless', 'cluster'].includes(CacheType)) {
+      throw new Error('Invalid CacheType. Must be "serverless" or "cluster"');
+    }
   }
   
   // Validate secret name format
@@ -76,7 +96,7 @@ function validateInputs(properties) {
     throw new Error('Invalid EnvVarName format');
   }
   
-  return { DBInstanceId, PasswordSecretArn, SecretName, ServiceName, EnvVarName };
+  return { DBInstanceId, PasswordSecretArn, SecretName, ServiceName, EnvVarName, ResourceType: resourceType, CacheIdentifier, CacheType };
 }
 
 /**
@@ -90,7 +110,7 @@ exports.handler = async (event, context) => {
     
     // Validate all inputs before processing
     const validated = validateInputs(ResourceProperties);
-    const { DBInstanceId, PasswordSecretArn, SecretName, ServiceName, EnvVarName } = validated;
+    const { DBInstanceId, PasswordSecretArn, SecretName, ServiceName, EnvVarName, ResourceType, CacheIdentifier, CacheType } = validated;
 
     // Handle DELETE request
     if (RequestType === 'Delete') {
@@ -108,60 +128,123 @@ exports.handler = async (event, context) => {
       return;
     }
 
-    // Get DB instance details
-    console.log(`Describing DB instance: ${DBInstanceId}`);
-    const dbResponse = await rds.send(new DescribeDBInstancesCommand({
-      DBInstanceIdentifier: DBInstanceId,
-    }));
-    
-    if (!dbResponse.DBInstances || dbResponse.DBInstances.length === 0) {
-      throw new Error(`DB instance not found: ${DBInstanceId}`);
-    }
-    
-    const dbInstance = dbResponse.DBInstances[0];
-    
-    if (!dbInstance.Endpoint) {
-      throw new Error(`DB instance ${DBInstanceId} does not have an endpoint yet`);
-    }
-    
-    const endpoint = dbInstance.Endpoint.Address;
-    const port = dbInstance.Endpoint.Port;
-    
-    console.log(`DB endpoint: ${endpoint}:${port}`);
+    let connectionUrl;
 
-    // Get password from Secrets Manager
-    console.log(`Retrieving password from: ${PasswordSecretArn}`);
-    const passwordResponse = await secretsManager.send(new GetSecretValueCommand({
-      SecretId: PasswordSecretArn,
-    }));
-    
-    if (!passwordResponse.SecretString) {
-      throw new Error('Password secret is empty');
-    }
-    
-    const passwordData = JSON.parse(passwordResponse.SecretString);
-    const password = passwordData.password;
-    
-    if (!password) {
-      throw new Error('Password field not found in secret');
-    }
+    if (ResourceType === 'redis') {
+      // Handle Redis/ElastiCache
+      console.log(`Describing ElastiCache: ${CacheIdentifier} (type: ${CacheType})`);
+      
+      let endpoint, port;
+      
+      if (CacheType === 'serverless') {
+        // Serverless ElastiCache
+        const cacheResponse = await elasticache.send(new DescribeServerlessCachesCommand({
+          ServerlessCacheName: CacheIdentifier,
+        }));
+        
+        if (!cacheResponse.ServerlessCaches || cacheResponse.ServerlessCaches.length === 0) {
+          throw new Error(`Serverless cache not found: ${CacheIdentifier}`);
+        }
+        
+        const cache = cacheResponse.ServerlessCaches[0];
+        
+        if (!cache.Endpoint) {
+          throw new Error(`Serverless cache ${CacheIdentifier} does not have an endpoint yet`);
+        }
+        
+        endpoint = cache.Endpoint.Address;
+        port = cache.Endpoint.Port;
+      } else {
+        // Regular ElastiCache cluster
+        const cacheResponse = await elasticache.send(new DescribeCacheClustersCommand({
+          CacheClusterId: CacheIdentifier,
+          ShowCacheNodeInfo: true,
+        }));
+        
+        if (!cacheResponse.CacheClusters || cacheResponse.CacheClusters.length === 0) {
+          throw new Error(`Cache cluster not found: ${CacheIdentifier}`);
+        }
+        
+        const cluster = cacheResponse.CacheClusters[0];
+        
+        if (!cluster.CacheNodes || cluster.CacheNodes.length === 0) {
+          throw new Error(`Cache cluster ${CacheIdentifier} has no nodes`);
+        }
+        
+        const node = cluster.CacheNodes[0];
+        if (!node.Endpoint) {
+          throw new Error(`Cache cluster ${CacheIdentifier} does not have an endpoint yet`);
+        }
+        
+        endpoint = node.Endpoint.Address;
+        port = node.Endpoint.Port;
+      }
+      
+      console.log(`Redis endpoint: ${endpoint}:${port}`);
+      
+      // Construct REDIS_URL with TLS (rediss://)
+      // Serverless ElastiCache has encryption in transit enabled by default
+      connectionUrl = `rediss://${endpoint}:${port}`;
+      
+      console.log(`Constructed Redis URL with TLS`);
+      
+    } else {
+      // Handle PostgreSQL/RDS (original logic)
+      console.log(`Describing DB instance: ${DBInstanceId}`);
+      const dbResponse = await rds.send(new DescribeDBInstancesCommand({
+        DBInstanceIdentifier: DBInstanceId,
+      }));
+      
+      if (!dbResponse.DBInstances || dbResponse.DBInstances.length === 0) {
+        throw new Error(`DB instance not found: ${DBInstanceId}`);
+      }
+      
+      const dbInstance = dbResponse.DBInstances[0];
+      
+      if (!dbInstance.Endpoint) {
+        throw new Error(`DB instance ${DBInstanceId} does not have an endpoint yet`);
+      }
+      
+      const endpoint = dbInstance.Endpoint.Address;
+      const port = dbInstance.Endpoint.Port;
+      
+      console.log(`DB endpoint: ${endpoint}:${port}`);
 
-    // Construct DATABASE_URL using URL encoding for password
-    // This ensures special characters in password don't break the URL
-    const encodedPassword = encodeURIComponent(password);
-    const databaseUrl = `postgresql://postgres:${encodedPassword}@${endpoint}:${port}/postgres`;
-    
-    console.log(`Constructed database URL (password hidden)`);
+      // Get password from Secrets Manager
+      console.log(`Retrieving password from: ${PasswordSecretArn}`);
+      const passwordResponse = await secretsManager.send(new GetSecretValueCommand({
+        SecretId: PasswordSecretArn,
+      }));
+      
+      if (!passwordResponse.SecretString) {
+        throw new Error('Password secret is empty');
+      }
+      
+      const passwordData = JSON.parse(passwordResponse.SecretString);
+      const password = passwordData.password;
+      
+      if (!password) {
+        throw new Error('Password field not found in secret');
+      }
+
+      // Construct DATABASE_URL using URL encoding for password
+      // This ensures special characters in password don't break the URL
+      const encodedPassword = encodeURIComponent(password);
+      connectionUrl = `postgresql://postgres:${encodedPassword}@${endpoint}:${port}/postgres`;
+      
+      console.log(`Constructed database URL (password hidden)`);
+    }
 
     // Create or update the secret
     const secretParams = {
       Name: SecretName,
-      Description: `Database connection URL for ${EnvVarName}`,
-      SecretString: databaseUrl,
+      Description: `${ResourceType === 'redis' ? 'Redis' : 'Database'} connection URL for ${EnvVarName}`,
+      SecretString: connectionUrl,
       Tags: [
         { Key: 'service', Value: ServiceName },
         { Key: 'managed-by', Value: 'prod' },
         { Key: 'env-var', Value: EnvVarName },
+        { Key: 'resource-type', Value: ResourceType },
       ],
     };
 
@@ -174,7 +257,7 @@ exports.handler = async (event, context) => {
       console.log(`Updating secret: ${SecretName}`);
       const updateResponse = await secretsManager.send(new UpdateSecretCommand({
         SecretId: SecretName,
-        SecretString: databaseUrl,
+        SecretString: connectionUrl,
       }));
       secretArn = updateResponse.ARN;
     }

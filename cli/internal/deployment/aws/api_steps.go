@@ -8,6 +8,7 @@ import (
 	"github.com/go-errors/errors"
 
 	"github.com/meroxa/prod/cli/internal/backend"
+	backendaws "github.com/meroxa/prod/cli/internal/backend/aws"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/output"
 )
@@ -328,7 +329,8 @@ func BuildAWSDeploymentSpec(
 		if svc.Provider == "postgresql" || svc.Provider == "mysql" {
 			serviceType = "rds"
 		} else if svc.Provider == "redis" {
-			serviceType = "elasticache"
+			// Use Serverless ElastiCache with Valkey engine for Redis
+			serviceType = "serverless-cache"
 		} else {
 			slog.Warn("Unsupported service provider for AWS", "provider", svc.Provider)
 			continue
@@ -348,8 +350,17 @@ func BuildAWSDeploymentSpec(
 			backingService.InstanceClass = "db.t3.micro"
 			backingService.AllocatedStorage = 20
 		} else if svc.Provider == "redis" {
-			backingService.NodeType = "cache.t3.micro"
-			backingService.NumCacheNodes = 1
+			// Configure Serverless ElastiCache with sensible defaults
+			backingService.MajorEngineVersion = "7"
+			backingService.CacheUsageLimits = &backendaws.CacheUsageLimits{
+				DataStorage: &backendaws.DataStorageLimit{
+					Maximum: 10,
+					Unit:    "GB",
+				},
+				ECPUPerSecond: &backendaws.ECPULimit{
+					Maximum: 5000,
+				},
+			}
 		}
 
 		backingServices = append(backingServices, backingService)

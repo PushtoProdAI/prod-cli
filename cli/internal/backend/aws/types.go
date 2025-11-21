@@ -9,13 +9,33 @@ type AWSAuthSetup struct {
 
 // BackingService represents a backing service (database, cache, etc.) for AWS deployment
 type BackingService struct {
-	Type             string `json:"type"`
-	Name             string `json:"name"`
-	Engine           string `json:"engine,omitempty"`
-	InstanceClass    string `json:"instanceClass,omitempty"`
-	AllocatedStorage int    `json:"allocatedStorage,omitempty"`
-	NodeType         string `json:"nodeType,omitempty"`
-	NumCacheNodes    int    `json:"numCacheNodes,omitempty"`
+	Type               string            `json:"type"`
+	Name               string            `json:"name"`
+	Engine             string            `json:"engine,omitempty"`
+	InstanceClass      string            `json:"instanceClass,omitempty"`
+	AllocatedStorage   int               `json:"allocatedStorage,omitempty"`
+	NodeType           string            `json:"nodeType,omitempty"`
+	NumCacheNodes      int               `json:"numCacheNodes,omitempty"`
+	CacheUsageLimits   *CacheUsageLimits `json:"cacheUsageLimits,omitempty"`
+	DailySnapshotTime  string            `json:"dailySnapshotTime,omitempty"`
+	MajorEngineVersion string            `json:"majorEngineVersion,omitempty"`
+}
+
+// CacheUsageLimits represents the usage limits for Serverless ElastiCache
+type CacheUsageLimits struct {
+	DataStorage   *DataStorageLimit `json:"dataStorage,omitempty"`
+	ECPUPerSecond *ECPULimit        `json:"ecpuPerSecond,omitempty"`
+}
+
+// DataStorageLimit represents data storage limits
+type DataStorageLimit struct {
+	Maximum int    `json:"maximum,omitempty"`
+	Unit    string `json:"unit,omitempty"`
+}
+
+// ECPULimit represents ECPU per second limits
+type ECPULimit struct {
+	Maximum int `json:"maximum,omitempty"`
 }
 
 // EnvVar represents an environment variable with categorization

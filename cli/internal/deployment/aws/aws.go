@@ -152,11 +152,20 @@ func (ada *AWSDeploymentAdapter) estimateCostFromTemplate(ctx context.Context, s
 				AllocatedStorage: postgresStorage,
 			})
 		case "redis":
+			// Use Serverless ElastiCache with Valkey engine for Redis deployments
 			backingServices = append(backingServices, backend.BackingService{
-				Type:          "elasticache",
-				Name:          service.Name,
-				NodeType:      redisNodeType,
-				NumCacheNodes: 1,
+				Type:               "serverless-cache",
+				Name:               service.Name,
+				MajorEngineVersion: "7",
+				CacheUsageLimits: &backend.CacheUsageLimits{
+					DataStorage: &backend.DataStorageLimit{
+						Maximum: 10,
+						Unit:    "GB",
+					},
+					ECPUPerSecond: &backend.ECPULimit{
+						Maximum: 5000,
+					},
+				},
 			})
 		}
 	}
