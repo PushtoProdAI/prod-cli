@@ -100,6 +100,7 @@ func (qd *QueuedDeployment) GenerateAPISteps() []HerokuAPIStep {
 			appStepID,
 			customEnvVars,
 			dbMappings,
+			qd.spec.EnvVars, // Pass full env vars for Redis-specific role handling
 			deps,
 		))
 		stepCounter++
