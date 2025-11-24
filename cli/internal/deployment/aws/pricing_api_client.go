@@ -469,17 +469,6 @@ func (c *PricingAPIClient) GetNATGatewayPricing(ctx context.Context, region stri
 func (c *PricingAPIClient) GetServerlessElastiCachePricing(ctx context.Context, region string) (*ServerlessElastiCachePricingResult, error) {
 	cacheKey := fmt.Sprintf("serverless-elasticache:%s", region)
 
-	// Check cache first
-	if cached, ok := c.cache.Get(cacheKey); ok {
-		slog.Debug("Using cached Serverless ElastiCache pricing", "key", cacheKey, "cost", cached)
-		// Cached value is data storage cost, need to return structured result
-		// For simplicity, use fallback pricing structure
-		return &ServerlessElastiCachePricingResult{
-			DataStorageGBMonthlyCost: 0.125,
-			ECPUHourlyCost:           0.0034,
-		}, nil
-	}
-
 	// Try to get pricing from AWS Pricing API
 	// Note: Serverless ElastiCache pricing may not be fully available in the API yet
 	// ServiceCode would be "AmazonElastiCache" with specific filters for serverless
@@ -492,6 +481,12 @@ func (c *PricingAPIClient) GetServerlessElastiCachePricing(ctx context.Context, 
 	result := &ServerlessElastiCachePricingResult{
 		DataStorageGBMonthlyCost: 0.125,
 		ECPUHourlyCost:           0.0034,
+	}
+
+	// Check cache first
+	if cached, ok := c.cache.Get(cacheKey); ok {
+		slog.Debug("Using cached Serverless ElastiCache pricing", "key", cacheKey, "cost", cached)
+		return result, nil
 	}
 
 	// Cache the storage cost as a representative value

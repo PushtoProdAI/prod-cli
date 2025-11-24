@@ -24,10 +24,12 @@ const (
 	postgresStorage       = 20 // GB
 	postgresStorageType   = "gp3"
 
-	// ElastiCache Redis configuration
-	redisNodeType      = "cache.t3.micro"
-	redisEngine        = "redis"
-	redisEngineVersion = "7.0"
+	// Serverless ElastiCache configuration (Valkey engine)
+	serverlessCacheType          = "serverless-cache"
+	serverlessCacheEngineVersion = "7"
+	serverlessCacheDataStorageGB = 10
+	serverlessCacheStorageUnit   = "GB"
+	serverlessCacheMaxECPU       = 5000
 
 	// App Runner configuration (display format with units)
 	appRunnerCPU    = "1 vCPU"
@@ -154,16 +156,16 @@ func (ada *AWSDeploymentAdapter) estimateCostFromTemplate(ctx context.Context, s
 		case "redis":
 			// Use Serverless ElastiCache with Valkey engine for Redis deployments
 			backingServices = append(backingServices, backend.BackingService{
-				Type:               "serverless-cache",
+				Type:               serverlessCacheType,
 				Name:               service.Name,
-				MajorEngineVersion: "7",
+				MajorEngineVersion: serverlessCacheEngineVersion,
 				CacheUsageLimits: &backend.CacheUsageLimits{
 					DataStorage: &backend.DataStorageLimit{
-						Maximum: 10,
-						Unit:    "GB",
+						Maximum: serverlessCacheDataStorageGB,
+						Unit:    serverlessCacheStorageUnit,
 					},
 					ECPUPerSecond: &backend.ECPULimit{
-						Maximum: 5000,
+						Maximum: serverlessCacheMaxECPU,
 					},
 				},
 			})

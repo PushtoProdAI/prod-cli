@@ -330,7 +330,7 @@ func BuildAWSDeploymentSpec(
 			serviceType = "rds"
 		} else if svc.Provider == "redis" {
 			// Use Serverless ElastiCache with Valkey engine for Redis
-			serviceType = "serverless-cache"
+			serviceType = serverlessCacheType
 		} else {
 			slog.Warn("Unsupported service provider for AWS", "provider", svc.Provider)
 			continue
@@ -351,14 +351,14 @@ func BuildAWSDeploymentSpec(
 			backingService.AllocatedStorage = 20
 		} else if svc.Provider == "redis" {
 			// Configure Serverless ElastiCache with sensible defaults
-			backingService.MajorEngineVersion = "7"
+			backingService.MajorEngineVersion = serverlessCacheEngineVersion
 			backingService.CacheUsageLimits = &backendaws.CacheUsageLimits{
 				DataStorage: &backendaws.DataStorageLimit{
-					Maximum: 10,
-					Unit:    "GB",
+					Maximum: serverlessCacheDataStorageGB,
+					Unit:    serverlessCacheStorageUnit,
 				},
 				ECPUPerSecond: &backendaws.ECPULimit{
-					Maximum: 5000,
+					Maximum: serverlessCacheMaxECPU,
 				},
 			}
 		}
