@@ -1,6 +1,7 @@
 // Functions for building environment variables and secrets for ECS and App Runner
 
 import type { DeploymentSpec } from './types.ts';
+import { BACKING_SERVICE_TYPE_RDS, BACKING_SERVICE_TYPE_SERVERLESS_CACHE } from './types.ts';
 
 /**
  * Build runtime environment variables (non-sensitive, direct values)
@@ -11,7 +12,7 @@ export function buildEnvironmentVariables(spec: DeploymentSpec, resources: any):
   const addedEnvVars = new Set<string>();
   
   // Process PostgreSQL backing services
-  const postgresServices = spec.backingServices?.filter(s => s.type === 'rds') || [];
+  const postgresServices = spec.backingServices?.filter(s => s.type === BACKING_SERVICE_TYPE_RDS) || [];
   
   // Build database connection components for each PostgreSQL service
   const dbConnectionInfo: Record<string, any> = {};
@@ -45,7 +46,7 @@ export function buildEnvironmentVariables(spec: DeploymentSpec, resources: any):
   }
   
   // Process Redis backing services (serverless-cache only)
-  const redisServices = spec.backingServices?.filter(s => s.type === 'serverless-cache') || [];
+  const redisServices = spec.backingServices?.filter(s => s.type === BACKING_SERVICE_TYPE_SERVERLESS_CACHE) || [];
   
   // Build Redis connection components for each service
   // Note: Only host/port are built here for non-sensitive env vars
@@ -160,10 +161,10 @@ export function buildEnvironmentSecrets(spec: DeploymentSpec, resources: any): a
   const addedSecrets = new Set<string>();
   
   // Process PostgreSQL backing services for database credentials
-  const postgresServices = spec.backingServices?.filter(s => s.type === 'rds') || [];
+  const postgresServices = spec.backingServices?.filter(s => s.type === BACKING_SERVICE_TYPE_RDS) || [];
   
   // Process Redis backing services (serverless-cache only)
-  const redisServices = spec.backingServices?.filter(s => s.type === 'serverless-cache') || [];
+  const redisServices = spec.backingServices?.filter(s => s.type === BACKING_SERVICE_TYPE_SERVERLESS_CACHE) || [];
   
   for (const envVar of spec.envVars) {
     // Handle database-related sensitive env vars WITHOUT values (will be populated from RDS)

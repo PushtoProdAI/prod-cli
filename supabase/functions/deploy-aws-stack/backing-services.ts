@@ -1,6 +1,7 @@
 // Backing services (RDS, Serverless ElastiCache) for AWS deployments
 
 import type { DeploymentSpec } from './types.ts';
+import { BACKING_SERVICE_TYPE_RDS, BACKING_SERVICE_TYPE_SERVERLESS_CACHE } from './types.ts';
 import { getStandardTags } from './tags.ts';
 
 /**
@@ -17,9 +18,9 @@ export function buildBackingServices(
   }
 
   for (const service of spec.backingServices) {
-    if (service.type === 'rds') {
+    if (service.type === BACKING_SERVICE_TYPE_RDS) {
       buildRDSInstance(spec.serviceName, service, tenantId, resources);
-    } else if (service.type === 'serverless-cache') {
+    } else if (service.type === BACKING_SERVICE_TYPE_SERVERLESS_CACHE) {
       buildServerlessElastiCache(spec.serviceName, service, tenantId, resources);
     }
   }
