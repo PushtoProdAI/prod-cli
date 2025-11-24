@@ -646,9 +646,9 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 		return a.promptForEnvVarValue(ctx, input, out)
 	}
 
-	// All env vars are database-related or already have values, proceed with PrepareJS
-	fmt.Fprintf(out, "✅ All environment variables are ready. Proceeding to JavaScript preparation...\n")
-	return a.prepareJS(ctx, input, out)
+	// All env vars are database-related or already have values, proceed with language-specific preparation
+	fmt.Fprintf(out, "✅ All environment variables are ready. Proceeding to project preparation...\n")
+	return a.prepareProject(ctx, input, out)
 }
 
 func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -662,9 +662,9 @@ func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.W
 	}
 
 	if currentEnvVar == nil {
-		// No more pending env vars, proceed with PrepareJS
-		fmt.Fprintf(out, "All environment variable values collected. Proceeding to JavaScript preparation...\n")
-		return a.prepareJS(ctx, input, out)
+		// No more pending env vars, proceed with language-specific preparation
+		fmt.Fprintf(out, "All environment variable values collected. Proceeding to project preparation...\n")
+		return a.prepareProject(ctx, input, out)
 	}
 
 	promptMessage := fmt.Sprintf("Enter value for environment variable '%s':", currentEnvVar.Name)
@@ -711,6 +711,19 @@ func (a *Agent) waitForEnvVarValue(ctx context.Context, input string, out io.Wri
 // unescapeJSONUnicode converts JSON unicode escapes like \u0026 back to their original characters
 func unescapeJSONUnicode(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\\u0026", "&"), "\\u0026\\u0026", "&&")
+}
+
+func (a *Agent) prepareProject(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	// Route to the appropriate language-specific preparation
+	switch a.DeployPlan.Spec.Language {
+	case "node":
+		return a.prepareJS(ctx, input, out)
+	case "python":
+		return a.preparePython(ctx, input, out)
+	default:
+		// No language-specific preparation needed, proceed directly to deployment
+		return a.deploy(ctx, input, out)
+	}
 }
 
 func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -819,6 +832,92 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 	}
 
 	// After PrepareJS completion, proceed with deployment
+	return a.deploy(ctx, input, out)
+}
+
+func (a *Agent) preparePython(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	if a.DeployPlan.Spec.Language == "python" {
+		fmt.Fprintf(out, "🔧 Preparing Python environment...\n")
+		wf, err := Workflows{}.SetupPythonProject(ctx, a.wfClient, *a.DeployPlan)
+		if err != nil {
+			slog.Error("Workflow execution result", "error", err)
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":     "setup_python_project",
+				"component":    "agent",
+				"platform":     a.DeployPlan.Platform,
+				"project_type": "python",
+			})
+			fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
+			return a.checkPrerequisites, nil
+		}
+
+		result, err := client.GetWorkflowResult[SetupPythonProjectResult](ctx, a.wfClient, wf, 2*time.Minute)
+		if err != nil {
+			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
+			prod_error.CaptureErrorWithContext(err, map[string]any{
+				"workflow":     "setup_python_project",
+				"component":    "agent",
+				"operation":    "get_workflow_result",
+				"platform":     a.DeployPlan.Platform,
+				"project_name": a.DeployPlan.Spec.Name,
+				"language":     a.DeployPlan.Spec.Language,
+			})
+			return a.confirmWithPrompt(ctx, "", out)
+		}
+		if result.Error.Summary != "" {
+			if tuiWriter, ok := out.(TUIWriter); ok {
+				if result.Error.IsWarning {
+					tuiWriter.SendWarning(result.Error.Summary, result.Error.Remediations)
+				} else {
+					tuiWriter.SendError(result.Error.Summary, result.Error.Remediations)
+				}
+			} else {
+				if result.Error.IsWarning {
+					fmt.Fprintf(out, "⚠️  %s\n", result.Error.Summary)
+				} else {
+					fmt.Fprintf(out, "❌ %s\n", result.Error.Summary)
+				}
+				if len(result.Error.Remediations) > 0 {
+					fmt.Fprint(out, "Here are some suggestions to fix the issues:\n")
+					for _, r := range result.Error.Remediations {
+						fmt.Fprintf(out, " • %s\n", r.Description)
+						if r.CliCommand != "" {
+							fmt.Fprintf(out, "   Run: %s\n", r.CliCommand)
+						}
+					}
+				}
+				fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
+			}
+			return a.confirmWithPrompt(ctx, "", out)
+		}
+		// Display .python-version diff if available
+		if len(result.PythonVersionDiff) > 0 {
+			fmt.Fprint(out, "\n🐍 .python-version changes:\n")
+			fmt.Fprint(out, "────────────────────────────────────────\n")
+
+			for _, line := range result.PythonVersionDiff {
+				content := unescapeJSONUnicode(line.Content)
+				switch line.Type {
+				case "header":
+					fmt.Fprintf(out, "\033[36m%s\033[0m\n", content)
+				case "added":
+					fmt.Fprintf(out, "\033[32m%s\033[0m\n", content)
+				case "removed":
+					fmt.Fprintf(out, "\033[31m%s\033[0m\n", content)
+				case "fileheader":
+					fmt.Fprintf(out, "\033[1m%s\033[0m\n", content)
+				default:
+					fmt.Fprintf(out, "%s\n", content)
+				}
+			}
+			fmt.Fprint(out, "────────────────────────────────────────\n")
+		}
+		a.DeployPlan = &result.UpdatedPlan
+		fmt.Fprint(out, "✅ Python environment prepared successfully!\n")
+
+	}
+
+	// After PreparePython completion, proceed with deployment
 	return a.deploy(ctx, input, out)
 }
 

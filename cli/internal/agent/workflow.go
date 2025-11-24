@@ -29,6 +29,7 @@ const (
 	DetectExistingWorkflowName         = "agent.detectExisting"
 	DeployNetlifyWorkflowName          = "agent.deploy.netlify"
 	SetupJavaScriptProjectWorkflowName = "agent.setupJavaScriptProject"
+	SetupPythonProjectWorkflowName     = "agent.setupPythonProject"
 	DeployVercelWorkflowName           = "agent.deploy.vercel"
 	DeployHerokuWorkflowName           = "agent.deploy.heroku"
 	DeployAWSWorkflowName              = "agent.deploy.aws"
@@ -69,6 +70,14 @@ type SetupJavaScriptProjectResult struct {
 	PackageJsonDiff    []DiffLine  `json:"packageJsonDiff,omitempty"`
 	Error              deployError `json:"error"`
 	UpdatedPlan        DeployPlan  `json:"updatedPlan"`
+}
+
+// SetupPythonProjectResult contains the results of setting up a Python project
+type SetupPythonProjectResult struct {
+	PythonVersionCreated bool        `json:"pythonVersionCreated"`
+	PythonVersionDiff    []DiffLine  `json:"pythonVersionDiff,omitempty"`
+	Error                deployError `json:"error"`
+	UpdatedPlan          DeployPlan  `json:"updatedPlan"`
 }
 
 var _ workflowext.Registerer = (*Workflows)(nil)
@@ -135,6 +144,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: DetectExistingWorkflowName, WorkflowFunc: w.detectExistingWorkflow},
 		{Name: DeployNetlifyWorkflowName, WorkflowFunc: w.deployNetlify},
 		{Name: SetupJavaScriptProjectWorkflowName, WorkflowFunc: w.setupJavaScriptProject},
+		{Name: SetupPythonProjectWorkflowName, WorkflowFunc: w.setupPythonProject},
 		{Name: DeployVercelWorkflowName, WorkflowFunc: w.deployVercel},
 		{Name: DeployHerokuWorkflowName, WorkflowFunc: w.deployHeroku},
 		{Name: DeployAWSWorkflowName, WorkflowFunc: w.deployAWS},
@@ -183,6 +193,12 @@ func (Workflows) SetupJavaScriptProject(ctx context.Context, c *client.Client, i
 	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{
 		InstanceID: fmt.Sprintf("%s.%d", SetupJavaScriptProjectWorkflowName, time.Now().Unix()),
 	}, SetupJavaScriptProjectWorkflowName, input)
+}
+
+func (Workflows) SetupPythonProject(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
+	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{
+		InstanceID: fmt.Sprintf("%s.%d", SetupPythonProjectWorkflowName, time.Now().Unix()),
+	}, SetupPythonProjectWorkflowName, input)
 }
 
 // Shared workflow implementations
@@ -458,5 +474,69 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 	}
 	result.UpdatedPlan = plan
 	slog.Info("JavaScript project setup completed successfully")
+	return result, nil
+}
+
+func (w *Workflows) setupPythonProject(ctx workflow.Context, input DeployPlan) (SetupPythonProjectResult, error) {
+	slog.Info("setupPythonProject workflow started", "platform", input.Platform)
+	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
+
+	result := SetupPythonProjectResult{}
+
+	// Step 1: Generate .python-version file
+	slog.Info("Generating .python-version file")
+	pyConfig, err := workflow.ExecuteActivity[PythonConfigResult](ctx, ActivityOpts, AgentGeneratePythonVersion, input).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to generate Python version file", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     SetupPythonProjectWorkflowName,
+			"activity":     AgentGeneratePythonVersion,
+			"component":    "python_config",
+			"platform":     input.Platform.String(),
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     SetupPythonProjectWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "python_config",
+				"platform":     input.Platform.String(),
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
+			slog.Error("Failed to summarize Python version error", "error", e1)
+			return SetupPythonProjectResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		return SetupPythonProjectResult{Error: summary}, nil
+	}
+
+	// Update result with version file changes
+	if pyConfig.PythonVersionCreated {
+		result.PythonVersionCreated = true
+		result.PythonVersionDiff = pyConfig.PythonVersionDiff
+		slog.Info("Python version file created/updated")
+	} else {
+		slog.Info("No Python version file changes needed")
+	}
+
+	// Step 2: Prepare deployment (framework-specific adjustments)
+	plan, err := workflow.ExecuteActivity[DeployPlan](ctx, ActivityOpts, AgentPrepareDeployment, input).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to prepare deployment", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     SetupPythonProjectWorkflowName,
+			"activity":     AgentPrepareDeployment,
+			"component":    "python_config",
+			"platform":     input.Platform.String(),
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
+	}
+	result.UpdatedPlan = plan
+	slog.Info("Python project setup completed successfully")
 	return result, nil
 }
