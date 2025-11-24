@@ -1,11 +1,12 @@
-// Backing services (RDS, ElastiCache) for AWS deployments
+// Backing services (RDS, Serverless ElastiCache) for AWS deployments
 
 import type { DeploymentSpec } from './types.ts';
+import { BACKING_SERVICE_TYPE_RDS, BACKING_SERVICE_TYPE_SERVERLESS_CACHE } from './types.ts';
 import { getStandardTags } from './tags.ts';
 
 /**
- * Build backing service resources (RDS databases, ElastiCache clusters)
- * Creates password secrets, database instances, and cache clusters as specified
+ * Build backing service resources (RDS databases, Serverless ElastiCache)
+ * Creates password secrets, database instances, and serverless cache clusters as specified
  */
 export function buildBackingServices(
   spec: DeploymentSpec,
@@ -17,10 +18,10 @@ export function buildBackingServices(
   }
 
   for (const service of spec.backingServices) {
-    if (service.type === 'rds') {
+    if (service.type === BACKING_SERVICE_TYPE_RDS) {
       buildRDSInstance(spec.serviceName, service, tenantId, resources);
-    } else if (service.type === 'elasticache') {
-      buildElastiCacheCluster(spec.serviceName, service, tenantId, resources);
+    } else if (service.type === BACKING_SERVICE_TYPE_SERVERLESS_CACHE) {
+      buildServerlessElastiCache(spec.serviceName, service, tenantId, resources);
     }
   }
 }
@@ -77,36 +78,43 @@ function buildRDSInstance(
 }
 
 /**
- * Build ElastiCache Redis cluster with subnet group
+ * Build Serverless ElastiCache with Valkey engine
+ * Serverless ElastiCache automatically scales and manages the cache infrastructure
  */
-function buildElastiCacheCluster(
+function buildServerlessElastiCache(
   serviceName: string,
   service: any,
   tenantId: string,
   resources: any
 ): void {
   const cacheName = service.name.replace(/[^a-zA-Z0-9]/g, '');
-  
-  // Create subnet group for ElastiCache
-  resources[`${cacheName}SubnetGroup`] = {
-    Type: 'AWS::ElastiCache::SubnetGroup',
-    Properties: {
-      Description: 'Subnet group for ElastiCache',
-      SubnetIds: [{ Ref: 'PrivateSubnetAZ1' }, { Ref: 'PrivateSubnetAZ2' }],
+
+  // Build cache usage limits (default to sensible values if not specified)
+  const cacheUsageLimits: any = {
+    DataStorage: {
+      Maximum: service.cacheUsageLimits?.dataStorage?.maximum || 10,
+      Unit: 'GB',
+    },
+    ECPUPerSecond: {
+      Maximum: service.cacheUsageLimits?.ecpuPerSecond?.maximum || 5000,
     },
   };
 
-  // Create ElastiCache cluster
+  // Create Serverless ElastiCache with Valkey engine
+  // Note: Serverless ElastiCache uses SubnetIds directly (no subnet group needed)
   resources[cacheName] = {
-    Type: 'AWS::ElastiCache::CacheCluster',
+    Type: 'AWS::ElastiCache::ServerlessCache',
     Properties: {
-      ClusterName: `prod-${serviceName}-${service.name}`,
-      Engine: 'redis',
-      CacheNodeType: service.nodeType || 'cache.t3.micro',
-      NumCacheNodes: service.numCacheNodes || 1,
-      CacheSubnetGroupName: { Ref: `${cacheName}SubnetGroup` },
-      VpcSecurityGroupIds: [{ Ref: 'BackingServiceSecurityGroup' }],
+      ServerlessCacheName: `prod-${serviceName}-${service.name}`,
+      Engine: 'valkey',
+      MajorEngineVersion: service.majorEngineVersion || '7',
+      Description: `Serverless cache for ${serviceName}`,
+      CacheUsageLimits: cacheUsageLimits,
+      DailySnapshotTime: service.dailySnapshotTime || '03:00',
+      SubnetIds: [{ Ref: 'PrivateSubnetAZ1' }, { Ref: 'PrivateSubnetAZ2' }],
+      SecurityGroupIds: [{ Ref: 'BackingServiceSecurityGroup' }],
       Tags: getStandardTags(tenantId, serviceName),
     },
+    DependsOn: ['PrivateSubnetAZ1', 'PrivateSubnetAZ2', 'BackingServiceSecurityGroup'],
   };
 }

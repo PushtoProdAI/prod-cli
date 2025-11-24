@@ -200,10 +200,10 @@ Deno.serve(async (req) => {
               resources.hasRDS = true;
               resources.rdsInstances.push(logicalId);
               console.log('Found RDS instance:', logicalId);
-            } else if (resourceType === 'AWS::ElastiCache::CacheCluster') {
+            } else if (resourceType === 'AWS::ElastiCache::CacheCluster' || resourceType === 'AWS::ElastiCache::ServerlessCache') {
               resources.hasElastiCache = true;
               resources.elastiCacheInstances.push(logicalId);
-              console.log('Found ElastiCache cluster:', logicalId);
+              console.log('Found ElastiCache:', resourceType, logicalId);
             } else if (resourceType === 'AWS::AppRunner::Service') {
               resources.hasAppRunner = true;
               console.log('Found App Runner service:', logicalId);
