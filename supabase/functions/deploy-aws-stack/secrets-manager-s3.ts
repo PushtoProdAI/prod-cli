@@ -2,6 +2,7 @@
 // IMPROVED VERSION: Uses S3-hosted Lambda packages instead of inline code
 
 import type { DeploymentSpec } from './types.ts';
+import { BACKING_SERVICE_TYPE_RDS, BACKING_SERVICE_TYPE_SERVERLESS_CACHE } from './types.ts';
 import { getStandardTags } from './tags.ts';
 
 // Configuration for Lambda function packages
@@ -21,8 +22,8 @@ const LAMBDA_PACKAGES = {
  * - Lambda-backed custom resources for DATABASE_URL construction (from S3)
  */
 export function buildSecretsManagerResources(spec: DeploymentSpec, tenantId: string, resources: any): void {
-  const postgresServices = spec.backingServices?.filter(s => s.type === 'rds') || [];
-  const redisServices = spec.backingServices?.filter(s => s.type === 'serverless-cache') || [];
+  const postgresServices = spec.backingServices?.filter(s => s.type === BACKING_SERVICE_TYPE_RDS) || [];
+  const redisServices = spec.backingServices?.filter(s => s.type === BACKING_SERVICE_TYPE_SERVERLESS_CACHE) || [];
   
   console.log('buildSecretsManagerResources called:', {
     postgresServicesCount: postgresServices.length,
