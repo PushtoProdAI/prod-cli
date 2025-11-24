@@ -58,6 +58,9 @@ async function sendResponse(event, context, status, data) {
 function validateInputs(properties) {
   const { DBInstanceId, PasswordSecretArn, SecretName, ServiceName, EnvVarName, ResourceType, CacheIdentifier, CacheType } = properties;
   
+  // AWS resource identifier format: starts with letter, alphanumeric and hyphens, max 63 chars
+  const AWS_IDENTIFIER_REGEX = /^[a-zA-Z][a-zA-Z0-9-]{0,62}$/;
+  
   // Validate resource type
   const resourceType = ResourceType || 'postgres'; // Default to postgres for backward compatibility
   if (!['postgres', 'redis'].includes(resourceType)) {
@@ -67,12 +70,12 @@ function validateInputs(properties) {
   // Validate based on resource type
   if (resourceType === 'postgres') {
     // Validate DB instance identifier format
-    if (!DBInstanceId || !/^[a-zA-Z][a-zA-Z0-9-]{0,62}$/.test(DBInstanceId)) {
+    if (!DBInstanceId || !AWS_IDENTIFIER_REGEX.test(DBInstanceId)) {
       throw new Error('Invalid DBInstanceId format');
     }
   } else if (resourceType === 'redis') {
     // Validate cache identifier format
-    if (!CacheIdentifier || !/^[a-zA-Z][a-zA-Z0-9-]{0,62}$/.test(CacheIdentifier)) {
+    if (!CacheIdentifier || !AWS_IDENTIFIER_REGEX.test(CacheIdentifier)) {
       throw new Error('Invalid CacheIdentifier format');
     }
     // Validate cache type
