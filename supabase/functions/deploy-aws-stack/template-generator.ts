@@ -1,4 +1,5 @@
 import type { DeploymentSpec } from './types.ts';
+import { BACKING_SERVICE_TYPE_RDS, BACKING_SERVICE_TYPE_SERVERLESS_CACHE } from './types.ts';
 import { buildNetworkingResources } from './networking.ts';
 import { buildBackingServices } from './backing-services.ts';
 import { buildAppRunnerAccessRole, buildAppRunnerInstanceRole, buildECSTaskExecutionRole, buildECSTaskRole } from './iam-roles.ts';
@@ -150,8 +151,8 @@ function validateDeploymentSpec(spec: DeploymentSpec, tenantId: string): void {
           `Invalid backing service name: "${service.name}". Must be lowercase alphanumeric with hyphens.`
         );
       }
-      if (service.type !== 'rds' && service.type !== 'elasticache') {
-        throw new Error(`Invalid backing service type: "${service.type}". Must be "rds" or "elasticache"`);
+      if (service.type !== BACKING_SERVICE_TYPE_RDS && service.type !== BACKING_SERVICE_TYPE_SERVERLESS_CACHE) {
+        throw new Error(`Invalid backing service type: "${service.type}". Must be "${BACKING_SERVICE_TYPE_RDS}" or "${BACKING_SERVICE_TYPE_SERVERLESS_CACHE}"`);
       }
     }
   }
@@ -199,7 +200,7 @@ export function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: s
 
   if (needsVpc) {
     // Build VPC networking resources (VPC, subnets, security groups, route tables)
-    const hasRds = spec.backingServices?.some(s => s.type === 'rds');
+    const hasRds = spec.backingServices?.some(s => s.type === BACKING_SERVICE_TYPE_RDS);
     buildNetworkingResources(spec.serviceName, tenantId, hasMigrations, hasRds || false, resources);
   }
 
@@ -304,7 +305,7 @@ export function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: s
   // Add database connection strings to outputs
   if (spec.backingServices) {
     for (const service of spec.backingServices) {
-      if (service.type === 'rds') {
+      if (service.type === BACKING_SERVICE_TYPE_RDS) {
         const dbName = service.name.replace(/[^a-zA-Z0-9]/g, '');
         outputs[`${dbName}Endpoint`] = {
           Description: `${service.name} endpoint`,
@@ -314,15 +315,15 @@ export function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: s
           Description: `${service.name} port`,
           Value: { 'Fn::GetAtt': [dbName, 'Endpoint.Port'] },
         };
-      } else if (service.type === 'elasticache') {
+      } else if (service.type === BACKING_SERVICE_TYPE_SERVERLESS_CACHE) {
         const cacheName = service.name.replace(/[^a-zA-Z0-9]/g, '');
         outputs[`${cacheName}Endpoint`] = {
           Description: `${service.name} endpoint`,
-          Value: { 'Fn::GetAtt': [cacheName, 'RedisEndpoint.Address'] },
+          Value: { 'Fn::GetAtt': [cacheName, 'Endpoint.Address'] },
         };
         outputs[`${cacheName}Port`] = {
           Description: `${service.name} port`,
-          Value: { 'Fn::GetAtt': [cacheName, 'RedisEndpoint.Port'] },
+          Value: { 'Fn::GetAtt': [cacheName, 'Endpoint.Port'] },
         };
       }
     }

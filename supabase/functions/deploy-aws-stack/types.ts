@@ -1,5 +1,9 @@
 // Type definitions for AWS deployment
 
+// Backing service type constants
+export const BACKING_SERVICE_TYPE_RDS = 'rds' as const;
+export const BACKING_SERVICE_TYPE_SERVERLESS_CACHE = 'serverless-cache' as const;
+
 export interface EnvVar {
   name: string;
   value?: string;
@@ -22,13 +26,23 @@ export interface DeploymentSpec {
 }
 
 export interface BackingService {
-  type: 'rds' | 'elasticache';
+  type: typeof BACKING_SERVICE_TYPE_RDS | typeof BACKING_SERVICE_TYPE_SERVERLESS_CACHE;
   name: string;
   engine?: string;
   instanceClass?: string;
   allocatedStorage?: number;
-  nodeType?: string;
-  numCacheNodes?: number;
+  // Serverless cache specific options
+  cacheUsageLimits?: {
+    dataStorage?: {
+      maximum?: number;
+      unit?: 'GB';
+    };
+    ecpuPerSecond?: {
+      maximum?: number;
+    };
+  };
+  dailySnapshotTime?: string;
+  majorEngineVersion?: string;
 }
 
 export interface DeploymentResult {

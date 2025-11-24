@@ -106,6 +106,12 @@ type ElastiCachePricingResult struct {
 	MonthlyCost    float64 // Total monthly cost (730 hours)
 }
 
+// ServerlessElastiCachePricingResult contains Serverless ElastiCache pricing details
+type ServerlessElastiCachePricingResult struct {
+	DataStorageGBMonthlyCost float64 // Cost per GB per month for data storage
+	ECPUHourlyCost           float64 // Cost per ECPU per hour
+}
+
 // GetAppRunnerPricing retrieves App Runner pricing for specified CPU and memory
 func (c *PricingAPIClient) GetAppRunnerPricing(ctx context.Context, vCPU, memoryGB, region string) (*AppRunnerPricingResult, error) {
 	cacheKey := fmt.Sprintf("apprunner:%s:%s:%s", region, vCPU, memoryGB)
@@ -457,6 +463,36 @@ func (c *PricingAPIClient) GetNATGatewayPricing(ctx context.Context, region stri
 
 	c.cache.Set(cacheKey, monthlyCost)
 	return monthlyCost, nil
+}
+
+// GetServerlessElastiCachePricing retrieves Serverless ElastiCache pricing
+func (c *PricingAPIClient) GetServerlessElastiCachePricing(ctx context.Context, region string) (*ServerlessElastiCachePricingResult, error) {
+	cacheKey := fmt.Sprintf("serverless-elasticache:%s", region)
+
+	// Try to get pricing from AWS Pricing API
+	// Note: Serverless ElastiCache pricing may not be fully available in the API yet
+	// ServiceCode would be "AmazonElastiCache" with specific filters for serverless
+
+	// For now, use fallback pricing based on published AWS pricing
+	// As of Jan 2025:
+	// - Data storage: $0.125/GB-month
+	// - ECPU: $0.0034/ECPU-hour
+
+	result := &ServerlessElastiCachePricingResult{
+		DataStorageGBMonthlyCost: 0.125,
+		ECPUHourlyCost:           0.0034,
+	}
+
+	// Check cache first
+	if cached, ok := c.cache.Get(cacheKey); ok {
+		slog.Debug("Using cached Serverless ElastiCache pricing", "key", cacheKey, "cost", cached)
+		return result, nil
+	}
+
+	// Cache the storage cost as a representative value
+	c.cache.Set(cacheKey, result.DataStorageGBMonthlyCost)
+
+	return result, nil
 }
 
 // GetSecretsManagerPricing retrieves Secrets Manager pricing
