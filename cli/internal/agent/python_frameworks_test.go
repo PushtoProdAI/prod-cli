@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/meroxa/prod/cli/internal/analyzer"
 )
 
 func TestGetDomainPatterns(t *testing.T) {
@@ -634,5 +636,421 @@ func TestHandleConfigNoSettingsFile(t *testing.T) {
 	_, _, err := handler.HandleConfig(tmpDir, FlyIO)
 	if err == nil {
 		t.Error("Expected error when settings file not found")
+	}
+}
+
+func TestDetectDjangoServer(t *testing.T) {
+	handler := &DjangoHandler{}
+
+	tests := []struct {
+		name           string
+		setupFiles     map[string]string // path -> content
+		dependencies   []string          // dependency names (will be converted to analyzer.Dependency)
+		wantServerType ServerType
+		wantModule     string
+		wantChannels   bool
+		wantErr        bool
+	}{
+		{
+			name: "WSGI project",
+			setupFiles: map[string]string{
+				"myproject/wsgi.py": "# WSGI",
+			},
+			dependencies:   []string{"django"},
+			wantServerType: ServerTypeWSGI,
+			wantModule:     "myproject",
+			wantChannels:   false,
+			wantErr:        false,
+		},
+		{
+			name: "ASGI project",
+			setupFiles: map[string]string{
+				"myproject/asgi.py": "# ASGI",
+			},
+			dependencies:   []string{"django"},
+			wantServerType: ServerTypeASGI,
+			wantModule:     "myproject",
+			wantChannels:   false,
+			wantErr:        false,
+		},
+		{
+			name: "Channels project (ASGI forced)",
+			setupFiles: map[string]string{
+				"myproject/wsgi.py": "# WSGI",
+				"myproject/asgi.py": "# ASGI",
+			},
+			dependencies:   []string{"django", "channels"},
+			wantServerType: ServerTypeASGI,
+			wantModule:     "myproject",
+			wantChannels:   true,
+			wantErr:        false,
+		},
+		{
+			name: "Both WSGI and ASGI (prefers ASGI)",
+			setupFiles: map[string]string{
+				"myproject/wsgi.py": "# WSGI",
+				"myproject/asgi.py": "# ASGI",
+			},
+			dependencies:   []string{"django"},
+			wantServerType: ServerTypeASGI,
+			wantModule:     "myproject",
+			wantChannels:   false,
+			wantErr:        false,
+		},
+		{
+			name: "Config directory structure",
+			setupFiles: map[string]string{
+				"config/wsgi.py": "# WSGI",
+			},
+			dependencies:   []string{"django"},
+			wantServerType: ServerTypeWSGI,
+			wantModule:     "config",
+			wantChannels:   false,
+			wantErr:        false,
+		},
+		{
+			name:           "No WSGI/ASGI found",
+			setupFiles:     map[string]string{},
+			dependencies:   []string{"django"},
+			wantServerType: "",
+			wantModule:     "",
+			wantChannels:   false,
+			wantErr:        true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temp project directory
+			tmpDir := t.TempDir()
+
+			// Create all setup files
+			for path, content := range tt.setupFiles {
+				fullPath := filepath.Join(tmpDir, path)
+				if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+					t.Fatalf("Failed to create directory: %v", err)
+				}
+				if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+					t.Fatalf("Failed to create file %s: %v", path, err)
+				}
+			}
+
+			// Convert dependency strings to analyzer.Dependency
+			var deps []analyzer.Dependency
+			for _, depName := range tt.dependencies {
+				deps = append(deps, analyzer.Dependency{Name: depName})
+			}
+
+			// Detect server
+			config, err := handler.detectDjangoServer(tmpDir, deps)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("detectDjangoServer() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			if config.ServerType != tt.wantServerType {
+				t.Errorf("detectDjangoServer() ServerType = %v, want %v", config.ServerType, tt.wantServerType)
+			}
+
+			if config.ProjectModule != tt.wantModule {
+				t.Errorf("detectDjangoServer() ProjectModule = %v, want %v", config.ProjectModule, tt.wantModule)
+			}
+
+			if config.HasChannels != tt.wantChannels {
+				t.Errorf("detectDjangoServer() HasChannels = %v, want %v", config.HasChannels, tt.wantChannels)
+			}
+		})
+	}
+}
+
+func TestGenerateRunCommand(t *testing.T) {
+	handler := &DjangoHandler{}
+
+	tests := []struct {
+		name       string
+		config     *DjangoServerConfig
+		wantCmd    string
+		wantServer string // substring that should be in command
+	}{
+		{
+			name: "WSGI command",
+			config: &DjangoServerConfig{
+				ServerType:    ServerTypeWSGI,
+				ProjectModule: "myproject",
+			},
+			wantCmd:    "gunicorn myproject.wsgi:application --bind 0.0.0.0:$PORT --workers 1",
+			wantServer: "gunicorn",
+		},
+		{
+			name: "ASGI command",
+			config: &DjangoServerConfig{
+				ServerType:    ServerTypeASGI,
+				ProjectModule: "myproject",
+			},
+			wantCmd:    "uvicorn myproject.asgi:application --host 0.0.0.0 --port $PORT --workers 1",
+			wantServer: "uvicorn",
+		},
+		{
+			name: "Config module WSGI",
+			config: &DjangoServerConfig{
+				ServerType:    ServerTypeWSGI,
+				ProjectModule: "config",
+			},
+			wantCmd:    "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 1",
+			wantServer: "gunicorn",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := handler.generateRunCommand(tt.config)
+
+			if got != tt.wantCmd {
+				t.Errorf("generateRunCommand() = %v, want %v", got, tt.wantCmd)
+			}
+
+			if !strings.Contains(got, tt.wantServer) {
+				t.Errorf("generateRunCommand() should contain %q, got %v", tt.wantServer, got)
+			}
+		})
+	}
+}
+
+func TestGetRequiredServer(t *testing.T) {
+	handler := &DjangoHandler{}
+
+	tests := []struct {
+		name       string
+		serverType ServerType
+		want       string
+	}{
+		{
+			name:       "WSGI requires gunicorn",
+			serverType: ServerTypeWSGI,
+			want:       "gunicorn",
+		},
+		{
+			name:       "ASGI requires uvicorn[standard]",
+			serverType: ServerTypeASGI,
+			want:       "uvicorn[standard]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := handler.getRequiredServer(tt.serverType)
+			if got != tt.want {
+				t.Errorf("getRequiredServer() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHasServerInstalled(t *testing.T) {
+	handler := &DjangoHandler{}
+
+	tests := []struct {
+		name         string
+		dependencies []string
+		serverType   ServerType
+		want         bool
+	}{
+		{
+			name:         "gunicorn installed for WSGI",
+			dependencies: []string{"django", "gunicorn", "psycopg2"},
+			serverType:   ServerTypeWSGI,
+			want:         true,
+		},
+		{
+			name:         "uvicorn installed for ASGI",
+			dependencies: []string{"django", "uvicorn", "channels"},
+			serverType:   ServerTypeASGI,
+			want:         true,
+		},
+		{
+			name:         "uvicorn[standard] matches uvicorn",
+			dependencies: []string{"django", "uvicorn[standard]"},
+			serverType:   ServerTypeASGI,
+			want:         true,
+		},
+		{
+			name:         "gunicorn not installed",
+			dependencies: []string{"django", "psycopg2"},
+			serverType:   ServerTypeWSGI,
+			want:         false,
+		},
+		{
+			name:         "empty dependencies",
+			dependencies: []string{},
+			serverType:   ServerTypeWSGI,
+			want:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Convert strings to analyzer.Dependency
+			var deps []analyzer.Dependency
+			for _, depName := range tt.dependencies {
+				deps = append(deps, analyzer.Dependency{Name: depName})
+			}
+
+			got := handler.hasServerInstalled(deps, tt.serverType)
+			if got != tt.want {
+				t.Errorf("hasServerInstalled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAddServerDependency(t *testing.T) {
+	handler := &DjangoHandler{}
+
+	tests := []struct {
+		name               string
+		existingReqs       string
+		serverType         ServerType
+		wantContains       string
+		wantErr            bool
+		wantFileNotCreated bool // For cases where requirements.txt doesn't exist
+	}{
+		{
+			name: "Add gunicorn to existing requirements",
+			existingReqs: `django==4.2.0
+psycopg2==2.9.5
+`,
+			serverType:   ServerTypeWSGI,
+			wantContains: "gunicorn",
+			wantErr:      false,
+		},
+		{
+			name: "Add uvicorn[standard] to existing requirements",
+			existingReqs: `django==4.2.0
+channels==4.0.0
+`,
+			serverType:   ServerTypeASGI,
+			wantContains: "uvicorn[standard]",
+			wantErr:      false,
+		},
+		{
+			name:         "Add to empty requirements",
+			existingReqs: "",
+			serverType:   ServerTypeWSGI,
+			wantContains: "gunicorn",
+			wantErr:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			reqsPath := filepath.Join(tmpDir, "requirements.txt")
+
+			// Create requirements.txt
+			if err := os.WriteFile(reqsPath, []byte(tt.existingReqs), 0644); err != nil {
+				t.Fatalf("Failed to create requirements.txt: %v", err)
+			}
+
+			// Add server dependency
+			err := handler.addServerDependency(tmpDir, tt.serverType)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("addServerDependency() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			// Read updated requirements
+			content, err := os.ReadFile(reqsPath)
+			if err != nil {
+				t.Fatalf("Failed to read requirements.txt: %v", err)
+			}
+
+			contentStr := string(content)
+			if !strings.Contains(contentStr, tt.wantContains) {
+				t.Errorf("Expected requirements.txt to contain %q\nGot:\n%s", tt.wantContains, contentStr)
+			}
+
+			// Verify original content is still present
+			if tt.existingReqs != "" && !strings.Contains(contentStr, strings.TrimSpace(tt.existingReqs)) {
+				t.Error("Expected original requirements to be preserved")
+			}
+		})
+	}
+}
+
+func TestScanPythonDependencies(t *testing.T) {
+	tests := []struct {
+		name             string
+		requirementsFile string
+		wantDeps         []string
+		wantErr          bool
+	}{
+		{
+			name: "Parse standard requirements.txt",
+			requirementsFile: `django==4.2.0
+gunicorn==20.1.0
+psycopg2-binary==2.9.5
+# This is a comment
+redis==4.5.0`,
+			wantDeps: []string{"django", "gunicorn", "psycopg2-binary", "redis"},
+			wantErr:  false,
+		},
+		{
+			name: "Handle version specifiers",
+			requirementsFile: `django>=4.0.0
+uvicorn[standard]>=0.20.0
+channels~=4.0.0`,
+			wantDeps: []string{"django", "uvicorn[standard]", "channels"},
+			wantErr:  false,
+		},
+		{
+			name:             "Empty requirements",
+			requirementsFile: "",
+			wantDeps:         []string{},
+			wantErr:          false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			reqsPath := filepath.Join(tmpDir, "requirements.txt")
+
+			if err := os.WriteFile(reqsPath, []byte(tt.requirementsFile), 0644); err != nil {
+				t.Fatalf("Failed to create requirements.txt: %v", err)
+			}
+
+			deps, err := scanPythonDependencies(tmpDir)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("scanPythonDependencies() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if len(deps) != len(tt.wantDeps) {
+				t.Errorf("scanPythonDependencies() got %d deps, want %d", len(deps), len(tt.wantDeps))
+			}
+
+			// Check each expected dependency is present
+			depNames := make(map[string]bool)
+			for _, dep := range deps {
+				depNames[dep.Name] = true
+			}
+
+			for _, wantDep := range tt.wantDeps {
+				if !depNames[wantDep] {
+					t.Errorf("Expected dependency %q not found in results", wantDep)
+				}
+			}
+		})
 	}
 }

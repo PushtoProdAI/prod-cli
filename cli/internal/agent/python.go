@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,14 +14,18 @@ import (
 	"github.com/pmezard/go-difflib/difflib"
 )
 
-// Python configuration result containing version file diffs
+// Python configuration result containing version file diffs and framework configuration
 type PythonConfigResult struct {
-	PythonVersionCreated bool              `json:"pythonVersionCreated"`
-	PythonVersionDiff    []DiffLine        `json:"pythonVersionDiff,omitempty"`
-	DjangoConfigUpdated  bool              `json:"djangoConfigUpdated"`
-	DjangoConfigDiff     []DiffLine        `json:"djangoConfigDiff,omitempty"`
-	DjangoConfigPath     string            `json:"djangoConfigPath,omitempty"`
-	DjangoEnvVars        map[string]string `json:"djangoEnvVars,omitempty"`
+	PythonVersionCreated bool       `json:"pythonVersionCreated"`
+	PythonVersionDiff    []DiffLine `json:"pythonVersionDiff,omitempty"`
+
+	// Framework-agnostic configuration fields
+	FrameworkConfigUpdated bool              `json:"frameworkConfigUpdated"`
+	FrameworkConfigDiff    []DiffLine        `json:"frameworkConfigDiff,omitempty"`
+	FrameworkConfigPath    string            `json:"frameworkConfigPath,omitempty"`
+	FrameworkEnvVars       map[string]string `json:"frameworkEnvVars,omitempty"`
+	FrameworkRunCommand    string            `json:"frameworkRunCommand,omitempty"`
+	ServerAdded            bool              `json:"serverAdded"`
 }
 
 // generatePythonVersion creates .python-version file for Python projects
@@ -143,7 +148,7 @@ func (a *Activities) configureDjango(ctx context.Context, plan DeployPlan) (Pyth
 	if usesEnvVars {
 		a.uiWriter.SendStatusComplete("django_config", "✅ Django already uses environment variables")
 		// Provide the env vars that should be set
-		result.DjangoEnvVars = handler.GetRequiredEnvVars(plan.Platform)
+		result.FrameworkEnvVars = handler.GetRequiredEnvVars(plan.Platform)
 		return result, nil
 	}
 
@@ -152,18 +157,186 @@ func (a *Activities) configureDjango(ctx context.Context, plan DeployPlan) (Pyth
 	if err != nil {
 		a.uiWriter.SendStatusComplete("django_config", "⚠️  Django settings.py not found, will use environment variables")
 		// Settings file not found, provide env vars as fallback
-		result.DjangoEnvVars = handler.GetRequiredEnvVars(plan.Platform)
+		result.FrameworkEnvVars = handler.GetRequiredEnvVars(plan.Platform)
 		return result, nil
 	}
 
 	if len(diff) > 0 {
-		result.DjangoConfigUpdated = true
-		result.DjangoConfigDiff = diff
-		result.DjangoConfigPath = configPath
+		result.FrameworkConfigUpdated = true
+		result.FrameworkConfigDiff = diff
+		result.FrameworkConfigPath = configPath
 		a.uiWriter.SendStatusComplete("django_config", "✅ Updated Django settings for deployment")
 	} else {
 		a.uiWriter.SendStatusComplete("django_config", "✅ Django settings already configured")
 	}
 
 	return result, nil
+}
+
+// setupDjangoServer detects and configures production server (gunicorn/uvicorn) for Django
+func (a *Activities) setupDjangoServer(ctx context.Context, plan DeployPlan) (PythonConfigResult, error) {
+	result := PythonConfigResult{}
+
+	// Check if this is a Django project
+	framework := findPythonFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
+	if framework != "django" {
+		// Not a Django project, skip
+		return result, nil
+	}
+
+	a.uiWriter.SendStatus("django_server", "Setting up production server for Django...")
+
+	handler := &DjangoHandler{}
+
+	// Scan dependencies from the project files directly
+	dependencies, err := scanPythonDependencies(plan.Source)
+	if err != nil {
+		slog.Warn("Failed to extract dependencies", "error", err)
+		dependencies = []analyzer.Dependency{}
+	}
+
+	// Check if we already have a production-ready command from LLM/Procfile
+	existingCommand := strings.TrimSpace(plan.Spec.StartCommand)
+	hasProductionServer := strings.Contains(existingCommand, "gunicorn") ||
+		strings.Contains(existingCommand, "uvicorn") ||
+		strings.Contains(existingCommand, "daphne")
+
+	var serverConfig *DjangoServerConfig
+	var runCommand string
+
+	if hasProductionServer {
+		// LLM/Procfile already suggested a production server
+		slog.Info("Found existing production server command", "command", existingCommand)
+
+		// Parse to determine which server and ensure dependency is installed
+		if strings.Contains(existingCommand, "uvicorn") || strings.Contains(existingCommand, "daphne") {
+			serverConfig = &DjangoServerConfig{ServerType: ServerTypeASGI}
+		} else {
+			serverConfig = &DjangoServerConfig{ServerType: ServerTypeWSGI}
+		}
+
+		// Use the existing command
+		runCommand = existingCommand
+
+	} else {
+		// No production server found (empty, or manage.py runserver, etc.)
+		// Detect WSGI vs ASGI and generate command ourselves
+		slog.Info("No production server in StartCommand, detecting from project structure")
+
+		serverConfig, err = handler.detectDjangoServer(plan.Source, dependencies)
+		if err != nil {
+			a.uiWriter.SendStatusComplete("django_server", "⚠️  Could not detect Django server configuration")
+			slog.Warn("Failed to detect Django server", "error", err)
+			return result, nil
+		}
+
+		slog.Info("Detected Django server configuration",
+			"type", serverConfig.ServerType,
+			"module", serverConfig.ProjectModule,
+			"hasChannels", serverConfig.HasChannels)
+
+		// Generate run command
+		runCommand = handler.generateRunCommand(serverConfig)
+		slog.Info("Generated Django run command", "command", runCommand)
+	}
+
+	// Check if server dependency is already installed
+	serverAdded := false
+	if !handler.hasServerInstalled(dependencies, serverConfig.ServerType) {
+		// Add server dependency
+		err := handler.addServerDependency(plan.Source, serverConfig.ServerType)
+		if err != nil {
+			slog.Warn("Failed to add server dependency", "error", err)
+			// Continue anyway - user can add it manually
+		} else {
+			serverAdded = true
+			slog.Info("Added server dependency", "server", handler.getRequiredServer(serverConfig.ServerType))
+		}
+	} else {
+		slog.Info("Server already installed", "server", handler.getRequiredServer(serverConfig.ServerType))
+	}
+
+	result.FrameworkRunCommand = runCommand
+	result.ServerAdded = serverAdded
+
+	a.uiWriter.SendStatusComplete("django_server", fmt.Sprintf("✅ Configured %s for production", handler.getRequiredServer(serverConfig.ServerType)))
+
+	return result, nil
+}
+
+// configurePythonFramework is a framework-agnostic activity that dispatches to the appropriate framework handler
+func (a *Activities) configurePythonFramework(ctx context.Context, plan DeployPlan) (PythonConfigResult, error) {
+	framework := findPythonFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
+
+	slog.Info("Configuring Python framework", "framework", framework)
+
+	switch framework {
+	case "django":
+		return a.configureDjango(ctx, plan)
+	case "flask":
+		// TODO: Implement Flask configuration
+		return PythonConfigResult{}, nil
+	case "fastapi":
+		// TODO: Implement FastAPI configuration
+		return PythonConfigResult{}, nil
+	default:
+		slog.Info("No framework-specific configuration needed")
+		return PythonConfigResult{}, nil
+	}
+}
+
+// setupPythonServer is a framework-agnostic activity that sets up production server for Python frameworks
+func (a *Activities) setupPythonServer(ctx context.Context, plan DeployPlan) (PythonConfigResult, error) {
+	framework := findPythonFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
+
+	slog.Info("Setting up Python server", "framework", framework)
+
+	switch framework {
+	case "django":
+		return a.setupDjangoServer(ctx, plan)
+	case "flask":
+		// TODO: Implement Flask server setup (gunicorn for Flask)
+		return PythonConfigResult{}, nil
+	case "fastapi":
+		// TODO: Implement FastAPI server setup (uvicorn for FastAPI)
+		return PythonConfigResult{}, nil
+	default:
+		slog.Info("No framework-specific server setup needed")
+		return PythonConfigResult{}, nil
+	}
+}
+
+// scanPythonDependencies quickly scans requirements.txt to check for installed packages
+func scanPythonDependencies(projectPath string) ([]analyzer.Dependency, error) {
+	var dependencies []analyzer.Dependency
+
+	// Check requirements.txt
+	requirementsPath := filepath.Join(projectPath, "requirements.txt")
+	if content, err := os.ReadFile(requirementsPath); err == nil {
+		lines := strings.Split(string(content), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+
+			// Extract package name (ignore version specifiers)
+			packageName := line
+			for _, sep := range []string{"==", ">=", "<=", "!=", "~=", ">", "<"} {
+				if idx := strings.Index(line, sep); idx != -1 {
+					packageName = line[:idx]
+					break
+				}
+			}
+			// Handle extras syntax like uvicorn[standard]
+			packageName = strings.TrimSpace(packageName)
+
+			dependencies = append(dependencies, analyzer.Dependency{
+				Name:   packageName,
+				Source: "requirements.txt",
+			})
+		}
+	}
+
+	return dependencies, nil
 }
