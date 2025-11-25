@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -504,18 +505,73 @@ func (s *GitDeployStep) Execute(ctx context.Context, client *HerokuClient, stepR
 
 func (s *GitDeployStep) createProcfile() error {
 	procfilePath := filepath.Join(s.BuildContext, "Procfile")
-	if _, err := os.Stat(procfilePath); os.IsNotExist(err) {
-		var procfileContent string
-		if s.MigrationCommand != "" {
-			// Include release phase for migrations
-			procfileContent = fmt.Sprintf("release: %s\nweb: %s", s.MigrationCommand, s.StartCommand)
-		} else {
-			procfileContent = fmt.Sprintf("web: %s", s.StartCommand)
+
+	var procfileContent string
+	if s.MigrationCommand != "" {
+		// Include release phase for migrations
+		procfileContent = fmt.Sprintf("release: %s\nweb: %s", s.MigrationCommand, s.StartCommand)
+	} else {
+		procfileContent = fmt.Sprintf("web: %s", s.StartCommand)
+	}
+
+	// Check if Procfile exists
+	if existingContent, err := os.ReadFile(procfilePath); err == nil {
+		// Procfile exists - check if it needs updating
+		existingStr := string(existingContent)
+
+		// Check if it has a bad/development command that should be replaced
+		badCommands := []string{
+			"python manage.py runserver",
+			"django manage.py runserver",
+			"./manage.py runserver",
 		}
+
+		shouldReplace := false
+		for _, badCmd := range badCommands {
+			if strings.Contains(existingStr, badCmd) {
+				shouldReplace = true
+				break
+			}
+		}
+
+		// Also replace if the web command doesn't use a production server
+		lines := strings.Split(existingStr, "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(strings.TrimSpace(line), "web:") {
+				// Check if it's using gunicorn, uvicorn, or other production servers
+				hasProductionServer := strings.Contains(line, "gunicorn") ||
+					strings.Contains(line, "uvicorn") ||
+					strings.Contains(line, "daphne") ||
+					strings.Contains(line, "waitress")
+
+				if !hasProductionServer {
+					shouldReplace = true
+					break
+				}
+			}
+		}
+
+		if shouldReplace {
+			slog.Info("Replacing existing Procfile with production-ready command",
+				"old", existingStr,
+				"new", procfileContent)
+			if err := os.WriteFile(procfilePath, []byte(procfileContent), 0644); err != nil {
+				return err
+			}
+		} else {
+			// Procfile exists and looks good, don't overwrite
+			slog.Info("Existing Procfile appears to use production server, keeping it unchanged")
+		}
+	} else if os.IsNotExist(err) {
+		// Procfile doesn't exist - create it
 		if err := os.WriteFile(procfilePath, []byte(procfileContent), 0644); err != nil {
 			return err
 		}
+	} else {
+		// Some other error reading the file
+		return err
 	}
+
 	return nil
 }
 

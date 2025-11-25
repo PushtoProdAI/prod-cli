@@ -159,6 +159,7 @@ func TestPythonAnalyzer_Analyze(t *testing.T) {
 			expectedLang: "python",
 			expectedServices: []ServiceRequirement{
 				{Type: "framework", Provider: "fastapi"},
+				{Type: "server", Provider: "uvicorn"},
 				{Type: "database", Provider: "mongodb"},
 			},
 		},

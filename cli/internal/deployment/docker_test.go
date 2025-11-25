@@ -99,3 +99,77 @@ func TestGenerateDockerfile_PythonFallback(t *testing.T) {
 		t.Errorf("Expected fallback build command %q not found in Dockerfile:\n%s", expectedBuild, dockerfile)
 	}
 }
+
+func TestGenerateDockerfile_DjangoCollectStatic(t *testing.T) {
+	tests := []struct {
+		name                    string
+		services                []Service
+		shouldHaveCollectStatic bool
+	}{
+		{
+			name: "Django project should have collectstatic",
+			services: []Service{
+				{Type: "framework", Provider: "django"},
+			},
+			shouldHaveCollectStatic: true,
+		},
+		{
+			name: "Flask project should not have collectstatic",
+			services: []Service{
+				{Type: "framework", Provider: "flask"},
+			},
+			shouldHaveCollectStatic: false,
+		},
+		{
+			name: "FastAPI project should not have collectstatic",
+			services: []Service{
+				{Type: "framework", Provider: "fastapi"},
+			},
+			shouldHaveCollectStatic: false,
+		},
+		{
+			name:                    "Non-framework Python project should not have collectstatic",
+			services:                []Service{},
+			shouldHaveCollectStatic: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dg := NewDockerGeneratorWithBackend(io.Discard, []EnvVar{}, nil)
+			spec := &DeploymentSpec{
+				Name:         "test-app",
+				Language:     "python",
+				BuildCommand: "pip install -r requirements.txt",
+				StartCommand: "gunicorn app:application",
+				Services:     tt.services,
+			}
+
+			artifacts, err := dg.GenerateDockerfile(spec)
+			if err != nil {
+				t.Fatalf("Failed to generate Dockerfile: %v", err)
+			}
+
+			dockerfile := artifacts.Dockerfile
+			hasCollectStatic := strings.Contains(dockerfile, "python manage.py collectstatic")
+
+			if tt.shouldHaveCollectStatic && !hasCollectStatic {
+				t.Errorf("Expected collectstatic command in Dockerfile for %s, but it was not found", tt.name)
+				// Print relevant lines for debugging
+				lines := strings.Split(dockerfile, "\n")
+				for i, line := range lines {
+					if strings.Contains(line, "Collect static") {
+						t.Logf("Line %d: %s", i, line)
+						if i+1 < len(lines) {
+							t.Logf("Line %d: %s", i+1, lines[i+1])
+						}
+					}
+				}
+			}
+
+			if !tt.shouldHaveCollectStatic && hasCollectStatic {
+				t.Errorf("Did not expect collectstatic command in Dockerfile for %s, but it was found:\n%s", tt.name, dockerfile)
+			}
+		})
+	}
+}

@@ -686,13 +686,13 @@ func TestDetectDjangoServer(t *testing.T) {
 			wantErr:        false,
 		},
 		{
-			name: "Both WSGI and ASGI (prefers ASGI)",
+			name: "Both WSGI and ASGI (prefers WSGI for sync apps)",
 			setupFiles: map[string]string{
 				"myproject/wsgi.py": "# WSGI",
 				"myproject/asgi.py": "# ASGI",
 			},
 			dependencies:   []string{"django"},
-			wantServerType: ServerTypeASGI,
+			wantServerType: ServerTypeWSGI,
 			wantModule:     "myproject",
 			wantChannels:   false,
 			wantErr:        false,
