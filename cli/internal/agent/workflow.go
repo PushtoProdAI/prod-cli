@@ -74,14 +74,16 @@ type SetupJavaScriptProjectResult struct {
 
 // SetupPythonProjectResult contains the results of setting up a Python project
 type SetupPythonProjectResult struct {
-	PythonVersionCreated bool              `json:"pythonVersionCreated"`
-	PythonVersionDiff    []DiffLine        `json:"pythonVersionDiff,omitempty"`
-	DjangoConfigUpdated  bool              `json:"djangoConfigUpdated"`
-	DjangoConfigDiff     []DiffLine        `json:"djangoConfigDiff,omitempty"`
-	DjangoConfigPath     string            `json:"djangoConfigPath,omitempty"`
-	DjangoEnvVars        map[string]string `json:"djangoEnvVars,omitempty"`
-	Error                deployError       `json:"error"`
-	UpdatedPlan          DeployPlan        `json:"updatedPlan"`
+	PythonVersionCreated   bool              `json:"pythonVersionCreated"`
+	PythonVersionDiff      []DiffLine        `json:"pythonVersionDiff,omitempty"`
+	FrameworkConfigUpdated bool              `json:"frameworkConfigUpdated"`
+	FrameworkConfigDiff    []DiffLine        `json:"frameworkConfigDiff,omitempty"`
+	FrameworkConfigPath    string            `json:"frameworkConfigPath,omitempty"`
+	FrameworkEnvVars       map[string]string `json:"frameworkEnvVars,omitempty"`
+	FrameworkRunCommand    string            `json:"frameworkRunCommand,omitempty"`
+	ServerAdded            bool              `json:"serverAdded"`
+	Error                  deployError       `json:"error"`
+	UpdatedPlan            DeployPlan        `json:"updatedPlan"`
 }
 
 var _ workflowext.Registerer = (*Workflows)(nil)
@@ -530,29 +532,55 @@ func (w *Workflows) setupPythonProject(ctx workflow.Context, input DeployPlan) (
 
 	// Step 2: Configure framework-specific settings (Django, Flask, FastAPI, etc.)
 	slog.Info("Checking for framework-specific configuration")
-	frameworkConfig, err := workflow.ExecuteActivity[PythonConfigResult](ctx, ActivityOpts, AgentConfigureDjango, input).Get(ctx)
+	frameworkConfig, err := workflow.ExecuteActivity[PythonConfigResult](ctx, ActivityOpts, AgentConfigurePythonFramework, input).Get(ctx)
 	if err != nil {
 		slog.Error("Framework configuration failed", "error", err)
-		// This is unexpected since configureDjango handles non-Django projects gracefully
 		prod_error.CaptureErrorWithContext(err, map[string]any{
 			"workflow":     SetupPythonProjectWorkflowName,
-			"activity":     AgentConfigureDjango,
+			"activity":     AgentConfigurePythonFramework,
 			"component":    "python_config",
 			"platform":     input.Platform.String(),
 			"project_name": input.Spec.Name,
 			"language":     input.Spec.Language,
 		})
 	} else {
-		// Update result with Django configuration changes
-		if frameworkConfig.DjangoConfigUpdated {
-			result.DjangoConfigUpdated = frameworkConfig.DjangoConfigUpdated
-			result.DjangoConfigDiff = frameworkConfig.DjangoConfigDiff
-			result.DjangoConfigPath = frameworkConfig.DjangoConfigPath
-			slog.Info("Django configuration updated", "path", frameworkConfig.DjangoConfigPath)
+		// Update result with framework configuration changes
+		if frameworkConfig.FrameworkConfigUpdated {
+			result.FrameworkConfigUpdated = frameworkConfig.FrameworkConfigUpdated
+			result.FrameworkConfigDiff = frameworkConfig.FrameworkConfigDiff
+			result.FrameworkConfigPath = frameworkConfig.FrameworkConfigPath
+			slog.Info("Framework configuration updated", "path", frameworkConfig.FrameworkConfigPath)
 		}
-		if len(frameworkConfig.DjangoEnvVars) > 0 {
-			result.DjangoEnvVars = frameworkConfig.DjangoEnvVars
-			slog.Info("Django environment variables prepared", "count", len(frameworkConfig.DjangoEnvVars))
+		if len(frameworkConfig.FrameworkEnvVars) > 0 {
+			result.FrameworkEnvVars = frameworkConfig.FrameworkEnvVars
+			slog.Info("Framework environment variables prepared", "count", len(frameworkConfig.FrameworkEnvVars))
+		}
+	}
+
+	// Step 2b: Setup production server for Python frameworks
+	slog.Info("Setting up production server for Python framework")
+	serverConfig, err := workflow.ExecuteActivity[PythonConfigResult](ctx, ActivityOpts, AgentSetupPythonServer, input).Get(ctx)
+	if err != nil {
+		slog.Error("Python server setup failed", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     SetupPythonProjectWorkflowName,
+			"activity":     AgentSetupPythonServer,
+			"component":    "python_config",
+			"platform":     input.Platform.String(),
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
+	} else {
+		// Update result with server configuration
+		if serverConfig.FrameworkRunCommand != "" {
+			result.FrameworkRunCommand = serverConfig.FrameworkRunCommand
+			result.ServerAdded = serverConfig.ServerAdded
+			slog.Info("Python server configured", "command", serverConfig.FrameworkRunCommand, "serverAdded", serverConfig.ServerAdded)
+
+			// Always update the plan's StartCommand with the production-ready command
+			// This overrides any bad suggestions like "python manage.py runserver"
+			input.Spec.StartCommand = serverConfig.FrameworkRunCommand
+			slog.Info("Updated StartCommand to production server", "command", serverConfig.FrameworkRunCommand)
 		}
 	}
 

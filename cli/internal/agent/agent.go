@@ -945,12 +945,12 @@ func (a *Agent) preparePython(ctx context.Context, input string, out io.Writer) 
 			fmt.Fprint(out, "────────────────────────────────────────\n")
 		}
 
-		// Display Django configuration diff if available
-		if len(result.DjangoConfigDiff) > 0 {
-			fmt.Fprintf(out, "\n⚙️  Django %s changes:\n", result.DjangoConfigPath)
+		// Display framework configuration diff if available
+		if len(result.FrameworkConfigDiff) > 0 {
+			fmt.Fprintf(out, "\n⚙️  Framework %s changes:\n", result.FrameworkConfigPath)
 			fmt.Fprint(out, "────────────────────────────────────────\n")
 
-			for _, line := range result.DjangoConfigDiff {
+			for _, line := range result.FrameworkConfigDiff {
 				content := unescapeJSONUnicode(line.Content)
 				switch line.Type {
 				case "header":
@@ -968,10 +968,10 @@ func (a *Agent) preparePython(ctx context.Context, input string, out io.Writer) 
 			fmt.Fprint(out, "────────────────────────────────────────\n")
 		}
 
-		// Display Django environment variables if using env vars pattern
-		if len(result.DjangoEnvVars) > 0 {
-			fmt.Fprint(out, "\n🔒 Django environment variables will be set:\n")
-			for key, value := range result.DjangoEnvVars {
+		// Display framework environment variables if using env vars pattern
+		if len(result.FrameworkEnvVars) > 0 {
+			fmt.Fprint(out, "\n🔒 Framework environment variables will be set:\n")
+			for key, value := range result.FrameworkEnvVars {
 				fmt.Fprintf(out, "  • %s=%s\n", key, value)
 			}
 			fmt.Fprint(out, "\n")

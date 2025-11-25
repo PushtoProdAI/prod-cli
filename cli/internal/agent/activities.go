@@ -40,7 +40,8 @@ const (
 	AgentCreatePackageLock          = "agent.createPackageLock"
 	AgentUpdateJavaScriptConfig     = "agent.updateJavaScriptConfig"
 	AgentGeneratePythonVersion      = "agent.generatePythonVersion"
-	AgentConfigureDjango            = "agent.configureDjango"
+	AgentConfigurePythonFramework   = "agent.configurePythonFramework"
+	AgentSetupPythonServer          = "agent.setupPythonServer"
 	AgentRestoreConfigFromBackup    = "agent.restoreConfigFromBackup"
 	AgentPrepareDeployment          = "agent.prepareDeployment"
 	AgentCheckExistingProject       = "agent.checkExistingProject"
@@ -93,7 +94,8 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentCreatePackageLock, ActFunc: a.createPackageLockJSON},
 		{Name: AgentUpdateJavaScriptConfig, ActFunc: a.updateJavaScriptConfig},
 		{Name: AgentGeneratePythonVersion, ActFunc: a.generatePythonVersion},
-		{Name: AgentConfigureDjango, ActFunc: a.configureDjango},
+		{Name: AgentConfigurePythonFramework, ActFunc: a.configurePythonFramework},
+		{Name: AgentSetupPythonServer, ActFunc: a.setupPythonServer},
 		{Name: AgentRestoreConfigFromBackup, ActFunc: a.restoreFromBackup},
 		{Name: AgentPrepareDeployment, ActFunc: a.prepareDeployment},
 		{Name: AgentCheckExistingProject, ActFunc: a.checkExistingProject},

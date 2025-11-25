@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
+	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/pmezard/go-difflib/difflib"
 )
@@ -335,4 +336,165 @@ func (h *DjangoHandler) PrepareDeployment(plan DeployPlan) DeployPlan {
 	}
 
 	return plan
+}
+
+// ServerType represents the type of server (WSGI or ASGI)
+type ServerType string
+
+const (
+	ServerTypeWSGI ServerType = "wsgi"
+	ServerTypeASGI ServerType = "asgi"
+)
+
+// DjangoServerConfig contains server configuration details
+type DjangoServerConfig struct {
+	ServerType    ServerType
+	ProjectModule string // e.g., "myproject" from myproject/wsgi.py
+	HasChannels   bool
+}
+
+// detectDjangoServer detects WSGI vs ASGI setup for Django project
+func (h *DjangoHandler) detectDjangoServer(projectPath string, dependencies []analyzer.Dependency) (*DjangoServerConfig, error) {
+	config := &DjangoServerConfig{}
+
+	// Check if Django Channels is installed (indicates ASGI)
+	for _, dep := range dependencies {
+		if dep.Name == "channels" {
+			config.HasChannels = true
+			config.ServerType = ServerTypeASGI
+			break
+		}
+	}
+
+	// Find the Django project module by looking for wsgi.py or asgi.py
+	var wsgiPath, asgiPath string
+	var projectModule string
+
+	// Walk the project directory to find wsgi.py and asgi.py files
+	err := filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip common non-project directories
+		if info.IsDir() {
+			dirName := filepath.Base(path)
+			if dirName == "venv" || dirName == ".venv" || dirName == "env" ||
+				dirName == ".env" || dirName == "__pycache__" || dirName == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if !info.IsDir() {
+			fileName := filepath.Base(path)
+			if fileName == "wsgi.py" {
+				wsgiPath = path
+				// Extract project module name from path (e.g., myproject/wsgi.py -> myproject)
+				projectModule = filepath.Base(filepath.Dir(path))
+			} else if fileName == "asgi.py" {
+				asgiPath = path
+				if projectModule == "" {
+					projectModule = filepath.Base(filepath.Dir(path))
+				}
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, errors.Errorf("failed to walk project directory: %w", err)
+	}
+
+	// Determine server type if not already set by Channels detection
+	if config.ServerType == "" {
+		if asgiPath != "" {
+			config.ServerType = ServerTypeASGI
+		} else if wsgiPath != "" {
+			config.ServerType = ServerTypeWSGI
+		} else {
+			// Default to WSGI if neither found (Django creates wsgi.py by default)
+			config.ServerType = ServerTypeWSGI
+		}
+	}
+
+	config.ProjectModule = projectModule
+
+	if projectModule == "" {
+		return nil, errors.New("could not determine Django project module (no wsgi.py or asgi.py found)")
+	}
+
+	return config, nil
+}
+
+// generateRunCommand generates the production-ready run command for Django
+func (h *DjangoHandler) generateRunCommand(config *DjangoServerConfig) string {
+	if config.ServerType == ServerTypeASGI {
+		// Use uvicorn for ASGI (Channels, async views)
+		// Using 1 worker to minimize memory usage on small deployments
+		return fmt.Sprintf("uvicorn %s.asgi:application --host 0.0.0.0 --port $PORT --workers 1", config.ProjectModule)
+	}
+
+	// Use gunicorn for WSGI (default Django)
+	// Using 1 worker to minimize memory usage on small deployments
+	return fmt.Sprintf("gunicorn %s.wsgi:application --bind 0.0.0.0:$PORT --workers 1", config.ProjectModule)
+}
+
+// getRequiredServer returns the server package needed based on server type
+func (h *DjangoHandler) getRequiredServer(serverType ServerType) string {
+	if serverType == ServerTypeASGI {
+		return "uvicorn[standard]"
+	}
+	return "gunicorn"
+}
+
+// hasServerInstalled checks if the required server is already in dependencies
+func (h *DjangoHandler) hasServerInstalled(dependencies []analyzer.Dependency, serverType ServerType) bool {
+	requiredServer := h.getRequiredServer(serverType)
+
+	// Check for exact match or base package name (e.g., "uvicorn" matches "uvicorn[standard]")
+	baseServerName := strings.Split(requiredServer, "[")[0]
+
+	for _, dep := range dependencies {
+		if dep.Name == requiredServer || dep.Name == baseServerName {
+			return true
+		}
+	}
+
+	return false
+}
+
+// addServerDependency adds the required server to the appropriate dependency file
+func (h *DjangoHandler) addServerDependency(projectPath string, serverType ServerType) error {
+	requiredServer := h.getRequiredServer(serverType)
+
+	// Check for requirements.txt first (most common)
+	requirementsPath := filepath.Join(projectPath, "requirements.txt")
+	if _, err := os.Stat(requirementsPath); err == nil {
+		// Read existing content
+		content, err := os.ReadFile(requirementsPath)
+		if err != nil {
+			return errors.Errorf("failed to read requirements.txt: %w", err)
+		}
+
+		// Add the server dependency
+		newContent := string(content)
+		if !strings.HasSuffix(newContent, "\n") {
+			newContent += "\n"
+		}
+		newContent += requiredServer + "\n"
+
+		// Write back
+		if err := os.WriteFile(requirementsPath, []byte(newContent), 0644); err != nil {
+			return errors.Errorf("failed to write requirements.txt: %w", err)
+		}
+
+		slog.Info("Added server dependency to requirements.txt", "server", requiredServer)
+		return nil
+	}
+
+	// TODO: Add support for other dependency management systems (Poetry, Pipenv, etc.)
+	// For now, we'll just log a warning
+	slog.Warn("Could not automatically add server dependency - no requirements.txt found. Please add manually.", "server", requiredServer)
+	return nil
 }
