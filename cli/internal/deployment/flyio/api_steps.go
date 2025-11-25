@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/xo/dburl"
 
 	"github.com/meroxa/prod/cli/internal/deployment"
 )
@@ -22,11 +24,14 @@ type CreateFlyioAppStep struct {
 }
 
 func (c *CreateFlyioAppStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
+	// The appName should already be normalized by GenerateAPISteps
+	appName := c.appName
+
 	// First check if app already exists in your organization
-	existingApp, err := client.GetApp(ctx, c.appName)
+	existingApp, err := client.GetApp(ctx, appName)
 	if err == nil && existingApp != nil {
 		// App already exists, use it instead of creating
-		slog.Info("App already exists, using existing app", "name", c.appName, "id", existingApp.ID)
+		slog.Info("App already exists, using existing app", "name", appName, "id", existingApp.ID)
 		return deployment.CreatedResource{
 			ID:   existingApp.ID,
 			Type: "app",
@@ -34,8 +39,8 @@ func (c *CreateFlyioAppStep) Execute(ctx context.Context, client FlyioClient, st
 		}, nil
 	}
 
-	// Try to create the app with the original name
-	appName := c.appName
+	// Create the app with the normalized name
+	slog.Info("Creating Fly.io app", "name", appName)
 	app, err := client.CreateApp(ctx, CreateAppRequest{
 		Name:    appName,
 		Region:  c.region,
@@ -56,13 +61,43 @@ func (c *CreateFlyioAppStep) Execute(ctx context.Context, client FlyioClient, st
 				}, nil
 			}
 
-			// App name is taken globally - provide a clear error message
-			return nil, errors.Errorf("app name %q is already taken globally on Fly.io. This could be:\n"+
-				"1. Taken by another Fly.io user\n"+
-				"2. Reserved from a previous failed deployment\n\n"+
-				"Solutions:\n"+
-				"- Rename your project directory to something more unique\n"+
-				"- Or manually choose a unique name for your app", appName)
+			// Try with a random suffix
+			suffix := GenerateRandomSuffix()
+			newAppName := appName + "-" + suffix
+
+			// Ensure the new name doesn't exceed 63 chars
+			if len(newAppName) > 63 {
+				// Truncate the base name to make room for suffix
+				baseLen := 63 - len(suffix) - 1 // -1 for the dash
+				newAppName = appName[:baseLen] + "-" + suffix
+			}
+
+			slog.Info("App name taken, retrying with suffix", "original", appName, "new", newAppName)
+			app, retryErr := client.CreateApp(ctx, CreateAppRequest{
+				Name:    newAppName,
+				Region:  c.region,
+				OrgSlug: defaultOrg,
+			})
+			if retryErr != nil {
+				// If retry also fails, provide a clear error message
+				return nil, errors.Errorf("app name %q is already taken globally on Fly.io and retry with %q also failed: %v\n\n"+
+					"This could be:\n"+
+					"1. Taken by another Fly.io user\n"+
+					"2. Reserved from a previous failed deployment\n\n"+
+					"Solutions:\n"+
+					"- Rename your project directory to something more unique\n"+
+					"- Or manually choose a unique name for your app", appName, newAppName, retryErr)
+			}
+
+			// Success with suffix - update the appName so subsequent steps use it
+			slog.Info("Successfully created app with suffix", "name", newAppName)
+			// Note: We can't update c.appName here as it's read-only during execution
+			// The returned resource will have the actual name used
+			return deployment.CreatedResource{
+				ID:   app.ID,
+				Type: "app",
+				Name: app.Name,
+			}, nil
 		} else {
 			return nil, err
 		}
@@ -89,17 +124,31 @@ func (c *CreateFlyioAppStep) Rollback(ctx context.Context, client FlyioClient, s
 // DeployFlyioConfigStep deploys configuration to a Fly.io app
 type DeployFlyioConfigStep struct {
 	BaseStep
-	appName string // App name (known upfront from spec)
-	config  *FlyioConfig
+	appName   string // App name (fallback if step results not available)
+	appStepID string // ID of the step that created the app
+	config    *FlyioConfig
 }
 
 func (d *DeployFlyioConfigStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
+	// Try to get the actual app name from the create-app step results
+	// This handles cases where the app was created with a different name (e.g., with a suffix)
 	appName := d.appName
+	if d.appStepID != "" {
+		if appResult, ok := stepResults[d.appStepID]; ok {
+			if resource, ok := appResult.(deployment.CreatedResource); ok {
+				appName = resource.Name
+			}
+		}
+	}
+
 	if appName == "" {
 		return nil, errors.Errorf("app name is required")
 	}
 
 	slog.Info("Deploying app configuration", "app", appName)
+
+	// Update config with the actual app name (in case it was created with a suffix)
+	d.config.AppName = appName
 
 	// Deploy using the actual app name
 	err := client.DeployApp(ctx, appName, d.config)
@@ -248,9 +297,10 @@ func (c *CreateFlyioServiceStep) Rollback(ctx context.Context, client FlyioClien
 // AttachPostgresStep attaches a PostgreSQL database to a Fly.io app
 type AttachPostgresStep struct {
 	BaseStep
-	appStepID     string // ID of the step that created the app
-	serviceStepID string // ID of the step that created the postgres cluster
-	variableName  string
+	appStepID     string              // ID of the step that created the app
+	serviceStepID string              // ID of the step that created the postgres cluster
+	variableName  string              // Main DATABASE_URL variable name
+	allEnvVars    []deployment.EnvVar // All PostgreSQL env vars from spec
 }
 
 func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
@@ -266,12 +316,17 @@ func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, st
 		return nil, errors.Errorf("could not find app name from step %s", s.appStepID)
 	}
 
-	// Get the cluster ID from the previous step
+	// Get the cluster ID and connection string from the previous step
 	clusterID := ""
+	connectionString := ""
 	if serviceResult, ok := stepResults[s.serviceStepID]; ok {
 		if resource, ok := serviceResult.(deployment.CreatedResource); ok {
 			if metadata, ok := resource.Metadata["cluster_id"].(string); ok {
 				clusterID = metadata
+			}
+			// Get the connection string that was already created
+			if connStr, ok := resource.Metadata["connection_string"].(string); ok {
+				connectionString = connStr
 			}
 		}
 	}
@@ -279,8 +334,6 @@ func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, st
 	if clusterID == "" {
 		return nil, errors.Errorf("could not find cluster ID from step %s", s.serviceStepID)
 	}
-
-	slog.Info("Attaching Postgres to app", "app", appName, "cluster", clusterID)
 
 	// Attach using cluster ID
 	err := client.AttachPostgres(ctx, AttachPostgresRequest{
@@ -292,6 +345,75 @@ func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, st
 		return nil, errors.Errorf("failed to attach postgres: %w", err)
 	}
 
+	// If we don't have the connection string from metadata, try to get it
+	if connectionString == "" {
+		connInfo, err := client.GetPostgresConnectionInfo(ctx, clusterID)
+		if err != nil {
+			slog.Warn("Could not get connection info to set individual DB variables", "error", err)
+			// Continue anyway - the main DATABASE_URL should be set
+			return map[string]string{
+				"status":       "attached",
+				"app":          appName,
+				"cluster_id":   clusterID,
+				"variableName": s.variableName,
+			}, nil
+		}
+
+		// Parse the connection string to extract components
+		connectionString = connInfo.InternalConnectionString
+		if connectionString == "" {
+			connectionString = connInfo.ExternalConnectionString
+		}
+	}
+
+	// Now set individual DB component variables if they're in the spec
+	if len(s.allEnvVars) > 0 && connectionString != "" {
+		secrets := make(map[string]string)
+
+		// Parse the connection URL
+		// Expected format: postgresql://user:password@host:port/database
+		parsedURL, err := parsePostgresURL(connectionString)
+		if err != nil {
+			slog.Warn("Could not parse connection string for individual variables", "error", err)
+		} else {
+			// Map each env var based on its role
+			for _, envVar := range s.allEnvVars {
+				if envVar.Service != "postgresql" {
+					continue
+				}
+
+				var value string
+				switch envVar.Role {
+				case deployment.EnvRoleFullURI:
+					value = connectionString
+				case deployment.EnvRoleHostname:
+					value = parsedURL.Host
+				case deployment.EnvRolePort:
+					value = parsedURL.Port
+				case deployment.EnvRoleUsername:
+					value = parsedURL.Username
+				case deployment.EnvRolePassword:
+					value = parsedURL.Password
+				case deployment.EnvRoleDatabaseName:
+					value = parsedURL.Database
+				}
+
+				if value != "" {
+					secrets[envVar.Name] = value
+				}
+			}
+
+			// Set these as secrets (they contain sensitive info like password)
+			if len(secrets) > 0 {
+				slog.Info("Setting individual PostgreSQL environment variables", "count", len(secrets), "app", appName)
+				if err := client.SetSecrets(ctx, appName, secrets); err != nil {
+					slog.Warn("Failed to set individual DB variables", "error", err)
+					// Don't fail the whole deployment for this
+				}
+			}
+		}
+	}
+
 	// Return success indicator
 	return map[string]string{
 		"status":       "attached",
@@ -299,6 +421,40 @@ func (s *AttachPostgresStep) Execute(ctx context.Context, client FlyioClient, st
 		"cluster_id":   clusterID,
 		"variableName": s.variableName,
 	}, nil
+}
+
+// ParsedPostgresURL holds the components of a PostgreSQL connection URL
+type ParsedPostgresURL struct {
+	Host     string
+	Port     string
+	Username string
+	Password string
+	Database string
+}
+
+// parsePostgresURL parses a PostgreSQL connection URL into its components
+// Expected format: postgresql://user:password@host:port/database
+func parsePostgresURL(connStr string) (*ParsedPostgresURL, error) {
+	parsed, err := dburl.Parse(connStr)
+	if err != nil {
+		return nil, errors.Errorf("failed to parse connection string: %w", err)
+	}
+
+	result := &ParsedPostgresURL{
+		Host:     parsed.Hostname(),
+		Port:     parsed.Port(),
+		Database: strings.TrimPrefix(parsed.Path, "/"),
+	}
+
+	if parsed.User != nil {
+		result.Username = parsed.User.Username()
+		// Password() returns (password, bool) where bool indicates if password was set
+		if password, ok := parsed.User.Password(); ok {
+			result.Password = password
+		}
+	}
+
+	return result, nil
 }
 
 func (s *AttachPostgresStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]any) error {
@@ -310,9 +466,10 @@ func (s *AttachPostgresStep) Rollback(ctx context.Context, client FlyioClient, s
 // AttachRedisStep attaches a Redis database to a Fly.io app
 type AttachRedisStep struct {
 	BaseStep
-	appStepID    string // ID of the step that created the app
-	redisName    string
-	variableName string
+	appStepID    string              // ID of the step that created the app
+	redisName    string              // Name of the Redis instance
+	variableName string              // Main REDIS_URL variable name
+	allEnvVars   []deployment.EnvVar // All Redis env vars from spec
 }
 
 func (s *AttachRedisStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
@@ -340,6 +497,67 @@ func (s *AttachRedisStep) Execute(ctx context.Context, client FlyioClient, stepR
 		return nil, errors.Errorf("failed to attach redis: %w", err)
 	}
 
+	// Get the connection info to set individual Redis variables
+	connInfo, err := client.GetRedisConnectionInfo(ctx, s.redisName)
+	if err != nil {
+		slog.Warn("Could not get Redis connection info to set individual variables", "error", err)
+		return map[string]string{
+			"status":       "attached",
+			"app":          appName,
+			"redis":        s.redisName,
+			"variableName": s.variableName,
+		}, nil
+	}
+
+	// Get the connection string
+	connectionString := connInfo.InternalConnectionString
+	if connectionString == "" {
+		connectionString = connInfo.ExternalConnectionString
+	}
+
+	// Set individual Redis component variables if they're in the spec
+	if len(s.allEnvVars) > 0 && connectionString != "" {
+		secrets := make(map[string]string)
+
+		// Parse the Redis connection URL
+		// Expected format: redis://default:password@host:port
+		parsedURL, err := parseRedisURL(connectionString)
+		if err != nil {
+			slog.Warn("Could not parse Redis connection string for individual variables", "error", err)
+		} else {
+			// Map each env var based on its role
+			for _, envVar := range s.allEnvVars {
+				if !envVar.IsRedisRelated() {
+					continue
+				}
+
+				var value string
+				switch envVar.Role {
+				case deployment.EnvRoleRedisURI:
+					value = connectionString
+				case deployment.EnvRoleRedisHost:
+					value = parsedURL.Host
+				case deployment.EnvRoleRedisPort:
+					value = parsedURL.Port
+				case deployment.EnvRoleRedisPassword:
+					value = parsedURL.Password
+				}
+
+				if value != "" {
+					secrets[envVar.Name] = value
+				}
+			}
+
+			// Set these as secrets
+			if len(secrets) > 0 {
+				slog.Info("Setting individual Redis environment variables", "count", len(secrets), "app", appName)
+				if err := client.SetSecrets(ctx, appName, secrets); err != nil {
+					slog.Warn("Failed to set individual Redis variables", "error", err)
+				}
+			}
+		}
+	}
+
 	// Return success indicator
 	return map[string]string{
 		"status":       "attached",
@@ -347,6 +565,41 @@ func (s *AttachRedisStep) Execute(ctx context.Context, client FlyioClient, stepR
 		"redis":        s.redisName,
 		"variableName": s.variableName,
 	}, nil
+}
+
+// ParsedRedisURL holds the components of a Redis connection URL
+type ParsedRedisURL struct {
+	Host     string
+	Port     string
+	Password string
+}
+
+// parseRedisURL parses a Redis connection URL into its components
+// Expected format: redis://[username]:password@host:port or redis://:password@host:port
+func parseRedisURL(connStr string) (*ParsedRedisURL, error) {
+	parsed, err := url.Parse(connStr)
+	if err != nil {
+		return nil, errors.Errorf("failed to parse Redis connection string: %w", err)
+	}
+
+	result := &ParsedRedisURL{
+		Host: parsed.Hostname(),
+		Port: parsed.Port(),
+	}
+
+	// Default Redis port
+	if result.Port == "" {
+		result.Port = "6379"
+	}
+
+	if parsed.User != nil {
+		// Password() returns (password, bool) where bool indicates if password was set
+		if password, ok := parsed.User.Password(); ok {
+			result.Password = password
+		}
+	}
+
+	return result, nil
 }
 
 func (s *AttachRedisStep) Rollback(ctx context.Context, client FlyioClient, stepResults map[string]any) error {
@@ -464,8 +717,9 @@ func (g *GenerateDockerfileStep) Rollback(ctx context.Context, client FlyioClien
 // SetSecretsStep sets secrets for a Fly.io app
 type SetSecretsStep struct {
 	BaseStep
-	appName string // App name (known upfront from spec)
-	secrets map[string]string
+	appName   string // App name (fallback if step results not available)
+	appStepID string // ID of the step that created the app
+	secrets   map[string]string
 }
 
 func (s *SetSecretsStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
@@ -476,7 +730,17 @@ func (s *SetSecretsStep) Execute(ctx context.Context, client FlyioClient, stepRe
 		}, nil
 	}
 
+	// Try to get the actual app name from the create-app step results
+	// This handles cases where the app was created with a different name (e.g., with a suffix)
 	appName := s.appName
+	if s.appStepID != "" {
+		if appResult, ok := stepResults[s.appStepID]; ok {
+			if resource, ok := appResult.(deployment.CreatedResource); ok {
+				appName = resource.Name
+			}
+		}
+	}
+
 	if appName == "" {
 		return nil, errors.Errorf("app name is required")
 	}

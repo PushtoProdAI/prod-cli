@@ -1,6 +1,8 @@
 package flyio
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"time"
 )
 
@@ -88,6 +90,76 @@ func GetLanguageConfig(language string) LanguageConfig {
 	return LanguageConfig{
 		InternalPort: defaultHTTPPort,
 	}
+}
+
+// NormalizeFlyAppName normalizes an app name to meet Fly.io requirements:
+// - Must be under 63 characters
+// - Only lowercase letters, numbers, and dashes
+// - Cannot start or end with a dash
+func NormalizeFlyAppName(name string) string {
+	// Convert to lowercase
+	result := ""
+	for _, c := range name {
+		switch {
+		case c >= 'a' && c <= 'z':
+			result += string(c)
+		case c >= 'A' && c <= 'Z':
+			result += string(c - 'A' + 'a')
+		case c >= '0' && c <= '9':
+			result += string(c)
+		case c == '_' || c == ' ' || c == '.':
+			// Replace underscores, spaces, and dots with dashes
+			result += "-"
+		case c == '-':
+			result += "-"
+			// Skip all other characters
+		}
+	}
+
+	// Remove leading and trailing dashes
+	for len(result) > 0 && result[0] == '-' {
+		result = result[1:]
+	}
+	for len(result) > 0 && result[len(result)-1] == '-' {
+		result = result[:len(result)-1]
+	}
+
+	// Collapse multiple consecutive dashes into one
+	collapsed := ""
+	lastWasDash := false
+	for _, c := range result {
+		if c == '-' {
+			if !lastWasDash {
+				collapsed += string(c)
+				lastWasDash = true
+			}
+		} else {
+			collapsed += string(c)
+			lastWasDash = false
+		}
+	}
+
+	// Truncate to 63 characters
+	if len(collapsed) > 63 {
+		collapsed = collapsed[:63]
+	}
+
+	// Remove trailing dash if truncation created one
+	for len(collapsed) > 0 && collapsed[len(collapsed)-1] == '-' {
+		collapsed = collapsed[:len(collapsed)-1]
+	}
+
+	return collapsed
+}
+
+// GenerateRandomSuffix generates a random 4-character suffix for app names
+func GenerateRandomSuffix() string {
+	bytes := make([]byte, 2)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to timestamp-based suffix if random fails
+		return hex.EncodeToString([]byte{byte(time.Now().Unix() & 0xFF), byte((time.Now().Unix() >> 8) & 0xFF)})
+	}
+	return hex.EncodeToString(bytes)
 }
 
 // FlyioPricing contains pricing information for Fly.io services

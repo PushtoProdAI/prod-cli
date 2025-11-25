@@ -545,6 +545,24 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 	return a.categorizeEnvironmentVariables(ctx, input, out)
 }
 
+// isFrameworkManagedVar checks if a variable is managed by a framework handler
+// Framework handlers will set these values in PrepareDeployment, so don't prompt user
+func isFrameworkManagedVar(varName string, spec analyzer.ProjectSpec) bool {
+	// Check if this is a Django project
+	for _, sr := range spec.ServiceRequirements {
+		if sr.Type == "framework" && sr.Provider == "django" {
+			// Django framework vars
+			if strings.Contains(varName, "ALLOWED_HOSTS") ||
+				strings.Contains(varName, "CSRF_TRUSTED_ORIGINS") {
+				return true
+			}
+		}
+		// Add other frameworks here as needed
+		// if sr.Provider == "rails" { ... }
+	}
+	return false
+}
+
 func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	fmt.Fprintf(out, "🔍 Categorizing environment variables...\n")
 
@@ -589,14 +607,28 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 
 	for _, envVar := range envVars {
 		if envVar.IsNotDBRelated() {
-			// This application-level var needs user input
-			a.envVars = append(a.envVars, EnvVarWithStatus{
-				EnvVar: envVar,
-				Status: "pending",
-			})
-			pendingCount++
-			if envVar.Sensitive {
-				sensitivePending = append(sensitivePending, envVar.Name)
+			// Check if this is a framework-managed var (Django, Rails, etc.)
+			// These will be set by PrepareDeployment, so don't prompt the user
+			// and don't add to a.envVars (framework handles them completely)
+			if isFrameworkManagedVar(envVar.Name, a.DeployPlan.Spec) {
+				// Show in auto-populated list but don't add to a.envVars
+				if envVar.Sensitive {
+					sensitiveAutoPopulated = append(sensitiveAutoPopulated, envVar.Name)
+				} else {
+					nonSensitiveAutoPopulated = append(nonSensitiveAutoPopulated, envVar.Name)
+				}
+				// Skip adding to a.envVars - framework will add to CollectedEnvVars directly
+				continue
+			} else {
+				// Application-level vars need user input (unless .env provides defaults)
+				a.envVars = append(a.envVars, EnvVarWithStatus{
+					EnvVar: envVar,
+					Status: "pending",
+				})
+				pendingCount++
+				if envVar.Sensitive {
+					sensitivePending = append(sensitivePending, envVar.Name)
+				}
 			}
 		} else {
 			// Backing service vars (DB, Redis) - deployment system will auto-populate values
@@ -912,6 +944,39 @@ func (a *Agent) preparePython(ctx context.Context, input string, out io.Writer) 
 			}
 			fmt.Fprint(out, "────────────────────────────────────────\n")
 		}
+
+		// Display Django configuration diff if available
+		if len(result.DjangoConfigDiff) > 0 {
+			fmt.Fprintf(out, "\n⚙️  Django %s changes:\n", result.DjangoConfigPath)
+			fmt.Fprint(out, "────────────────────────────────────────\n")
+
+			for _, line := range result.DjangoConfigDiff {
+				content := unescapeJSONUnicode(line.Content)
+				switch line.Type {
+				case "header":
+					fmt.Fprintf(out, "\033[36m%s\033[0m\n", content)
+				case "added":
+					fmt.Fprintf(out, "\033[32m%s\033[0m\n", content)
+				case "removed":
+					fmt.Fprintf(out, "\033[31m%s\033[0m\n", content)
+				case "fileheader":
+					fmt.Fprintf(out, "\033[1m%s\033[0m\n", content)
+				default:
+					fmt.Fprintf(out, "%s\n", content)
+				}
+			}
+			fmt.Fprint(out, "────────────────────────────────────────\n")
+		}
+
+		// Display Django environment variables if using env vars pattern
+		if len(result.DjangoEnvVars) > 0 {
+			fmt.Fprint(out, "\n🔒 Django environment variables will be set:\n")
+			for key, value := range result.DjangoEnvVars {
+				fmt.Fprintf(out, "  • %s=%s\n", key, value)
+			}
+			fmt.Fprint(out, "\n")
+		}
+
 		a.DeployPlan = &result.UpdatedPlan
 		fmt.Fprint(out, "✅ Python environment prepared successfully!\n")
 
@@ -937,7 +1002,10 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 			collectedEnvVars = append(collectedEnvVars, envVar.EnvVar)
 		}
 	}
-	// make sure if we have collected any other env vars along the way they are captured
+
+	// Merge collected env vars from categorization/user input
+	// Framework-managed vars are already in DeployPlanWithEnvVars.CollectedEnvVars
+	// (added by PrepareDeployment), so we just append the rest
 	DeployPlanWithEnvVars.CollectedEnvVars = append(DeployPlanWithEnvVars.CollectedEnvVars, collectedEnvVars...)
 
 	wf, err := Workflows{}.Deploy(ctx, a.wfClient, DeployPlanWithEnvVars)

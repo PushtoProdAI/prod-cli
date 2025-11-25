@@ -5,16 +5,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/pmezard/go-difflib/difflib"
 )
 
 // Python configuration result containing version file diffs
 type PythonConfigResult struct {
-	PythonVersionCreated bool       `json:"pythonVersionCreated"`
-	PythonVersionDiff    []DiffLine `json:"pythonVersionDiff,omitempty"`
+	PythonVersionCreated bool              `json:"pythonVersionCreated"`
+	PythonVersionDiff    []DiffLine        `json:"pythonVersionDiff,omitempty"`
+	DjangoConfigUpdated  bool              `json:"djangoConfigUpdated"`
+	DjangoConfigDiff     []DiffLine        `json:"djangoConfigDiff,omitempty"`
+	DjangoConfigPath     string            `json:"djangoConfigPath,omitempty"`
+	DjangoEnvVars        map[string]string `json:"djangoEnvVars,omitempty"`
 }
 
 // generatePythonVersion creates .python-version file for Python projects
@@ -41,10 +47,7 @@ func (a *Activities) generatePythonVersion(ctx context.Context, plan DeployPlan)
 
 	// Create .prod directory if it doesn't exist for backups
 	prodDir := filepath.Join(projectPath, ".prod")
-	if err := os.MkdirAll(prodDir, 0755); err != nil {
-		a.uiWriter.SendStatusComplete("python_version", "❌ Failed to create .prod directory")
-		return result, errors.Errorf("failed to create .prod directory: %w", err)
-	}
+	os.MkdirAll(prodDir, 0755)
 
 	// Python version to use
 	pythonVersion := "3.11\n"
@@ -93,6 +96,73 @@ func (a *Activities) generatePythonVersion(ctx context.Context, plan DeployPlan)
 			{Type: "added", Content: "+3.11"},
 		}
 		a.uiWriter.SendStatusComplete("python_version", "✅ Created .python-version with Python 3.11")
+	}
+
+	return result, nil
+}
+
+// findPythonFrameworkFromServiceRequirements extracts the Python framework from ServiceRequirements
+func findPythonFrameworkFromServiceRequirements(serviceRequirements []analyzer.ServiceRequirement) string {
+	for _, sr := range serviceRequirements {
+		if sr.Type == "framework" {
+			return sr.Provider // Returns "django", "flask", "fastapi", etc.
+		}
+	}
+	return ""
+}
+
+// configureDjango updates Django settings for deployment
+func (a *Activities) configureDjango(ctx context.Context, plan DeployPlan) (PythonConfigResult, error) {
+	result := PythonConfigResult{}
+
+	// Check if this is a Django project by looking at ServiceRequirements
+	framework := findPythonFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
+	if framework != "django" {
+		// Not a Django project, skip configuration
+		a.uiWriter.SendStatus("django_config", "Skipping Django configuration (not a Django project)")
+		return result, nil
+	}
+
+	a.uiWriter.SendStatus("django_config", "Configuring Django settings...")
+
+	// Create Django handler
+	handler := &DjangoHandler{}
+
+	// Check if Django settings already use environment variables
+	// The analyzer already scanned for env vars, so we can check plan.Spec.EnvVars
+	usesEnvVars := false
+	for _, envVar := range plan.Spec.EnvVars {
+		// Check if ALLOWED_HOSTS or DJANGO_ALLOWED_HOSTS is referenced
+		if strings.Contains(envVar.VarName, "ALLOWED_HOSTS") ||
+			strings.Contains(envVar.VarName, "CSRF_TRUSTED_ORIGINS") {
+			usesEnvVars = true
+			break
+		}
+	}
+
+	if usesEnvVars {
+		a.uiWriter.SendStatusComplete("django_config", "✅ Django already uses environment variables")
+		// Provide the env vars that should be set
+		result.DjangoEnvVars = handler.GetRequiredEnvVars(plan.Platform)
+		return result, nil
+	}
+
+	// Try to find and update Django settings file directly (no env vars detected)
+	diff, configPath, err := handler.HandleConfig(plan.Source, plan.Platform)
+	if err != nil {
+		a.uiWriter.SendStatusComplete("django_config", "⚠️  Django settings.py not found, will use environment variables")
+		// Settings file not found, provide env vars as fallback
+		result.DjangoEnvVars = handler.GetRequiredEnvVars(plan.Platform)
+		return result, nil
+	}
+
+	if len(diff) > 0 {
+		result.DjangoConfigUpdated = true
+		result.DjangoConfigDiff = diff
+		result.DjangoConfigPath = configPath
+		a.uiWriter.SendStatusComplete("django_config", "✅ Updated Django settings for deployment")
+	} else {
+		a.uiWriter.SendStatusComplete("django_config", "✅ Django settings already configured")
 	}
 
 	return result, nil

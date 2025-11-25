@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -157,6 +158,20 @@ func patchPackageJSONForPlatform(origPackageJson []byte, platform Platform, fram
 
 // findRuntimeFramework extracts the runtime framework from ServiceRequirements
 func findRuntimeFrameworkFromServiceRequirements(serviceRequirements []analyzer.ServiceRequirement) string {
+	// Prioritize actual web frameworks over WSGI servers
+	// First pass: look for Django, Flask, FastAPI, etc.
+	preferredFrameworks := []string{"django", "flask", "fastapi", "express", "nextjs", "remix", "svelte"}
+	for _, sr := range serviceRequirements {
+		if sr.Type == "framework" {
+			for _, preferred := range preferredFrameworks {
+				if sr.Provider == preferred {
+					return sr.Provider
+				}
+			}
+		}
+	}
+
+	// Second pass: return any framework (including wsgi, asgi, etc.)
 	for _, sr := range serviceRequirements {
 		if sr.Type == "framework" {
 			return sr.Provider
@@ -265,15 +280,19 @@ func (a *Activities) updateJavaScriptConfig(_ context.Context, plan DeployPlan) 
 func (a *Activities) prepareDeployment(_ context.Context, plan DeployPlan) (DeployPlan, error) {
 	runtimeFramework := findRuntimeFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
 
+	slog.Info("prepareDeployment framework detection", "runtimeFramework", runtimeFramework)
+
 	a.uiWriter.SendStatus("configuring", fmt.Sprintf("Configuring %s deployment...", runtimeFramework))
 
 	handler := frameworkRegistry.GetHandler(runtimeFramework)
 	if handler == nil {
+		slog.Debug("No handler found for framework", "framework", runtimeFramework)
 		a.uiWriter.SendStatusComplete("configuring", "✅ No framework-specific deployment config needed")
 		return plan, nil
 	}
 
 	plan = handler.PrepareDeployment(plan)
+
 	a.uiWriter.SendStatusComplete("configuring", fmt.Sprintf("✅ %s deployment configuration complete", runtimeFramework))
 	return plan, nil
 }

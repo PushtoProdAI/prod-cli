@@ -62,7 +62,13 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 	var steps []FlyioAPIStep
 	var serviceStepIDs []string
 	var attachmentStepIDs []string
-	appName := fqd.spec.Name
+	appName := NormalizeFlyAppName(fqd.spec.Name)
+
+	// Inform user if the app name was normalized
+	if appName != fqd.spec.Name {
+		fmt.Fprintf(fqd.writer, "ℹ️  App name normalized: %q → %q (Fly.io requires lowercase letters, numbers, and dashes only)\n", fqd.spec.Name, appName)
+	}
+
 	appStepID := "create-app"
 
 	if fqd.spec.IsUpdate {
@@ -211,8 +217,9 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 				Description: fmt.Sprintf("Setting %d secret(s) for app", len(secrets)),
 				DependsOn:   []string{appStepID},
 			},
-			appName: appName,
-			secrets: secrets,
+			appName:   appName,
+			appStepID: appStepID,
+			secrets:   secrets,
 		})
 	}
 
@@ -232,8 +239,9 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 			Description: "Deploying app configuration",
 			DependsOn:   deployDeps,
 		},
-		appName: appName,
-		config:  fqd.generateFlyConfig(),
+		appName:   appName,
+		appStepID: appStepID,
+		config:    fqd.generateFlyConfig(),
 	})
 
 	return steps
@@ -241,6 +249,7 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 
 // createServiceStep creates a deployment step for a service
 func (fqd *FlyioQueuedDeployment) createServiceStep(service deployment.Service, stepID string, appStepID string) FlyioAPIStep {
+	normalizedAppName := NormalizeFlyAppName(fqd.spec.Name)
 	switch service.Provider {
 	case "postgresql":
 		// Postgres is independent - doesn't need to wait for app
@@ -250,7 +259,7 @@ func (fqd *FlyioQueuedDeployment) createServiceStep(service deployment.Service, 
 				Description: fmt.Sprintf("Creating PostgreSQL database: %s", service.Name),
 			},
 			serviceType: "postgres",
-			name:        fmt.Sprintf("%s-postgres", fqd.spec.Name),
+			name:        fmt.Sprintf("%s-postgres", normalizedAppName),
 			region:      defaultRegion,
 			size:        postgresVolumeSizeGB,
 		}
@@ -262,7 +271,7 @@ func (fqd *FlyioQueuedDeployment) createServiceStep(service deployment.Service, 
 				Description: fmt.Sprintf("Creating Redis database: %s", service.Name),
 			},
 			serviceType: "redis",
-			name:        fmt.Sprintf("%s-redis", fqd.spec.Name),
+			name:        fmt.Sprintf("%s-redis", normalizedAppName),
 			region:      defaultRegion,
 		}
 	case "volume":
@@ -280,9 +289,27 @@ func (fqd *FlyioQueuedDeployment) createAttachmentStep(service deployment.Servic
 	switch service.Provider {
 	case "postgresql":
 		pgURLVar := "DATABASE_URL"
+		var pgEnvVars []deployment.EnvVar
 		for _, v := range fqd.spec.EnvVars {
-			if v.Role == deployment.EnvRoleFullURI && v.Service == "postgresql" {
-				pgURLVar = v.Name
+			// Check if this is a PostgreSQL-related variable by role
+			// Service field might be empty or "unknown" if LLM couldn't determine it
+			isPostgresVar := v.Service == "postgresql" ||
+				(v.Role == deployment.EnvRoleFullURI && (v.Service == "" || v.Service == "unknown")) ||
+				(v.Role == deployment.EnvRoleHostname && (v.Service == "" || v.Service == "unknown")) ||
+				(v.Role == deployment.EnvRolePort && (v.Service == "" || v.Service == "unknown")) ||
+				(v.Role == deployment.EnvRoleUsername && (v.Service == "" || v.Service == "unknown")) ||
+				(v.Role == deployment.EnvRolePassword && (v.Service == "" || v.Service == "unknown")) ||
+				(v.Role == deployment.EnvRoleDatabaseName && (v.Service == "" || v.Service == "unknown"))
+
+			if isPostgresVar {
+				// Set service to postgresql if it's not set
+				if v.Service == "" || v.Service == "unknown" {
+					v.Service = "postgresql"
+				}
+				pgEnvVars = append(pgEnvVars, v)
+				if v.Role == deployment.EnvRoleFullURI {
+					pgURLVar = v.Name
+				}
 			}
 		}
 		return &AttachPostgresStep{
@@ -294,8 +321,19 @@ func (fqd *FlyioQueuedDeployment) createAttachmentStep(service deployment.Servic
 			appStepID:     appStepID, // Pass the app step ID to retrieve actual app name
 			variableName:  pgURLVar,
 			serviceStepID: serviceStepID, // Pass the service step ID to retrieve cluster ID
+			allEnvVars:    pgEnvVars,     // Pass all PostgreSQL env vars to set individual components
 		}
 	case "redis":
+		redisURLVar := "REDIS_URL"
+		var redisEnvVars []deployment.EnvVar
+		for _, v := range fqd.spec.EnvVars {
+			if v.IsRedisRelated() {
+				redisEnvVars = append(redisEnvVars, v)
+				if v.Role == deployment.EnvRoleRedisURI {
+					redisURLVar = v.Name
+				}
+			}
+		}
 		return &AttachRedisStep{
 			BaseStep: BaseStep{
 				ID:          stepID,
@@ -303,8 +341,9 @@ func (fqd *FlyioQueuedDeployment) createAttachmentStep(service deployment.Servic
 				DependsOn:   []string{appStepID, serviceStepID}, // Depends on both app and service creation
 			},
 			appStepID:    appStepID, // Pass the app step ID to retrieve actual app name
-			redisName:    fmt.Sprintf("%s-redis", fqd.spec.Name),
-			variableName: "REDIS_URL",
+			redisName:    fmt.Sprintf("%s-redis", NormalizeFlyAppName(fqd.spec.Name)),
+			variableName: redisURLVar,
+			allEnvVars:   redisEnvVars, // Pass all Redis env vars to set individual components
 		}
 	default:
 		// Don't create attachment steps for unsupported services
@@ -334,7 +373,7 @@ func (fqd *FlyioQueuedDeployment) generateFlyConfig() *FlyioConfig {
 	envVars["PORT"] = fmt.Sprintf("%d", internalPort)
 
 	config := &FlyioConfig{
-		AppName:        fqd.spec.Name,
+		AppName:        NormalizeFlyAppName(fqd.spec.Name),
 		ReleaseCommand: fqd.spec.MigrationCommand,
 		EnvVars:        envVars,
 	}
