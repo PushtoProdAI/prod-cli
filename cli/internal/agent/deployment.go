@@ -185,6 +185,11 @@ func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, dbList 
 	slog.Info("CategorizeEnvVarsForDeployment input", "envVar", envVar)
 	slog.Info("CategorizeEnvVarsForDeployment dbList", "dbList", dbList)
 	slog.Info("CategorizeEnvVarsForDeployment workflow name", "workflowName", CategorizeEnvVarsWorkflowName)
+
+	// Framework-specific vars (Django, Rails, etc.) are categorized generically here,
+	// but their actual values are set later in PrepareDeployment (which runs after this).
+	// This allows for good UX (user sees all vars) while letting framework handlers control values.
+
 	ev := types.EnvVarCandidate{
 		VarName: envVar.VarName,
 		Line:    int64(envVar.Line),
@@ -403,13 +408,16 @@ func (d *FlyIOProjectDetector) DetectExistingProject(ctx context.Context, projec
 		result.DeployURL = existing.Hostname
 		result.IsUpdate = true
 
-		slog.Info("Detecting existing Fly.io databases", "projectName", projectName)
+		// Use normalized name for database detection to match deployment naming
+		normalizedName := flyio.NormalizeFlyAppName(projectName)
+
+		slog.Info("Detecting existing Fly.io databases", "projectName", projectName, "normalizedName", normalizedName)
 		pgClusters, err := d.client.ListPostgres(ctx)
 		if err != nil {
 			slog.Error("Failed to list postgres clusters", "error", err)
 		} else {
 			slog.Info("Listed postgres clusters", "count", len(pgClusters))
-			expectedPGName := fmt.Sprintf("%s-postgres", projectName)
+			expectedPGName := fmt.Sprintf("%s-postgres", normalizedName)
 			slog.Info("Looking for postgres cluster", "expectedName", expectedPGName)
 			for _, cluster := range pgClusters {
 				slog.Info("Checking postgres cluster", "name", cluster.Name, "expected", expectedPGName)
@@ -430,7 +438,7 @@ func (d *FlyIOProjectDetector) DetectExistingProject(ctx context.Context, projec
 			slog.Error("Failed to list Redis databases", "error", err)
 		} else {
 			slog.Info("Listed Redis databases", "count", len(redisList))
-			expectedRedisName := fmt.Sprintf("%s-redis", projectName)
+			expectedRedisName := fmt.Sprintf("%s-redis", normalizedName)
 			slog.Info("Looking for Redis database", "expectedName", expectedRedisName)
 			for _, redis := range redisList {
 				slog.Info("Checking Redis database", "name", redis.Name, "expected", expectedRedisName)

@@ -74,10 +74,14 @@ type SetupJavaScriptProjectResult struct {
 
 // SetupPythonProjectResult contains the results of setting up a Python project
 type SetupPythonProjectResult struct {
-	PythonVersionCreated bool        `json:"pythonVersionCreated"`
-	PythonVersionDiff    []DiffLine  `json:"pythonVersionDiff,omitempty"`
-	Error                deployError `json:"error"`
-	UpdatedPlan          DeployPlan  `json:"updatedPlan"`
+	PythonVersionCreated bool              `json:"pythonVersionCreated"`
+	PythonVersionDiff    []DiffLine        `json:"pythonVersionDiff,omitempty"`
+	DjangoConfigUpdated  bool              `json:"djangoConfigUpdated"`
+	DjangoConfigDiff     []DiffLine        `json:"djangoConfigDiff,omitempty"`
+	DjangoConfigPath     string            `json:"djangoConfigPath,omitempty"`
+	DjangoEnvVars        map[string]string `json:"djangoEnvVars,omitempty"`
+	Error                deployError       `json:"error"`
+	UpdatedPlan          DeployPlan        `json:"updatedPlan"`
 }
 
 var _ workflowext.Registerer = (*Workflows)(nil)
@@ -341,7 +345,8 @@ func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPla
 	mapDuration := time.Since(mapStart)
 	workflow.Logger(ctx).Debug("created env map", "size", len(envMap), "duration", mapDuration)
 
-	// we will take values that in env files and use those as suggested values
+	// Merge .env file values as suggested defaults
+	// Note: Framework handlers will override these later in PrepareDeployment
 	mergeStart := time.Now()
 	workflow.Logger(ctx).Info("starting to merge env file values")
 	mergedCount := 0
@@ -523,7 +528,35 @@ func (w *Workflows) setupPythonProject(ctx workflow.Context, input DeployPlan) (
 		slog.Info("No Python version file changes needed")
 	}
 
-	// Step 2: Prepare deployment (framework-specific adjustments)
+	// Step 2: Configure framework-specific settings (Django, Flask, FastAPI, etc.)
+	slog.Info("Checking for framework-specific configuration")
+	frameworkConfig, err := workflow.ExecuteActivity[PythonConfigResult](ctx, ActivityOpts, AgentConfigureDjango, input).Get(ctx)
+	if err != nil {
+		slog.Error("Framework configuration failed", "error", err)
+		// This is unexpected since configureDjango handles non-Django projects gracefully
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     SetupPythonProjectWorkflowName,
+			"activity":     AgentConfigureDjango,
+			"component":    "python_config",
+			"platform":     input.Platform.String(),
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
+	} else {
+		// Update result with Django configuration changes
+		if frameworkConfig.DjangoConfigUpdated {
+			result.DjangoConfigUpdated = frameworkConfig.DjangoConfigUpdated
+			result.DjangoConfigDiff = frameworkConfig.DjangoConfigDiff
+			result.DjangoConfigPath = frameworkConfig.DjangoConfigPath
+			slog.Info("Django configuration updated", "path", frameworkConfig.DjangoConfigPath)
+		}
+		if len(frameworkConfig.DjangoEnvVars) > 0 {
+			result.DjangoEnvVars = frameworkConfig.DjangoEnvVars
+			slog.Info("Django environment variables prepared", "count", len(frameworkConfig.DjangoEnvVars))
+		}
+	}
+
+	// Step 3: Prepare deployment (framework-specific adjustments)
 	plan, err := workflow.ExecuteActivity[DeployPlan](ctx, ActivityOpts, AgentPrepareDeployment, input).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to prepare deployment", "error", err)
