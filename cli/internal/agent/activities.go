@@ -42,6 +42,7 @@ const (
 	AgentGeneratePythonVersion      = "agent.generatePythonVersion"
 	AgentConfigurePythonFramework   = "agent.configurePythonFramework"
 	AgentSetupPythonServer          = "agent.setupPythonServer"
+	AgentConfigurePythonStaticFiles = "agent.configurePythonStaticFiles"
 	AgentRestoreConfigFromBackup    = "agent.restoreConfigFromBackup"
 	AgentPrepareDeployment          = "agent.prepareDeployment"
 	AgentCheckExistingProject       = "agent.checkExistingProject"
@@ -96,6 +97,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentGeneratePythonVersion, ActFunc: a.generatePythonVersion},
 		{Name: AgentConfigurePythonFramework, ActFunc: a.configurePythonFramework},
 		{Name: AgentSetupPythonServer, ActFunc: a.setupPythonServer},
+		{Name: AgentConfigurePythonStaticFiles, ActFunc: a.configureDjangoStaticFiles},
 		{Name: AgentRestoreConfigFromBackup, ActFunc: a.restoreFromBackup},
 		{Name: AgentPrepareDeployment, ActFunc: a.prepareDeployment},
 		{Name: AgentCheckExistingProject, ActFunc: a.checkExistingProject},

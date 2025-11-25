@@ -977,6 +977,32 @@ func (a *Agent) preparePython(ctx context.Context, input string, out io.Writer) 
 			fmt.Fprint(out, "\n")
 		}
 
+		// Display static files configuration if available
+		if len(result.StaticFilesDiff) > 0 {
+			fmt.Fprint(out, "\n📦 Static files configuration changes:\n")
+			fmt.Fprint(out, "────────────────────────────────────────\n")
+
+			for _, line := range result.StaticFilesDiff {
+				content := unescapeJSONUnicode(line.Content)
+				switch line.Type {
+				case "header":
+					fmt.Fprintf(out, "\033[36m%s\033[0m\n", content)
+				case "added":
+					fmt.Fprintf(out, "\033[32m%s\033[0m\n", content)
+				case "removed":
+					fmt.Fprintf(out, "\033[31m%s\033[0m\n", content)
+				case "fileheader":
+					fmt.Fprintf(out, "\033[1m%s\033[0m\n", content)
+				default:
+					fmt.Fprintf(out, "%s\n", content)
+				}
+			}
+			fmt.Fprint(out, "────────────────────────────────────────\n")
+			if result.WhiteNoiseAdded {
+				fmt.Fprint(out, "✅ Added WhiteNoise for static file serving\n")
+			}
+		}
+
 		a.DeployPlan = &result.UpdatedPlan
 		fmt.Fprint(out, "✅ Python environment prepared successfully!\n")
 

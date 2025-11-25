@@ -26,6 +26,11 @@ type PythonConfigResult struct {
 	FrameworkEnvVars       map[string]string `json:"frameworkEnvVars,omitempty"`
 	FrameworkRunCommand    string            `json:"frameworkRunCommand,omitempty"`
 	ServerAdded            bool              `json:"serverAdded"`
+
+	// Static files configuration
+	StaticFilesConfigured bool       `json:"staticFilesConfigured"`
+	StaticFilesDiff       []DiffLine `json:"staticFilesDiff,omitempty"`
+	WhiteNoiseAdded       bool       `json:"whiteNoiseAdded"`
 }
 
 // generatePythonVersion creates .python-version file for Python projects
@@ -304,6 +309,112 @@ func (a *Activities) setupPythonServer(ctx context.Context, plan DeployPlan) (Py
 		slog.Info("No framework-specific server setup needed")
 		return PythonConfigResult{}, nil
 	}
+}
+
+// configureDjangoStaticFiles sets up WhiteNoise and collectstatic for Django projects
+func (a *Activities) configureDjangoStaticFiles(ctx context.Context, plan DeployPlan) (PythonConfigResult, error) {
+	result := PythonConfigResult{}
+
+	// Check if this is a Django project
+	framework := findPythonFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
+	if framework != "django" {
+		// Not a Django project, skip
+		return result, nil
+	}
+
+	a.uiWriter.SendStatus("django_static", "Configuring static files for Django...")
+
+	handler := &DjangoHandler{}
+
+	// Find Django settings file
+	settingsPath, _, err := handler.findDjangoSettings(plan.Source)
+	if err != nil {
+		a.uiWriter.SendStatusComplete("django_static", "⚠️  Could not find Django settings.py")
+		slog.Warn("Failed to find Django settings for static files configuration", "error", err)
+		return result, nil
+	}
+
+	// Scan dependencies
+	dependencies, err := scanPythonDependencies(plan.Source)
+	if err != nil {
+		slog.Warn("Failed to extract dependencies for static files check", "error", err)
+		dependencies = []analyzer.Dependency{}
+	}
+
+	// Detect current static files setup
+	staticConfig, err := handler.detectStaticFilesSetup(plan.Source, settingsPath, dependencies)
+	if err != nil {
+		slog.Warn("Failed to detect static files setup", "error", err)
+		a.uiWriter.SendStatusComplete("django_static", "⚠️  Could not detect static files configuration")
+		return result, nil
+	}
+
+	slog.Info("Detected static files configuration",
+		"hasStaticRoot", staticConfig.HasStaticRoot,
+		"hasWhiteNoise", staticConfig.HasWhiteNoise,
+		"hasStaticFiles", staticConfig.HasStaticFilesDir,
+		"needsConfig", staticConfig.NeedsConfiguration)
+
+	// If no static files or already configured, skip
+	if !staticConfig.HasStaticFilesDir {
+		a.uiWriter.SendStatusComplete("django_static", "✅ No static files detected")
+		slog.Info("No static files directory found, skipping static configuration")
+		return result, nil
+	}
+
+	if !staticConfig.NeedsConfiguration {
+		a.uiWriter.SendStatusComplete("django_static", "✅ Static files already configured")
+		slog.Info("Static files already configured with WhiteNoise and STATIC_ROOT")
+		return result, nil
+	}
+
+	// Add WhiteNoise to requirements.txt if needed
+	if !staticConfig.HasWhiteNoise {
+		err := handler.addWhiteNoiseDependency(plan.Source)
+		if err != nil {
+			slog.Warn("Failed to add WhiteNoise dependency", "error", err)
+		} else {
+			result.WhiteNoiseAdded = true
+			slog.Info("Added WhiteNoise to requirements.txt")
+		}
+	}
+
+	// Update settings.py with STATIC_ROOT and WhiteNoise middleware
+	originalContent, updatedContent, err := handler.configureStaticFiles(plan.Source, settingsPath)
+	if err != nil {
+		a.uiWriter.SendStatusComplete("django_static", "⚠️  Failed to configure static files")
+		slog.Warn("Failed to update settings.py for static files", "error", err)
+		return result, nil
+	}
+
+	// Create backup
+	if err := handler.createBackup(plan.Source, settingsPath, originalContent); err != nil {
+		slog.Warn("Failed to create backup of settings.py", "error", err)
+	}
+
+	// Write updated settings
+	if err := os.WriteFile(settingsPath, updatedContent, 0644); err != nil {
+		a.uiWriter.SendStatusComplete("django_static", "❌ Failed to write updated settings")
+		return result, errors.Errorf("failed to write updated settings: %w", err)
+	}
+
+	// Generate diff for UI display
+	diff, err := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
+		A:        difflib.SplitLines(string(originalContent)),
+		B:        difflib.SplitLines(string(updatedContent)),
+		FromFile: filepath.Base(settingsPath),
+		ToFile:   filepath.Base(settingsPath),
+		Context:  3,
+	})
+	if err == nil && diff != "" {
+		result.StaticFilesConfigured = true
+		result.StaticFilesDiff = parseDiffString(diff)
+	}
+
+	a.uiWriter.SendStatusComplete("django_static", "✅ Configured WhiteNoise for static files")
+	slog.Info("Successfully configured Django static files with WhiteNoise")
+
+	return result, nil
 }
 
 // scanPythonDependencies quickly scans requirements.txt to check for installed packages

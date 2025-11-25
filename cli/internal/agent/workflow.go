@@ -82,6 +82,9 @@ type SetupPythonProjectResult struct {
 	FrameworkEnvVars       map[string]string `json:"frameworkEnvVars,omitempty"`
 	FrameworkRunCommand    string            `json:"frameworkRunCommand,omitempty"`
 	ServerAdded            bool              `json:"serverAdded"`
+	StaticFilesConfigured  bool              `json:"staticFilesConfigured"`
+	StaticFilesDiff        []DiffLine        `json:"staticFilesDiff,omitempty"`
+	WhiteNoiseAdded        bool              `json:"whiteNoiseAdded"`
 	Error                  deployError       `json:"error"`
 	UpdatedPlan            DeployPlan        `json:"updatedPlan"`
 }
@@ -581,6 +584,29 @@ func (w *Workflows) setupPythonProject(ctx workflow.Context, input DeployPlan) (
 			// This overrides any bad suggestions like "python manage.py runserver"
 			input.Spec.StartCommand = serverConfig.FrameworkRunCommand
 			slog.Info("Updated StartCommand to production server", "command", serverConfig.FrameworkRunCommand)
+		}
+	}
+
+	// Step 2c: Configure static files for Python frameworks (Django)
+	slog.Info("Configuring static files for Python framework")
+	staticConfig, err := workflow.ExecuteActivity[PythonConfigResult](ctx, ActivityOpts, AgentConfigurePythonStaticFiles, input).Get(ctx)
+	if err != nil {
+		slog.Error("Python static files setup failed", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     SetupPythonProjectWorkflowName,
+			"activity":     AgentConfigurePythonStaticFiles,
+			"component":    "python_config",
+			"platform":     input.Platform.String(),
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
+	} else {
+		// Update result with static files configuration
+		if staticConfig.StaticFilesConfigured {
+			result.StaticFilesConfigured = staticConfig.StaticFilesConfigured
+			result.StaticFilesDiff = staticConfig.StaticFilesDiff
+			result.WhiteNoiseAdded = staticConfig.WhiteNoiseAdded
+			slog.Info("Static files configured", "whiteNoiseAdded", staticConfig.WhiteNoiseAdded)
 		}
 	}
 

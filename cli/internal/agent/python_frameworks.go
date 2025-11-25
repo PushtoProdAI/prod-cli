@@ -407,11 +407,15 @@ func (h *DjangoHandler) detectDjangoServer(projectPath string, dependencies []an
 	}
 
 	// Determine server type if not already set by Channels detection
+	// Prefer WSGI (gunicorn) by default since most Django apps are synchronous
+	// Only use ASGI (uvicorn) if Channels is installed (already checked above)
 	if config.ServerType == "" {
-		if asgiPath != "" {
-			config.ServerType = ServerTypeASGI
-		} else if wsgiPath != "" {
+		if wsgiPath != "" {
 			config.ServerType = ServerTypeWSGI
+		} else if asgiPath != "" {
+			// Only fallback to ASGI if wsgi.py doesn't exist
+			// This handles the rare case of ASGI-only projects
+			config.ServerType = ServerTypeASGI
 		} else {
 			// Default to WSGI if neither found (Django creates wsgi.py by default)
 			config.ServerType = ServerTypeWSGI
@@ -496,5 +500,161 @@ func (h *DjangoHandler) addServerDependency(projectPath string, serverType Serve
 	// TODO: Add support for other dependency management systems (Poetry, Pipenv, etc.)
 	// For now, we'll just log a warning
 	slog.Warn("Could not automatically add server dependency - no requirements.txt found. Please add manually.", "server", requiredServer)
+	return nil
+}
+
+// StaticFilesConfig contains the static file configuration status
+type StaticFilesConfig struct {
+	HasStaticRoot      bool
+	HasWhiteNoise      bool
+	HasStaticFilesDir  bool
+	NeedsConfiguration bool
+}
+
+// detectStaticFilesSetup checks if Django project has static files configured
+func (h *DjangoHandler) detectStaticFilesSetup(projectPath string, settingsPath string, dependencies []analyzer.Dependency) (*StaticFilesConfig, error) {
+	config := &StaticFilesConfig{}
+
+	// Check if WhiteNoise is in dependencies
+	for _, dep := range dependencies {
+		if dep.Name == "whitenoise" {
+			config.HasWhiteNoise = true
+			break
+		}
+	}
+
+	// Check if STATIC_ROOT is configured in settings.py
+	if settingsPath != "" {
+		content, err := os.ReadFile(settingsPath)
+		if err == nil {
+			contentStr := string(content)
+			config.HasStaticRoot = strings.Contains(contentStr, "STATIC_ROOT")
+		}
+	}
+
+	// Check if there are any static files in the project
+	err := filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip common non-project directories
+		if info.IsDir() {
+			dirName := filepath.Base(path)
+			if dirName == "venv" || dirName == ".venv" || dirName == "env" ||
+				dirName == ".env" || dirName == "__pycache__" || dirName == ".git" {
+				return filepath.SkipDir
+			}
+			// Check if this is a "static" directory
+			if dirName == "static" {
+				config.HasStaticFilesDir = true
+				return filepath.SkipDir // Found one, no need to keep looking
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, errors.Errorf("failed to walk project directory: %w", err)
+	}
+
+	// Determine if configuration is needed
+	// We need configuration if:
+	// 1. Project has static files
+	// 2. And either WhiteNoise is not installed OR STATIC_ROOT is not configured
+	config.NeedsConfiguration = config.HasStaticFilesDir && (!config.HasWhiteNoise || !config.HasStaticRoot)
+
+	return config, nil
+}
+
+// configureStaticFiles adds WhiteNoise and STATIC_ROOT configuration to Django settings
+func (h *DjangoHandler) configureStaticFiles(projectPath string, settingsPath string) ([]byte, []byte, error) {
+	originalContent, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return nil, nil, errors.Errorf("failed to read settings file: %w", err)
+	}
+
+	contentStr := string(originalContent)
+
+	// Add STATIC_ROOT if not present
+	if !strings.Contains(contentStr, "STATIC_ROOT") {
+		// Add STATIC_ROOT after STATIC_URL
+		staticURLRe := regexp.MustCompile(`(?m)^STATIC_URL\s*=.*$`)
+		if staticURLRe.MatchString(contentStr) {
+			contentStr = staticURLRe.ReplaceAllStringFunc(contentStr, func(match string) string {
+				return match + "\n\n# Static files will be collected here for production\nSTATIC_ROOT = BASE_DIR / 'staticfiles'"
+			})
+		} else {
+			// If STATIC_URL doesn't exist, add both at the end
+			contentStr += "\n\n# Static files configuration for production\nSTATIC_URL = 'static/'\nSTATIC_ROOT = BASE_DIR / 'staticfiles'\n"
+		}
+	}
+
+	// Add WhiteNoise to MIDDLEWARE if not present
+	if !strings.Contains(contentStr, "whitenoise") {
+		middlewareRe := regexp.MustCompile(`(?s)(MIDDLEWARE\s*=\s*\[)(.*?)(\])`)
+		if middlewareRe.MatchString(contentStr) {
+			contentStr = middlewareRe.ReplaceAllStringFunc(contentStr, func(match string) string {
+				// Find SecurityMiddleware and add WhiteNoise right after it
+				if strings.Contains(match, "django.middleware.security.SecurityMiddleware") {
+					return strings.Replace(match,
+						"'django.middleware.security.SecurityMiddleware',",
+						"'django.middleware.security.SecurityMiddleware',\n    'whitenoise.middleware.WhiteNoiseMiddleware',",
+						1)
+				}
+				// If SecurityMiddleware not found, add at the beginning
+				parts := middlewareRe.FindStringSubmatch(match)
+				if len(parts) >= 3 {
+					return parts[1] + "\n    'whitenoise.middleware.WhiteNoiseMiddleware'," + parts[2] + parts[3]
+				}
+				return match
+			})
+		}
+	}
+
+	// Add WhiteNoise storage configuration if not present
+	if !strings.Contains(contentStr, "STATICFILES_STORAGE") && !strings.Contains(contentStr, "STORAGES") {
+		// Add after STATIC_ROOT
+		staticRootRe := regexp.MustCompile(`(?m)^STATIC_ROOT\s*=.*$`)
+		if staticRootRe.MatchString(contentStr) {
+			contentStr = staticRootRe.ReplaceAllStringFunc(contentStr, func(match string) string {
+				return match + "\nSTATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'"
+			})
+		}
+	}
+
+	return originalContent, []byte(contentStr), nil
+}
+
+// addWhiteNoiseDependency adds whitenoise to requirements.txt if not present
+func (h *DjangoHandler) addWhiteNoiseDependency(projectPath string) error {
+	requirementsPath := filepath.Join(projectPath, "requirements.txt")
+	if _, err := os.Stat(requirementsPath); err == nil {
+		content, err := os.ReadFile(requirementsPath)
+		if err != nil {
+			return errors.Errorf("failed to read requirements.txt: %w", err)
+		}
+
+		// Check if whitenoise is already in requirements
+		if strings.Contains(string(content), "whitenoise") {
+			return nil // Already present
+		}
+
+		// Add whitenoise
+		newContent := string(content)
+		if !strings.HasSuffix(newContent, "\n") {
+			newContent += "\n"
+		}
+		newContent += "whitenoise\n"
+
+		if err := os.WriteFile(requirementsPath, []byte(newContent), 0644); err != nil {
+			return errors.Errorf("failed to write requirements.txt: %w", err)
+		}
+
+		slog.Info("Added whitenoise to requirements.txt")
+		return nil
+	}
+
+	slog.Warn("Could not add whitenoise - no requirements.txt found. Please add manually.")
 	return nil
 }

@@ -58,6 +58,11 @@ COPY . .
 COPY . .
 {{- end }}
 
+# Collect static files for Django if needed
+{{- if .IsDjango }}
+RUN python manage.py collectstatic --noinput --clear || echo "No static files to collect"
+{{- end }}
+
 # Set environment variables for production deployment
 ENV HOST=0.0.0.0
 ENV PORT=8000
