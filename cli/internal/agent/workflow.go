@@ -60,33 +60,21 @@ type DiffLine struct {
 	Content string `json:"content"` // the actual line content
 }
 
-// SetupJavaScriptProjectResult contains the results of setting up a JavaScript project
-type SetupJavaScriptProjectResult struct {
-	PackageLockCreated bool        `json:"packageLockCreated"`
-	ConfigUpdated      bool        `json:"configUpdated"`
-	ConfigDiff         []DiffLine  `json:"configDiff,omitempty"`
-	ConfigPath         string      `json:"configPath,omitempty"`
-	PackageJsonUpdated bool        `json:"packageJsonUpdated"`
-	PackageJsonDiff    []DiffLine  `json:"packageJsonDiff,omitempty"`
-	Error              deployError `json:"error"`
-	UpdatedPlan        DeployPlan  `json:"updatedPlan"`
+// ConfigChange represents a single configuration file modification
+type ConfigChange struct {
+	Name      string     `json:"name"`      // Display name (e.g., "Package.json", ".python-version", "svelte.config.js")
+	Path      string     `json:"path"`      // File path for reference
+	Diff      []DiffLine `json:"diff"`      // The actual diff to display
+	Icon      string     `json:"icon"`      // Optional emoji/icon for display (e.g., "📦", "🐍", "⚙️")
+	ExtraInfo string     `json:"extraInfo"` // Additional context (e.g., "Added WhiteNoise for static files")
 }
 
-// SetupPythonProjectResult contains the results of setting up a Python project
-type SetupPythonProjectResult struct {
-	PythonVersionCreated   bool              `json:"pythonVersionCreated"`
-	PythonVersionDiff      []DiffLine        `json:"pythonVersionDiff,omitempty"`
-	FrameworkConfigUpdated bool              `json:"frameworkConfigUpdated"`
-	FrameworkConfigDiff    []DiffLine        `json:"frameworkConfigDiff,omitempty"`
-	FrameworkConfigPath    string            `json:"frameworkConfigPath,omitempty"`
-	FrameworkEnvVars       map[string]string `json:"frameworkEnvVars,omitempty"`
-	FrameworkRunCommand    string            `json:"frameworkRunCommand,omitempty"`
-	ServerAdded            bool              `json:"serverAdded"`
-	StaticFilesConfigured  bool              `json:"staticFilesConfigured"`
-	StaticFilesDiff        []DiffLine        `json:"staticFilesDiff,omitempty"`
-	WhiteNoiseAdded        bool              `json:"whiteNoiseAdded"`
-	Error                  deployError       `json:"error"`
-	UpdatedPlan            DeployPlan        `json:"updatedPlan"`
+// SetupProjectResult is a language-agnostic result for project setup workflows
+type SetupProjectResult struct {
+	ConfigChanges []ConfigChange    `json:"configChanges,omitempty"` // All configuration files that were modified
+	EnvVars       map[string]string `json:"envVars,omitempty"`       // Environment variables to be set (framework-specific)
+	Error         deployError       `json:"error"`                   // Any errors encountered
+	UpdatedPlan   DeployPlan        `json:"updatedPlan"`             // The updated deployment plan
 }
 
 var _ workflowext.Registerer = (*Workflows)(nil)
@@ -381,11 +369,11 @@ func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPla
 	return envVars, nil
 }
 
-func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPlan) (SetupJavaScriptProjectResult, error) {
+func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPlan) (SetupProjectResult, error) {
 	slog.Info("setupJavaScriptProject workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
-	result := SetupJavaScriptProjectResult{}
+	result := SetupProjectResult{}
 
 	// Step 1: Update JavaScript project configuration (Svelte config + package.json)
 	slog.Info("Updating JavaScript project configuration")
@@ -413,24 +401,31 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 				"operation":    "summarize_original_error",
 			})
 			slog.Error("Failed to summarize JavaScript config error", "error", e1)
-			return SetupJavaScriptProjectResult{Error: deployError{Summary: err.Error()}}, nil
+			return SetupProjectResult{Error: deployError{Summary: err.Error()}}, nil
 		}
-		return SetupJavaScriptProjectResult{Error: summary}, nil
+		return SetupProjectResult{Error: summary}, nil
 	}
 
-	// Update result with configuration changes
+	// Add configuration changes to result
 	if len(jsConfig.ConfigDiff) > 0 {
-		result.ConfigUpdated = true
-		result.ConfigDiff = jsConfig.ConfigDiff
-		result.ConfigPath = jsConfig.ConfigPath
+		result.ConfigChanges = append(result.ConfigChanges, ConfigChange{
+			Name: jsConfig.ConfigPath,
+			Path: jsConfig.ConfigPath,
+			Diff: jsConfig.ConfigDiff,
+			Icon: "⚙️",
+		})
 		slog.Info("JavaScript configuration updated")
 	} else {
 		slog.Info("No JavaScript configuration found or no changes needed")
 	}
 
-	if jsConfig.PackageJsonUpdated {
-		result.PackageJsonUpdated = true
-		result.PackageJsonDiff = jsConfig.PackageJsonDiff
+	if jsConfig.PackageJsonUpdated && len(jsConfig.PackageJsonDiff) > 0 {
+		result.ConfigChanges = append(result.ConfigChanges, ConfigChange{
+			Name: "Package.json",
+			Path: "package.json",
+			Diff: jsConfig.PackageJsonDiff,
+			Icon: "📦",
+		})
 		slog.Info("Package.json configuration updated")
 	} else {
 		slog.Info("No package.json changes needed")
@@ -438,7 +433,7 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 
 	// Step 2: Create/update package-lock.json (after config changes)
 	slog.Info("Creating/updating package-lock.json")
-	configUpdated := result.ConfigUpdated || result.PackageJsonUpdated
+	configUpdated := len(jsConfig.ConfigDiff) > 0 || jsConfig.PackageJsonUpdated
 	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentCreatePackageLock, input, configUpdated).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to create package-lock.json", "error", err)
@@ -463,11 +458,10 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 				"operation":    "summarize_original_error",
 			})
 			slog.Error("Failed to summarize package-lock error", "error", e1)
-			return SetupJavaScriptProjectResult{Error: deployError{Summary: err.Error()}}, nil
+			return SetupProjectResult{Error: deployError{Summary: err.Error()}}, nil
 		}
-		return SetupJavaScriptProjectResult{Error: summary}, nil
+		return SetupProjectResult{Error: summary}, nil
 	}
-	result.PackageLockCreated = true
 	slog.Info("Package-lock.json handling completed")
 
 	plan, err := workflow.ExecuteActivity[DeployPlan](ctx, ActivityOpts, AgentPrepareDeployment, input).Get(ctx)
@@ -487,11 +481,11 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 	return result, nil
 }
 
-func (w *Workflows) setupPythonProject(ctx workflow.Context, input DeployPlan) (SetupPythonProjectResult, error) {
+func (w *Workflows) setupPythonProject(ctx workflow.Context, input DeployPlan) (SetupProjectResult, error) {
 	slog.Info("setupPythonProject workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
-	result := SetupPythonProjectResult{}
+	result := SetupProjectResult{}
 
 	// Step 1: Generate .python-version file
 	slog.Info("Generating .python-version file")
@@ -519,15 +513,19 @@ func (w *Workflows) setupPythonProject(ctx workflow.Context, input DeployPlan) (
 				"operation":    "summarize_original_error",
 			})
 			slog.Error("Failed to summarize Python version error", "error", e1)
-			return SetupPythonProjectResult{Error: deployError{Summary: err.Error()}}, nil
+			return SetupProjectResult{Error: deployError{Summary: err.Error()}}, nil
 		}
-		return SetupPythonProjectResult{Error: summary}, nil
+		return SetupProjectResult{Error: summary}, nil
 	}
 
-	// Update result with version file changes
-	if pyConfig.PythonVersionCreated {
-		result.PythonVersionCreated = true
-		result.PythonVersionDiff = pyConfig.PythonVersionDiff
+	// Add Python version changes to result
+	if pyConfig.PythonVersionCreated && len(pyConfig.PythonVersionDiff) > 0 {
+		result.ConfigChanges = append(result.ConfigChanges, ConfigChange{
+			Name: ".python-version",
+			Path: ".python-version",
+			Diff: pyConfig.PythonVersionDiff,
+			Icon: "🐍",
+		})
 		slog.Info("Python version file created/updated")
 	} else {
 		slog.Info("No Python version file changes needed")
@@ -547,15 +545,18 @@ func (w *Workflows) setupPythonProject(ctx workflow.Context, input DeployPlan) (
 			"language":     input.Spec.Language,
 		})
 	} else {
-		// Update result with framework configuration changes
-		if frameworkConfig.FrameworkConfigUpdated {
-			result.FrameworkConfigUpdated = frameworkConfig.FrameworkConfigUpdated
-			result.FrameworkConfigDiff = frameworkConfig.FrameworkConfigDiff
-			result.FrameworkConfigPath = frameworkConfig.FrameworkConfigPath
+		// Add framework configuration changes to result
+		if frameworkConfig.FrameworkConfigUpdated && len(frameworkConfig.FrameworkConfigDiff) > 0 {
+			result.ConfigChanges = append(result.ConfigChanges, ConfigChange{
+				Name: fmt.Sprintf("Framework %s", frameworkConfig.FrameworkConfigPath),
+				Path: frameworkConfig.FrameworkConfigPath,
+				Diff: frameworkConfig.FrameworkConfigDiff,
+				Icon: "⚙️",
+			})
 			slog.Info("Framework configuration updated", "path", frameworkConfig.FrameworkConfigPath)
 		}
 		if len(frameworkConfig.FrameworkEnvVars) > 0 {
-			result.FrameworkEnvVars = frameworkConfig.FrameworkEnvVars
+			result.EnvVars = frameworkConfig.FrameworkEnvVars
 			slog.Info("Framework environment variables prepared", "count", len(frameworkConfig.FrameworkEnvVars))
 		}
 	}
@@ -576,8 +577,6 @@ func (w *Workflows) setupPythonProject(ctx workflow.Context, input DeployPlan) (
 	} else {
 		// Update result with server configuration
 		if serverConfig.FrameworkRunCommand != "" {
-			result.FrameworkRunCommand = serverConfig.FrameworkRunCommand
-			result.ServerAdded = serverConfig.ServerAdded
 			slog.Info("Python server configured", "command", serverConfig.FrameworkRunCommand, "serverAdded", serverConfig.ServerAdded)
 
 			// Always update the plan's StartCommand with the production-ready command
@@ -601,11 +600,19 @@ func (w *Workflows) setupPythonProject(ctx workflow.Context, input DeployPlan) (
 			"language":     input.Spec.Language,
 		})
 	} else {
-		// Update result with static files configuration
-		if staticConfig.StaticFilesConfigured {
-			result.StaticFilesConfigured = staticConfig.StaticFilesConfigured
-			result.StaticFilesDiff = staticConfig.StaticFilesDiff
-			result.WhiteNoiseAdded = staticConfig.WhiteNoiseAdded
+		// Add static files configuration changes to result
+		if staticConfig.StaticFilesConfigured && len(staticConfig.StaticFilesDiff) > 0 {
+			extraInfo := ""
+			if staticConfig.WhiteNoiseAdded {
+				extraInfo = "✅ Added WhiteNoise for static file serving"
+			}
+			result.ConfigChanges = append(result.ConfigChanges, ConfigChange{
+				Name:      "Static files configuration",
+				Path:      "",
+				Diff:      staticConfig.StaticFilesDiff,
+				Icon:      "📦",
+				ExtraInfo: extraInfo,
+			})
 			slog.Info("Static files configured", "whiteNoiseAdded", staticConfig.WhiteNoiseAdded)
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cschleiden/go-workflows/client"
+	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/auth"
@@ -758,258 +759,158 @@ func (a *Agent) prepareProject(ctx context.Context, input string, out io.Writer)
 	}
 }
 
-func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	if a.DeployPlan.Spec.Language == "node" {
-		fmt.Fprintf(out, "🔧 Preparing JavaScript environment...\n")
-		wf, err := Workflows{}.SetupJavaScriptProject(ctx, a.wfClient, *a.DeployPlan)
-		if err != nil {
-			slog.Error("Workflow execution result", "error", err)
-			prod_error.CaptureErrorWithContext(err, map[string]any{
-				"workflow":     "setup_javascript_project",
-				"component":    "agent",
-				"platform":     a.DeployPlan.Platform,
-				"project_type": "javascript",
-			})
-			fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
-			return a.checkPrerequisites, nil
+// displayDiffLines is a helper function to display diff lines with color formatting
+func displayDiffLines(out io.Writer, diffLines []DiffLine) {
+	fmt.Fprint(out, "────────────────────────────────────────\n")
+	for _, line := range diffLines {
+		content := unescapeJSONUnicode(line.Content)
+		switch line.Type {
+		case "header":
+			fmt.Fprintf(out, "\033[36m%s\033[0m\n", content)
+		case "added":
+			fmt.Fprintf(out, "\033[32m%s\033[0m\n", content)
+		case "removed":
+			fmt.Fprintf(out, "\033[31m%s\033[0m\n", content)
+		case "fileheader":
+			fmt.Fprintf(out, "\033[1m%s\033[0m\n", content)
+		default:
+			fmt.Fprintf(out, "%s\n", content)
 		}
+	}
+	fmt.Fprint(out, "────────────────────────────────────────\n")
+}
 
-		result, err := client.GetWorkflowResult[SetupJavaScriptProjectResult](ctx, a.wfClient, wf, 2*time.Minute)
-		if err != nil {
-			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
-			prod_error.CaptureErrorWithContext(err, map[string]any{
-				"workflow":     "setup_javascript_project",
-				"component":    "agent",
-				"operation":    "get_workflow_result",
-				"platform":     a.DeployPlan.Platform,
-				"project_name": a.DeployPlan.Spec.Name,
-				"language":     a.DeployPlan.Spec.Language,
-			})
-			return a.confirmWithPrompt(ctx, "", out)
-		}
-		if result.Error.Summary != "" {
-			if tuiWriter, ok := out.(TUIWriter); ok {
-				if result.Error.IsWarning {
-					tuiWriter.SendWarning(result.Error.Summary, result.Error.Remediations)
-				} else {
-					tuiWriter.SendError(result.Error.Summary, result.Error.Remediations)
-				}
-			} else {
-				if result.Error.IsWarning {
-					fmt.Fprintf(out, "⚠️  %s\n", result.Error.Summary)
-				} else {
-					fmt.Fprintf(out, "❌ %s\n", result.Error.Summary)
-				}
-				if len(result.Error.Remediations) > 0 {
-					fmt.Fprint(out, "Here are some suggestions to fix the issues:\n")
-					for _, r := range result.Error.Remediations {
-						fmt.Fprintf(out, " • %s\n", r.Description)
-						if r.CliCommand != "" {
-							fmt.Fprintf(out, "   Run: %s\n", r.CliCommand)
-						}
-					}
-				}
-				fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
-			}
-			return a.confirmWithPrompt(ctx, "", out)
-		}
-		// Display config diff if available
-		if len(result.ConfigDiff) > 0 {
-			fmt.Fprintf(out, "\n⚙️ %s configuration changes:\n", result.ConfigPath)
-			fmt.Fprint(out, "────────────────────────────────────────\n")
-
-			for _, line := range result.ConfigDiff {
-				content := unescapeJSONUnicode(line.Content)
-				switch line.Type {
-				case "header":
-					fmt.Fprintf(out, "\033[36m%s\033[0m\n", content)
-				case "added":
-					fmt.Fprintf(out, "\033[32m%s\033[0m\n", content)
-				case "removed":
-					fmt.Fprintf(out, "\033[31m%s\033[0m\n", content)
-				case "fileheader":
-					fmt.Fprintf(out, "\033[1m%s\033[0m\n", content)
-				default:
-					fmt.Fprintf(out, "%s\n", content)
-				}
-			}
-			fmt.Fprint(out, "────────────────────────────────────────\n")
-		}
-
-		// Display package.json diff if available
-		if len(result.PackageJsonDiff) > 0 {
-			fmt.Fprint(out, "\n📦 Package.json changes:\n")
-			fmt.Fprint(out, "────────────────────────────────────────\n")
-
-			for _, line := range result.PackageJsonDiff {
-				content := unescapeJSONUnicode(line.Content)
-				switch line.Type {
-				case "header":
-					fmt.Fprintf(out, "\033[36m%s\033[0m\n", content)
-				case "added":
-					fmt.Fprintf(out, "\033[32m%s\033[0m\n", content)
-				case "removed":
-					fmt.Fprintf(out, "\033[31m%s\033[0m\n", content)
-				case "fileheader":
-					fmt.Fprintf(out, "\033[1m%s\033[0m\n", content)
-				default:
-					fmt.Fprintf(out, "%s\n", content)
-				}
-			}
-			fmt.Fprint(out, "────────────────────────────────────────\n")
-		}
-		a.DeployPlan = &result.UpdatedPlan
-		fmt.Fprint(out, "✅ JavaScript environment prepared successfully!\n")
-
+// handleSetupError handles errors from setup workflows in a standardized way
+func handleSetupError(ctx context.Context, out io.Writer, err deployError, confirmFn func(context.Context, string, io.Writer) (stateFn, error)) (stateFn, error) {
+	if err.Summary == "" {
+		return nil, nil
 	}
 
-	// After PrepareJS completion, proceed with deployment
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		if err.IsWarning {
+			tuiWriter.SendWarning(err.Summary, err.Remediations)
+		} else {
+			tuiWriter.SendError(err.Summary, err.Remediations)
+		}
+	} else {
+		if err.IsWarning {
+			fmt.Fprintf(out, "⚠️  %s\n", err.Summary)
+		} else {
+			fmt.Fprintf(out, "❌ %s\n", err.Summary)
+		}
+		if len(err.Remediations) > 0 {
+			fmt.Fprint(out, "Here are some suggestions to fix the issues:\n")
+			for _, r := range err.Remediations {
+				fmt.Fprintf(out, " • %s\n", r.Description)
+				if r.CliCommand != "" {
+					fmt.Fprintf(out, "   Run: %s\n", r.CliCommand)
+				}
+			}
+		}
+		fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
+	}
+	return confirmFn(ctx, "", out)
+}
+
+// prepareLanguage is a generic function that handles environment preparation for any language
+func (a *Agent) prepareLanguage(
+	ctx context.Context,
+	input string,
+	out io.Writer,
+	languageCheck string,
+	preparingMsg string,
+	successMsg string,
+	workflowName string,
+	projectType string,
+	workflowFn func(context.Context, *client.Client, DeployPlan) (*workflow.Instance, error),
+) (stateFn, error) {
+	if a.DeployPlan.Spec.Language != languageCheck {
+		return a.deploy(ctx, input, out)
+	}
+
+	fmt.Fprintf(out, "%s\n", preparingMsg)
+	wf, err := workflowFn(ctx, a.wfClient, *a.DeployPlan)
+	if err != nil {
+		slog.Error("Workflow execution result", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     workflowName,
+			"component":    "agent",
+			"platform":     a.DeployPlan.Platform,
+			"project_type": projectType,
+		})
+		fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
+		return a.checkPrerequisites, nil
+	}
+
+	result, err := client.GetWorkflowResult[SetupProjectResult](ctx, a.wfClient, wf, 2*time.Minute)
+	if err != nil {
+		fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     workflowName,
+			"component":    "agent",
+			"operation":    "get_workflow_result",
+			"platform":     a.DeployPlan.Platform,
+			"project_name": a.DeployPlan.Spec.Name,
+			"language":     a.DeployPlan.Spec.Language,
+		})
+		return a.confirmWithPrompt(ctx, "", out)
+	}
+
+	if nextState, err := handleSetupError(ctx, out, result.Error, a.confirmWithPrompt); nextState != nil || err != nil {
+		return nextState, err
+	}
+
+	// Display all config changes
+	for _, change := range result.ConfigChanges {
+		if len(change.Diff) > 0 {
+			if change.Icon != "" {
+				fmt.Fprintf(out, "\n%s %s changes:\n", change.Icon, change.Name)
+			} else {
+				fmt.Fprintf(out, "\n%s changes:\n", change.Name)
+			}
+			displayDiffLines(out, change.Diff)
+			if change.ExtraInfo != "" {
+				fmt.Fprintf(out, "%s\n", change.ExtraInfo)
+			}
+		}
+	}
+
+	// Display environment variables if any
+	if len(result.EnvVars) > 0 {
+		fmt.Fprint(out, "\n🔒 Framework environment variables will be set:\n")
+		for key, value := range result.EnvVars {
+			fmt.Fprintf(out, "  • %s=%s\n", key, value)
+		}
+		fmt.Fprint(out, "\n")
+	}
+
+	a.DeployPlan = &result.UpdatedPlan
+	fmt.Fprintf(out, "%s\n", successMsg)
+
+	// After preparation completion, proceed with deployment
 	return a.deploy(ctx, input, out)
 }
 
+func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	return a.prepareLanguage(ctx, input, out,
+		"node",
+		"🔧 Preparing JavaScript environment...",
+		"✅ JavaScript environment prepared successfully!",
+		"setup_javascript_project",
+		"javascript",
+		Workflows{}.SetupJavaScriptProject,
+	)
+}
+
 func (a *Agent) preparePython(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	if a.DeployPlan.Spec.Language == "python" {
-		fmt.Fprintf(out, "🔧 Preparing Python environment...\n")
-		wf, err := Workflows{}.SetupPythonProject(ctx, a.wfClient, *a.DeployPlan)
-		if err != nil {
-			slog.Error("Workflow execution result", "error", err)
-			prod_error.CaptureErrorWithContext(err, map[string]any{
-				"workflow":     "setup_python_project",
-				"component":    "agent",
-				"platform":     a.DeployPlan.Platform,
-				"project_type": "python",
-			})
-			fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
-			return a.checkPrerequisites, nil
-		}
-
-		result, err := client.GetWorkflowResult[SetupPythonProjectResult](ctx, a.wfClient, wf, 2*time.Minute)
-		if err != nil {
-			fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
-			prod_error.CaptureErrorWithContext(err, map[string]any{
-				"workflow":     "setup_python_project",
-				"component":    "agent",
-				"operation":    "get_workflow_result",
-				"platform":     a.DeployPlan.Platform,
-				"project_name": a.DeployPlan.Spec.Name,
-				"language":     a.DeployPlan.Spec.Language,
-			})
-			return a.confirmWithPrompt(ctx, "", out)
-		}
-		if result.Error.Summary != "" {
-			if tuiWriter, ok := out.(TUIWriter); ok {
-				if result.Error.IsWarning {
-					tuiWriter.SendWarning(result.Error.Summary, result.Error.Remediations)
-				} else {
-					tuiWriter.SendError(result.Error.Summary, result.Error.Remediations)
-				}
-			} else {
-				if result.Error.IsWarning {
-					fmt.Fprintf(out, "⚠️  %s\n", result.Error.Summary)
-				} else {
-					fmt.Fprintf(out, "❌ %s\n", result.Error.Summary)
-				}
-				if len(result.Error.Remediations) > 0 {
-					fmt.Fprint(out, "Here are some suggestions to fix the issues:\n")
-					for _, r := range result.Error.Remediations {
-						fmt.Fprintf(out, " • %s\n", r.Description)
-						if r.CliCommand != "" {
-							fmt.Fprintf(out, "   Run: %s\n", r.CliCommand)
-						}
-					}
-				}
-				fmt.Fprint(out, "Once you are ready to retry, just let me know!\n")
-			}
-			return a.confirmWithPrompt(ctx, "", out)
-		}
-		// Display .python-version diff if available
-		if len(result.PythonVersionDiff) > 0 {
-			fmt.Fprint(out, "\n🐍 .python-version changes:\n")
-			fmt.Fprint(out, "────────────────────────────────────────\n")
-
-			for _, line := range result.PythonVersionDiff {
-				content := unescapeJSONUnicode(line.Content)
-				switch line.Type {
-				case "header":
-					fmt.Fprintf(out, "\033[36m%s\033[0m\n", content)
-				case "added":
-					fmt.Fprintf(out, "\033[32m%s\033[0m\n", content)
-				case "removed":
-					fmt.Fprintf(out, "\033[31m%s\033[0m\n", content)
-				case "fileheader":
-					fmt.Fprintf(out, "\033[1m%s\033[0m\n", content)
-				default:
-					fmt.Fprintf(out, "%s\n", content)
-				}
-			}
-			fmt.Fprint(out, "────────────────────────────────────────\n")
-		}
-
-		// Display framework configuration diff if available
-		if len(result.FrameworkConfigDiff) > 0 {
-			fmt.Fprintf(out, "\n⚙️  Framework %s changes:\n", result.FrameworkConfigPath)
-			fmt.Fprint(out, "────────────────────────────────────────\n")
-
-			for _, line := range result.FrameworkConfigDiff {
-				content := unescapeJSONUnicode(line.Content)
-				switch line.Type {
-				case "header":
-					fmt.Fprintf(out, "\033[36m%s\033[0m\n", content)
-				case "added":
-					fmt.Fprintf(out, "\033[32m%s\033[0m\n", content)
-				case "removed":
-					fmt.Fprintf(out, "\033[31m%s\033[0m\n", content)
-				case "fileheader":
-					fmt.Fprintf(out, "\033[1m%s\033[0m\n", content)
-				default:
-					fmt.Fprintf(out, "%s\n", content)
-				}
-			}
-			fmt.Fprint(out, "────────────────────────────────────────\n")
-		}
-
-		// Display framework environment variables if using env vars pattern
-		if len(result.FrameworkEnvVars) > 0 {
-			fmt.Fprint(out, "\n🔒 Framework environment variables will be set:\n")
-			for key, value := range result.FrameworkEnvVars {
-				fmt.Fprintf(out, "  • %s=%s\n", key, value)
-			}
-			fmt.Fprint(out, "\n")
-		}
-
-		// Display static files configuration if available
-		if len(result.StaticFilesDiff) > 0 {
-			fmt.Fprint(out, "\n📦 Static files configuration changes:\n")
-			fmt.Fprint(out, "────────────────────────────────────────\n")
-
-			for _, line := range result.StaticFilesDiff {
-				content := unescapeJSONUnicode(line.Content)
-				switch line.Type {
-				case "header":
-					fmt.Fprintf(out, "\033[36m%s\033[0m\n", content)
-				case "added":
-					fmt.Fprintf(out, "\033[32m%s\033[0m\n", content)
-				case "removed":
-					fmt.Fprintf(out, "\033[31m%s\033[0m\n", content)
-				case "fileheader":
-					fmt.Fprintf(out, "\033[1m%s\033[0m\n", content)
-				default:
-					fmt.Fprintf(out, "%s\n", content)
-				}
-			}
-			fmt.Fprint(out, "────────────────────────────────────────\n")
-			if result.WhiteNoiseAdded {
-				fmt.Fprint(out, "✅ Added WhiteNoise for static file serving\n")
-			}
-		}
-
-		a.DeployPlan = &result.UpdatedPlan
-		fmt.Fprint(out, "✅ Python environment prepared successfully!\n")
-
-	}
-
-	// After PreparePython completion, proceed with deployment
-	return a.deploy(ctx, input, out)
+	return a.prepareLanguage(ctx, input, out,
+		"python",
+		"🔧 Preparing Python environment...",
+		"✅ Python environment prepared successfully!",
+		"setup_python_project",
+		"python",
+		Workflows{}.SetupPythonProject,
+	)
 }
 
 func (a *Agent) deploy(ctx context.Context, input string, out io.Writer) (stateFn, error) {
