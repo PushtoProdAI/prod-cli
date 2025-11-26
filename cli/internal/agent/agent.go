@@ -94,43 +94,6 @@ type DeployPlan struct {
 	ExistingProjectInfo ExistingProjectInfo
 }
 
-type deployResult struct {
-	Url   string
-	Error deployError
-}
-
-type deployError struct {
-	Summary      string
-	Remediations []Remediation
-	IsWarning    bool
-}
-
-type Remediation struct {
-	Description string
-	CliCommand  string
-}
-
-//go:generate stringer -type=Platform,Action -output=types_string.go
-type Platform int
-
-const (
-	Render Platform = iota
-	FlyIO
-	Netlify
-	Vercel
-	Heroku
-	AWS
-	UnknownPlatform
-)
-
-type Action int
-
-const (
-	Deploy Action = iota
-	Rollback
-	UnknownAction
-)
-
 type (
 	stateFn  func(ctx context.Context, input string, out io.Writer) (stateFn, error)
 	deploySM struct {

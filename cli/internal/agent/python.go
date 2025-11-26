@@ -111,22 +111,12 @@ func (a *Activities) generatePythonVersion(ctx context.Context, plan DeployPlan)
 	return result, nil
 }
 
-// findPythonFrameworkFromServiceRequirements extracts the Python framework from ServiceRequirements
-func findPythonFrameworkFromServiceRequirements(serviceRequirements []analyzer.ServiceRequirement) string {
-	for _, sr := range serviceRequirements {
-		if sr.Type == "framework" {
-			return sr.Provider // Returns "django", "flask", "fastapi", etc.
-		}
-	}
-	return ""
-}
-
 // configureDjango updates Django settings for deployment
 func (a *Activities) configureDjango(ctx context.Context, plan DeployPlan) (PythonConfigResult, error) {
 	result := PythonConfigResult{}
 
 	// Check if this is a Django project by looking at ServiceRequirements
-	framework := findPythonFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
+	framework := findFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
 	if framework != "django" {
 		// Not a Django project, skip configuration
 		a.uiWriter.SendStatus("django_config", "Skipping Django configuration (not a Django project)")
@@ -183,7 +173,7 @@ func (a *Activities) setupDjangoServer(ctx context.Context, plan DeployPlan) (Py
 	result := PythonConfigResult{}
 
 	// Check if this is a Django project
-	framework := findPythonFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
+	framework := findFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
 	if framework != "django" {
 		// Not a Django project, skip
 		return result, nil
@@ -271,7 +261,7 @@ func (a *Activities) setupDjangoServer(ctx context.Context, plan DeployPlan) (Py
 
 // configurePythonFramework is a framework-agnostic activity that dispatches to the appropriate framework handler
 func (a *Activities) configurePythonFramework(ctx context.Context, plan DeployPlan) (PythonConfigResult, error) {
-	framework := findPythonFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
+	framework := findFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
 
 	slog.Info("Configuring Python framework", "framework", framework)
 
@@ -292,7 +282,7 @@ func (a *Activities) configurePythonFramework(ctx context.Context, plan DeployPl
 
 // setupPythonServer is a framework-agnostic activity that sets up production server for Python frameworks
 func (a *Activities) setupPythonServer(ctx context.Context, plan DeployPlan) (PythonConfigResult, error) {
-	framework := findPythonFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
+	framework := findFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
 
 	slog.Info("Setting up Python server", "framework", framework)
 
@@ -316,7 +306,7 @@ func (a *Activities) configureDjangoStaticFiles(ctx context.Context, plan Deploy
 	result := PythonConfigResult{}
 
 	// Check if this is a Django project
-	framework := findPythonFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
+	framework := findFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
 	if framework != "django" {
 		// Not a Django project, skip
 		return result, nil

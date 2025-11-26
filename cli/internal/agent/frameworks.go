@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
+	"github.com/meroxa/prod/cli/internal/analyzer"
 )
 
 // FrameworkHandler defines the unified interface for all framework-specific operations
@@ -79,4 +80,30 @@ func (b *BaseFrameworkHandler) createBackup(projectPath, filename string, conten
 	}
 
 	return nil
+}
+
+// findFrameworkFromServiceRequirements extracts the runtime framework from ServiceRequirements.
+// It prioritizes actual web frameworks (django, flask, fastapi, express, nextjs, remix, svelte)
+// over WSGI/ASGI servers.
+func findFrameworkFromServiceRequirements(serviceRequirements []analyzer.ServiceRequirement) string {
+	// Prioritize actual web frameworks over WSGI servers
+	// First pass: look for Django, Flask, FastAPI, etc.
+	preferredFrameworks := []string{"django", "flask", "fastapi", "express", "nextjs", "remix", "svelte", "nuxt", "tanstack-start"}
+	for _, sr := range serviceRequirements {
+		if sr.Type == "framework" {
+			for _, preferred := range preferredFrameworks {
+				if sr.Provider == preferred {
+					return sr.Provider
+				}
+			}
+		}
+	}
+
+	// Second pass: return any framework (including wsgi, asgi, etc.)
+	for _, sr := range serviceRequirements {
+		if sr.Type == "framework" {
+			return sr.Provider
+		}
+	}
+	return ""
 }
