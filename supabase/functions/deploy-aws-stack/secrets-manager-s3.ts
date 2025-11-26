@@ -7,13 +7,18 @@ import { getStandardTags } from './tags.ts';
 
 // Configuration for Lambda function packages
 // Bucket is configured via LAMBDA_BUCKET environment variable in Supabase
-const LAMBDA_PACKAGES = {
-  databaseUrlConstructor: {
-    bucket: Deno.env.get('LAMBDA_BUCKET') || 'prod-aws-deploy',
-    key: 'lambda-functions/database-url-constructor/function.zip',
-    version: '1.0.0',
-  },
-};
+// For multi-region support, bucket names follow the pattern: {base-bucket}-{region}
+// e.g., prod-aws-deploy-us-east-1, prod-aws-deploy-us-east-2
+function getLambdaPackageConfig(region: string) {
+  const baseBucket = Deno.env.get('LAMBDA_BUCKET') || 'prod-aws-deploy';
+  return {
+    databaseUrlConstructor: {
+      bucket: `${baseBucket}-${region}`,
+      key: 'lambda-functions/database-url-constructor/function.zip',
+      version: '1.0.0',
+    },
+  };
+}
 
 /**
  * Build Secrets Manager resources for sensitive environment variables
@@ -21,7 +26,8 @@ const LAMBDA_PACKAGES = {
  * - Simple secrets for user-provided sensitive vars (API keys, etc.)
  * - Lambda-backed custom resources for DATABASE_URL construction (from S3)
  */
-export function buildSecretsManagerResources(spec: DeploymentSpec, tenantId: string, resources: any): void {
+export function buildSecretsManagerResources(spec: DeploymentSpec, tenantId: string, resources: any, region: string = 'us-east-1'): void {
+  const LAMBDA_PACKAGES = getLambdaPackageConfig(region);
   const postgresServices = spec.backingServices?.filter(s => s.type === BACKING_SERVICE_TYPE_RDS) || [];
   const redisServices = spec.backingServices?.filter(s => s.type === BACKING_SERVICE_TYPE_SERVERLESS_CACHE) || [];
   
