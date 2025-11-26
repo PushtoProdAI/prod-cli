@@ -24,6 +24,9 @@ func DetectExistingProject(ctx context.Context, client FlyioClient, projectName 
 		return nil, err
 	}
 
+	// Normalize the project name to match what would be used during deployment
+	normalizedName := NormalizeFlyAppName(projectName)
+
 	output, err := flyctlClient.executor.Execute(ctx, "flyctl", "apps", "list", "--json")
 	if err != nil {
 		return nil, errors.Errorf("failed to list apps: %w", err)
@@ -35,7 +38,7 @@ func DetectExistingProject(ctx context.Context, client FlyioClient, projectName 
 	}
 
 	for _, app := range apps {
-		if strings.EqualFold(app.Name, projectName) {
+		if strings.EqualFold(app.Name, normalizedName) {
 			hostname := app.Hostname
 			if hostname != "" && !strings.HasPrefix(hostname, "http") {
 				hostname = "https://" + hostname

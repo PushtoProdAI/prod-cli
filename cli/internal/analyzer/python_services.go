@@ -22,11 +22,13 @@ var PythonServiceMappings = map[string]ServiceRequirement{
 	"django-redis": ServiceRedis,
 
 	// Web frameworks
-	"django":   {Type: "framework", Provider: "django"},
-	"flask":    {Type: "framework", Provider: "flask"},
-	"fastapi":  {Type: "framework", Provider: "fastapi"},
-	"uvicorn":  {Type: "framework", Provider: "fastapi"},
-	"gunicorn": {Type: "framework", Provider: "wsgi"},
+	"django":  {Type: "framework", Provider: "django"},
+	"flask":   {Type: "framework", Provider: "flask"},
+	"fastapi": {Type: "framework", Provider: "fastapi"},
+
+	// WSGI/ASGI servers (not frameworks themselves)
+	"uvicorn":  {Type: "server", Provider: "uvicorn"},
+	"gunicorn": {Type: "server", Provider: "gunicorn"},
 
 	// Database ORMs
 	"sqlalchemy": {Type: "orm", Provider: "sqlalchemy"},

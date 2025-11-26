@@ -187,6 +187,15 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 	// Determine port from env vars or use default
 	port := dg.determinePort()
 
+	// Check if this is a Django project by looking for django framework in ServiceRequirements
+	isDjango := false
+	for _, service := range spec.Services {
+		if service.Type == "framework" && service.Provider == "django" {
+			isDjango = true
+			break
+		}
+	}
+
 	// Prepare template data
 	templateData := struct {
 		Name             string
@@ -198,6 +207,7 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 		HasStartupScript bool
 		OutputDir        string
 		IsStatic         bool
+		IsDjango         bool
 		EnvVars          []EnvVar
 	}{
 		Name:             spec.Name,
@@ -209,6 +219,7 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 		HasStartupScript: strings.ToLower(spec.Language) == "python",
 		OutputDir:        spec.OutputDir,
 		IsStatic:         spec.IsStatic,
+		IsDjango:         isDjango,
 		EnvVars:          dg.envVars,
 	}
 	// Execute template
