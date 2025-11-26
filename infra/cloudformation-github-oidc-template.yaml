@@ -16,9 +16,15 @@ Parameters:
   
   S3BucketName:
     Type: String
-    Description: Name of existing S3 bucket for artifact uploads
+    Description: Name of the main S3 bucket (for CF templates, etc.)
     AllowedPattern: ^[a-z0-9][a-z0-9.-]*[a-z0-9]$
     ConstraintDescription: Must be a valid S3 bucket name (lowercase letters, numbers, dots, and hyphens)
+  
+  S3BucketPrefix:
+    Type: String
+    Description: Prefix for region-specific S3 buckets (buckets will be created as {prefix}-{region})
+    AllowedPattern: ^[a-z0-9][a-z0-9.-]*[a-z0-9]$
+    ConstraintDescription: Must be a valid S3 bucket name prefix (lowercase letters, numbers, dots, and hyphens)
   
   GitHubOIDCRoleName:
     Type: String
@@ -74,13 +80,14 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          - Sid: S3ListBucket
+          # Main bucket (for CF templates, etc.)
+          - Sid: S3MainBucketAccess
             Effect: Allow
             Action:
               - s3:ListBucket
               - s3:GetBucketLocation
             Resource: !Sub 'arn:aws:s3:::${S3BucketName}'
-          - Sid: S3UploadObjects
+          - Sid: S3MainBucketObjects
             Effect: Allow
             Action:
               - s3:PutObject
@@ -88,6 +95,34 @@ Resources:
               - s3:GetObject
               - s3:DeleteObject
             Resource: !Sub 'arn:aws:s3:::${S3BucketName}/*'
+          # Region-specific buckets (for Lambda packages)
+          - Sid: S3CreateRegionalBucket
+            Effect: Allow
+            Action:
+              - s3:CreateBucket
+              - s3:PutBucketTagging
+              - s3:PutBucketPolicy
+              - s3:PutBucketPublicAccessBlock
+            Resource: !Sub 'arn:aws:s3:::${S3BucketPrefix}-*'
+          - Sid: S3RegionalBucketAccess
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: !Sub 'arn:aws:s3:::${S3BucketPrefix}-*'
+          - Sid: S3HeadBucket
+            Effect: Allow
+            Action:
+              - s3:HeadBucket
+            Resource: '*'
+          - Sid: S3RegionalBucketObjects
+            Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:PutObjectAcl
+              - s3:GetObject
+              - s3:DeleteObject
+            Resource: !Sub 'arn:aws:s3:::${S3BucketPrefix}-*/*'
       Roles:
         - !Ref GitHubActionsRole
 
@@ -105,8 +140,12 @@ Outputs:
       Name: !Sub '${AWS::StackName}-GitHubActionsRoleArn'
 
   S3BucketName:
-    Description: Name of the S3 bucket configured for artifact uploads
+    Description: Name of the main S3 bucket for artifact uploads
     Value: !Ref S3BucketName
+
+  S3BucketPrefix:
+    Description: Prefix for region-specific S3 buckets
+    Value: !Ref S3BucketPrefix
 
   WorkflowInstructions:
     Description: Instructions for using this role in GitHub Actions
@@ -123,6 +162,10 @@ Outputs:
           role-to-assume: ${GitHubActionsRole.Arn}
           aws-region: ${AWS::Region}
       
-      - name: Upload to S3
+      - name: Upload to main S3 bucket
         run: |
-          aws s3 cp ./artifacts s3://${S3BucketName}/ --recursive
+          aws s3 cp ./templates s3://${S3BucketName}/ --recursive
+      
+      - name: Upload to region-specific S3 bucket
+        run: |
+          aws s3 cp ./lambda s3://${S3BucketPrefix}-${AWS::Region}/ --recursive
