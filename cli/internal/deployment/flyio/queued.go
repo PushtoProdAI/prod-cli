@@ -291,18 +291,9 @@ func (fqd *FlyioQueuedDeployment) createAttachmentStep(service deployment.Servic
 		pgURLVar := "DATABASE_URL"
 		var pgEnvVars []deployment.EnvVar
 		for _, v := range fqd.spec.EnvVars {
-			// Check if this is a PostgreSQL-related variable by role
-			// Service field might be empty or "unknown" if LLM couldn't determine it
-			isPostgresVar := v.Service == "postgresql" ||
-				(v.Role == deployment.EnvRoleFullURI && (v.Service == "" || v.Service == "unknown")) ||
-				(v.Role == deployment.EnvRoleHostname && (v.Service == "" || v.Service == "unknown")) ||
-				(v.Role == deployment.EnvRolePort && (v.Service == "" || v.Service == "unknown")) ||
-				(v.Role == deployment.EnvRoleUsername && (v.Service == "" || v.Service == "unknown")) ||
-				(v.Role == deployment.EnvRolePassword && (v.Service == "" || v.Service == "unknown")) ||
-				(v.Role == deployment.EnvRoleDatabaseName && (v.Service == "" || v.Service == "unknown"))
-
-			if isPostgresVar {
-				// Set service to postgresql if it's not set
+			// Include all DB-related vars (PostgreSQL is the default/primary database)
+			if v.IsDBRelated() {
+				// Normalize service to postgresql
 				if v.Service == "" || v.Service == "unknown" {
 					v.Service = "postgresql"
 				}
