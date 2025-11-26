@@ -54,12 +54,6 @@ type Workflows struct {
 	llmClient    llm.Client
 }
 
-// DiffLine represents a single line in a diff
-type DiffLine struct {
-	Type    string `json:"type"`    // "context", "added", "removed", "header", "fileheader"
-	Content string `json:"content"` // the actual line content
-}
-
 // ConfigChange represents a single configuration file modification
 type ConfigChange struct {
 	Name      string     `json:"name"`      // Display name (e.g., "Package.json", ".python-version", "svelte.config.js")
@@ -94,13 +88,15 @@ func newAgentLLMClient() llm.Client {
 
 func NewWorkflows(renderClient render.RenderClient, flyClient flyio.FlyioClient, beClient *backend.Client, uiWriter output.StatusWriter) *Workflows {
 	llmClient := newAgentLLMClient()
+	frameworkRegistry := NewFrameworkRegistry()
 	return &Workflows{
 		Acts: &Activities{
-			renderClient: renderClient,
-			flyClient:    flyClient,
-			beClient:     beClient,
-			uiWriter:     uiWriter,
-			llmClient:    llmClient,
+			renderClient:      renderClient,
+			flyClient:         flyClient,
+			beClient:          beClient,
+			uiWriter:          uiWriter,
+			llmClient:         llmClient,
+			frameworkRegistry: frameworkRegistry,
 		},
 		renderClient: renderClient,
 		flyClient:    flyClient,

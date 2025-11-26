@@ -32,6 +32,3 @@ func (r *FrameworkRegistry) RegisterHandler(handler FrameworkHandler) {
 func (r *FrameworkRegistry) GetHandler(framework string) FrameworkHandler {
 	return r.handlers[framework]
 }
-
-// Global framework registry instance
-var frameworkRegistry = NewFrameworkRegistry()

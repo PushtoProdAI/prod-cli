@@ -57,11 +57,12 @@ const (
 )
 
 type Activities struct {
-	renderClient render.RenderClient
-	flyClient    flyio.FlyioClient
-	beClient     *backend.Client
-	uiWriter     output.StatusWriter
-	llmClient    llm.Client
+	renderClient      render.RenderClient
+	flyClient         flyio.FlyioClient
+	beClient          *backend.Client
+	uiWriter          output.StatusWriter
+	llmClient         llm.Client
+	frameworkRegistry *FrameworkRegistry
 }
 
 func (a *Activities) Activities() []workflowext.Activity {

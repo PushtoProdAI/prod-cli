@@ -7,12 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/pmezard/go-difflib/difflib"
 )
 
@@ -146,8 +144,8 @@ func (a *Activities) createPackageLockJSON(ctx context.Context, plan DeployPlan,
 }
 
 // patchPackageJSONForPlatform applies platform-specific package.json changes and returns updated content, changed flag, and error
-func patchPackageJSONForPlatform(origPackageJson []byte, platform Platform, framework string) ([]byte, bool, error) {
-	handler := frameworkRegistry.GetHandler(framework)
+func (a *Activities) patchPackageJSONForPlatform(origPackageJson []byte, platform Platform, framework string) ([]byte, bool, error) {
+	handler := a.frameworkRegistry.GetHandler(framework)
 	if handler == nil {
 		// No specific handler for this framework, return unchanged
 		return origPackageJson, false, nil
@@ -156,39 +154,15 @@ func patchPackageJSONForPlatform(origPackageJson []byte, platform Platform, fram
 	return handler.PatchPackageJSON(origPackageJson, platform)
 }
 
-// findRuntimeFramework extracts the runtime framework from ServiceRequirements
-func findRuntimeFrameworkFromServiceRequirements(serviceRequirements []analyzer.ServiceRequirement) string {
-	// Prioritize actual web frameworks over WSGI servers
-	// First pass: look for Django, Flask, FastAPI, etc.
-	preferredFrameworks := []string{"django", "flask", "fastapi", "express", "nextjs", "remix", "svelte"}
-	for _, sr := range serviceRequirements {
-		if sr.Type == "framework" {
-			for _, preferred := range preferredFrameworks {
-				if sr.Provider == preferred {
-					return sr.Provider
-				}
-			}
-		}
-	}
-
-	// Second pass: return any framework (including wsgi, asgi, etc.)
-	for _, sr := range serviceRequirements {
-		if sr.Type == "framework" {
-			return sr.Provider
-		}
-	}
-	return ""
-}
-
 // updateJavaScriptConfig handles both framework config and package.json updates for JavaScript projects
 func (a *Activities) updateJavaScriptConfig(_ context.Context, plan DeployPlan) (JavaScriptConfigResult, error) {
 	projectPath := plan.Source
 	result := JavaScriptConfigResult{}
-	runtimeFramework := findRuntimeFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
+	runtimeFramework := findFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
 
 	a.uiWriter.SendStatus("configuring", "Configuring JavaScript project...")
 
-	handler := frameworkRegistry.GetHandler(runtimeFramework)
+	handler := a.frameworkRegistry.GetHandler(runtimeFramework)
 
 	// First, handle package.json updates for all platforms
 	packageJsonPath := filepath.Join(projectPath, "package.json")
@@ -200,7 +174,7 @@ func (a *Activities) updateJavaScriptConfig(_ context.Context, plan DeployPlan) 
 		}
 
 		// Apply platform-specific package.json patches
-		updatedPackageJson, packageUpdated, err := patchPackageJSONForPlatform(origPackageJson, plan.Platform, runtimeFramework)
+		updatedPackageJson, packageUpdated, err := a.patchPackageJSONForPlatform(origPackageJson, plan.Platform, runtimeFramework)
 		if err != nil {
 			a.uiWriter.SendStatusComplete("configuring", "❌ Failed to patch package.json")
 			return JavaScriptConfigResult{}, errors.Errorf("failed to patch package.json: %w", err)
@@ -278,13 +252,13 @@ func (a *Activities) updateJavaScriptConfig(_ context.Context, plan DeployPlan) 
 }
 
 func (a *Activities) prepareDeployment(_ context.Context, plan DeployPlan) (DeployPlan, error) {
-	runtimeFramework := findRuntimeFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
+	runtimeFramework := findFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
 
 	slog.Info("prepareDeployment framework detection", "runtimeFramework", runtimeFramework)
 
 	a.uiWriter.SendStatus("configuring", fmt.Sprintf("Configuring %s deployment...", runtimeFramework))
 
-	handler := frameworkRegistry.GetHandler(runtimeFramework)
+	handler := a.frameworkRegistry.GetHandler(runtimeFramework)
 	if handler == nil {
 		slog.Debug("No handler found for framework", "framework", runtimeFramework)
 		a.uiWriter.SendStatusComplete("configuring", "✅ No framework-specific deployment config needed")
@@ -297,79 +271,14 @@ func (a *Activities) prepareDeployment(_ context.Context, plan DeployPlan) (Depl
 	return plan, nil
 }
 
-// parseDiffString converts a unified diff string into structured DiffLine data
-func parseDiffString(diffStr string) []DiffLine {
-	if diffStr == "" {
-		return nil
-	}
-
-	lines := strings.Split(diffStr, "\n")
-	var diffLines []DiffLine
-
-	for _, line := range lines {
-		var lineType string
-
-		if strings.HasPrefix(line, "@@") {
-			lineType = "header"
-		} else if strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++") {
-			lineType = "fileheader"
-		} else if strings.HasPrefix(line, "+") {
-			lineType = "added"
-		} else if strings.HasPrefix(line, "-") {
-			lineType = "removed"
-		} else {
-			lineType = "context"
-		}
-
-		diffLines = append(diffLines, DiffLine{
-			Type:    lineType,
-			Content: line,
-		})
-	}
-
-	return diffLines
-}
-
 // restoreFromBackup restores config files from the latest backup based on framework
 func (a *Activities) restoreFromBackup(ctx context.Context, plan DeployPlan) ([]DiffLine, error) {
-	runtimeFramework := findRuntimeFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
+	runtimeFramework := findFrameworkFromServiceRequirements(plan.Spec.ServiceRequirements)
 
-	handler := frameworkRegistry.GetHandler(runtimeFramework)
+	handler := a.frameworkRegistry.GetHandler(runtimeFramework)
 	if handler == nil {
 		return nil, errors.Errorf("no backup restoration available for framework: %s", runtimeFramework)
 	}
 
 	return handler.RestoreConfigFromBackup(ctx, plan)
-}
-
-// findLatestBackup finds the most recent backup file for a given config filename
-func findLatestBackup(prodDir, configFilename string) (string, error) {
-	entries, err := os.ReadDir(prodDir)
-	if err != nil {
-		return "", errors.Errorf("failed to read .prod directory: %w", err)
-	}
-
-	var backups []string
-	prefix := configFilename + "."
-	suffix := ".bak"
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if strings.HasPrefix(name, prefix) && strings.HasSuffix(name, suffix) {
-			backups = append(backups, name)
-		}
-	}
-
-	if len(backups) == 0 {
-		return "", errors.Errorf("no backup files found for %s", configFilename)
-	}
-
-	// Sort backups by filename (which includes timestamp) to get the latest
-	sort.Strings(backups)
-	latestBackup := backups[len(backups)-1]
-
-	return filepath.Join(prodDir, latestBackup), nil
 }
