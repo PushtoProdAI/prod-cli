@@ -66,9 +66,23 @@ jobs:
           # Common AWS regions for customer deployments
           REGIONS="us-east-1 us-east-2 us-west-1 us-west-2 eu-west-1 eu-west-2 eu-central-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ca-central-1"
           for region in $REGIONS; do
-            echo "📦 Uploading to prod-aws-deploy-staging-${region}..."
+            BUCKET="prod-aws-deploy-staging-${region}"
+            
+            # Create bucket if it doesn't exist
+            if ! aws s3api head-bucket --bucket ${BUCKET} --region ${region} 2>/dev/null; then
+              echo "🪣 Creating bucket ${BUCKET} in ${region}..."
+              if [ "${region}" = "us-east-1" ]; then
+                # us-east-1 doesn't support LocationConstraint
+                aws s3api create-bucket --bucket ${BUCKET} --region ${region}
+              else
+                aws s3api create-bucket --bucket ${BUCKET} --region ${region} \
+                  --create-bucket-configuration LocationConstraint=${region}
+              fi
+            fi
+            
+            echo "📦 Uploading to ${BUCKET}..."
             aws s3 cp lambda/database-url-constructor/function.zip \
-              s3://prod-aws-deploy-staging-${region}/lambda-functions/database-url-constructor/function.zip \
+              s3://${BUCKET}/lambda-functions/database-url-constructor/function.zip \
               --content-type application/zip \
               --region ${region}
           done
@@ -126,9 +140,23 @@ jobs:
           # Common AWS regions for customer deployments
           REGIONS="us-east-1 us-east-2 us-west-1 us-west-2 eu-west-1 eu-west-2 eu-central-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ca-central-1"
           for region in $REGIONS; do
-            echo "📦 Uploading to prod-aws-deploy-${region}..."
+            BUCKET="prod-aws-deploy-${region}"
+            
+            # Create bucket if it doesn't exist
+            if ! aws s3api head-bucket --bucket ${BUCKET} --region ${region} 2>/dev/null; then
+              echo "🪣 Creating bucket ${BUCKET} in ${region}..."
+              if [ "${region}" = "us-east-1" ]; then
+                # us-east-1 doesn't support LocationConstraint
+                aws s3api create-bucket --bucket ${BUCKET} --region ${region}
+              else
+                aws s3api create-bucket --bucket ${BUCKET} --region ${region} \
+                  --create-bucket-configuration LocationConstraint=${region}
+              fi
+            fi
+            
+            echo "📦 Uploading to ${BUCKET}..."
             aws s3 cp lambda/database-url-constructor/function.zip \
-              s3://prod-aws-deploy-${region}/lambda-functions/database-url-constructor/function.zip \
+              s3://${BUCKET}/lambda-functions/database-url-constructor/function.zip \
               --content-type application/zip \
               --region ${region}
           done
