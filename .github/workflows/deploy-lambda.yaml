@@ -60,22 +60,32 @@ jobs:
           role-to-assume: arn:aws:iam::588738592923:role/GitHubActionsRole
           aws-region: us-east-1
 
-      - name: Upload Lambda function to S3
+      - name: Upload Lambda function to S3 (all supported regions)
         run: |
-          aws s3 cp lambda/database-url-constructor/function.zip \
-            s3://prod-aws-deploy-staging/lambda-functions/database-url-constructor/function.zip \
-            --content-type application/zip
+          # Staging uses region-specific bucket naming: prod-aws-deploy-staging-{region}
+          # Common AWS regions for customer deployments
+          REGIONS="us-east-1 us-east-2 us-west-1 us-west-2 eu-west-1 eu-west-2 eu-central-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ca-central-1"
+          for region in $REGIONS; do
+            echo "📦 Uploading to prod-aws-deploy-staging-${region}..."
+            aws s3 cp lambda/database-url-constructor/function.zip \
+              s3://prod-aws-deploy-staging-${region}/lambda-functions/database-url-constructor/function.zip \
+              --content-type application/zip \
+              --region ${region}
+          done
 
       - name: Verify upload
         run: |
-          echo "✅ Lambda function uploaded successfully to:"
-          echo "s3://prod-aws-deploy-staging/lambda-functions/database-url-constructor/function.zip"
+          echo "✅ Lambda function uploaded successfully to all staging regions:"
           echo ""
           echo "Environment: Staging"
           echo "Branch: ${{ github.ref_name }}"
           echo "Commit: ${{ github.sha }}"
           echo ""
-          aws s3 ls s3://prod-aws-deploy-staging/lambda-functions/database-url-constructor/function.zip
+          REGIONS="us-east-1 us-east-2 us-west-1 us-west-2 eu-west-1 eu-west-2 eu-central-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ca-central-1"
+          for region in $REGIONS; do
+            echo "Region: ${region}"
+            aws s3 ls s3://prod-aws-deploy-staging-${region}/lambda-functions/database-url-constructor/function.zip --region ${region}
+          done
 
   deploy-production:
     name: Deploy to Production
@@ -110,19 +120,29 @@ jobs:
           role-to-assume: arn:aws:iam::248877153149:role/GitHubActionsRole
           aws-region: us-east-2
 
-      - name: Upload Lambda function to S3
+      - name: Upload Lambda function to S3 (all supported regions)
         run: |
-          aws s3 cp lambda/database-url-constructor/function.zip \
-            s3://prod-aws-deploy/lambda-functions/database-url-constructor/function.zip \
-            --content-type application/zip
+          # Production uses region-specific bucket naming: prod-aws-deploy-{region}
+          # Common AWS regions for customer deployments
+          REGIONS="us-east-1 us-east-2 us-west-1 us-west-2 eu-west-1 eu-west-2 eu-central-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ca-central-1"
+          for region in $REGIONS; do
+            echo "📦 Uploading to prod-aws-deploy-${region}..."
+            aws s3 cp lambda/database-url-constructor/function.zip \
+              s3://prod-aws-deploy-${region}/lambda-functions/database-url-constructor/function.zip \
+              --content-type application/zip \
+              --region ${region}
+          done
 
       - name: Verify upload
         run: |
-          echo "✅ Lambda function uploaded successfully to:"
-          echo "s3://prod-aws-deploy/lambda-functions/database-url-constructor/function.zip"
+          echo "✅ Lambda function uploaded successfully to all production regions:"
           echo ""
           echo "Environment: Production"
           echo "Branch: ${{ github.ref_name }}"
           echo "Commit: ${{ github.sha }}"
           echo ""
-          aws s3 ls s3://prod-aws-deploy/lambda-functions/database-url-constructor/function.zip
+          REGIONS="us-east-1 us-east-2 us-west-1 us-west-2 eu-west-1 eu-west-2 eu-central-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ca-central-1"
+          for region in $REGIONS; do
+            echo "Region: ${region}"
+            aws s3 ls s3://prod-aws-deploy-${region}/lambda-functions/database-url-constructor/function.zip --region ${region}
+          done

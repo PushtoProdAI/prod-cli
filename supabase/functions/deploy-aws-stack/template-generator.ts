@@ -178,7 +178,7 @@ function validateDeploymentSpec(spec: DeploymentSpec, tenantId: string): void {
   console.log('✓ Deployment spec validation passed');
 }
 
-export function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string): string {
+export function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: string, region: string = 'us-east-1'): string {
   // SECURITY: Validate all user inputs before using them in CloudFormation template
   validateDeploymentSpec(spec, tenantId);
   
@@ -216,7 +216,7 @@ export function generateCloudFormationTemplate(spec: DeploymentSpec, tenantId: s
 
   // Build Secrets Manager resources for sensitive env vars (including Lambda-backed custom resources)
   // This must be called early so secrets exist for both migrations and App Runner
-  buildSecretsManagerResources(spec, tenantId, resources);
+  buildSecretsManagerResources(spec, tenantId, resources, region);
 
   // Build ECS resources for running migrations (if migration command exists)
   if (hasMigrations) {
