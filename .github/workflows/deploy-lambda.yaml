@@ -78,6 +78,24 @@ jobs:
                 aws s3api create-bucket --bucket ${BUCKET} --region ${region} \
                   --create-bucket-configuration LocationConstraint=${region}
               fi
+              
+              # Disable block public access for Lambda packages (needed for cross-account CloudFormation)
+              echo "🔓 Configuring public access for ${BUCKET}..."
+              aws s3api put-public-access-block --bucket ${BUCKET} --region ${region} \
+                --public-access-block-configuration "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false"
+              
+              # Add bucket policy to allow public read on lambda-functions path
+              echo "📜 Adding bucket policy for ${BUCKET}..."
+              aws s3api put-bucket-policy --bucket ${BUCKET} --region ${region} --policy "{
+                \"Version\": \"2012-10-17\",
+                \"Statement\": [{
+                  \"Sid\": \"PublicReadLambdaPackages\",
+                  \"Effect\": \"Allow\",
+                  \"Principal\": \"*\",
+                  \"Action\": \"s3:GetObject\",
+                  \"Resource\": \"arn:aws:s3:::${BUCKET}/lambda-functions/*\"
+                }]
+              }"
             fi
             
             echo "📦 Uploading to ${BUCKET}..."
@@ -152,6 +170,24 @@ jobs:
                 aws s3api create-bucket --bucket ${BUCKET} --region ${region} \
                   --create-bucket-configuration LocationConstraint=${region}
               fi
+              
+              # Disable block public access for Lambda packages (needed for cross-account CloudFormation)
+              echo "🔓 Configuring public access for ${BUCKET}..."
+              aws s3api put-public-access-block --bucket ${BUCKET} --region ${region} \
+                --public-access-block-configuration "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false"
+              
+              # Add bucket policy to allow public read on lambda-functions path
+              echo "📜 Adding bucket policy for ${BUCKET}..."
+              aws s3api put-bucket-policy --bucket ${BUCKET} --region ${region} --policy "{
+                \"Version\": \"2012-10-17\",
+                \"Statement\": [{
+                  \"Sid\": \"PublicReadLambdaPackages\",
+                  \"Effect\": \"Allow\",
+                  \"Principal\": \"*\",
+                  \"Action\": \"s3:GetObject\",
+                  \"Resource\": \"arn:aws:s3:::${BUCKET}/lambda-functions/*\"
+                }]
+              }"
             fi
             
             echo "📦 Uploading to ${BUCKET}..."
