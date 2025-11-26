@@ -39,6 +39,10 @@ const (
 	AgentDetermineMigrationCommand  = "agent.determineMigrationCommand"
 	AgentCreatePackageLock          = "agent.createPackageLock"
 	AgentUpdateJavaScriptConfig     = "agent.updateJavaScriptConfig"
+	AgentGeneratePythonVersion      = "agent.generatePythonVersion"
+	AgentConfigurePythonFramework   = "agent.configurePythonFramework"
+	AgentSetupPythonServer          = "agent.setupPythonServer"
+	AgentConfigurePythonStaticFiles = "agent.configurePythonStaticFiles"
 	AgentRestoreConfigFromBackup    = "agent.restoreConfigFromBackup"
 	AgentPrepareDeployment          = "agent.prepareDeployment"
 	AgentCheckExistingProject       = "agent.checkExistingProject"
@@ -53,11 +57,12 @@ const (
 )
 
 type Activities struct {
-	renderClient render.RenderClient
-	flyClient    flyio.FlyioClient
-	beClient     *backend.Client
-	uiWriter     output.StatusWriter
-	llmClient    llm.Client
+	renderClient      render.RenderClient
+	flyClient         flyio.FlyioClient
+	beClient          *backend.Client
+	uiWriter          output.StatusWriter
+	llmClient         llm.Client
+	frameworkRegistry *FrameworkRegistry
 }
 
 func (a *Activities) Activities() []workflowext.Activity {
@@ -90,6 +95,10 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentDetermineMigrationCommand, ActFunc: a.determineMigrationCommand},
 		{Name: AgentCreatePackageLock, ActFunc: a.createPackageLockJSON},
 		{Name: AgentUpdateJavaScriptConfig, ActFunc: a.updateJavaScriptConfig},
+		{Name: AgentGeneratePythonVersion, ActFunc: a.generatePythonVersion},
+		{Name: AgentConfigurePythonFramework, ActFunc: a.configurePythonFramework},
+		{Name: AgentSetupPythonServer, ActFunc: a.setupPythonServer},
+		{Name: AgentConfigurePythonStaticFiles, ActFunc: a.configureDjangoStaticFiles},
 		{Name: AgentRestoreConfigFromBackup, ActFunc: a.restoreFromBackup},
 		{Name: AgentPrepareDeployment, ActFunc: a.prepareDeployment},
 		{Name: AgentCheckExistingProject, ActFunc: a.checkExistingProject},

@@ -578,7 +578,8 @@ func (c *FlyctlClient) GetPostgresConnectionInfo(ctx context.Context, appID stri
 		return nil, err
 	}
 	// Use flyctl mpg db list to get connection info
-	output, err := c.executor.Execute(ctx, "flyctl", "mpg", "db", "list", "--app", appID, "--json")
+	// Note: The command is "flyctl mpg db list <CLUSTER_ID>" without --app flag
+	output, err := c.executor.Execute(ctx, "flyctl", "mpg", "db", "list", appID, "--json")
 	if err != nil {
 		return nil, errors.Errorf("failed to get postgres connection info: %w", err)
 	}

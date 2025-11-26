@@ -29,6 +29,7 @@ const (
 	DetectExistingWorkflowName         = "agent.detectExisting"
 	DeployNetlifyWorkflowName          = "agent.deploy.netlify"
 	SetupJavaScriptProjectWorkflowName = "agent.setupJavaScriptProject"
+	SetupPythonProjectWorkflowName     = "agent.setupPythonProject"
 	DeployVercelWorkflowName           = "agent.deploy.vercel"
 	DeployHerokuWorkflowName           = "agent.deploy.heroku"
 	DeployAWSWorkflowName              = "agent.deploy.aws"
@@ -53,22 +54,21 @@ type Workflows struct {
 	llmClient    llm.Client
 }
 
-// DiffLine represents a single line in a diff
-type DiffLine struct {
-	Type    string `json:"type"`    // "context", "added", "removed", "header", "fileheader"
-	Content string `json:"content"` // the actual line content
+// ConfigChange represents a single configuration file modification
+type ConfigChange struct {
+	Name      string     `json:"name"`      // Display name (e.g., "Package.json", ".python-version", "svelte.config.js")
+	Path      string     `json:"path"`      // File path for reference
+	Diff      []DiffLine `json:"diff"`      // The actual diff to display
+	Icon      string     `json:"icon"`      // Optional emoji/icon for display (e.g., "📦", "🐍", "⚙️")
+	ExtraInfo string     `json:"extraInfo"` // Additional context (e.g., "Added WhiteNoise for static files")
 }
 
-// SetupJavaScriptProjectResult contains the results of setting up a JavaScript project
-type SetupJavaScriptProjectResult struct {
-	PackageLockCreated bool        `json:"packageLockCreated"`
-	ConfigUpdated      bool        `json:"configUpdated"`
-	ConfigDiff         []DiffLine  `json:"configDiff,omitempty"`
-	ConfigPath         string      `json:"configPath,omitempty"`
-	PackageJsonUpdated bool        `json:"packageJsonUpdated"`
-	PackageJsonDiff    []DiffLine  `json:"packageJsonDiff,omitempty"`
-	Error              deployError `json:"error"`
-	UpdatedPlan        DeployPlan  `json:"updatedPlan"`
+// SetupProjectResult is a language-agnostic result for project setup workflows
+type SetupProjectResult struct {
+	ConfigChanges []ConfigChange    `json:"configChanges,omitempty"` // All configuration files that were modified
+	EnvVars       map[string]string `json:"envVars,omitempty"`       // Environment variables to be set (framework-specific)
+	Error         deployError       `json:"error"`                   // Any errors encountered
+	UpdatedPlan   DeployPlan        `json:"updatedPlan"`             // The updated deployment plan
 }
 
 var _ workflowext.Registerer = (*Workflows)(nil)
@@ -88,13 +88,15 @@ func newAgentLLMClient() llm.Client {
 
 func NewWorkflows(renderClient render.RenderClient, flyClient flyio.FlyioClient, beClient *backend.Client, uiWriter output.StatusWriter) *Workflows {
 	llmClient := newAgentLLMClient()
+	frameworkRegistry := NewFrameworkRegistry()
 	return &Workflows{
 		Acts: &Activities{
-			renderClient: renderClient,
-			flyClient:    flyClient,
-			beClient:     beClient,
-			uiWriter:     uiWriter,
-			llmClient:    llmClient,
+			renderClient:      renderClient,
+			flyClient:         flyClient,
+			beClient:          beClient,
+			uiWriter:          uiWriter,
+			llmClient:         llmClient,
+			frameworkRegistry: frameworkRegistry,
 		},
 		renderClient: renderClient,
 		flyClient:    flyClient,
@@ -135,6 +137,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: DetectExistingWorkflowName, WorkflowFunc: w.detectExistingWorkflow},
 		{Name: DeployNetlifyWorkflowName, WorkflowFunc: w.deployNetlify},
 		{Name: SetupJavaScriptProjectWorkflowName, WorkflowFunc: w.setupJavaScriptProject},
+		{Name: SetupPythonProjectWorkflowName, WorkflowFunc: w.setupPythonProject},
 		{Name: DeployVercelWorkflowName, WorkflowFunc: w.deployVercel},
 		{Name: DeployHerokuWorkflowName, WorkflowFunc: w.deployHeroku},
 		{Name: DeployAWSWorkflowName, WorkflowFunc: w.deployAWS},
@@ -183,6 +186,12 @@ func (Workflows) SetupJavaScriptProject(ctx context.Context, c *client.Client, i
 	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{
 		InstanceID: fmt.Sprintf("%s.%d", SetupJavaScriptProjectWorkflowName, time.Now().Unix()),
 	}, SetupJavaScriptProjectWorkflowName, input)
+}
+
+func (Workflows) SetupPythonProject(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
+	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{
+		InstanceID: fmt.Sprintf("%s.%d", SetupPythonProjectWorkflowName, time.Now().Unix()),
+	}, SetupPythonProjectWorkflowName, input)
 }
 
 // Shared workflow implementations
@@ -325,7 +334,8 @@ func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPla
 	mapDuration := time.Since(mapStart)
 	workflow.Logger(ctx).Debug("created env map", "size", len(envMap), "duration", mapDuration)
 
-	// we will take values that in env files and use those as suggested values
+	// Merge .env file values as suggested defaults
+	// Note: Framework handlers will override these later in PrepareDeployment
 	mergeStart := time.Now()
 	workflow.Logger(ctx).Info("starting to merge env file values")
 	mergedCount := 0
@@ -355,11 +365,11 @@ func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPla
 	return envVars, nil
 }
 
-func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPlan) (SetupJavaScriptProjectResult, error) {
+func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPlan) (SetupProjectResult, error) {
 	slog.Info("setupJavaScriptProject workflow started", "platform", input.Platform)
 	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
 
-	result := SetupJavaScriptProjectResult{}
+	result := SetupProjectResult{}
 
 	// Step 1: Update JavaScript project configuration (Svelte config + package.json)
 	slog.Info("Updating JavaScript project configuration")
@@ -387,24 +397,31 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 				"operation":    "summarize_original_error",
 			})
 			slog.Error("Failed to summarize JavaScript config error", "error", e1)
-			return SetupJavaScriptProjectResult{Error: deployError{Summary: err.Error()}}, nil
+			return SetupProjectResult{Error: deployError{Summary: err.Error()}}, nil
 		}
-		return SetupJavaScriptProjectResult{Error: summary}, nil
+		return SetupProjectResult{Error: summary}, nil
 	}
 
-	// Update result with configuration changes
+	// Add configuration changes to result
 	if len(jsConfig.ConfigDiff) > 0 {
-		result.ConfigUpdated = true
-		result.ConfigDiff = jsConfig.ConfigDiff
-		result.ConfigPath = jsConfig.ConfigPath
+		result.ConfigChanges = append(result.ConfigChanges, ConfigChange{
+			Name: jsConfig.ConfigPath,
+			Path: jsConfig.ConfigPath,
+			Diff: jsConfig.ConfigDiff,
+			Icon: "⚙️",
+		})
 		slog.Info("JavaScript configuration updated")
 	} else {
 		slog.Info("No JavaScript configuration found or no changes needed")
 	}
 
-	if jsConfig.PackageJsonUpdated {
-		result.PackageJsonUpdated = true
-		result.PackageJsonDiff = jsConfig.PackageJsonDiff
+	if jsConfig.PackageJsonUpdated && len(jsConfig.PackageJsonDiff) > 0 {
+		result.ConfigChanges = append(result.ConfigChanges, ConfigChange{
+			Name: "Package.json",
+			Path: "package.json",
+			Diff: jsConfig.PackageJsonDiff,
+			Icon: "📦",
+		})
 		slog.Info("Package.json configuration updated")
 	} else {
 		slog.Info("No package.json changes needed")
@@ -412,7 +429,7 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 
 	// Step 2: Create/update package-lock.json (after config changes)
 	slog.Info("Creating/updating package-lock.json")
-	configUpdated := result.ConfigUpdated || result.PackageJsonUpdated
+	configUpdated := len(jsConfig.ConfigDiff) > 0 || jsConfig.PackageJsonUpdated
 	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentCreatePackageLock, input, configUpdated).Get(ctx)
 	if err != nil {
 		slog.Error("Failed to create package-lock.json", "error", err)
@@ -437,11 +454,10 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 				"operation":    "summarize_original_error",
 			})
 			slog.Error("Failed to summarize package-lock error", "error", e1)
-			return SetupJavaScriptProjectResult{Error: deployError{Summary: err.Error()}}, nil
+			return SetupProjectResult{Error: deployError{Summary: err.Error()}}, nil
 		}
-		return SetupJavaScriptProjectResult{Error: summary}, nil
+		return SetupProjectResult{Error: summary}, nil
 	}
-	result.PackageLockCreated = true
 	slog.Info("Package-lock.json handling completed")
 
 	plan, err := workflow.ExecuteActivity[DeployPlan](ctx, ActivityOpts, AgentPrepareDeployment, input).Get(ctx)
@@ -458,5 +474,159 @@ func (w *Workflows) setupJavaScriptProject(ctx workflow.Context, input DeployPla
 	}
 	result.UpdatedPlan = plan
 	slog.Info("JavaScript project setup completed successfully")
+	return result, nil
+}
+
+func (w *Workflows) setupPythonProject(ctx workflow.Context, input DeployPlan) (SetupProjectResult, error) {
+	slog.Info("setupPythonProject workflow started", "platform", input.Platform)
+	slog.Info("DeployPlan details", "action", input.Action, "source", input.Source, "specName", input.Spec.Name, "specLanguage", input.Spec.Language)
+
+	result := SetupProjectResult{}
+
+	// Step 1: Generate .python-version file
+	slog.Info("Generating .python-version file")
+	pyConfig, err := workflow.ExecuteActivity[PythonConfigResult](ctx, ActivityOpts, AgentGeneratePythonVersion, input).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to generate Python version file", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     SetupPythonProjectWorkflowName,
+			"activity":     AgentGeneratePythonVersion,
+			"component":    "python_config",
+			"platform":     input.Platform.String(),
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
+		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
+		if e1 != nil {
+			// Send the summarize error
+			prod_error.CaptureErrorWithContext(e1, map[string]any{
+				"workflow":     SetupPythonProjectWorkflowName,
+				"activity":     AgentSummarizeError,
+				"component":    "python_config",
+				"platform":     input.Platform.String(),
+				"project_name": input.Spec.Name,
+				"language":     input.Spec.Language,
+				"operation":    "summarize_original_error",
+			})
+			slog.Error("Failed to summarize Python version error", "error", e1)
+			return SetupProjectResult{Error: deployError{Summary: err.Error()}}, nil
+		}
+		return SetupProjectResult{Error: summary}, nil
+	}
+
+	// Add Python version changes to result
+	if pyConfig.PythonVersionCreated && len(pyConfig.PythonVersionDiff) > 0 {
+		result.ConfigChanges = append(result.ConfigChanges, ConfigChange{
+			Name: ".python-version",
+			Path: ".python-version",
+			Diff: pyConfig.PythonVersionDiff,
+			Icon: "🐍",
+		})
+		slog.Info("Python version file created/updated")
+	} else {
+		slog.Info("No Python version file changes needed")
+	}
+
+	// Step 2: Configure framework-specific settings (Django, Flask, FastAPI, etc.)
+	slog.Info("Checking for framework-specific configuration")
+	frameworkConfig, err := workflow.ExecuteActivity[PythonConfigResult](ctx, ActivityOpts, AgentConfigurePythonFramework, input).Get(ctx)
+	if err != nil {
+		slog.Error("Framework configuration failed", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     SetupPythonProjectWorkflowName,
+			"activity":     AgentConfigurePythonFramework,
+			"component":    "python_config",
+			"platform":     input.Platform.String(),
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
+	} else {
+		// Add framework configuration changes to result
+		if frameworkConfig.FrameworkConfigUpdated && len(frameworkConfig.FrameworkConfigDiff) > 0 {
+			result.ConfigChanges = append(result.ConfigChanges, ConfigChange{
+				Name: fmt.Sprintf("Framework %s", frameworkConfig.FrameworkConfigPath),
+				Path: frameworkConfig.FrameworkConfigPath,
+				Diff: frameworkConfig.FrameworkConfigDiff,
+				Icon: "⚙️",
+			})
+			slog.Info("Framework configuration updated", "path", frameworkConfig.FrameworkConfigPath)
+		}
+		if len(frameworkConfig.FrameworkEnvVars) > 0 {
+			result.EnvVars = frameworkConfig.FrameworkEnvVars
+			slog.Info("Framework environment variables prepared", "count", len(frameworkConfig.FrameworkEnvVars))
+		}
+	}
+
+	// Step 2b: Setup production server for Python frameworks
+	slog.Info("Setting up production server for Python framework")
+	serverConfig, err := workflow.ExecuteActivity[PythonConfigResult](ctx, ActivityOpts, AgentSetupPythonServer, input).Get(ctx)
+	if err != nil {
+		slog.Error("Python server setup failed", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     SetupPythonProjectWorkflowName,
+			"activity":     AgentSetupPythonServer,
+			"component":    "python_config",
+			"platform":     input.Platform.String(),
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
+	} else {
+		// Update result with server configuration
+		if serverConfig.FrameworkRunCommand != "" {
+			slog.Info("Python server configured", "command", serverConfig.FrameworkRunCommand, "serverAdded", serverConfig.ServerAdded)
+
+			// Always update the plan's StartCommand with the production-ready command
+			// This overrides any bad suggestions like "python manage.py runserver"
+			input.Spec.StartCommand = serverConfig.FrameworkRunCommand
+			slog.Info("Updated StartCommand to production server", "command", serverConfig.FrameworkRunCommand)
+		}
+	}
+
+	// Step 2c: Configure static files for Python frameworks (Django)
+	slog.Info("Configuring static files for Python framework")
+	staticConfig, err := workflow.ExecuteActivity[PythonConfigResult](ctx, ActivityOpts, AgentConfigurePythonStaticFiles, input).Get(ctx)
+	if err != nil {
+		slog.Error("Python static files setup failed", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     SetupPythonProjectWorkflowName,
+			"activity":     AgentConfigurePythonStaticFiles,
+			"component":    "python_config",
+			"platform":     input.Platform.String(),
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
+	} else {
+		// Add static files configuration changes to result
+		if staticConfig.StaticFilesConfigured && len(staticConfig.StaticFilesDiff) > 0 {
+			extraInfo := ""
+			if staticConfig.WhiteNoiseAdded {
+				extraInfo = "✅ Added WhiteNoise for static file serving"
+			}
+			result.ConfigChanges = append(result.ConfigChanges, ConfigChange{
+				Name:      "Static files configuration",
+				Path:      "",
+				Diff:      staticConfig.StaticFilesDiff,
+				Icon:      "📦",
+				ExtraInfo: extraInfo,
+			})
+			slog.Info("Static files configured", "whiteNoiseAdded", staticConfig.WhiteNoiseAdded)
+		}
+	}
+
+	// Step 3: Prepare deployment (framework-specific adjustments)
+	plan, err := workflow.ExecuteActivity[DeployPlan](ctx, ActivityOpts, AgentPrepareDeployment, input).Get(ctx)
+	if err != nil {
+		slog.Error("Failed to prepare deployment", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     SetupPythonProjectWorkflowName,
+			"activity":     AgentPrepareDeployment,
+			"component":    "python_config",
+			"platform":     input.Platform.String(),
+			"project_name": input.Spec.Name,
+			"language":     input.Spec.Language,
+		})
+	}
+	result.UpdatedPlan = plan
+	slog.Info("Python project setup completed successfully")
 	return result, nil
 }

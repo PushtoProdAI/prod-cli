@@ -182,7 +182,7 @@ func (db *DeploymentBuilder) Build() (*DeploymentSpec, error) {
 		serviceCount[req.Provider]++
 
 		service := Service{
-			Type:     req.Provider,
+			Type:     req.Type,
 			Name:     fmt.Sprintf("%s-%d", req.Provider, serviceCount[req.Provider]),
 			Config:   make(map[string]any),
 			Provider: req.Provider,

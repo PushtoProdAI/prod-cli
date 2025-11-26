@@ -6,6 +6,13 @@ import (
 	"testing"
 )
 
+// testActivities returns an Activities instance with a framework registry for testing
+func testActivities() *Activities {
+	return &Activities{
+		frameworkRegistry: NewFrameworkRegistry(),
+	}
+}
+
 func TestPatchSvelteConfig(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -382,7 +389,8 @@ func TestPatchPackageJSONForPlatformWithFrameworkDetection(t *testing.T) {
 }`
 
 			// Test the function
-			updatedJSON, changed, err := patchPackageJSONForPlatform([]byte(origPackageJSON), tt.platform, tt.framework)
+			a := testActivities()
+			updatedJSON, changed, err := a.patchPackageJSONForPlatform([]byte(origPackageJSON), tt.platform, tt.framework)
 			if err != nil {
 				t.Fatalf("patchPackageJSONForPlatform failed: %v", err)
 			}
@@ -602,7 +610,8 @@ func TestPatchPackageJSONForRemixPlatforms(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			updatedPackageJSON, changed, err := patchPackageJSONForPlatform([]byte(basePackageJSON), tt.platform, tt.framework)
+			a := testActivities()
+			updatedPackageJSON, changed, err := a.patchPackageJSONForPlatform([]byte(basePackageJSON), tt.platform, tt.framework)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
