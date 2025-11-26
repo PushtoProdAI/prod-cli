@@ -49,6 +49,15 @@ Deno.serve(async (req) => {
       return new Response("Missing required field: serviceName", { status: 400 });
     }
 
+    // Get customer AWS region from database for accurate template generation
+    const { data: awsCredentials } = await supabaseClient
+      .from('aws_credentials')
+      .select('region')
+      .eq('user_id', data.user.id)
+      .single();
+
+    const awsRegion = awsCredentials?.region || 'us-east-1';
+
     // Generate CloudFormation template
     // Use a placeholder image URL since we're just generating the template for pricing
     const previewSpec = {
@@ -56,7 +65,7 @@ Deno.serve(async (req) => {
       imageUrl: deploymentSpec.imageUrl || 'placeholder.dkr.ecr.us-east-1.amazonaws.com/app:latest',
     };
 
-    const template = generateCloudFormationTemplate(previewSpec, data.user.id);
+    const template = generateCloudFormationTemplate(previewSpec, data.user.id, awsRegion);
 
     // Return the template
     return Response.json({

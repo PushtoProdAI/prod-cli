@@ -117,7 +117,7 @@ Deno.serve(async (req) => {
     });
 
     // Generate CloudFormation template
-    const template = generateCloudFormationTemplate(deploymentSpec, data.user.id);
+    const template = generateCloudFormationTemplate(deploymentSpec, data.user.id, awsRegion);
     const stackName = `prod-${deploymentSpec.serviceName}`;
 
     // Check if stack exists
