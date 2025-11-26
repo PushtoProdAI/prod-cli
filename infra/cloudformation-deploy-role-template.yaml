@@ -711,8 +711,9 @@ Resources:
               - s3:GetObject
               - s3:GetObjectVersion
             Resource:
-              - 'arn:aws:s3:::prod-aws-deploy/lambda-functions/*'
-              - 'arn:aws:s3:::prod-aws-deploy-staging/lambda-functions/*'
+              # Region-specific buckets for Lambda packages
+              - 'arn:aws:s3:::prod-aws-deploy-*/lambda-functions/*'
+              - 'arn:aws:s3:::prod-aws-deploy-staging-*/lambda-functions/*'
 
 Outputs:
   RoleArn:
