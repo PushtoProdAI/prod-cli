@@ -89,6 +89,26 @@ func (w *TeaWriter) SetSpinnerController(controller output.SpinnerController) {
 	// No-op - TeaWriter controls its own spinner
 }
 
+// SendDeploymentStart is a no-op for TeaWriter
+func (w *TeaWriter) SendDeploymentStart(platform, projectPath string) {
+	// No-op for TUI
+}
+
+// SendDeploymentComplete is a no-op for TeaWriter
+func (w *TeaWriter) SendDeploymentComplete(platform, status, url, errorMsg string, durationMs int64) {
+	// No-op for TUI
+}
+
+// SendPlanApprovalRequest is a no-op for TeaWriter
+func (w *TeaWriter) SendPlanApprovalRequest(plan map[string]interface{}) {
+	// No-op for TUI
+}
+
+// SendEnvVarPrompt is a no-op for TeaWriter
+func (w *TeaWriter) SendEnvVarPrompt(varName, defaultValue, message string) {
+	// No-op for TUI
+}
+
 // handleSpinnerLogic processes automatic spinner start/stop based on message content
 func (w *TeaWriter) handleSpinnerLogic(message string) {
 	// Check if this message should start a spinner

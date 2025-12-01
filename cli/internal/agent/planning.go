@@ -377,6 +377,9 @@ func (a *Activities) logDeploymentStart(ctx context.Context, platform string, sp
 		return "", errors.Errorf("failed to log deployment start: %w", err)
 	}
 
+	// Emit deployment_start event for VSCode extension
+	a.uiWriter.SendDeploymentStart(platform, source)
+
 	slog.Info("Deployment start logged", "operation_id", operationId, "platform", platform)
 	return operationId, nil
 }
@@ -391,6 +394,18 @@ func (a *Activities) updateDeploymentStatus(ctx context.Context, operationId str
 	if err != nil {
 		slog.Error("Failed to update deployment status", "error", err, "operation_id", operationId, "status", status)
 		return errors.Errorf("failed to update deployment status: %w", err)
+	}
+
+	// Emit deployment_complete event for VSCode extension when deployment finishes
+	if status == "success" || status == "failed" {
+		platform, _ := metadata["platform"].(string)
+		url, _ := metadata["url"].(string)
+		errorMsg, _ := metadata["error"].(string)
+
+		// Calculate duration if we have start_time in metadata, otherwise use 0
+		var durationMs int64 = 0
+
+		a.uiWriter.SendDeploymentComplete(platform, status, url, errorMsg, durationMs)
 	}
 
 	slog.Info("Deployment status updated", "operation_id", operationId, "status", status)

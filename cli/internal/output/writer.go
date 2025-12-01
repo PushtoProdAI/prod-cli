@@ -1,11 +1,15 @@
 package output
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
+	"os"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-errors/errors"
 )
@@ -137,6 +141,10 @@ type StatusWriter interface {
 	io.Writer
 	SendStatus(status, message string)
 	SendStatusComplete(status, message string)
+	SendDeploymentStart(platform, projectPath string)
+	SendDeploymentComplete(platform, status, url, errorMsg string, durationMs int64)
+	SendPlanApprovalRequest(plan map[string]interface{})
+	SendEnvVarPrompt(varName, defaultValue, message string)
 }
 
 // InfoBoxWriter defines the interface for sending info box messages
@@ -164,6 +172,26 @@ func (w *NoOpWriter) SendStatus(status, message string) {
 
 // SendStatusComplete discards the completion message
 func (w *NoOpWriter) SendStatusComplete(status, message string) {
+	// Do nothing
+}
+
+// SendDeploymentStart does nothing
+func (w *NoOpWriter) SendDeploymentStart(platform, projectPath string) {
+	// Do nothing
+}
+
+// SendDeploymentComplete does nothing
+func (w *NoOpWriter) SendDeploymentComplete(platform, status, url, errorMsg string, durationMs int64) {
+	// Do nothing
+}
+
+// SendPlanApprovalRequest does nothing
+func (w *NoOpWriter) SendPlanApprovalRequest(plan map[string]interface{}) {
+	// Do nothing
+}
+
+// SendEnvVarPrompt does nothing
+func (w *NoOpWriter) SendEnvVarPrompt(varName, defaultValue, message string) {
 	// Do nothing
 }
 
@@ -214,6 +242,26 @@ func (w *ConsoleWriter) SendStatus(status, message string) {
 // SendStatusComplete outputs completion messages to stdout
 func (w *ConsoleWriter) SendStatusComplete(status, message string) {
 	fmt.Printf("[%s] %s\n", strings.ToUpper(status), message)
+}
+
+// SendDeploymentStart is a no-op for console writer
+func (w *ConsoleWriter) SendDeploymentStart(platform, projectPath string) {
+	// No-op
+}
+
+// SendDeploymentComplete is a no-op for console writer
+func (w *ConsoleWriter) SendDeploymentComplete(platform, status, url, errorMsg string, durationMs int64) {
+	// No-op
+}
+
+// SendPlanApprovalRequest is a no-op for console writer
+func (w *ConsoleWriter) SendPlanApprovalRequest(plan map[string]interface{}) {
+	// No-op
+}
+
+// SendEnvVarPrompt is a no-op for console writer
+func (w *ConsoleWriter) SendEnvVarPrompt(varName, defaultValue, message string) {
+	// No-op
 }
 
 // StartSpinner outputs spinner message to stdout (no actual spinner)
@@ -291,6 +339,148 @@ var (
 	_ StatusWriter = (*ConsoleWriter)(nil)
 )
 
+// JSONEvent represents a structured event emitted in JSON mode
+type JSONEvent struct {
+	Type      string    `json:"type"`
+	Status    string    `json:"status,omitempty"`
+	Message   string    `json:"message,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// JSONWriter implements StatusWriter for JSON-structured output
+// Outputs one JSON object per line (JSON Lines format) to stdout
+type JSONWriter struct {
+	mu      sync.Mutex
+	encoder *json.Encoder
+}
+
+// NewJSONWriter creates a new JSON writer
+func NewJSONWriter() *JSONWriter {
+	return &JSONWriter{
+		encoder: json.NewEncoder(os.Stdout),
+	}
+}
+
+// Write implements io.Writer - outputs raw logs as JSON events
+func (w *JSONWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	event := JSONEvent{
+		Type:      "log",
+		Message:   string(p),
+		Timestamp: time.Now(),
+	}
+
+	if err := w.encoder.Encode(event); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+// SendStatus outputs status messages as JSON events
+func (w *JSONWriter) SendStatus(status, message string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	event := JSONEvent{
+		Type:      "status",
+		Status:    status,
+		Message:   message,
+		Timestamp: time.Now(),
+	}
+
+	w.encoder.Encode(event)
+}
+
+// SendStatusComplete outputs completion messages as JSON events
+func (w *JSONWriter) SendStatusComplete(status, message string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	event := JSONEvent{
+		Type:      "status_complete",
+		Status:    status,
+		Message:   message,
+		Timestamp: time.Now(),
+	}
+
+	w.encoder.Encode(event)
+}
+
+// SendDeploymentStart emits a deployment_start event
+func (w *JSONWriter) SendDeploymentStart(platform, projectPath string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	event := map[string]interface{}{
+		"type":         "deployment_start",
+		"platform":     platform,
+		"project_path": projectPath,
+		"timestamp":    time.Now().Format(time.RFC3339),
+	}
+
+	w.encoder.Encode(event)
+}
+
+// SendDeploymentComplete emits a deployment_complete event
+func (w *JSONWriter) SendDeploymentComplete(platform, status, url, errorMsg string, durationMs int64) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	event := map[string]interface{}{
+		"type":        "deployment_complete",
+		"platform":    platform,
+		"status":      status,
+		"duration_ms": durationMs,
+		"timestamp":   time.Now().Format(time.RFC3339),
+	}
+
+	if url != "" {
+		event["url"] = url
+	}
+	if errorMsg != "" {
+		event["error"] = errorMsg
+	}
+
+	w.encoder.Encode(event)
+}
+
+// SendPlanApprovalRequest emits a plan_approval_request event
+func (w *JSONWriter) SendPlanApprovalRequest(plan map[string]interface{}) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// Add type and timestamp to the plan data
+	plan["type"] = "plan_approval_request"
+	plan["timestamp"] = time.Now().Format(time.RFC3339)
+
+	if err := w.encoder.Encode(plan); err != nil {
+		slog.Error("Failed to encode plan approval request", "error", err)
+	}
+}
+
+// SendEnvVarPrompt emits an env_var_prompt event
+func (w *JSONWriter) SendEnvVarPrompt(varName, defaultValue, message string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	event := map[string]interface{}{
+		"type":          "env_var_prompt",
+		"variable_name": varName,
+		"default_value": defaultValue,
+		"message":       message,
+		"timestamp":     time.Now().Format(time.RFC3339),
+	}
+
+	if err := w.encoder.Encode(event); err != nil {
+		slog.Error("Failed to encode env var prompt", "error", err)
+	}
+}
+
+// Ensure JSONWriter implements StatusWriter
+var _ StatusWriter = (*JSONWriter)(nil)
+
 // WriterType represents the type of writer to create
 type WriterType string
 
@@ -298,6 +488,7 @@ const (
 	WriterTypeTUI     WriterType = "tui"
 	WriterTypeConsole WriterType = "console"
 	WriterTypeNoOp    WriterType = "noop"
+	WriterTypeJSON    WriterType = "json"
 )
 
 // ProxyWriter is a writer that forwards calls to another writer that can be updated
@@ -339,6 +530,34 @@ func (p *ProxyWriter) SendStatusComplete(status, message string) {
 	p.target.SendStatusComplete(status, message)
 }
 
+// SendDeploymentStart implements StatusWriter
+func (p *ProxyWriter) SendDeploymentStart(platform, projectPath string) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	p.target.SendDeploymentStart(platform, projectPath)
+}
+
+// SendDeploymentComplete implements StatusWriter
+func (p *ProxyWriter) SendDeploymentComplete(platform, status, url, errorMsg string, durationMs int64) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	p.target.SendDeploymentComplete(platform, status, url, errorMsg, durationMs)
+}
+
+// SendPlanApprovalRequest implements StatusWriter
+func (p *ProxyWriter) SendPlanApprovalRequest(plan map[string]interface{}) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	p.target.SendPlanApprovalRequest(plan)
+}
+
+// SendEnvVarPrompt implements StatusWriter
+func (p *ProxyWriter) SendEnvVarPrompt(varName, defaultValue, message string) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	p.target.SendEnvVarPrompt(varName, defaultValue, message)
+}
+
 // SendInfoBox forwards info box messages to the target if it supports them
 func (p *ProxyWriter) SendInfoBox(title string, content string, icon string) {
 	p.mu.RLock()
@@ -361,6 +580,8 @@ func NewWriter(writerType WriterType) StatusWriter {
 		return NewConsoleWriter()
 	case WriterTypeNoOp:
 		return NewNoOpWriter()
+	case WriterTypeJSON:
+		return NewJSONWriter()
 	case WriterTypeTUI:
 		fallthrough
 	default:
