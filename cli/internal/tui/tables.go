@@ -274,6 +274,9 @@ func formatDeploymentDate(dateStr string) string {
 		return dateStr
 	}
 
+	// Convert to local timezone for display
+	parsedTime = parsedTime.Local()
+
 	// Format as "Jan 2, 3:04 PM"
 	now := time.Now()
 
