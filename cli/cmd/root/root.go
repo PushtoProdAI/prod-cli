@@ -10,6 +10,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/cmd/auth"
 	"github.com/meroxa/prod/cli/internal/agent"
+	"github.com/meroxa/prod/cli/internal/config"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/tui"
 )
@@ -78,7 +79,7 @@ ______              _
 `
 
 	if c.flags.Version {
-		c.output.Stdout(fmt.Sprintf("%s\n", "0.0.1"))
+		c.output.Stdout(fmt.Sprintf("%s\n", config.Version))
 		return nil
 	}
 
