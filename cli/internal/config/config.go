@@ -13,6 +13,7 @@ var (
 	SentryDSN                    string
 	ProdAWSAccountID             string
 	AWSCloudFormationTemplateURL string
+	Version                      string
 )
 
 // GetEnvironment returns the current environment (local, staging, production)
