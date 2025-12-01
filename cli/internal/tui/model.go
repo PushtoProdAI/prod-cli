@@ -74,15 +74,17 @@ type Model struct {
 	lastContentLen      int
 	autoScrollEnabled   bool
 
-	selection            SelectionState
-	mousePressed         bool
-	expandedRemediations map[int]bool
-	currentError         *ErrorDisplayMessage
-	errorStartLine       int
-	errorEndLine         int
-	showSlashCommands    bool
-	slashCommandCursor   int
-	availableCommands    []SlashCommand
+	selection                SelectionState
+	mousePressed             bool
+	expandedRemediations     map[int]bool
+	currentError             *ErrorDisplayMessage
+	errorStartLine           int
+	errorEndLine             int
+	showSlashCommands        bool
+	slashCommandCursor       int
+	slashCommandScrollOffset int
+	slashCommandLastInput    string
+	availableCommands        []SlashCommand
 
 	// Search state
 	searchQuery       string
@@ -373,15 +375,40 @@ func (m Model) View() (string, *tea.Cursor) {
 	if m.showSlashCommands && m.isMode(ModeNormal) {
 		filtered := m.getFilteredSlashCommands()
 		if len(filtered) > 0 {
+			const maxVisibleItems = 5
 			var menuText strings.Builder
-			for i, cmd := range filtered {
+
+			// Calculate visible window - ensure cursor is always visible
+			startIdx := m.slashCommandScrollOffset
+			endIdx := startIdx + maxVisibleItems
+			if endIdx > len(filtered) {
+				endIdx = len(filtered)
+				startIdx = endIdx - maxVisibleItems
+				if startIdx < 0 {
+					startIdx = 0
+				}
+			}
+
+			// Show scroll indicator at top if not at start
+			if startIdx > 0 {
+				menuText.WriteString("  ↑ more\n")
+			}
+
+			for i := startIdx; i < endIdx; i++ {
+				cmd := filtered[i]
 				if i == m.slashCommandCursor {
 					menuText.WriteString(fmt.Sprintf("❯ %s - %s\n", cmd.Command, cmd.Description))
 				} else {
 					menuText.WriteString(fmt.Sprintf("  %s - %s\n", cmd.Command, cmd.Description))
 				}
 			}
-			menuText.WriteString("Use ↑/↓ to navigate, Tab/Enter to select, Esc to cancel")
+
+			// Show scroll indicator at bottom if more items below
+			if endIdx < len(filtered) {
+				menuText.WriteString("  ↓ more\n")
+			}
+
+			menuText.WriteString("↑/↓ navigate, Tab/Enter select, Esc cancel")
 			slashCommandMenu = confirmationPromptStyle.Render(menuText.String())
 		}
 	}
