@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/meroxa/prod/cli/internal/backend"
+	"github.com/meroxa/prod/cli/internal/config"
 )
 
 // SlashCommand represents a command that can be executed from the TUI
@@ -48,6 +49,11 @@ func (a *Agent) GetAvailableSlashCommands() []SlashCommand {
 			Name:        "/search",
 			Description: "Search through the output buffer",
 			Handler:     a.handleSearchCommand,
+		},
+		{
+			Name:        "/version",
+			Description: "Show the current Prod CLI version",
+			Handler:     a.handleVersionCommand,
 		},
 	}
 }
@@ -132,5 +138,10 @@ func (a *Agent) handleDeploysCommand(ctx context.Context, out io.Writer) (stateF
 	// Send deployment history to TUI for display
 	tuiWriter.SendDeploymentHistory(response.Data)
 
+	return a.checkPrerequisites, nil
+}
+
+func (a *Agent) handleVersionCommand(ctx context.Context, out io.Writer) (stateFn, error) {
+	fmt.Fprintf(out, "Prod CLI version: %s\n", config.Version)
 	return a.checkPrerequisites, nil
 }

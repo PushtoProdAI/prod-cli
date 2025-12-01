@@ -7,11 +7,14 @@ BINARY_NAME=prod
 CMD_PATH=cmd/main.go
 BUILD_DIR=../bin
 
-GIT_TAG := $(shell git describe --tags --exact-match 2>/dev/null)
-ifeq ($(GIT_TAG),)
-    VERSION := $(shell git rev-parse --short HEAD)
-else
-    VERSION := $(GIT_TAG)
+# VERSION can be set via environment variable, otherwise fall back to git
+ifndef VERSION
+    GIT_TAG := $(shell git describe --tags --exact-match 2>/dev/null)
+    ifeq ($(GIT_TAG),)
+        VERSION := $(shell git rev-parse --short HEAD)
+    else
+        VERSION := $(GIT_TAG)
+    endif
 endif
 
 # Load .env file if it exists (check parent directory first, then current directory)
@@ -31,7 +34,8 @@ LDFLAGS := -X 'github.com/meroxa/prod/cli/internal/config.SupabaseURL=$(SUPABASE
 					 -X 'github.com/meroxa/prod/cli/internal/config.Environment=$(ENVIRONMENT)' \
 					 -X 'github.com/meroxa/prod/cli/internal/config.SentryDSN=$(CLI_SENTRY_DSN)' \
 					 -X 'github.com/meroxa/prod/cli/internal/config.ProdAWSAccountID=$(PROD_AWS_ACCOUNT_ID)' \
-					 -X 'github.com/meroxa/prod/cli/internal/config.AWSCloudFormationTemplateURL=$(AWS_CLOUDFORMATION_TEMPLATE_URL)'
+					 -X 'github.com/meroxa/prod/cli/internal/config.AWSCloudFormationTemplateURL=$(AWS_CLOUDFORMATION_TEMPLATE_URL)' \
+					 -X 'github.com/meroxa/prod/cli/internal/config.Version=$(VERSION)'
 
 .PHONY: build
 build: build-cli-darwin-arm64
