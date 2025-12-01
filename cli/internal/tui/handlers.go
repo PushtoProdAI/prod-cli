@@ -324,6 +324,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSpecialModeKeys(msg)
 	}
 
+	// Don't update text input or slash command visibility for Up/Down keys
+	// when slash commands are visible (those are handled above)
+	if m.showSlashCommands {
+		key := msg.Key()
+		if key.Code == tea.KeyUp || key.Code == tea.KeyDown {
+			return m, nil
+		}
+	}
+
 	// Update text input for normal mode
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(msg)
@@ -350,6 +359,10 @@ func (m Model) handleUpKey() (tea.Model, tea.Cmd) {
 		filtered := m.getFilteredSlashCommands()
 		if len(filtered) > 0 && m.slashCommandCursor > 0 {
 			m.slashCommandCursor--
+			// Scroll up if cursor moves above visible window
+			if m.slashCommandCursor < m.slashCommandScrollOffset {
+				m.slashCommandScrollOffset = m.slashCommandCursor
+			}
 		}
 		return m, nil
 	}
@@ -376,9 +389,14 @@ func (m Model) handleDownKey() (tea.Model, tea.Cmd) {
 
 	// Slash command navigation
 	if m.showSlashCommands {
+		const maxVisibleItems = 5
 		filtered := m.getFilteredSlashCommands()
 		if len(filtered) > 0 && m.slashCommandCursor < len(filtered)-1 {
 			m.slashCommandCursor++
+			// Scroll down if cursor moves below visible window
+			if m.slashCommandCursor >= m.slashCommandScrollOffset+maxVisibleItems {
+				m.slashCommandScrollOffset = m.slashCommandCursor - maxVisibleItems + 1
+			}
 		}
 		return m, nil
 	}
@@ -619,10 +637,16 @@ func (m *Model) updateSlashCommandVisibility() {
 
 	// Show slash commands if input starts with /
 	if strings.HasPrefix(input, "/") && m.isMode(ModeNormal) {
+		// Reset cursor and scroll if input changed (filtered list may have changed)
+		if !m.showSlashCommands || input != m.slashCommandLastInput {
+			m.slashCommandCursor = 0
+			m.slashCommandScrollOffset = 0
+			m.slashCommandLastInput = input
+		}
 		m.showSlashCommands = true
-		m.slashCommandCursor = 0
 	} else {
 		m.showSlashCommands = false
+		m.slashCommandLastInput = ""
 	}
 }
 
