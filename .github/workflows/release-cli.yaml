@@ -133,12 +133,12 @@ jobs:
       - name: Get version
         id: version
         run: |
-          # Try to get the latest tag, fallback to commit hash
-          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -n "$latest_tag" ]; then
-            echo "version=$latest_tag" >> $GITHUB_OUTPUT
+          # Try to get exact tag match, fallback to commit hash
+          exact_tag=$(git describe --tags --exact-match 2>/dev/null || echo "")
+          if [ -n "$exact_tag" ]; then
+            echo "version=$exact_tag" >> $GITHUB_OUTPUT
           else
-            echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+            echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
 
       - name: Build Linux binaries (Staging)
@@ -276,12 +276,12 @@ jobs:
       - name: Get version
         id: version
         run: |
-          # Try to get the latest tag, fallback to commit hash
-          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -n "$latest_tag" ]; then
-            echo "version=$latest_tag" >> $GITHUB_OUTPUT
+          # Try to get exact tag match, fallback to commit hash
+          exact_tag=$(git describe --tags --exact-match 2>/dev/null || echo "")
+          if [ -n "$exact_tag" ]; then
+            echo "version=$exact_tag" >> $GITHUB_OUTPUT
           else
-            echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+            echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
 
       - name: Build Linux binaries (Production)
@@ -417,12 +417,12 @@ jobs:
       - name: Get version
         id: version
         run: |
-          # Try to get the latest tag, fallback to commit hash
-          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -n "$latest_tag" ]; then
-            echo "version=$latest_tag" >> $GITHUB_OUTPUT
+          # Try to get exact tag match, fallback to commit hash
+          exact_tag=$(git describe --tags --exact-match 2>/dev/null || echo "")
+          if [ -n "$exact_tag" ]; then
+            echo "version=$exact_tag" >> $GITHUB_OUTPUT
           else
-            echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+            echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
         shell: bash
 
@@ -552,12 +552,12 @@ jobs:
       - name: Get version
         id: version
         run: |
-          # Try to get the latest tag, fallback to commit hash
-          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -n "$latest_tag" ]; then
-            echo "version=$latest_tag" >> $GITHUB_OUTPUT
+          # Try to get exact tag match, fallback to commit hash
+          exact_tag=$(git describe --tags --exact-match 2>/dev/null || echo "")
+          if [ -n "$exact_tag" ]; then
+            echo "version=$exact_tag" >> $GITHUB_OUTPUT
           else
-            echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+            echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
 
       - name: Build macOS binaries (Staging)
@@ -697,12 +697,12 @@ jobs:
       - name: Get version
         id: version
         run: |
-          # Try to get the latest tag, fallback to commit hash
-          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -n "$latest_tag" ]; then
-            echo "version=$latest_tag" >> $GITHUB_OUTPUT
+          # Try to get exact tag match, fallback to commit hash
+          exact_tag=$(git describe --tags --exact-match 2>/dev/null || echo "")
+          if [ -n "$exact_tag" ]; then
+            echo "version=$exact_tag" >> $GITHUB_OUTPUT
           else
-            echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+            echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
         shell: bash
 
@@ -832,12 +832,12 @@ jobs:
       - name: Get version
         id: version
         run: |
-          # Try to get the latest tag, fallback to commit hash
-          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -n "$latest_tag" ]; then
-            echo "version=$latest_tag" >> $GITHUB_OUTPUT
+          # Try to get exact tag match, fallback to commit hash
+          exact_tag=$(git describe --tags --exact-match 2>/dev/null || echo "")
+          if [ -n "$exact_tag" ]; then
+            echo "version=$exact_tag" >> $GITHUB_OUTPUT
           else
-            echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+            echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
 
       - name: Build macOS binaries (Production)
