@@ -130,19 +130,6 @@ jobs:
       - name: Create bin directory
         run: mkdir -p bin
 
-      - name: Build Linux binaries (Staging)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          PROD_AWS_ACCOUNT_ID: ${{ secrets.PROD_AWS_ACCOUNT_ID }}
-          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
-          PROD_DEBUG: true
-          ENVIRONMENT: staging
-        run: |
-          echo "Building staging binaries with PROD_DEBUG=true, ENVIRONMENT=staging"
-          cd cli
-          make build-linux-all
-
       - name: Get version
         id: version
         run: |
@@ -153,6 +140,20 @@ jobs:
           else
             echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
+
+      - name: Build Linux binaries (Staging)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_AWS_ACCOUNT_ID: ${{ secrets.PROD_AWS_ACCOUNT_ID }}
+          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
+          PROD_DEBUG: true
+          ENVIRONMENT: staging
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "Building staging binaries with PROD_DEBUG=true, ENVIRONMENT=staging"
+          cd cli
+          make build-linux-all
 
       - name: Upload Linux AMD64 artifact
         uses: actions/upload-artifact@v4
@@ -272,19 +273,6 @@ jobs:
       - name: Create bin directory
         run: mkdir -p bin
 
-      - name: Build Linux binaries (Production)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          PROD_AWS_ACCOUNT_ID: ${{ secrets.PROD_AWS_ACCOUNT_ID }}
-          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
-          PROD_DEBUG: false
-          ENVIRONMENT: production
-        run: |
-          echo "Building production binaries with PROD_DEBUG=false, ENVIRONMENT=production"
-          cd cli
-          make build-linux-all
-
       - name: Get version
         id: version
         run: |
@@ -295,6 +283,20 @@ jobs:
           else
             echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
+
+      - name: Build Linux binaries (Production)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_AWS_ACCOUNT_ID: ${{ secrets.PROD_AWS_ACCOUNT_ID }}
+          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
+          PROD_DEBUG: false
+          ENVIRONMENT: production
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "Building production binaries with PROD_DEBUG=false, ENVIRONMENT=production"
+          cd cli
+          make build-linux-all
 
       - name: Upload Linux AMD64 artifact
         uses: actions/upload-artifact@v4
@@ -412,20 +414,6 @@ jobs:
         run: mkdir -p bin
         shell: bash
 
-      - name: Build Windows binaries (Staging)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          PROD_AWS_ACCOUNT_ID: ${{ secrets.PROD_AWS_ACCOUNT_ID }}
-          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
-          PROD_DEBUG: true
-          ENVIRONMENT: staging
-        run: |
-          echo "Building staging binaries with PROD_DEBUG=true, ENVIRONMENT=staging"
-          cd cli
-          make build-cli-windows
-        shell: bash
-
       - name: Get version
         id: version
         run: |
@@ -436,6 +424,21 @@ jobs:
           else
             echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
+        shell: bash
+
+      - name: Build Windows binaries (Staging)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_AWS_ACCOUNT_ID: ${{ secrets.PROD_AWS_ACCOUNT_ID }}
+          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
+          PROD_DEBUG: true
+          ENVIRONMENT: staging
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "Building staging binaries with PROD_DEBUG=true, ENVIRONMENT=staging"
+          cd cli
+          make build-cli-windows
         shell: bash
 
       - name: Upload Windows AMD64 artifact
@@ -546,22 +549,6 @@ jobs:
       - name: Create bin directory
         run: mkdir -p bin
 
-      - name: Build macOS binaries (Staging)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          PROD_AWS_ACCOUNT_ID: ${{ secrets.PROD_AWS_ACCOUNT_ID }}
-          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
-          PROD_DEBUG: true
-          ENVIRONMENT: staging
-        run: |
-          echo "Building staging binaries with PROD_DEBUG=true, ENVIRONMENT=staging"
-          cd cli
-          # Build ARM64 (should always work)
-          make build-cli-darwin-arm64
-          # Try to build AMD64 (may fail on some macOS versions)
-          make build-cli-darwin || echo "Warning: macOS AMD64 build failed, continuing with ARM64 only"
-
       - name: Get version
         id: version
         run: |
@@ -572,6 +559,23 @@ jobs:
           else
             echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
+
+      - name: Build macOS binaries (Staging)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_AWS_ACCOUNT_ID: ${{ secrets.PROD_AWS_ACCOUNT_ID }}
+          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
+          PROD_DEBUG: true
+          ENVIRONMENT: staging
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "Building staging binaries with PROD_DEBUG=true, ENVIRONMENT=staging"
+          cd cli
+          # Build ARM64 (should always work)
+          make build-cli-darwin-arm64
+          # Try to build AMD64 (may fail on some macOS versions)
+          make build-cli-darwin || echo "Warning: macOS AMD64 build failed, continuing with ARM64 only"
 
       - name: Upload macOS AMD64 artifact
         uses: actions/upload-artifact@v4
@@ -690,20 +694,6 @@ jobs:
         run: mkdir -p bin
         shell: bash
 
-      - name: Build Windows binaries (Production)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          PROD_AWS_ACCOUNT_ID: ${{ secrets.PROD_AWS_ACCOUNT_ID }}
-          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
-          PROD_DEBUG: false
-          ENVIRONMENT: production
-        run: |
-          echo "Building production binaries with PROD_DEBUG=false, ENVIRONMENT=production"
-          cd cli
-          make build-cli-windows
-        shell: bash
-
       - name: Get version
         id: version
         run: |
@@ -714,6 +704,21 @@ jobs:
           else
             echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
+        shell: bash
+
+      - name: Build Windows binaries (Production)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_AWS_ACCOUNT_ID: ${{ secrets.PROD_AWS_ACCOUNT_ID }}
+          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
+          PROD_DEBUG: false
+          ENVIRONMENT: production
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "Building production binaries with PROD_DEBUG=false, ENVIRONMENT=production"
+          cd cli
+          make build-cli-windows
         shell: bash
 
       - name: Upload Windows AMD64 artifact
@@ -824,22 +829,6 @@ jobs:
       - name: Create bin directory
         run: mkdir -p bin
 
-      - name: Build macOS binaries (Production)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          PROD_AWS_ACCOUNT_ID: ${{ secrets.PROD_AWS_ACCOUNT_ID }}
-          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
-          PROD_DEBUG: false
-          ENVIRONMENT: production
-        run: |
-          echo "Building production binaries with PROD_DEBUG=false, ENVIRONMENT=production"
-          cd cli
-          # Build ARM64 (should always work)
-          make build-cli-darwin-arm64
-          # Try to build AMD64 (may fail on some macOS versions)
-          make build-cli-darwin || echo "Warning: macOS AMD64 build failed, continuing with ARM64 only"
-
       - name: Get version
         id: version
         run: |
@@ -850,6 +839,23 @@ jobs:
           else
             echo "version=v0.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
+
+      - name: Build macOS binaries (Production)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          PROD_AWS_ACCOUNT_ID: ${{ secrets.PROD_AWS_ACCOUNT_ID }}
+          AWS_CLOUDFORMATION_TEMPLATE_URL: ${{ secrets.AWS_CLOUDFORMATION_TEMPLATE_URL }}
+          PROD_DEBUG: false
+          ENVIRONMENT: production
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "Building production binaries with PROD_DEBUG=false, ENVIRONMENT=production"
+          cd cli
+          # Build ARM64 (should always work)
+          make build-cli-darwin-arm64
+          # Try to build AMD64 (may fail on some macOS versions)
+          make build-cli-darwin || echo "Warning: macOS AMD64 build failed, continuing with ARM64 only"
 
       - name: Upload macOS AMD64 artifact
         uses: actions/upload-artifact@v4
