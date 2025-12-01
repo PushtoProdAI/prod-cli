@@ -75,7 +75,7 @@ func (c *Client) RecordRequestedStack(ctx context.Context, authToken string, pla
 	return nil
 }
 
-// These delegate to c.AWS.* methods
+// AWS delegation methods - these delegate to c.AWS.* methods
 
 // CheckAWSAuthentication checks if AWS authentication is set up
 func (c *Client) CheckAWSAuthentication(ctx context.Context, authToken string) (bool, error) {

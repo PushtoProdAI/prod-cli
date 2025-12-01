@@ -9,6 +9,7 @@ import (
 	"github.com/conduitio/ecdysis"
 	"github.com/go-errors/errors"
 	"github.com/meroxa/prod/cli/cmd/auth"
+	"github.com/meroxa/prod/cli/cmd/run"
 	"github.com/meroxa/prod/cli/internal/agent"
 	"github.com/meroxa/prod/cli/internal/config"
 	"github.com/meroxa/prod/cli/internal/output"
@@ -44,11 +45,13 @@ type RootCommand struct {
 
 	// Subcommands
 	Auth auth.AuthCommand `cmd:"" help:"Manage authentication"`
+	Run  run.RunCommand   `cmd:"" help:"Run a deployment command"`
 }
 
 func (c *RootCommand) SubCommands() []ecdysis.Command {
 	return []ecdysis.Command{
 		&c.Auth,
+		&c.Run,
 	}
 }
 

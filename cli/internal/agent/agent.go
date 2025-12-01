@@ -94,6 +94,12 @@ type DeployPlan struct {
 	ExistingProjectInfo ExistingProjectInfo
 }
 
+// Plan approval response constants
+const (
+	PlanApprovalApproved = "approved"
+	PlanApprovalRejected = "rejected"
+)
+
 type (
 	stateFn  func(ctx context.Context, input string, out io.Writer) (stateFn, error)
 	deploySM struct {
@@ -120,6 +126,16 @@ func (a *Agent) SetInteractive(interactive bool) {
 	a.interactive = interactive
 }
 
+// IsComplete returns true if the state machine has finished (no current state)
+func (a *Agent) IsComplete() bool {
+	return a.sm.currentState == nil
+}
+
+// isJSONMode checks if the agent is running in JSON mode (VSCode extension integration)
+func (a *Agent) isJSONMode() bool {
+	return os.Getenv("PROD_JSON_MODE") == "true"
+}
+
 func (a *Agent) IsErrorTrackingEnabled() bool {
 	return a.errorTrackingEnabled
 }
@@ -128,6 +144,51 @@ func (a *Agent) IsErrorTrackingEnabled() bool {
 func (a *Agent) sendPlan(out io.Writer, plan DeployPlan) {
 	tuiWriter := out.(TUIWriter)
 	tuiWriter.SendPlan(plan)
+}
+
+func (a *Agent) sendPlanApprovalRequest(out io.Writer, plan DeployPlan) {
+	// Build plan details for JSON output
+	planData := map[string]interface{}{
+		"action":   plan.Action.String(),
+		"platform": plan.Platform.String(),
+		"summary":  plan.Summary,
+		"project": map[string]interface{}{
+			"name":     plan.Spec.Name,
+			"language": plan.Spec.Language,
+			"source":   plan.Source,
+		},
+	}
+
+	// Add pricing if available
+	if plan.Pricing.Total > 0 {
+		planData["pricing"] = map[string]interface{}{
+			"total":    plan.Pricing.Total,
+			"services": plan.Pricing.Services,
+		}
+	}
+
+	// Emit through StatusWriter interface
+	if statusWriter, ok := out.(output.StatusWriter); ok {
+		statusWriter.SendPlanApprovalRequest(planData)
+	}
+}
+
+func (a *Agent) waitForPlanApproval(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	input = strings.ToLower(strings.TrimSpace(input))
+
+	switch input {
+	case PlanApprovalApproved:
+		fmt.Fprint(out, "Proceeding with deployment...\n")
+		a.nextStateAfterAuth = a.detectExisting
+		return a.checkAuthentication(ctx, input, out)
+	case PlanApprovalRejected:
+		fmt.Fprint(out, "Deployment cancelled\n")
+		return nil, nil
+	default:
+		// Invalid response, stay in this state and wait for valid input
+		slog.Info("Invalid plan approval response", "input", input)
+		return a.waitForPlanApproval, nil
+	}
 }
 
 func (a *Agent) sendConfirmation(out io.Writer, message string) {
@@ -339,18 +400,24 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 		})
 	}
 
-	a.sendPlan(out, plan)
-
 	if !shouldProceed(plan) {
 		fmt.Fprintf(out, "Cannot proceed with deployment plan\n")
 		return a.checkPrerequisites, nil
 	}
 	a.DeployPlan = &plan
 
-	if a.interactive {
-		// automatically advance the next state, don't need to wait for input here
+	// Check if we're in JSON mode (VSCode extension integration)
+	if a.isJSONMode() {
+		// JSON mode: emit plan_approval_request and wait for response
+		a.sendPlanApprovalRequest(out, plan)
+		return a.waitForPlanApproval, nil
+	} else if a.interactive {
+		// TUI mode: send plan to TUI and wait for confirmation
+		a.sendPlan(out, plan)
 		return a.confirmWithPrompt(ctx, input, out)
 	}
+
+	// Non-interactive, non-JSON mode: proceed directly
 	return a.confirm, nil
 }
 
@@ -663,6 +730,17 @@ func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.W
 		return a.prepareProject(ctx, input, out)
 	}
 
+	// Check if we're in JSON mode
+	if a.isJSONMode() {
+		// JSON mode: emit env_var_prompt event through StatusWriter
+		promptMessage := fmt.Sprintf("Enter value for environment variable '%s':", currentEnvVar.Name)
+		if statusWriter, ok := out.(output.StatusWriter); ok {
+			statusWriter.SendEnvVarPrompt(currentEnvVar.Name, currentEnvVar.Value, promptMessage)
+		}
+		return a.waitForEnvVarValue, nil
+	}
+
+	// TUI mode: use text prompt
 	promptMessage := fmt.Sprintf("Enter value for environment variable '%s':", currentEnvVar.Name)
 	if currentEnvVar.Value != "" {
 		// Use the enhanced method that pre-fills the input with the default value
@@ -934,6 +1012,8 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 	}
 
 	if result.Error.Summary != "" {
+		// deployment_complete event is emitted from planning.go workflow layer
+		// Here we just handle UI rendering based on mode
 		if tuiWriter, ok := out.(TUIWriter); ok {
 			if result.Error.IsWarning {
 				tuiWriter.SendWarning(result.Error.Summary, result.Error.Remediations)
@@ -968,6 +1048,8 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 		return a.checkPrerequisites, nil
 	}
 
+	// deployment_complete event is emitted from planning.go workflow layer
+	// Here we just handle UI rendering based on mode
 	if tuiWriter, ok := out.(TUIWriter); ok {
 		tuiWriter.SendSuccess(a.DeployPlan.Platform.String(), a.DeployPlan.Spec.Name, result.Url)
 		if result.Url != "" {
@@ -1140,7 +1222,13 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 		// Store the auth provider for use in authentication states
 		a.auth = authProvider
 
-		// In non-interactive mode, if we are not authenticated exit state machine
+		// Check if we're in JSON mode
+		if a.isJSONMode() {
+			// JSON mode: skip selection and go straight to OAuth login
+			return a.performOAuthLogin(ctx, input, out)
+		}
+
+		// In non-interactive mode, exit state machine
 		if !a.interactive {
 			return nil, nil
 		}
@@ -1151,12 +1239,11 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 			return a.promptForAWSRegion(ctx, input, out)
 		}
 
-		// In interactive mode, transition to auth selection state for other platforms
+		// In interactive TUI mode, show selection and transition to auth selection state
 		a.sendSelect(out, "Choose authentication method:", []string{
 			"Interactive login (recommended)",
 			"Enter API key directly",
 		})
-		// Transition to waiting for auth selection
 		return a.waitForAuthSelection, nil
 	}
 

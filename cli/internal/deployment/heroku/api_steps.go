@@ -708,14 +708,40 @@ func (s *GitDeployStep) extractErrorMessage(output string) string {
 }
 
 func (s *GitDeployStep) reportSuccess(writer io.Writer, output string) error {
+	// Check if nothing was actually pushed (this is NOT a success for deployment)
+	if strings.Contains(output, "Everything up-to-date") {
+		fmt.Fprintln(writer, "⚠️  No changes to deploy - your code is already up-to-date on Heroku")
+		fmt.Fprintln(writer, "💡 If you expected changes, make sure you've modified and saved your files")
+		// Return nil to not fail the deployment - the app is already deployed
+		return nil
+	}
+
+	// Look for actual deployment success indicators
+	foundDeploymentIndicator := false
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "https://") && strings.Contains(line, ".herokuapp.com") {
 			fmt.Fprintf(writer, "🌐 App URL: %s\n", strings.TrimSpace(line))
+			foundDeploymentIndicator = true
 		} else if strings.Contains(line, "deployed to Heroku") {
 			fmt.Fprintf(writer, "✅ %s\n", strings.TrimSpace(line))
+			foundDeploymentIndicator = true
+		} else if strings.Contains(line, "Verifying deploy") || strings.Contains(line, "Build succeeded") {
+			foundDeploymentIndicator = true
 		}
 	}
+
+	// If git push succeeded (exit 0) but we didn't find deployment indicators,
+	// log the output for debugging
+	if !foundDeploymentIndicator && output != "" {
+		fmt.Fprintln(writer, "📋 Git push output:")
+		for _, line := range lines {
+			if strings.TrimSpace(line) != "" {
+				fmt.Fprintf(writer, "  %s\n", line)
+			}
+		}
+	}
+
 	return nil
 }
 
