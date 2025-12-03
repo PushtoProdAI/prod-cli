@@ -52,11 +52,16 @@ func main() {
 	if os.Getenv("PROD_CONSOLE_MODE") == "true" {
 		writerType = output.WriterTypeConsole
 	}
+	if os.Getenv("PROD_JSON_MODE") == "true" {
+		writerType = output.WriterTypeJSON
+	}
 
 	// Create a writer that can be updated later for TUI mode
 	var statusWriter output.StatusWriter
 	if writerType == output.WriterTypeConsole {
 		statusWriter = output.NewConsoleWriter()
+	} else if writerType == output.WriterTypeJSON {
+		statusWriter = output.NewJSONWriter()
 	} else {
 		// For TUI mode, create a proxy writer that starts with console writer
 		// and will be updated to TeaWriter when TUI starts
@@ -99,11 +104,16 @@ func main() {
 		log.Fatalf("failed to initialize auth: %v", err)
 	}
 	a := agent.NewAgent(provider.Client, supabaseAuth, false)
-	cmd := e.MustBuildCobraCommand(&root.RootCommand{
+	rootCmd := &root.RootCommand{
 		Agent:        a,
 		StatusWriter: statusWriter,
 		WriterType:   writerType,
-	})
+	}
+	// Set Agent and StatusWriter for the Run subcommand
+	rootCmd.Run.Agent = a
+	rootCmd.Run.StatusWriter = statusWriter
+
+	cmd := e.MustBuildCobraCommand(rootCmd)
 	if err := cmd.Execute(); err != nil {
 		log.Fatal(err)
 	}
