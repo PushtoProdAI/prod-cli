@@ -930,7 +930,8 @@ jobs:
   # Create a staging release with all binaries for staging builds
   release-staging:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'staging' || github.event.inputs.build_type == 'both'))
-    needs: [test, build-linux-staging, build-windows-staging, build-macos-staging]
+    needs:
+      [test, build-linux-staging, build-windows-staging, build-macos-staging]
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -1359,9 +1360,17 @@ jobs:
   # Create a production release with all binaries when a tag is pushed
   release-production:
     if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.build_type == 'production' || github.event.inputs.build_type == 'both'))
-    needs: [test, build-linux-production, build-windows-production, build-macos-production]
+    needs:
+      [
+        test,
+        build-linux-production,
+        build-windows-production,
+        build-macos-production,
+      ]
     runs-on: ubuntu-latest
     environment: prod
+    outputs:
+      version: ${{ steps.prod-version.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1811,3 +1820,10 @@ jobs:
                     value: "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
                     short: false
 
+  # Update Homebrew formula after successful production release
+  update-homebrew-formula:
+    needs: [release-production]
+    uses: PushtoProdAI/homebrew-tap/.github/workflows/update-formula-on-release.yml@main
+    with:
+      version: ${{ needs.release-production.outputs.version }}
+    secrets: inherit
