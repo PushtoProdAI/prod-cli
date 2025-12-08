@@ -83,26 +83,6 @@ supabase link --project-ref your-project-ref
 supabase db pull
 ```
 
-## Deployment Platform Configuration
-
-To deploy applications using the prod CLI, you'll need to configure API keys for your preferred deployment platforms:
-
-### Render
-1. Go to [Render API Documentation](https://render.com/docs/api)
-2. Generate an API key from your Render dashboard
-3. Add it to your `.env` file:
-   ```bash
-   RENDER_API_KEY=your-render-api-key-here
-   ```
-
-### Fly.io
-1. Go to [Fly.io API Documentation](https://fly.io/docs/reference/api/)
-2. Generate an API token from your Fly.io dashboard
-3. Add it to your `.env` file:
-   ```bash
-   FLY_API_TOKEN=your-fly-api-token-here
-   ```
-
 ### Available Make Commands
 
 #### Supabase Commands
@@ -286,13 +266,6 @@ The Prod CLI uses a modern web-based authentication system that supports both OA
 ```
 
 ### Environment Support
-
-The authentication system supports multiple environments:
-
-- **Local:** `http://localhost:5175/cli-auth` (for local Supabase development)
-- **Staging:** `https://staging--prodai-landing.netlify.app/cli-auth` (default for local development)
-- **Production:** `https://pushtoprod.ai/cli-auth`
-
 The environment is automatically determined by the `ENVIRONMENT` variable in your `.env` file:
 
 ```bash
@@ -315,12 +288,10 @@ ENVIRONMENT=production
 
 - **Staging Environment (`ENVIRONMENT=staging`):**
   - Uses remote Supabase instance
-  - Authentication page: `https://staging--prodai-landing.netlify.app/cli-auth`
   - Recommended for local development (stable, no local setup required)
 
 - **Production Environment (`ENVIRONMENT=production`):**
   - Uses production Supabase instance
-  - Authentication page: `https://pushtoprod.ai/cli-auth`
   - For production deployments
 
 ### Authentication Features
@@ -332,22 +303,6 @@ ENVIRONMENT=production
 - **✅ Automatic Token Management:** No manual token copying required
 - **✅ Error Handling:** Clear error messages with retry options
 - **✅ Multi-Environment Support:** Works with staging and production
-
-### Troubleshooting Authentication
-
-If authentication fails:
-
-1. **Check Network Connection:** Ensure you can access the authentication website
-2. **Clear Browser Cache:** Try clearing your browser cache and cookies
-3. **Check Environment:** Verify you're using the correct environment (staging vs production)
-4. **Retry Authentication:** Use the "Try Again" button on error pages
-
-### Security Features
-
-- **JWT Token Validation:** All tokens are validated and include user information
-- **Automatic Token Expiration:** Tokens expire after 30 days
-- **Secure Storage:** Authentication tokens are stored securely in `~/.prod/auth.json`
-- **CORS Protection:** Proper CORS headers for secure cross-origin requests
 
 ### Troubleshooting Build Issues
 
