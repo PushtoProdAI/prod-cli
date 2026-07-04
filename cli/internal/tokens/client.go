@@ -270,7 +270,8 @@ func FormatTokenSummary(summary *TokenSummary, writer io.Writer) {
 
 			timestamp, _ := time.Parse(time.RFC3339, createdAt)
 
-			fmt.Fprintf(writer, "  • %s - %s (%d tokens) - %s\n",
+			fmt.Fprintf(
+				writer, "  • %s - %s (%d tokens) - %s\n",
 				timestamp.Format("Jan 2 15:04"),
 				operation,
 				int(tokensConsumed),

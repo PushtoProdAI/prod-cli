@@ -66,7 +66,7 @@ func (*parse) CategorizeRoutes(text string, opts ...CallOptionFunc) (types.Categ
 		return types.CategorizedRoutes{}, err
 	}
 
-	casted := (result).(types.CategorizedRoutes)
+	casted := result.(types.CategorizedRoutes)
 
 	return casted, nil
 }
@@ -112,7 +112,7 @@ func (*parse) DetermineBuildOutput(text string, opts ...CallOptionFunc) (types.B
 		return types.BuildOutput{}, err
 	}
 
-	casted := (result).(types.BuildOutput)
+	casted := result.(types.BuildOutput)
 
 	return casted, nil
 }
@@ -158,7 +158,7 @@ func (*parse) DetermineEnvVarRoles(text string, opts ...CallOptionFunc) (types.E
 		return types.EnvVarCategory{}, err
 	}
 
-	casted := (result).(types.EnvVarCategory)
+	casted := result.(types.EnvVarCategory)
 
 	return casted, nil
 }
@@ -204,7 +204,7 @@ func (*parse) DetermineLaunchCommand(text string, opts ...CallOptionFunc) (types
 		return types.LaunchCommand{}, err
 	}
 
-	casted := (result).(types.LaunchCommand)
+	casted := result.(types.LaunchCommand)
 
 	return casted, nil
 }
@@ -250,7 +250,7 @@ func (*parse) DetermineMigrationCommand(text string, opts ...CallOptionFunc) (ty
 		return types.MigrationCommand{}, err
 	}
 
-	casted := (result).(types.MigrationCommand)
+	casted := result.(types.MigrationCommand)
 
 	return casted, nil
 }
@@ -296,7 +296,7 @@ func (*parse) ExtractIntent(text string, opts ...CallOptionFunc) (types.Intent, 
 		return types.Intent{}, err
 	}
 
-	casted := (result).(types.Intent)
+	casted := result.(types.Intent)
 
 	return casted, nil
 }
@@ -342,7 +342,7 @@ func (*parse) FetchPricing(text string, opts ...CallOptionFunc) (types.ServicePr
 		return types.ServicePricing{}, err
 	}
 
-	casted := (result).(types.ServicePricing)
+	casted := result.(types.ServicePricing)
 
 	return casted, nil
 }
@@ -388,7 +388,7 @@ func (*parse) SummarizeDeployError(text string, opts ...CallOptionFunc) (types.E
 		return types.Error{}, err
 	}
 
-	casted := (result).(types.Error)
+	casted := result.(types.Error)
 
 	return casted, nil
 }
@@ -434,7 +434,7 @@ func (*parse) SummarizeIntent(text string, opts ...CallOptionFunc) (types.Summar
 		return types.Summary{}, err
 	}
 
-	casted := (result).(types.Summary)
+	casted := result.(types.Summary)
 
 	return casted, nil
 }
@@ -480,7 +480,7 @@ func (*parse) SummarizeSteps(text string, opts ...CallOptionFunc) (types.Summary
 		return types.Summary{}, err
 	}
 
-	casted := (result).(types.Summary)
+	casted := result.(types.Summary)
 
 	return casted, nil
 }
