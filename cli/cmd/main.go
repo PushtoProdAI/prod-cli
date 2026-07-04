@@ -129,14 +129,14 @@ func initLogFile() (*os.File, error) {
 
 	dirPath := filepath.Join(homeDir, ".prod")
 
-	err = os.MkdirAll(dirPath, 0755)
+	err = os.MkdirAll(dirPath, 0o755)
 	if err != nil {
 		return nil, errors.WrapPrefix(err, "failed to create directory", 0)
 	}
 
 	filePath := filepath.Join(dirPath, "log.txt")
 
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, errors.WrapPrefix(err, "failed to open/create file", 0)
 	}

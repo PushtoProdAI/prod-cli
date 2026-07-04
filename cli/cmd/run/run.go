@@ -18,8 +18,7 @@ var (
 	_ ecdysis.CommandWithFlags   = (*RunCommand)(nil)
 )
 
-type RunFlags struct {
-}
+type RunFlags struct{}
 
 type RunArgs struct {
 	prompt string

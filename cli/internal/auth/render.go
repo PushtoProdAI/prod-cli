@@ -397,19 +397,19 @@ func (ra *RenderAuth) updateExistingAPIKeyInProfile(profilePath, apiKey, existin
 
 	// Write the updated content back to the file
 	updatedContent := strings.Join(lines, "\n")
-	return os.WriteFile(profilePath, []byte(updatedContent), 0644)
+	return os.WriteFile(profilePath, []byte(updatedContent), 0o644)
 }
 
 // appendAPIKeyToProfile appends a new RENDER_API_KEY entry to the shell profile
 func (ra *RenderAuth) appendAPIKeyToProfile(profilePath, apiKey string) error {
 	// Create the directory if it doesn't exist (for fish config)
 	dir := filepath.Dir(profilePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return errors.Errorf("could not create directory %s: %w", dir, err)
 	}
 
 	// Open file in append mode, create if it doesn't exist
-	file, err := os.OpenFile(profilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(profilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return errors.Errorf("could not open profile file %s: %w", profilePath, err)
 	}

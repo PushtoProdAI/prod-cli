@@ -22,7 +22,6 @@ import (
 )
 
 func CategorizeRoutes(ctx context.Context, candidates []types.RouteCandidate, opts ...CallOptionFunc) (types.CategorizedRoutes, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -88,7 +87,6 @@ func CategorizeRoutes(ctx context.Context, candidates []types.RouteCandidate, op
 }
 
 func DetermineBuildOutput(ctx context.Context, candidate types.BuildOutputCandidate, opts ...CallOptionFunc) (types.BuildOutput, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -154,7 +152,6 @@ func DetermineBuildOutput(ctx context.Context, candidate types.BuildOutputCandid
 }
 
 func DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCandidate, dbList []string, opts ...CallOptionFunc) (types.EnvVarCategory, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -220,7 +217,6 @@ func DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCandidate, dbL
 }
 
 func DetermineLaunchCommand(ctx context.Context, language string, frameworks []string, envVars []string, lc types.LaunchContext, opts ...CallOptionFunc) (types.LaunchCommand, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -286,7 +282,6 @@ func DetermineLaunchCommand(ctx context.Context, language string, frameworks []s
 }
 
 func DetermineMigrationCommand(ctx context.Context, language string, frameworks []string, ormTools []string, migrationContext types.MigrationContext, opts ...CallOptionFunc) (types.MigrationCommand, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -352,7 +347,6 @@ func DetermineMigrationCommand(ctx context.Context, language string, frameworks 
 }
 
 func ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) (types.Intent, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -418,7 +412,6 @@ func ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) 
 }
 
 func FetchPricing(ctx context.Context, service types.Service, content string, opts ...CallOptionFunc) (types.ServicePricing, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -484,7 +477,6 @@ func FetchPricing(ctx context.Context, service types.Service, content string, op
 }
 
 func SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Intent, spec types.ProjectSpec, os string, violations []string, opts ...CallOptionFunc) (types.Error, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -550,7 +542,6 @@ func SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Int
 }
 
 func SummarizeIntent(ctx context.Context, intent types.Intent, name string, language string, detectedPlatforms []string, opts ...CallOptionFunc) (types.Summary, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -616,7 +607,6 @@ func SummarizeIntent(ctx context.Context, intent types.Intent, name string, lang
 }
 
 func SummarizeSteps(ctx context.Context, steps []string, opts ...CallOptionFunc) (types.Summary, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)

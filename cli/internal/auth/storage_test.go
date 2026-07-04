@@ -44,7 +44,7 @@ func TestTokenStore(t *testing.T) {
 
 	// Check permissions (should be 0600)
 	mode := info.Mode()
-	if mode.Perm() != 0600 {
+	if mode.Perm() != 0o600 {
 		t.Errorf("Session file has wrong permissions: %v, want 0600", mode.Perm())
 	}
 

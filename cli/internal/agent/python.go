@@ -57,7 +57,7 @@ func (a *Activities) generatePythonVersion(ctx context.Context, plan DeployPlan)
 
 	// Create .prod directory if it doesn't exist for backups
 	prodDir := filepath.Join(projectPath, ".prod")
-	os.MkdirAll(prodDir, 0755)
+	os.MkdirAll(prodDir, 0o755)
 
 	// Python version to use
 	pythonVersion := "3.11\n"
@@ -71,14 +71,14 @@ func (a *Activities) generatePythonVersion(ctx context.Context, plan DeployPlan)
 	// Backup original file if it exists
 	if versionExists {
 		backupPath := filepath.Join(prodDir, fmt.Sprintf(".python-version.%s.bak", time.Now().Format("20060102-150405")))
-		if err := os.WriteFile(backupPath, originalContent, 0644); err != nil {
+		if err := os.WriteFile(backupPath, originalContent, 0o644); err != nil {
 			a.uiWriter.SendStatusComplete("python_version", "❌ Failed to backup .python-version")
 			return result, errors.Errorf("failed to backup .python-version: %w", err)
 		}
 	}
 
 	// Write the .python-version file
-	if err := os.WriteFile(pythonVersionPath, []byte(pythonVersion), 0644); err != nil {
+	if err := os.WriteFile(pythonVersionPath, []byte(pythonVersion), 0o644); err != nil {
 		a.uiWriter.SendStatusComplete("python_version", "❌ Failed to create .python-version")
 		return result, errors.Errorf("failed to write .python-version: %w", err)
 	}
@@ -383,7 +383,7 @@ func (a *Activities) configureDjangoStaticFiles(ctx context.Context, plan Deploy
 	}
 
 	// Write updated settings
-	if err := os.WriteFile(settingsPath, updatedContent, 0644); err != nil {
+	if err := os.WriteFile(settingsPath, updatedContent, 0o644); err != nil {
 		a.uiWriter.SendStatusComplete("django_static", "❌ Failed to write updated settings")
 		return result, errors.Errorf("failed to write updated settings: %w", err)
 	}

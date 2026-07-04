@@ -82,7 +82,7 @@ func TestCreateProcfile(t *testing.T) {
 			// Create existing Procfile if specified
 			procfilePath := filepath.Join(tmpDir, "Procfile")
 			if tt.existingProcfile != "" {
-				if err := os.WriteFile(procfilePath, []byte(tt.existingProcfile), 0644); err != nil {
+				if err := os.WriteFile(procfilePath, []byte(tt.existingProcfile), 0o644); err != nil {
 					t.Fatalf("Failed to create existing Procfile: %v", err)
 				}
 			}

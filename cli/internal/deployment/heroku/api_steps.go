@@ -555,7 +555,7 @@ func (s *GitDeployStep) createProcfile() error {
 			slog.Info("Replacing existing Procfile with production-ready command",
 				"old", existingStr,
 				"new", procfileContent)
-			if err := os.WriteFile(procfilePath, []byte(procfileContent), 0644); err != nil {
+			if err := os.WriteFile(procfilePath, []byte(procfileContent), 0o644); err != nil {
 				return err
 			}
 		} else {
@@ -564,7 +564,7 @@ func (s *GitDeployStep) createProcfile() error {
 		}
 	} else if os.IsNotExist(err) {
 		// Procfile doesn't exist - create it
-		if err := os.WriteFile(procfilePath, []byte(procfileContent), 0644); err != nil {
+		if err := os.WriteFile(procfilePath, []byte(procfileContent), 0o644); err != nil {
 			return err
 		}
 	} else {

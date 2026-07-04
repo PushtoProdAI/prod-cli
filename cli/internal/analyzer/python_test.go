@@ -92,7 +92,7 @@ setup(name="test-project")`,
 			// Create test files
 			for filename, content := range tt.files {
 				filePath := filepath.Join(tmpDir, filename)
-				if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+				if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -194,14 +194,14 @@ redis = "*"`,
 
 			// Create project subdirectory with fixed name for consistent project name detection
 			projectDir := filepath.Join(tmpDir, "python-project")
-			if err := os.Mkdir(projectDir, 0755); err != nil {
+			if err := os.Mkdir(projectDir, 0o755); err != nil {
 				t.Fatal(err)
 			}
 
 			// Create test files
 			for filename, content := range tt.files {
 				filePath := filepath.Join(projectDir, filename)
-				if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+				if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -289,7 +289,7 @@ psycopg2-binary==2.9.0`,
 
 			// Create requirements.txt
 			reqPath := filepath.Join(tmpDir, "requirements.txt")
-			if err := os.WriteFile(reqPath, []byte(tt.content), 0644); err != nil {
+			if err := os.WriteFile(reqPath, []byte(tt.content), 0o644); err != nil {
 				t.Fatal(err)
 			}
 
@@ -411,7 +411,7 @@ func TestPythonAnalyzer_detectFramework(t *testing.T) {
 			// Create test files
 			for filename, content := range tt.files {
 				filePath := filepath.Join(tmpDir, filename)
-				if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+				if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}

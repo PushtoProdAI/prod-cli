@@ -7,6 +7,9 @@ replace github.com/cschleiden/go-workflows => github.com/lyuboxa/go-workflows v0
 require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.4.0
 	github.com/atotto/clipboard v0.1.4
+	github.com/aws/aws-sdk-go-v2 v1.39.6
+	github.com/aws/aws-sdk-go-v2/config v1.31.20
+	github.com/aws/aws-sdk-go-v2/service/pricing v1.40.5
 	github.com/boundaryml/baml v0.212.0
 	github.com/charmbracelet/bubbles/v2 v2.0.0-beta.1
 	github.com/charmbracelet/bubbletea/v2 v2.0.0-beta.4
@@ -21,7 +24,6 @@ require (
 	github.com/heroku/heroku-go/v6 v6.0.0
 	github.com/joho/godotenv v1.5.1
 	github.com/logdyhq/logdy-core v0.17.1
-	github.com/manifoldco/promptui v0.9.0
 	github.com/pelletier/go-toml/v2 v2.2.3
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/render-oss/cli v1.1.2
@@ -36,8 +38,6 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
-	github.com/aws/aws-sdk-go-v2 v1.39.6 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.31.20 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.24 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.13 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.13 // indirect
@@ -45,7 +45,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.13 // indirect
-	github.com/aws/aws-sdk-go-v2/service/pricing v1.40.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.40.2 // indirect
@@ -55,14 +54,11 @@ require (
 	github.com/cenkalti/backoff v2.1.1+incompatible // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.3.2 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20251017140847-d4ace4d6e731 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.14-0.20250505150409-97991a1f17d1 // indirect
 	github.com/charmbracelet/x/input v0.3.7 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
-	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/cheggaaa/pb/v3 v3.1.5 // indirect
-	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
@@ -76,7 +72,7 @@ require (
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-migrate/migrate/v4 v4.16.2 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
