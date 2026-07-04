@@ -48,20 +48,30 @@ func TestRefuseUnsupportedPlatformIsModeAware(t *testing.T) {
 			t.Error("Fly should always be allowed")
 		}
 	})
-	t.Run("local mode refuses Render without a registry", func(t *testing.T) {
+	t.Run("deploy refuses Render without a registry", func(t *testing.T) {
 		setLocalMode(t)
 		t.Setenv("PROD_REGISTRY_USERNAME", "")
 		t.Setenv("PROD_REGISTRY_TOKEN", "")
-		if !a.refuseUnsupportedPlatform(&sink, Render) {
-			t.Error("Render without a configured registry should be refused")
+		if !a.refuseDeployPlatform(&sink, Render) {
+			t.Error("Render deploy without a configured registry should be refused")
 		}
 	})
-	t.Run("local mode allows Render with a registry", func(t *testing.T) {
+	t.Run("deploy allows Render with a registry", func(t *testing.T) {
 		setLocalMode(t)
 		t.Setenv("PROD_REGISTRY_USERNAME", "alice")
 		t.Setenv("PROD_REGISTRY_TOKEN", "tok")
+		if a.refuseDeployPlatform(&sink, Render) {
+			t.Error("Render deploy with a configured registry should be allowed")
+		}
+	})
+	t.Run("rollback allows Render without a registry", func(t *testing.T) {
+		setLocalMode(t)
+		t.Setenv("PROD_REGISTRY_USERNAME", "")
+		t.Setenv("PROD_REGISTRY_TOKEN", "")
+		// executeRollback uses refuseUnsupportedPlatform, which must not require a
+		// registry — a Render rollback hits Render's API directly.
 		if a.refuseUnsupportedPlatform(&sink, Render) {
-			t.Error("Render with a configured registry should be allowed")
+			t.Error("Render rollback should be allowed without a registry")
 		}
 	})
 }
