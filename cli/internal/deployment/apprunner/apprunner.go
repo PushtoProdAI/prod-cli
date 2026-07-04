@@ -15,6 +15,7 @@ import (
 	artypes "github.com/aws/aws-sdk-go-v2/service/apprunner/types"
 	iamsdk "github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smsdk "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/go-errors/errors"
 )
 
@@ -30,6 +31,7 @@ const (
 type iamAPI interface {
 	CreateRole(context.Context, *iamsdk.CreateRoleInput, ...func(*iamsdk.Options)) (*iamsdk.CreateRoleOutput, error)
 	AttachRolePolicy(context.Context, *iamsdk.AttachRolePolicyInput, ...func(*iamsdk.Options)) (*iamsdk.AttachRolePolicyOutput, error)
+	PutRolePolicy(context.Context, *iamsdk.PutRolePolicyInput, ...func(*iamsdk.Options)) (*iamsdk.PutRolePolicyOutput, error)
 	GetRole(context.Context, *iamsdk.GetRoleInput, ...func(*iamsdk.Options)) (*iamsdk.GetRoleOutput, error)
 }
 
@@ -40,10 +42,16 @@ type appRunnerAPI interface {
 	DescribeService(context.Context, *arsdk.DescribeServiceInput, ...func(*arsdk.Options)) (*arsdk.DescribeServiceOutput, error)
 }
 
+type secretsAPI interface {
+	CreateSecret(context.Context, *smsdk.CreateSecretInput, ...func(*smsdk.Options)) (*smsdk.CreateSecretOutput, error)
+	PutSecretValue(context.Context, *smsdk.PutSecretValueInput, ...func(*smsdk.Options)) (*smsdk.PutSecretValueOutput, error)
+}
+
 // Deployer creates and updates App Runner services.
 type Deployer struct {
 	ar           appRunnerAPI
 	iam          iamAPI
+	sm           secretsAPI
 	pollInterval time.Duration // between DescribeService polls in WaitForRunning
 }
 
@@ -52,6 +60,7 @@ func New(cfg aws.Config) *Deployer {
 	return &Deployer{
 		ar:           arsdk.NewFromConfig(cfg),
 		iam:          iamsdk.NewFromConfig(cfg),
+		sm:           smsdk.NewFromConfig(cfg),
 		pollInterval: 15 * time.Second,
 	}
 }
@@ -66,6 +75,11 @@ type ServiceConfig struct {
 	Memory        string            // e.g. "2048" (2 GB)
 	StartCommand  string            // optional
 	EnvVars       map[string]string // plain runtime env vars
+	Secrets       map[string]string // sensitive env vars → stored in Secrets Manager
+
+	// Resolved by Deploy when Secrets is non-empty:
+	secretARNs      map[string]string // env name → secret ARN (RuntimeEnvironmentSecrets)
+	instanceRoleArn string            // instance role granting secretsmanager:GetSecretValue
 }
 
 // EnsureAccessRole creates (or finds) the IAM role App Runner assumes to pull
@@ -109,6 +123,21 @@ func (d *Deployer) EnsureAccessRole(ctx context.Context) (string, error) {
 // Deploy creates the App Runner service, or triggers a fresh deployment of the
 // existing one. Returns the service ARN.
 func (d *Deployer) Deploy(ctx context.Context, cfg ServiceConfig) (string, error) {
+	// Sensitive vars go into Secrets Manager, referenced by ARN, and the service
+	// gets an instance role allowing it to read them.
+	if len(cfg.Secrets) > 0 {
+		arns, err := d.ensureSecrets(ctx, cfg.Name, cfg.Secrets)
+		if err != nil {
+			return "", err
+		}
+		roleArn, err := d.ensureInstanceRole(ctx, cfg.Name, arnValues(arns))
+		if err != nil {
+			return "", err
+		}
+		cfg.secretARNs = arns
+		cfg.instanceRoleArn = roleArn
+	}
+
 	existing, err := d.findService(ctx, cfg.Name)
 	if err != nil {
 		return "", err
@@ -212,6 +241,9 @@ func sourceConfiguration(cfg ServiceConfig) *artypes.SourceConfiguration {
 	if len(cfg.EnvVars) > 0 {
 		imageCfg.RuntimeEnvironmentVariables = cfg.EnvVars
 	}
+	if len(cfg.secretARNs) > 0 {
+		imageCfg.RuntimeEnvironmentSecrets = cfg.secretARNs
+	}
 
 	return &artypes.SourceConfiguration{
 		AutoDeploymentsEnabled: aws.Bool(false),
@@ -227,5 +259,9 @@ func sourceConfiguration(cfg ServiceConfig) *artypes.SourceConfiguration {
 }
 
 func instanceConfiguration(cfg ServiceConfig) *artypes.InstanceConfiguration {
-	return &artypes.InstanceConfiguration{Cpu: aws.String(cfg.CPU), Memory: aws.String(cfg.Memory)}
+	ic := &artypes.InstanceConfiguration{Cpu: aws.String(cfg.CPU), Memory: aws.String(cfg.Memory)}
+	if cfg.instanceRoleArn != "" {
+		ic.InstanceRoleArn = aws.String(cfg.instanceRoleArn)
+	}
+	return ic
 }
