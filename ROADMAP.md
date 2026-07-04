@@ -217,12 +217,15 @@ account; "deploy this" works hands-free inside Claude Code / Cursor.
 
 Land the one platform that needs a real port, plus the deeper agent runtimes.
 
-- [ ] **AWS deploy in-CLI (Go), on App Runner** — deploy to AWS from the binary with the
+- [x] **AWS deploy in-CLI (Go), on App Runner** — deploy to AWS from the binary with the
       **user's own AWS creds** (standard credential chain), using **App Runner** (managed
       container→HTTPS) rather than reimplementing the CloudFormation control plane. Reuses PR 2's
-      registry adapter via a new **`ecr` kind**; bring-your-own database (`DATABASE_URL`) for v1.
-      This **deletes** the CFN/VPC/ECS/RDS template surface (~3,356 lines of backend-coupled code)
-      instead of porting it. Full plan: [docs/aws-app-runner.md](./docs/aws-app-runner.md).
+      registry adapter via an **`ecr` kind**; bring-your-own database (`DATABASE_URL`) for v1.
+      **Deleted** the CFN/VPC/ECS/RDS surface (~3,236 lines) instead of porting it. Shipped as
+      stages A–F (PRs #212–#218); plan: [docs/aws-app-runner.md](./docs/aws-app-runner.md).
+      Follow-ups: App Runner rollback; managed RDS + VPC connector; classify permanent
+      App Runner/ECR errors as non-retryable + reconcile the deploy activity's 15m/20m timeouts;
+      dedupe env keys across the plain/secrets maps.
 - [ ] **True non-HTTP shapes** — long-running **workers**, **cron**, **queue** consumers: a
       shape-aware liveness model (process-running / log-heartbeat instead of HTTP 200), portless
       artifact generation, and health-check auto-rollback made conditional on shape.
