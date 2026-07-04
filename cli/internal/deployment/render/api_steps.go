@@ -435,7 +435,7 @@ func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client Rende
 	if err != nil {
 		return nil, errors.Errorf("container registry not configured: %w", err)
 	}
-	creds, err := reg.Credentials(prodreg.Sanitize(s.ProjectName))
+	creds, err := reg.Credentials(ctx, prodreg.Sanitize(s.ProjectName))
 	if err != nil {
 		return nil, errors.Errorf("registry credentials: %w", err)
 	}

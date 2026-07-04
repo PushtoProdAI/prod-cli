@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -75,7 +76,7 @@ func TestProjectNameValidation(t *testing.T) {
 	}
 
 	for _, bad := range []string{"", "app:latest", "foo/bar", "my app", "app@sha256:x", "-lead", "trail-"} {
-		if _, err := r.Credentials(bad); err == nil {
+		if _, err := r.Credentials(context.Background(), bad); err == nil {
 			t.Errorf("Credentials(%q) should be rejected", bad)
 		}
 		if _, err := r.Ref(bad, "t"); err == nil {
@@ -109,7 +110,7 @@ func TestCredentials(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			cr, err := r.Credentials("my-app")
+			cr, err := r.Credentials(context.Background(), "my-app")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -129,7 +130,7 @@ func TestTokenHandling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cr, _ := r.Credentials("my-app")
+	cr, _ := r.Credentials(context.Background(), "my-app")
 	if cr.Token != " secret-with-space " {
 		t.Errorf("token was altered: %q", cr.Token)
 	}
@@ -148,7 +149,7 @@ func TestSanitize(t *testing.T) {
 		"--weird--", "", "@scope/", "Frontend-API", "123", "a/b/c", "!!!",
 	} {
 		s := Sanitize(raw)
-		if _, err := r.Credentials(s); err != nil {
+		if _, err := r.Credentials(context.Background(), s); err != nil {
 			t.Errorf("Sanitize(%q)=%q is not a valid project name: %v", raw, s, err)
 		}
 	}
