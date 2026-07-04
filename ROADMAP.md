@@ -125,15 +125,17 @@ Timeboxes assume a small team and are a *sequence*, not a calendar. Each phase g
 Make the OSS core a self-contained binary that deploys with no backend and no account. This is
 the load-bearing work.
 
-**Sever the backend from the deploy path**
-- [ ] **Local state store** — SQLite in `~/.prod` for deploy history; back go-workflows with it.
-      Replace every `deployment-logger` / `record-stack` call with local writes.
-- [ ] **Boot with no backend** — delete the `SUPABASE_*` requirement and `log.Fatal` in `main.go`.
-- [ ] **Drop the auth gate** — remove `ensureAuthenticated` from the deploy FSM; the only
-      credentials that matter are the *target platform's* (Fly token, AWS creds), read locally.
-- [ ] **Direct LLM by default** — build a BAML **`ClientRegistry`** in `llm.getCallOptions` to
-      select `CustomGPT4o`/`CustomSonnet`/`OllamaClient` at call time (no `.baml` edits, no
-      regen). Plumb `OPENAI_API_KEY`/`ANTHROPIC_API_KEY`/Ollama config.
+**Sever the backend from the deploy path** — ✅ done
+
+- [x] **Local state store** — JSON history at `~/.prod/history.json` (`internal/history`); a file
+      the user can read beats a database for a single-user CLI. `logDeploymentStart` /
+      `updateDeploymentStatus` / `sendProjectStats` and `/deploys` route through it in local mode.
+      (go-workflows keeps its own sqlite for durable workflow state.)
+- [x] **Boot with no backend** — removed the `SUPABASE_*` requirement / `log.Fatal`; runs standalone.
+- [x] **Drop the auth gate** — `ensureAuthenticated` short-circuits in local mode; only the target
+      platform's credentials matter, read locally.
+- [x] **Direct LLM by default** — BAML `ClientRegistry` in `llm.getCallOptions` selects OpenAI /
+      Anthropic / Ollama at call time (no `.baml` edits, no regen); `PROD_LLM_MODEL` override.
 
 **Legalize & de-identify**
 - [ ] **Secret sweep & rotate** — purge `.env`; scan **full git history** (a real JWT anon key is
@@ -143,7 +145,9 @@ the load-bearing work.
 - [ ] **Rename module** `github.com/meroxa/prod/cli` → `github.com/pushtoprodai/prod-cli`; update
       `baml_src/generators.baml` `client_package_name` **and `make generate`**; fix the module
       path in `cli/Makefile` and `.goreleaser.yml` ldflags.
-- [ ] Remove any remaining hard-coded identifiers (`config.go`, `scripts/install.sh`).
+- [x] `config.go` — hard-coded Supabase ref removed; backend resolved from `PROD_BACKEND_URL` /
+      `SUPABASE_URL` env or ldflags. **Remaining:** `scripts/install.sh` still points at the old
+      Supabase storage bucket and needs reworking for the GoReleaser/brew distribution.
 
 **De-risk the toolchain (spikes with their own proof)**
 - [ ] **CGO cross-compile** — BAML is a native dep; the existing `.goreleaser.yml` is darwin-only
@@ -153,9 +157,10 @@ the load-bearing work.
       **tagged release** (or upstream the patch); pin to a tag; document the delta. It's the last
       big "moving piece" — keep it (resumable deploys are real UX) but own it.
 
-**Repo split**
-- [ ] **`prod-cli` = the binary only.** The Supabase/Deno backend, `infra/`, and `lambda/` stay in
-      the separate (commercial) repo. The public repo is just `cli/` + docs + templates.
+**Repo split** — ✅ done
+- [x] **`prod-cli` = the binary only.** The Supabase/Deno backend, `infra/`, and `lambda/` were
+      removed from the tree (preserved in git history + `docs/design.md`). The repo is now `cli/`
+      + docs + templates + local-first tooling.
 
 **Exit:** on a machine with **no account and no backend**, `go build` produces a **Linux** binary
 that deploys a real app to **Fly.io** — proven by a CI test with all `SUPABASE_*` unset asserting
