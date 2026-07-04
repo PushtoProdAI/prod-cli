@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+#
+# prod-cli pre-push gate. Runs the local verification suite before any push, so a
+# PR is only opened after everything is green locally (we don't use CI for this).
+#
+# Activate with: make install-hooks   (sets git config core.hooksPath .githooks)
+# Bypass in a genuine emergency with: git push --no-verify
+exec "$(git rev-parse --show-toplevel)/scripts/check.sh"
