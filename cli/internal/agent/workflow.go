@@ -16,6 +16,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
 	prod_error "github.com/meroxa/prod/cli/internal/error"
+	"github.com/meroxa/prod/cli/internal/history"
 	"github.com/meroxa/prod/cli/internal/llm"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
@@ -89,6 +90,12 @@ func newAgentLLMClient() llm.Client {
 func NewWorkflows(renderClient render.RenderClient, flyClient flyio.FlyioClient, beClient *backend.Client, uiWriter output.StatusWriter) *Workflows {
 	llmClient := newAgentLLMClient()
 	frameworkRegistry := NewFrameworkRegistry()
+	// Local deployment history (used in local mode). If it can't be created we
+	// still deploy — history just isn't recorded — so failure is non-fatal.
+	histStore, err := history.NewStore()
+	if err != nil {
+		slog.Warn("failed to initialize local history store; deploy history will not be recorded", "error", err)
+	}
 	return &Workflows{
 		Acts: &Activities{
 			renderClient:      renderClient,
@@ -97,6 +104,7 @@ func NewWorkflows(renderClient render.RenderClient, flyClient flyio.FlyioClient,
 			uiWriter:          uiWriter,
 			llmClient:         llmClient,
 			frameworkRegistry: frameworkRegistry,
+			history:           histStore,
 		},
 		renderClient: renderClient,
 		flyClient:    flyClient,
