@@ -1,0 +1,34 @@
+prod
+Copyright (c) PushtoProd, Inc. and contributors
+
+This product is licensed under the MIT License (see LICENSE).
+
+This product includes third-party open-source software. The full dependency set
+and versions are recorded in cli/go.mod / cli/go.sum. Notable components and their
+licenses include:
+
+- BAML — github.com/boundaryml/baml (Apache-2.0). Its runtime engine library
+  (libbaml_cffi) is downloaded at first run; see docs/DISTRIBUTION.md.
+- AWS SDK for Go v2 — github.com/aws/aws-sdk-go-v2 (Apache-2.0)
+- OpenTelemetry Go — go.opentelemetry.io/otel (Apache-2.0)
+- gRPC-Go — google.golang.org/grpc (Apache-2.0)
+- go-workflows — github.com/cschleiden/go-workflows (MIT)
+- Bubble Tea and Charm libraries — github.com/charmbracelet/* (MIT)
+- modernc.org/sqlite (BSD-3-Clause)
+
+Each component remains under its own license; this NOTICE preserves the
+attribution required by those licenses (notably Apache-2.0 §4). The authoritative,
+complete list is generated from cli/go.mod at release time. Copies of the
+respective license texts are available in each dependency's source repository.
+
+The go-workflows dependency is currently sourced from a fork
+(github.com/lyuboxa/go-workflows, also MIT) via a go.mod replace directive.
+
+-------------------------------------------------------------------------------
+The following NOTICE content is reproduced from bundled Apache-2.0 dependencies
+as required by Apache License 2.0 §4(d):
+
+AWS SDK for Go
+Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+Copyright 2014-2015 Stripe, Inc.
+

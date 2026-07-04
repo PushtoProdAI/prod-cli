@@ -10,130 +10,134 @@ release is cut from a maintainer's machine with [GoReleaser](https://goreleaser.
 
 ---
 
-## The CGO cross-compile problem
+## How BAML's CGO actually works (this drove the wrong assumptions before)
 
-`prod` depends on [BAML](https://github.com/boundaryml/baml)
-(`github.com/boundaryml/baml`), which ships a **native library** and is used through
-cgo. That forces `CGO_ENABLED=1` for every build. (SQLite via `modernc.org/sqlite` is
-pure-Go and does *not* add a C requirement, so BAML is the only reason CGO is on.)
+`prod` depends on [BAML](https://github.com/boundaryml/baml), used through cgo, so
+`CGO_ENABLED=1`. It was long assumed this forced a build-time link against a
+platform-specific **native library**, making cross-compilation from a mac impractical.
+**That assumption is wrong.** Reading the binding
+(`baml_go/lib_unix.go`, `lib_common.go`):
 
-With cgo enabled, `go build` is no longer a self-contained Go toolchain operation: for
-each `GOOS/GOARCH` it invokes a **C compiler and linker that target that exact OS and
-architecture**, and links against that platform's system libraries. A plain
-`GOOS=linux GOARCH=amd64 go build` from macOS therefore fails — the host `clang` builds
-Mach-O objects for Darwin, not ELF for Linux, and there are no Linux headers/libs to
-link against. This is why the historical `.goreleaser.yml` was darwin-only.
+- The cgo surface is a **`dlopen` shim**: `#cgo LDFLAGS: -ldl` + `#include <dlfcn.h>` and a
+  small wrapper. **Nothing platform-specific is linked at build time.** Any linux-targeting
+  C compiler (`x86_64-linux-gnu-gcc`, `aarch64-linux-gnu-gcc`) handles it — cross-compiling
+  the Go binary is a non-event.
+- The real engine — `libbaml_cffi-<target-triple>.{so,dylib,dll}` (~56 MB) — is
+  **downloaded at runtime** from BAML's GitHub releases into `~/.cache/baml/libs/<version>/`
+  on first use and `dlopen`ed. The target is chosen from the **runtime** `GOOS/GOARCH`.
+- This happens in package `init()`, which **panics** if the library can't be found or
+  fetched. Because `main → baml_client → … → baml_go`, *every* invocation (even
+  `prod --version`) triggers it at process start.
 
-**What builds cleanly today:**
+So the build story is easy; the **runtime library provisioning** is the thing to get right
+(see "Runtime library" below).
 
-| Target             | From an Apple-Silicon mac                                              |
-|--------------------|-----------------------------------------------------------------------|
-| `darwin/arm64`     | ✅ native                                                              |
-| `darwin/amd64`     | ✅ Apple `clang` cross-compiles across darwin arches (`-arch x86_64`)  |
-| `linux/amd64`      | ❌ needs a linux-targeting C toolchain                                 |
-| `linux/arm64`      | ❌ needs a linux-targeting C toolchain                                 |
-| `windows/amd64`    | ❌ needs a mingw-w64 toolchain (+ CGO), must effectively build native  |
+**Build matrix (verified):**
 
-Both darwin archives come out of a single `goreleaser release` on a mac, so macOS users
-are fully served today. Linux and Windows need one of the options below.
-
----
-
-## Options for Linux / Windows
-
-### 1. Native per-OS build hosts (most reliable)
-Run the build on the OS you're targeting: a Linux box (or Linux Docker container) for the
-linux archives, a Windows box for the `.exe`. cgo "just works" because the toolchain is
-native. Downside: without CI this means keeping (or spinning up) machines per OS and
-stitching their artifacts into one release. For linux specifically, option 3 gives you
-this on your mac via Docker.
-
-### 2. `zig cc` as a cgo cross-compiler (least infra)
-Zig bundles a full cross-compilation toolchain (clang + per-target libc headers), so it
-can be used as the C compiler for arbitrary targets from a single machine:
-
-```bash
-# from cli/
-CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-  CC="zig cc -target x86_64-linux-gnu" \
-  CXX="zig c++ -target x86_64-linux-gnu" \
-  go build -o ../bin/prod-linux-amd64 ./cmd/main.go
-```
-
-This can be wired into GoReleaser per-build with `env: [CC=zig cc -target ...]`. The
-caveat: it only succeeds if **BAML's native library also cross-compiles/links under
-zig** for the target. That must be proven per target before trusting it — if BAML ships
-or builds a platform-specific static lib, zig may not resolve it. Verify a produced
-linux binary actually runs (in a Linux container) before publishing.
-
-### 3. The existing Docker cross toolchain for linux (`cli/Dockerfile.build`)
-[`cli/Dockerfile.build`](../cli/Dockerfile.build) already builds `linux/amd64` and
-`linux/arm64` inside a `golang` image with `gcc-x86-64-linux-gnu` /
-`gcc-aarch64-linux-gnu` cross compilers and the right `CC`. `cd cli && make build-cli-linux`
-(and `build-cli-linux-arm64`) drive it, and `make check-full` from the repo root builds
-the image as a gate. This is the pragmatic linux path on a mac. Its `darwin-amd64` stage
-is best-effort and unreliable (no macOS SDK in the image) — ignore it; build darwin on the
-mac. It produces **raw binaries**, not GoReleaser archives/checksums, so today linux is a
-manual/side-channel artifact rather than part of the goreleaser release.
+| Target          | From an Apple-Silicon mac                                                    |
+|-----------------|-----------------------------------------------------------------------------|
+| `darwin/arm64`  | ✅ native (`make build-cli-darwin-arm64`)                                   |
+| `darwin/amd64`  | ✅ Apple `clang` cross-compiles across darwin arches                        |
+| `linux/amd64`   | ✅ **via Docker** (`make build-cli-linux`) — cross-gcc; verified to run     |
+| `linux/arm64`   | ✅ **via Docker** (`make build-cli-linux-arm64`) — cross-gcc                |
+| `linux/musl` (Alpine) | ❌ unsupported — BAML v0.212.0 hardcodes `isMusl()=false`, fetches the `-gnu` lib, fails to load |
+| `windows/amd64` | ❌ needs a mingw-w64 toolchain — deferred (low demand)                      |
 
 ---
 
-## Recommendation
+## The linux build (`cli/Dockerfile.build`)
 
-**Ship darwin via GoReleaser on a mac now** (this is what `.goreleaser.yml` does), and
-treat **native/containerized linux builds as the path to first-class linux archives** —
-use `cli/Dockerfile.build` (option 3) to produce linux binaries locally today, and adopt
-a native Linux host when linux joins the goreleaser release. **Spike `zig cc`
-(option 2)** in parallel because it would collapse linux (and maybe windows) into the
-same one-command mac release — but only promote it once a zig-built binary is verified to
-run with BAML on the target. Windows stays lowest priority: build it natively on Windows
-when there's demand. Do **not** re-enable broken linux/windows targets in
-`.goreleaser.yml` until one of these is proven, so `goreleaser release` keeps succeeding.
+[`cli/Dockerfile.build`](../cli/Dockerfile.build) builds `linux/amd64` and `linux/arm64`
+inside a `golang` image with `gcc-x86-64-linux-gnu` / `gcc-aarch64-linux-gnu` cross
+compilers. `cd cli && make build-cli-linux` (and `build-cli-linux-arm64`) drive it.
+
+> The Docker base image must match `cli/go.mod`'s `go` directive. It was pinned to
+> `golang:1.24.4` while go.mod required 1.25.0, so `go mod download` failed with
+> `go.mod requires go >= 1.25.0` and every linux build "broke." Keep the `FROM` line in
+> lockstep with `go.mod`.
+
+A produced `linux/amd64` binary has been verified to **run** in a clean
+`debian:bookworm-slim` container (see the runtime requirements below), so this is a
+first-class linux path — not a side channel.
+
+> `zig cc` is **not** needed here (an earlier plan suggested it). Zig only helps when
+> there's real C to cross-compile; the BAML shim is just `dlopen`, which the cross-gcc
+> already handles. Don't reach for it.
+
+---
+
+## Runtime library — the real UX detail
+
+On first run, BAML downloads `libbaml_cffi` and caches it. Consequences to document for
+users and to build into any container image:
+
+- **Network is required on first run** to reach `github.com/boundaryml/baml` releases
+  (~56 MB). Subsequent runs use the cache (`~/.cache/baml/libs/<version>/`, or
+  `$BAML_CACHE_DIR`).
+- **CA certificates are required.** Minimal images (`debian:*-slim`, `alpine`) ship
+  **without** `ca-certificates`, so the HTTPS fetch fails with
+  `x509: certificate signed by unknown authority` and `init()` panics. Install
+  `ca-certificates` in any minimal runtime image.
+- **Offline / air-gapped:** pre-place the correct `libbaml_cffi-<triple>.so` and set
+  `BAML_LIBRARY_PATH=/path/to/lib` (and optionally `BAML_LIBRARY_DISABLE_DOWNLOAD=true`).
+- **glibc floor:** the `prod` binary itself links very low (`GNU/Linux 3.2.0`); the
+  downloaded `libbaml_cffi` sets its own floor, which we don't control. Mainstream glibc
+  distros (Debian/Ubuntu/Fedora, current releases) work; **musl/Alpine does not** (above).
+- **Supply-chain note:** BAML currently publishes no `.sha256` for the lib, so the download
+  proceeds **unverified** (the client logs a warning). Track upstream; consider pinning /
+  vendoring the lib for releases where integrity matters.
+
+---
+
+## Shipping linux (GoReleaser OSS can't do it directly)
+
+GoReleaser **OSS** builds darwin natively on the mac, but it can neither cross-compile CGO
+from a mac nor ingest prebuilt binaries — **`builder: prebuilt` is GoReleaser Pro-only**. So
+linux ships as **separate archives** attached to the same release:
+
+1. `make -C cli dist-linux VERSION=<tag>` — Docker-builds linux/amd64 + arm64 and packages
+   `cli/dist/prod_<tag>_linux_{amd64,arm64}.tar.gz` (+ `…_linux_checksums.txt`), matching the
+   name shape `install.sh` expects. **Pass `VERSION=<tag>`** so the stamped version matches
+   darwin (otherwise it's the short commit hash).
+2. GoReleaser cuts the darwin release (darwin archives + `prod_<tag>_checksums.txt` + the
+   Homebrew tap).
+3. `gh release upload <tag> cli/dist/prod_<tag>_linux_*.tar.gz` — attach the linux archives.
+   Optionally append the linux sha256 lines to the release's `checksums.txt` so `install.sh`
+   verifies them; if you don't, `install.sh` installs linux with a "checksum not found"
+   warning (it degrades gracefully — it does not fail).
+4. `install.sh` already allows linux (musl rejected with a clear message).
+
+> **Alternative:** with **GoReleaser Pro**, a `builder: prebuilt` build ingests the
+> `cli/dist-prebuilt/linux_<arch>/prod` binaries directly into a unified archive + checksum
+> matrix. We stay on OSS, so linux is the manual attach above.
 
 ---
 
 ## Local release runbook
 
-Prerequisites: `brew install goreleaser`, a clean working tree, and a `GITHUB_TOKEN` with
-`repo` scope exported (GoReleaser uses it to create the release and push the Homebrew
-formula to `pushtoprodai/homebrew-tap`).
+Prerequisites: `brew install goreleaser`, Docker running (for linux), a clean working tree,
+a `GITHUB_TOKEN` with `repo` scope, and the [`gh`](https://cli.github.com) CLI.
 
-1. **Validate the config** (no build):
-   ```bash
-   make release-check          # goreleaser check
-   ```
-2. **Dry-run locally** — builds the darwin archives + checksums into `dist/` without
-   tagging or publishing:
-   ```bash
-   make release-snapshot       # goreleaser release --snapshot --clean
-   ```
-   Inspect `dist/` and smoke-test the binary: `tar -xzf dist/prod_*_darwin_arm64.tar.gz && ./prod --version`.
-3. **Tag the release** (GoReleaser derives the version from the git tag):
-   ```bash
-   git tag -a v0.1.0 -m "v0.1.0"
-   git push origin v0.1.0
-   ```
-4. **Cut the release** (uploads archives + `checksums.txt` to GitHub Releases and updates
-   the Homebrew tap):
-   ```bash
-   export GITHUB_TOKEN=...      # repo scope
-   make release                 # goreleaser release --clean
-   ```
-5. **(Optional) linux binaries** until they're part of the goreleaser release:
-   ```bash
-   cd cli && make build-cli-linux build-cli-linux-arm64   # via Dockerfile.build → ../bin/
-   ```
-   Attach them to the GitHub release manually if you want to offer linux downloads.
-6. **Verify install paths:**
+1. **Tag** (so darwin and linux stamp the same version): `git tag -a v0.1.0 -m "v0.1.0"`.
+2. **Build + package linux** (Docker): `make -C cli dist-linux VERSION=v0.1.0`. Smoke-test a
+   linux archive **in a glibc container with `ca-certificates`** — the darwin host can't
+   exercise the linux runtime path.
+3. **Validate darwin config:** `make release-check` (`goreleaser check`).
+4. **Dry-run darwin:** `make release-snapshot` (`goreleaser release --snapshot --clean`);
+   smoke-test `tar -xzf dist/prod_*_darwin_arm64.tar.gz && ./prod --version`.
+5. **Push the tag + cut darwin:** `git push origin v0.1.0` then
+   `export GITHUB_TOKEN=… && make release` (`goreleaser release --clean`).
+6. **Attach linux:** `gh release upload v0.1.0 cli/dist/prod_v0.1.0_linux_*.tar.gz`.
+7. **Verify installs** on both a mac and a glibc Linux box:
    ```bash
    curl -sSL https://raw.githubusercontent.com/pushtoprodai/prod-cli/main/scripts/install.sh | sh
    brew install pushtoprodai/tap/prod
    ```
 
 ### What the release produces
-- `prod_<version>_darwin_arm64.tar.gz`, `prod_<version>_darwin_amd64.tar.gz`
-- `prod_<version>_checksums.txt` (sha256; `install.sh` verifies against it)
-- A `prod` formula in `pushtoprodai/homebrew-tap` (macOS-only while builds are darwin-only)
+- darwin (GoReleaser): `prod_<version>_{darwin_arm64,darwin_amd64}.tar.gz` +
+  `prod_<version>_checksums.txt` + a `prod` Homebrew formula.
+- linux (manual attach): `prod_<version>_{linux_amd64,linux_arm64}.tar.gz`.
 
 The archive name shape `prod_<version>_<os>_<arch>.tar.gz` is a contract with
 `scripts/install.sh` — change it in both places or installs break.
