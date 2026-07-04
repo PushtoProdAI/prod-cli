@@ -138,10 +138,13 @@ the load-bearing work.
       Anthropic / Ollama at call time (no `.baml` edits, no regen); `PROD_LLM_MODEL` override.
 
 **Legalize & de-identify**
-- [ ] **Secret sweep & rotate** — purge `.env`; scan **full git history** (a real JWT anon key is
-      present); **rotate the Supabase anon + service-role keys and the Sentry DSN**. A fresh repo
-      does not protect old history.
-- [ ] **MIT `LICENSE`** + `NOTICE` + `SECURITY.md`; remove the 1Password reference from docs.
+- [x] **Secret sweep** — full-history gitleaks scan + a pre-commit `gitleaks` hook.
+      [docs/security-sweep.md](./docs/security-sweep.md) has the classified findings, a verified
+      `git-filter-repo` purge, and a rotation checklist. The Supabase keys are **not** in git (they
+      were `.env`-only); the live secrets are a **Render API key + two Sentry DSNs**.
+      **Owner, before public: rotate those 3 + run the purge.**
+- [x] **MIT `LICENSE`** + `SECURITY.md` (present) + **`NOTICE`** (added in the Linux-release PR, with
+      Apache-2.0 attribution).
 - [x] **Rename module** `github.com/meroxa/prod/cli` → `github.com/pushtoprodai/prod-cli` across
       all sources, `go.mod`, `baml_src/generators.baml`, `cli/Makefile`, and `.goreleaser.yml`
       (ldflags + `owner`). Build + tests green under the new path.
@@ -151,12 +154,16 @@ the load-bearing work.
       verified); GoReleaser + Homebrew tap set up (see `docs/DISTRIBUTION.md`).
 
 **De-risk the toolchain (spikes with their own proof)**
-- [ ] **CGO cross-compile** — BAML is a native dep; the existing `.goreleaser.yml` is darwin-only
-      because Linux/Windows cross-compile is broken. Fix with native per-OS CI runners. The
-      clean-room exit needs a Linux binary, so this is a gate.
-- [ ] **`go-workflows` fork** — re-home under `github.com/pushtoprodai/go-workflows` with a
-      **tagged release** (or upstream the patch); pin to a tag; document the delta. It's the last
-      big "moving piece" — keep it (resumable deploys are real UX) but own it.
+- [x] **Linux binaries** — the "broken CGO cross-compile" was really a stale `Dockerfile.build` base
+      image (go 1.24 vs go.mod's 1.25). Fixed; linux/amd64 + arm64 build via Docker and a
+      linux/amd64 binary is verified to run. **The premise was wrong**: BAML doesn't static-link a
+      native lib — it `dlopen`s a runtime-downloaded one — so cross-compile is trivial; the
+      offline/first-run story is documented instead. Ships as separate archives (GoReleaser OSS
+      can't ingest prebuilt). Windows/musl out of scope. See [docs/DISTRIBUTION.md](./docs/DISTRIBUTION.md).
+- [x] **`go-workflows` fork** — **dropped entirely** for upstream `v1.4.2` (a real tag), replace
+      directive gone. The fork's only delta was sqlite tuning (WAL/busy-timeout/pool), reproduced by
+      building the DB ourselves and passing it to upstream's `NewSqliteBackendWithDB` — no fork to
+      maintain, no org repo needed. Regression-tested.
 
 **Repo split** — ✅ done
 - [x] **`prod-cli` = the binary only.** The Supabase/Deno backend, `infra/`, and `lambda/` were
@@ -187,9 +194,10 @@ phase** (it's the Go port in Phase 2) — the five direct-API platforms carry th
 - [ ] **Fix "deploy this" with no platform** — today `DEPLOY + UNKNOWN` dead-ends into prose.
       Route it into a platform picker (reuse the rollback-only `selectPlatform`), ranked by what
       the analyzer detected, with a per-project default.
-- [ ] **`ConsoleWriter` parity + fix the console-mode panic** (`out.(TUIWriter)` assertion). Drive
-      TUI/console/JSON from one canonical event; add a golden cross-writer test (also the MCP
-      anti-drift guarantee).
+- [x] **`ConsoleWriter` parity + console-mode panic** — the panic was already fixed (all
+      `out.(TUIWriter)` are checked `, ok`; the ConsoleWriter methods are real). Added a golden
+      cross-writer test driving Console/JSON/NoOp/Proxy from one canonical event sequence (JSON as
+      the byte-stable MCP anchor) — the anti-drift guarantee.
 
 **The AI / agent deployment story**
 - [ ] **`prod mcp`** — MCP server over the existing JSON event stream as a **stateful adapter**
