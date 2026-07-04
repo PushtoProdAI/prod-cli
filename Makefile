@@ -62,9 +62,13 @@ install-hooks:
 	@echo "✓ pre-push gate installed (core.hooksPath -> .githooks)"
 
 # Phase-0 definition of done: deploys with no backend and no account.
-# Expected to FAIL until the backend is severed from the deploy path (ROADMAP Phase 0).
+# Deploys the project in SMOKE_DIR (default: current dir). Needs a Fly token +
+# network + Docker, and provisions REAL infrastructure — not hermetic.
+#   make smoke SMOKE_DIR=test-projects/node-app
+SMOKE_DIR ?= .
 .PHONY: smoke
 smoke:
-	@echo "Clean-room smoke test: no backend, no account, deploy to Fly.io."
-	@echo "Requires FLY_API_TOKEN + network. Not hermetic. Expected to fail pre-Phase-0."
-	@env -u SUPABASE_URL -u SUPABASE_ANON_KEY go run ./cli/cmd "deploy this to fly"
+	@echo "Clean-room smoke: no backend, no account, deploy '$(SMOKE_DIR)' to Fly.io."
+	@echo "Requires a Fly token + network + Docker. Provisions real infrastructure."
+	@cd cli && go build -o $(CURDIR)/$(BUILD_DIR)/prod-smoke ./cmd
+	@cd $(SMOKE_DIR) && env -u SUPABASE_URL -u SUPABASE_ANON_KEY $(CURDIR)/$(BUILD_DIR)/prod-smoke "deploy this to fly"
