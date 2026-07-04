@@ -30,18 +30,14 @@ type SupabaseAuth struct {
 	out    io.Writer
 }
 
-// NewSupabaseAuth creates a new Supabase auth client
+// NewSupabaseAuth creates a new Supabase auth client.
+//
+// In local mode (no backend configured) this returns a valid but unauthenticated
+// client — the binary must still run without a backend. A prod-account login is
+// only required, and only possible, in managed mode.
 func NewSupabaseAuth(out io.Writer) (*SupabaseAuth, error) {
-	// Get Supabase configuration from environment
 	supabaseURL := config.GetSupabaseURL()
-	if supabaseURL == "" {
-		return nil, errors.Errorf("SUPABASE_URL environment variable not set")
-	}
-
 	supabaseAnonKey := config.GetSupabaseAnonKey()
-	if supabaseAnonKey == "" {
-		return nil, errors.Errorf("SUPABASE_ANON_KEY environment variable not set")
-	}
 
 	store, err := NewTokenStore()
 	if err != nil {
