@@ -25,6 +25,7 @@ import (
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/pushtoprodai/prod-cli/internal/backend"
 	"github.com/pushtoprodai/prod-cli/internal/output"
+	prodreg "github.com/pushtoprodai/prod-cli/internal/registry"
 )
 
 type DockerArtifacts struct {
@@ -765,75 +766,95 @@ func (dg *DockerGenerator) getPushCredentialsWithLocation(ctx context.Context, a
 	return dg.beClient.GetPushRegistryCredentials(ctx, authToken, projectName)
 }
 
-// PushToRegistry tags and pushes a Docker image to a private registry
+// PushToRegistry tags and pushes a Docker image using backend-issued (ECR)
+// credentials. Backend-free callers use PushToUserRegistry.
 func (dg *DockerGenerator) PushToRegistry(ctx context.Context, buildResult *DockerBuildResult, creds *backend.RegistryCredentials) (*DockerPushResult, error) {
+	return dg.pushImage(ctx, buildResult, creds.URL, creds.URL, creds.Repository, creds.Username, creds.Token)
+}
+
+// PushToUserRegistry pushes a built image to a registry the user owns (Docker
+// Hub, GHCR, generic) using credentials from the registry adapter — no backend.
+func (dg *DockerGenerator) PushToUserRegistry(ctx context.Context, buildResult *DockerBuildResult, creds prodreg.Credentials) (*DockerPushResult, error) {
+	return dg.pushImage(ctx, buildResult, creds.URL, creds.AuthServer, creds.Repository, creds.Username, creds.Token)
+}
+
+// pushImage tags buildResult's image as <host>/<repository>:<timestamp> and
+// pushes it, authenticating with authServer (which may differ from host — e.g.
+// Docker Hub's index URL). It returns the pushed reference.
+func (dg *DockerGenerator) pushImage(ctx context.Context, buildResult *DockerBuildResult, host, authServer, repository, username, token string) (*DockerPushResult, error) {
 	if dg.client == nil {
 		return nil, errors.Errorf("docker client not available. Please ensure Docker is installed and running")
 	}
 
-	// Use timestamp-based tag to ensure Render pulls the new image
+	// Timestamp tag so the deploy target always pulls the new image.
 	imageTag := fmt.Sprintf("%d", time.Now().Unix())
-	registryImageTag := fmt.Sprintf("%s/%s:%s", strings.TrimSuffix(creds.URL, "/"), creds.Repository, imageTag)
+	registryImageTag := fmt.Sprintf("%s/%s:%s", strings.TrimSuffix(host, "/"), repository, imageTag)
 
-	// Ensure we have the correct source image name with tag
 	sourceImage := buildResult.ImageName
 	if !strings.Contains(sourceImage, ":") {
 		sourceImage = sourceImage + ":latest"
 	}
 
 	fmt.Fprintf(dg.writer, "Tagging image for registry...\n")
-
-	// Tag the image for the registry
-	err := dg.client.ImageTag(ctx, sourceImage, registryImageTag)
-	if err != nil {
+	if err := dg.client.ImageTag(ctx, sourceImage, registryImageTag); err != nil {
 		return nil, errors.Errorf("failed to tag image for registry: %w", err)
 	}
 
-	// Create authentication config
 	authConfig := registry.AuthConfig{
-		Username:      creds.Username,
-		Password:      creds.Token,
-		ServerAddress: creds.URL,
+		Username:      username,
+		Password:      token,
+		ServerAddress: authServer,
 	}
-
-	// Encode authentication
 	authConfigBytes, err := json.Marshal(authConfig)
 	if err != nil {
 		return nil, errors.Errorf("failed to marshal auth config: %w", err)
 	}
 	authStr := base64.URLEncoding.EncodeToString(authConfigBytes)
 
-	// Push options
-	pushOptions := image.PushOptions{
-		RegistryAuth: authStr,
-	}
-
 	fmt.Fprintf(dg.writer, "Pushing image to registry...\n")
-
-	// Push the image
-	pushResponse, err := dg.client.ImagePush(ctx, registryImageTag, pushOptions)
+	pushResponse, err := dg.client.ImagePush(ctx, registryImageTag, image.PushOptions{RegistryAuth: authStr})
 	if err != nil {
 		return nil, errors.Errorf("failed to push image to registry: %w", err)
 	}
 	defer pushResponse.Close()
 
-	// Read push output and parse JSON messages
 	pushOutput := &strings.Builder{}
-	output := io.MultiWriter(dg.writer, pushOutput)
-
-	// Use the Docker SDK's jsonmessage package for proper parsing
-	err = jsonmessage.DisplayJSONMessagesStream(pushResponse, output, 0, false, nil)
-	if err != nil {
+	out := io.MultiWriter(dg.writer, pushOutput)
+	if err := jsonmessage.DisplayJSONMessagesStream(pushResponse, out, 0, false, nil); err != nil {
 		return nil, errors.Errorf("docker push failed: %w", err)
 	}
 
 	fmt.Fprintf(dg.writer, "✓ Successfully pushed image: %s\n", registryImageTag)
-
 	return &DockerPushResult{
 		PushedImageURL: registryImageTag,
-		RepositoryURL:  creds.URL,
+		RepositoryURL:  host,
 		PushOutput:     pushOutput.String(),
 	}, nil
+}
+
+// BuildAndPushToRegistry builds the image and pushes it to the user's registry.
+// The pushed image reference is pushResult.PushedImageURL — hand it to the
+// deploy target (e.g. Render).
+func (dg *DockerGenerator) BuildAndPushToRegistry(ctx context.Context, spec *DeploymentSpec, buildContext string, reg prodreg.Registry) (*DockerBuildResult, *DockerPushResult, error) {
+	fmt.Fprintf(dg.writer, "Building and pushing %s to your %s registry...\n", spec.Name, reg.Name())
+
+	buildResult, err := dg.GenerateAndBuild(ctx, spec, buildContext)
+	if err != nil {
+		return nil, nil, errors.Errorf("failed to build image: %w", err)
+	}
+	if dg.client == nil {
+		return buildResult, nil, errors.Errorf("docker client not available - cannot push to registry")
+	}
+
+	creds, err := reg.Credentials(spec.Name)
+	if err != nil {
+		return buildResult, nil, err
+	}
+	pushResult, err := dg.PushToUserRegistry(ctx, buildResult, creds)
+	if err != nil {
+		return buildResult, nil, errors.Errorf("failed to push to registry: %w", err)
+	}
+	return buildResult, pushResult, nil
 }
 
 // GetPullCredentials fetches registry credentials from the pull-token endpoint (internal registry)
