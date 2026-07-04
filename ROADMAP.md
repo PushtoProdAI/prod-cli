@@ -142,9 +142,9 @@ the load-bearing work.
       present); **rotate the Supabase anon + service-role keys and the Sentry DSN**. A fresh repo
       does not protect old history.
 - [ ] **MIT `LICENSE`** + `NOTICE` + `SECURITY.md`; remove the 1Password reference from docs.
-- [ ] **Rename module** `github.com/meroxa/prod/cli` → `github.com/pushtoprodai/prod-cli`; update
-      `baml_src/generators.baml` `client_package_name` **and `make generate`**; fix the module
-      path in `cli/Makefile` and `.goreleaser.yml` ldflags.
+- [x] **Rename module** `github.com/meroxa/prod/cli` → `github.com/pushtoprodai/prod-cli` across
+      all sources, `go.mod`, `baml_src/generators.baml`, `cli/Makefile`, and `.goreleaser.yml`
+      (ldflags + `owner`). Build + tests green under the new path.
 - [x] `config.go` — hard-coded Supabase ref removed; backend resolved from `PROD_BACKEND_URL` /
       `SUPABASE_URL` env or ldflags. **Remaining:** `scripts/install.sh` still points at the old
       Supabase storage bucket and needs reworking for the GoReleaser/brew distribution.

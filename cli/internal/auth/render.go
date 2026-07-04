@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/deployment/render"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
 	"github.com/render-oss/cli/pkg/client/oauth"
 	"github.com/render-oss/cli/pkg/config"
 	"github.com/render-oss/cli/pkg/dashboard"

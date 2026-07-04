@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/pmezard/go-difflib/difflib"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 // generateConfigDiff generates a diff between original and updated config (JS-specific helper)

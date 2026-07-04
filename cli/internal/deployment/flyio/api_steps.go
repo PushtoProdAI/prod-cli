@@ -13,7 +13,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/xo/dburl"
 
-	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 // CreateFlyioAppStep creates a new Fly.io app

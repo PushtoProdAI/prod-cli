@@ -26,9 +26,9 @@ builds:
       - PROD_DEBUG={{.Env.PROD_DEBUG}}
     ldflags:
       - -s -w
-      - -X 'github.com/meroxa/prod/cli/internal/config.SupabaseURL={{.Env.SUPABASE_URL}}'
-      - -X 'github.com/meroxa/prod/cli/internal/config.SupabaseAnonKey={{.Env.SUPABASE_ANON_KEY}}'
-      - -X 'github.com/meroxa/prod/cli/internal/config.ProdDebug={{.Env.PROD_DEBUG}}'
+      - -X 'github.com/pushtoprodai/prod-cli/internal/config.SupabaseURL={{.Env.SUPABASE_URL}}'
+      - -X 'github.com/pushtoprodai/prod-cli/internal/config.SupabaseAnonKey={{.Env.SUPABASE_ANON_KEY}}'
+      - -X 'github.com/pushtoprodai/prod-cli/internal/config.ProdDebug={{.Env.PROD_DEBUG}}'
     goos:
       - darwin
     goarch:
@@ -51,7 +51,7 @@ checksum:
 # Release configuration
 release:
   github:
-    owner: meroxa
+    owner: pushtoprodai
     name: prod
   draft: false
   prerelease: false

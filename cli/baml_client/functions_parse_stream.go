@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
-	"github.com/meroxa/prod/cli/baml_client/stream_types"
+	"github.com/pushtoprodai/prod-cli/baml_client/stream_types"
 )
 
 type parse_stream struct{}

@@ -8,12 +8,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/conduitio/ecdysis"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/cmd/auth"
-	"github.com/meroxa/prod/cli/cmd/run"
-	"github.com/meroxa/prod/cli/internal/agent"
-	"github.com/meroxa/prod/cli/internal/config"
-	"github.com/meroxa/prod/cli/internal/output"
-	"github.com/meroxa/prod/cli/internal/tui"
+	"github.com/pushtoprodai/prod-cli/cmd/auth"
+	"github.com/pushtoprodai/prod-cli/cmd/run"
+	"github.com/pushtoprodai/prod-cli/internal/agent"
+	"github.com/pushtoprodai/prod-cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/tui"
 )
 
 var (

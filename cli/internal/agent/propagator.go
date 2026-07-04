@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/cschleiden/go-workflows/workflow"
-	"github.com/meroxa/prod/cli/internal/auth"
-	"github.com/meroxa/prod/cli/internal/workflowext"
+	"github.com/pushtoprodai/prod-cli/internal/auth"
+	"github.com/pushtoprodai/prod-cli/internal/workflowext"
 )
 
 const key = "session"

@@ -8,17 +8,17 @@ import (
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client/types"
-	"github.com/meroxa/prod/cli/internal/analyzer"
-	"github.com/meroxa/prod/cli/internal/backend"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/deployment/aws"
-	"github.com/meroxa/prod/cli/internal/deployment/flyio"
-	"github.com/meroxa/prod/cli/internal/deployment/heroku"
-	"github.com/meroxa/prod/cli/internal/deployment/netlify"
-	"github.com/meroxa/prod/cli/internal/deployment/render"
-	"github.com/meroxa/prod/cli/internal/deployment/vercel"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/baml_client/types"
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
+	"github.com/pushtoprodai/prod-cli/internal/backend"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/aws"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/flyio"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/heroku"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/netlify"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/vercel"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 func (a *Activities) createDeployable(spec *deployment.DeploymentSpec, platform Platform) (deployment.Deployable, error) {

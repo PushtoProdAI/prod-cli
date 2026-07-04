@@ -16,7 +16,7 @@ import (
 	"github.com/xo/dburl"
 
 	heroku "github.com/heroku/heroku-go/v6"
-	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 type HerokuAPIStep = deployment.Step[*HerokuClient]

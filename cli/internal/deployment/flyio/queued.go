@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-errors/errors"
 
-	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 // FlyioQueuedDeployment handles step-by-step deployments to Fly.io

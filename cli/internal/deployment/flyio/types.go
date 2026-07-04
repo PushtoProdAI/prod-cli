@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 // FlyioClient interface for all Fly.io API operations

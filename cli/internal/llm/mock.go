@@ -3,7 +3,7 @@ package llm
 import (
 	"context"
 
-	"github.com/meroxa/prod/cli/baml_client/types"
+	"github.com/pushtoprodai/prod-cli/baml_client/types"
 )
 
 // MockClient provides a test implementation of the Client interface.

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/cschleiden/go-workflows/workflow"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	prod_error "github.com/meroxa/prod/cli/internal/error"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	prod_error "github.com/pushtoprodai/prod-cli/internal/error"
 )
 
 func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployResult, error) {
