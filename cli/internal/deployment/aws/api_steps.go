@@ -7,10 +7,10 @@ import (
 
 	"github.com/go-errors/errors"
 
-	"github.com/meroxa/prod/cli/internal/backend"
-	backendaws "github.com/meroxa/prod/cli/internal/backend/aws"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/backend"
+	backendaws "github.com/pushtoprodai/prod-cli/internal/backend/aws"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 // CreateECRRepositoryStepConfig holds configuration for creating an ECR repository
@@ -112,7 +112,8 @@ func (s *BuildAndPushECRStep) Execute(ctx context.Context, client AWSClient, ste
 		return nil, errors.Errorf("failed to build and push Docker image: %w", err)
 	}
 
-	slog.Info("Docker image built and pushed",
+	slog.Info(
+		"Docker image built and pushed",
 		"imageID", buildResult.ImageID,
 		"pushedImageURL", pushResult.PushedImageURL,
 	)
@@ -234,7 +235,8 @@ func (s *CreateAppRunnerServiceStep) Execute(ctx context.Context, client AWSClie
 	// Call backend to initiate CloudFormation stack deployment
 	backendClient := backend.NewClient()
 
-	slog.Info("Calling backend to initiate CloudFormation stack deployment",
+	slog.Info(
+		"Calling backend to initiate CloudFormation stack deployment",
 		"service", s.ServiceName,
 		"image", pushedImageURL,
 		"cpu", s.CPU,
@@ -252,7 +254,8 @@ func (s *CreateAppRunnerServiceStep) Execute(ctx context.Context, client AWSClie
 		return nil, errors.Errorf("CloudFormation deployment initiation failed: %s", result.Error)
 	}
 
-	slog.Info("CloudFormation stack deployment initiated",
+	slog.Info(
+		"CloudFormation stack deployment initiated",
 		"stackId", result.StackID,
 		"stackName", result.StackName,
 		"status", result.Status,

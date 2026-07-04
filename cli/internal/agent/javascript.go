@@ -183,7 +183,7 @@ func (a *Activities) updateJavaScriptConfig(_ context.Context, plan DeployPlan) 
 		if packageUpdated {
 			// Create backup directory
 			prodDir := filepath.Join(projectPath, ".prod")
-			if err := os.MkdirAll(prodDir, 0755); err != nil {
+			if err := os.MkdirAll(prodDir, 0o755); err != nil {
 				a.uiWriter.SendStatusComplete("configuring", "❌ Failed to create backup directory")
 				return JavaScriptConfigResult{}, errors.Errorf("failed to create .prod directory: %w", err)
 			}
@@ -195,13 +195,13 @@ func (a *Activities) updateJavaScriptConfig(_ context.Context, plan DeployPlan) 
 
 			// Create backup for package.json
 			packageJsonBackupPath := filepath.Join(prodDir, fmt.Sprintf("package.json.%s.bak", time.Now().Format("20060102-150405")))
-			if err := os.WriteFile(packageJsonBackupPath, origPackageJson, 0644); err != nil {
+			if err := os.WriteFile(packageJsonBackupPath, origPackageJson, 0o644); err != nil {
 				a.uiWriter.SendStatusComplete("configuring", "❌ Failed to create package.json backup")
 				return JavaScriptConfigResult{}, errors.Errorf("failed to create package.json backup at %s: %w", packageJsonBackupPath, err)
 			}
 
 			// Write updated package.json
-			if err := os.WriteFile(packageJsonPath, updatedPackageJson, 0644); err != nil {
+			if err := os.WriteFile(packageJsonPath, updatedPackageJson, 0o644); err != nil {
 				a.uiWriter.SendStatusComplete("configuring", "❌ Failed to write package.json")
 				return JavaScriptConfigResult{}, errors.Errorf("failed to write updated package.json: %w", err)
 			}

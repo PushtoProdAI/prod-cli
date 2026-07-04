@@ -12,10 +12,13 @@ import (
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client/types"
-	"github.com/meroxa/prod/cli/internal/analyzer"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	prod_error "github.com/meroxa/prod/cli/internal/error"
+	"github.com/google/uuid"
+	"github.com/pushtoprodai/prod-cli/baml_client/types"
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
+	"github.com/pushtoprodai/prod-cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	prod_error "github.com/pushtoprodai/prod-cli/internal/error"
+	"github.com/pushtoprodai/prod-cli/internal/history"
 )
 
 // planDeploy workflow handles the planning phase of deployment
@@ -310,6 +313,11 @@ func (a *Activities) summarize(ctx context.Context, intent types.Intent, name st
 }
 
 func (a *Activities) sendProjectStats(ctx context.Context, platform string, spec analyzer.ProjectSpec) error {
+	// Usage analytics is a managed-backend concern. In local mode there's nothing
+	// to report to, so this is a no-op.
+	if !config.BackendConfigured() {
+		return nil
+	}
 	session := CtxSession(ctx)
 	if session == nil {
 		return workflow.NewPermanentError(errors.New("no session found in context"))
@@ -322,20 +330,37 @@ func (a *Activities) sendProjectStats(ctx context.Context, platform string, spec
 }
 
 func (a *Activities) logDeploymentStart(ctx context.Context, platform string, spec analyzer.ProjectSpec, source string, action Action) (string, error) {
+	// Map Action to operation_type string
+	operationType := "deploy"
+	if action == Rollback {
+		operationType = "rollback"
+	}
+
+	// Local mode: record to the local history store instead of the backend. No
+	// session is required; the returned id is a local UUID used downstream.
+	if !config.BackendConfigured() {
+		id := uuid.NewString()
+		if a.history != nil {
+			if err := a.history.Add(history.Record{
+				ID:            id,
+				OperationType: operationType,
+				ResourceName:  spec.Name,
+				Platform:      platform,
+				Language:      spec.Language,
+				Status:        "started",
+				StartedAt:     time.Now(),
+			}); err != nil {
+				slog.Warn("failed to record local deployment start", "error", err)
+			}
+		}
+		a.uiWriter.SendDeploymentStart(platform, source)
+		slog.Info("Deployment start logged (local)", "operation_id", id, "platform", platform)
+		return id, nil
+	}
+
 	session := CtxSession(ctx)
 	if session == nil {
 		return "", workflow.NewPermanentError(errors.New("no session found in context"))
-	}
-
-	// Map Action to operation_type string
-	var operationType string
-	switch action {
-	case Deploy:
-		operationType = "deploy"
-	case Rollback:
-		operationType = "rollback"
-	default:
-		operationType = "deploy"
 	}
 
 	// Build deployment operation data
@@ -385,6 +410,18 @@ func (a *Activities) logDeploymentStart(ctx context.Context, platform string, sp
 }
 
 func (a *Activities) updateDeploymentStatus(ctx context.Context, operationId string, status string, metadata map[string]any) error {
+	// Local mode: update the local history store instead of the backend.
+	if !config.BackendConfigured() {
+		if a.history != nil {
+			if err := a.history.Update(operationId, status, time.Now(), metadata); err != nil {
+				slog.Warn("failed to update local deployment status", "error", err, "operation_id", operationId)
+			}
+		}
+		a.emitDeploymentCompleteIfDone(status, metadata)
+		slog.Info("Deployment status updated (local)", "operation_id", operationId, "status", status)
+		return nil
+	}
+
 	session := CtxSession(ctx)
 	if session == nil {
 		return workflow.NewPermanentError(errors.New("no session found in context"))
@@ -396,20 +433,21 @@ func (a *Activities) updateDeploymentStatus(ctx context.Context, operationId str
 		return errors.Errorf("failed to update deployment status: %w", err)
 	}
 
-	// Emit deployment_complete event for VSCode extension when deployment finishes
-	if status == "success" || status == "failed" {
-		platform, _ := metadata["platform"].(string)
-		url, _ := metadata["url"].(string)
-		errorMsg, _ := metadata["error"].(string)
-
-		// Calculate duration if we have start_time in metadata, otherwise use 0
-		var durationMs int64 = 0
-
-		a.uiWriter.SendDeploymentComplete(platform, status, url, errorMsg, durationMs)
-	}
-
+	a.emitDeploymentCompleteIfDone(status, metadata)
 	slog.Info("Deployment status updated", "operation_id", operationId, "status", status)
 	return nil
+}
+
+// emitDeploymentCompleteIfDone emits the deployment_complete UI event when a
+// deploy reaches a terminal state, so all output modes see the final result.
+func (a *Activities) emitDeploymentCompleteIfDone(status string, metadata map[string]any) {
+	if status != "success" && status != "failed" {
+		return
+	}
+	platform, _ := metadata["platform"].(string)
+	url, _ := metadata["url"].(string)
+	errorMsg, _ := metadata["error"].(string)
+	a.uiWriter.SendDeploymentComplete(platform, status, url, errorMsg, 0)
 }
 
 // Helper function to extract framework from spec

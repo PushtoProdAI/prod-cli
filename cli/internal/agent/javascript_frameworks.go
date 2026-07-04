@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/pmezard/go-difflib/difflib"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 // generateConfigDiff generates a diff between original and updated config (JS-specific helper)
@@ -156,7 +156,7 @@ func (h *RemixHandler) HandleConfig(projectPath string, platform Platform) ([]Di
 	}
 
 	// Write updated config
-	if err := os.WriteFile(configPath, updatedConfig, 0644); err != nil {
+	if err := os.WriteFile(configPath, updatedConfig, 0o644); err != nil {
 		return nil, "", errors.Errorf("failed to update %s: %w", configPath, err)
 	}
 
@@ -175,7 +175,7 @@ func (h *RemixHandler) HandlePlatformSpecificFiles(projectPath string, platform 
 	if platform == Vercel {
 		// Create .npmrc to handle peer dependencies during deployment
 		npmrcContent := "legacy-peer-deps=true\n"
-		return os.WriteFile(npmrcPath, []byte(npmrcContent), 0644)
+		return os.WriteFile(npmrcPath, []byte(npmrcContent), 0o644)
 	} else {
 		// Remove .npmrc if it exists (for non-Vercel platforms)
 		if _, err := os.Stat(npmrcPath); err == nil {
@@ -221,7 +221,7 @@ func (h *RemixHandler) RestoreConfigFromBackup(ctx context.Context, plan DeployP
 	}
 
 	// Restore the backup
-	if err := os.WriteFile(configPath, backupConfig, 0644); err != nil {
+	if err := os.WriteFile(configPath, backupConfig, 0o644); err != nil {
 		return nil, errors.Errorf("failed to restore config %s: %w", configPath, err)
 	}
 
@@ -332,7 +332,7 @@ func (h *SvelteKitHandler) HandleConfig(projectPath string, platform Platform) (
 	}
 
 	// Write updated config
-	if err := os.WriteFile(configPath, updatedConfig, 0644); err != nil {
+	if err := os.WriteFile(configPath, updatedConfig, 0o644); err != nil {
 		return nil, "", errors.Errorf("failed to write updated config to %s: %w", configPath, err)
 	}
 
@@ -386,7 +386,7 @@ func (h *SvelteKitHandler) RestoreConfigFromBackup(ctx context.Context, plan Dep
 	}
 
 	// Restore from backup
-	if err := os.WriteFile(configPath, backupConfig, 0644); err != nil {
+	if err := os.WriteFile(configPath, backupConfig, 0o644); err != nil {
 		return nil, errors.Errorf("failed to restore config from backup: %w", err)
 	}
 
@@ -767,7 +767,7 @@ func (h *TanStackStartHandler) HandleConfig(projectPath string, platform Platfor
 	}
 
 	// Write updated config
-	if err := os.WriteFile(configPath, updatedConfig, 0644); err != nil {
+	if err := os.WriteFile(configPath, updatedConfig, 0o644); err != nil {
 		return nil, "", errors.Errorf("failed to write updated config to %s: %w", configPath, err)
 	}
 
@@ -821,7 +821,7 @@ func (h *TanStackStartHandler) RestoreConfigFromBackup(ctx context.Context, plan
 	}
 
 	// Restore from backup
-	if err := os.WriteFile(configPath, backupConfig, 0644); err != nil {
+	if err := os.WriteFile(configPath, backupConfig, 0o644); err != nil {
 		return nil, errors.Errorf("failed to restore config from backup: %w", err)
 	}
 

@@ -57,7 +57,6 @@ func NewFlyioClient(writer io.Writer) FlyioClient {
 
 // makeRequest makes an HTTP request with proper authentication and error handling
 func (c *HTTPFlyioClient) makeRequest(ctx context.Context, method, endpoint string, body any) (*http.Response, error) {
-
 	var reqBody io.Reader
 
 	if body != nil {

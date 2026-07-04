@@ -14,7 +14,7 @@ import (
 	"github.com/go-errors/errors"
 
 	heroku "github.com/heroku/heroku-go/v6"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 // HTTPError represents an HTTP error with status code information

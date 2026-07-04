@@ -6,7 +6,7 @@ import (
 	"github.com/go-errors/errors"
 	"golang.org/x/net/html"
 
-	"github.com/meroxa/prod/cli/internal/cache"
+	"github.com/pushtoprodai/prod-cli/internal/cache"
 )
 
 type PricingProvider struct{}

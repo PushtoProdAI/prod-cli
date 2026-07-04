@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/analyzer"
-	"github.com/meroxa/prod/cli/internal/backend/aws"
-	"github.com/meroxa/prod/cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
+	"github.com/pushtoprodai/prod-cli/internal/backend/aws"
+	"github.com/pushtoprodai/prod-cli/internal/config"
 )
 
 func getBaseURL() string {

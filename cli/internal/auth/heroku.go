@@ -17,7 +17,7 @@ import (
 
 	"github.com/go-errors/errors"
 
-	"github.com/meroxa/prod/cli/internal/deployment/heroku"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/heroku"
 )
 
 const (
@@ -432,9 +432,9 @@ func (ha *HerokuAuth) saveNetrc() error {
 	}
 
 	// Set proper permissions (0600 for Unix-like systems)
-	perm := os.FileMode(0600)
+	perm := os.FileMode(0o600)
 	if runtime.GOOS == "windows" {
-		perm = 0644
+		perm = 0o644
 	}
 
 	return os.WriteFile(ha.netrc.path, []byte(content.String()), perm)

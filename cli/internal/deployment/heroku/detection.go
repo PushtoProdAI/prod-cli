@@ -25,7 +25,6 @@ func DetectExistingProject(ctx context.Context, client *HerokuClient, projectNam
 	cmd := exec.CommandContext(ctx, "git", "remote", "get-url", "heroku")
 	cmd.Dir = sourcePath
 	output, err := cmd.Output()
-
 	if err != nil {
 		return nil, nil
 	}

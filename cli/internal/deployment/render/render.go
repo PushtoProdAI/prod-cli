@@ -8,10 +8,10 @@ import (
 
 	"github.com/go-errors/errors"
 
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/deployment/pricing"
-	"github.com/meroxa/prod/cli/internal/llm"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/pricing"
+	"github.com/pushtoprodai/prod-cli/internal/llm"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 const (

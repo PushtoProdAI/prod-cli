@@ -3,7 +3,7 @@ package aws
 import (
 	"context"
 
-	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 // AWSAPIStep is a type alias for AWS-specific API steps

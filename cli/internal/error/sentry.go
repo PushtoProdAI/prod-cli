@@ -6,8 +6,8 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/config"
-	"github.com/meroxa/prod/cli/internal/settings"
+	"github.com/pushtoprodai/prod-cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/internal/settings"
 )
 
 // provides error tracking functionality with consent checks

@@ -32,13 +32,13 @@ import (
 	"strings"
 
 	baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
-	"github.com/meroxa/prod/cli/baml_client/type_builder"
+	"github.com/pushtoprodai/prod-cli/baml_client/type_builder"
 )
 
 var bamlRuntime *baml.BamlRuntime
 
 func getEnvVars(overrides map[string]string) map[string]string {
-	var env = map[string]string{}
+	env := map[string]string{}
 	for _, env_var := range os.Environ() {
 		key, value, _ := strings.Cut(env_var, "=")
 		env[key] = value
@@ -155,11 +155,13 @@ func WithCollectors(collectors []baml.Collector) CallOptionFunc {
 }
 
 // Constructors
-type Collector = baml.Collector
-type Image = baml.Image
-type Audio = baml.Audio
-type PDF = baml.PDF
-type Video = baml.Video
+type (
+	Collector = baml.Collector
+	Image     = baml.Image
+	Audio     = baml.Audio
+	PDF       = baml.PDF
+	Video     = baml.Video
+)
 
 func NewCollector(name string) (Collector, error) {
 	return bamlRuntime.NewCollector(name)

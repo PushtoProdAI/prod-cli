@@ -9,11 +9,11 @@ import (
 
 	"github.com/go-errors/errors"
 
-	backend "github.com/meroxa/prod/cli/internal/backend/aws"
-	"github.com/meroxa/prod/cli/internal/config"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/llm"
-	"github.com/meroxa/prod/cli/internal/output"
+	backend "github.com/pushtoprodai/prod-cli/internal/backend/aws"
+	"github.com/pushtoprodai/prod-cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/llm"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 const (

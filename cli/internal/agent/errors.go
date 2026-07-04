@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client/types"
+	"github.com/pushtoprodai/prod-cli/baml_client/types"
 )
 
 func (a *Activities) summarizeError(ctx context.Context, error string, input DeployPlan) (deployError, error) {

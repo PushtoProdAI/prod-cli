@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
 )
 
 // FrameworkHandler defines the unified interface for all framework-specific operations
@@ -70,12 +70,12 @@ func (b *BaseFrameworkHandler) findConfigFile(projectPath string, filenames []st
 // createBackup creates a timestamped backup of a file in the .prod directory
 func (b *BaseFrameworkHandler) createBackup(projectPath, filename string, content []byte) error {
 	prodDir := filepath.Join(projectPath, ".prod")
-	if err := os.MkdirAll(prodDir, 0755); err != nil {
+	if err := os.MkdirAll(prodDir, 0o755); err != nil {
 		return errors.Errorf("failed to create .prod directory: %w", err)
 	}
 
 	backupPath := filepath.Join(prodDir, fmt.Sprintf("%s.%s.bak", filepath.Base(filename), time.Now().Format("20060102-150405")))
-	if err := os.WriteFile(backupPath, content, 0644); err != nil {
+	if err := os.WriteFile(backupPath, content, 0o644); err != nil {
 		return errors.Errorf("failed to write backup: %w", err)
 	}
 

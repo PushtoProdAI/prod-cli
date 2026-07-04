@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-errors/errors"
 
-	"github.com/meroxa/prod/cli/internal/cache"
+	"github.com/pushtoprodai/prod-cli/internal/cache"
 )
 
 // PricingProvider fetches Fly.io pricing content

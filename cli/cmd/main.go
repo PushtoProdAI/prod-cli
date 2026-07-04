@@ -12,17 +12,17 @@ import (
 	"github.com/conduitio/ecdysis"
 	"github.com/cschleiden/go-workflows/backend"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/cmd/root"
-	"github.com/meroxa/prod/cli/internal/agent"
-	"github.com/meroxa/prod/cli/internal/auth"
-	be "github.com/meroxa/prod/cli/internal/backend"
-	"github.com/meroxa/prod/cli/internal/config"
-	"github.com/meroxa/prod/cli/internal/deployment/flyio"
-	"github.com/meroxa/prod/cli/internal/deployment/render"
-	prod_error "github.com/meroxa/prod/cli/internal/error"
-	prod_log "github.com/meroxa/prod/cli/internal/log"
-	"github.com/meroxa/prod/cli/internal/output"
-	"github.com/meroxa/prod/cli/internal/workflowext"
+	"github.com/pushtoprodai/prod-cli/cmd/root"
+	"github.com/pushtoprodai/prod-cli/internal/agent"
+	"github.com/pushtoprodai/prod-cli/internal/auth"
+	be "github.com/pushtoprodai/prod-cli/internal/backend"
+	"github.com/pushtoprodai/prod-cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/flyio"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
+	prod_error "github.com/pushtoprodai/prod-cli/internal/error"
+	prod_log "github.com/pushtoprodai/prod-cli/internal/log"
+	"github.com/pushtoprodai/prod-cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/workflowext"
 )
 
 func main() {
@@ -129,14 +129,14 @@ func initLogFile() (*os.File, error) {
 
 	dirPath := filepath.Join(homeDir, ".prod")
 
-	err = os.MkdirAll(dirPath, 0755)
+	err = os.MkdirAll(dirPath, 0o755)
 	if err != nil {
 		return nil, errors.WrapPrefix(err, "failed to create directory", 0)
 	}
 
 	filePath := filepath.Join(dirPath, "log.txt")
 
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, errors.WrapPrefix(err, "failed to open/create file", 0)
 	}

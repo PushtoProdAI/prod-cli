@@ -3,8 +3,8 @@ package agent
 import (
 	"testing"
 
-	"github.com/meroxa/prod/cli/internal/deployment/flyio"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/flyio"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 func TestWorkflows_Deploy_FlyIO(t *testing.T) {

@@ -9,9 +9,12 @@ else
     VERSION := $(GIT_TAG)
 endif
 
-.PHONY: build-cli
-build-cli: 
-	$(MAKE) -C cli build 
+# ---------------------------------------------------------------------------
+# Build (the single binary)
+# ---------------------------------------------------------------------------
+.PHONY: build
+build:
+	$(MAKE) -C cli build
 
 .PHONY: build-cli-linux
 build-cli-linux:
@@ -21,7 +24,7 @@ build-cli-linux:
 
 .PHONY: build-cli-darwin
 build-cli-darwin:
-	@echo "Building for macOS..."
+	@echo "Building for macOS (Intel)..."
 	@mkdir -p $(BUILD_DIR)
 	GOOS=darwin GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION)-darwin-amd64 $(CMD_PATH)
 
@@ -36,119 +39,59 @@ clean:
 	@echo "Cleaning build artifacts..."
 	@rm -rf $(BUILD_DIR)
 
-# Supabase commands
-.PHONY: supabase-start
-supabase-start:
-	@echo "Starting Supabase local development..."
-	@supabase start
+# ---------------------------------------------------------------------------
+# Local verification — we run everything locally, not in CI.
+#   make check         fast, hermetic gate (also runs on every push via the hook)
+#   make check-full    + cross-compile the CGO targets via cli/Dockerfile.build
+#   make install-hooks wire the pre-push hook (git config core.hooksPath .githooks)
+#   make smoke         clean-room deploy test (needs a Fly token + network; not hermetic)
+# ---------------------------------------------------------------------------
+.PHONY: check
+check:
+	@./scripts/check.sh
 
-.PHONY: supabase-stop
-supabase-stop:
-	@echo "Stopping Supabase local development..."
-	@supabase stop
+.PHONY: check-full
+check-full: check
+	@echo "Cross-compiling CGO targets via cli/Dockerfile.build..."
+	@cd cli && docker build -f Dockerfile.build -t prod-cli-build .
 
-.PHONY: supabase-status
-supabase-status:
-	@echo "Checking Supabase status..."
-	@supabase status
+.PHONY: install-hooks
+install-hooks:
+	@git config core.hooksPath .githooks
+	@chmod +x .githooks/* scripts/check.sh
+	@echo "✓ pre-push gate installed (core.hooksPath -> .githooks)"
 
-.PHONY: supabase-reset
-supabase-reset:
-	@echo "Resetting Supabase local development..."
-	@supabase db reset
+# ---------------------------------------------------------------------------
+# Release (local-first — there is no CI; releases are cut from this machine).
+# All targets require GoReleaser installed locally: `brew install goreleaser`.
+# See docs/DISTRIBUTION.md for the full runbook and the CGO cross-compile notes.
+#   make release-check      validate .goreleaser.yml (goreleaser check)
+#   make release-snapshot   build local archives without publishing (no tag/push)
+#   make release            cut a real release from the current git tag (pushes)
+# ---------------------------------------------------------------------------
+.PHONY: release-check
+release-check:
+	@command -v goreleaser >/dev/null 2>&1 || { echo "goreleaser not installed: brew install goreleaser"; exit 1; }
+	@goreleaser check
 
-.PHONY: supabase-migration-new
-supabase-migration-new:
-	@echo "Creating new migration..."
-	@read -p "Enter migration name: " name; supabase migration new $$name
+.PHONY: release-snapshot
+release-snapshot:
+	@command -v goreleaser >/dev/null 2>&1 || { echo "goreleaser not installed: brew install goreleaser"; exit 1; }
+	@goreleaser release --snapshot --clean
 
-.PHONY: supabase-migration-up
-supabase-migration-up:
-	@echo "Applying migrations..."
-	@supabase db push
+.PHONY: release
+release:
+	@command -v goreleaser >/dev/null 2>&1 || { echo "goreleaser not installed: brew install goreleaser"; exit 1; }
+	@goreleaser release --clean
 
-.PHONY: supabase-seed
-supabase-seed:
-	@echo "Seeding database..."
-	@supabase db seed
-
-.PHONY: supabase-studio
-supabase-studio:
-	@echo "Opening Supabase Studio..."
-	@open http://localhost:54323
-
-.PHONY: supabase-test-connection
-supabase-test-connection:
-	@echo "Testing Supabase connection..."
-	@if [ -f ".env" ]; then \
-		echo "Loading environment variables..."; \
-		export $$(grep -v '^#' .env | grep -v '^$$' | xargs); \
-		echo "SUPABASE_URL: $$SUPABASE_URL"; \
-		echo "SUPABASE_ANON_KEY: $$(echo $$SUPABASE_ANON_KEY | cut -c1-20)..."; \
-		echo "Testing connection with authentication..."; \
-		curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" \
-			-H "apikey: $$SUPABASE_ANON_KEY" \
-			-H "Authorization: Bearer $$SUPABASE_ANON_KEY" \
-			"$$SUPABASE_URL/rest/v1/" || echo "Connection failed"; \
-	else \
-		echo "No .env file found. Please copy env.example to .env and configure your Supabase credentials."; \
-	fi
-
-.PHONY: supabase-init-force
-supabase-init-force:
-	@echo "Force initializing Supabase project..."
-	@supabase init --force
-
-.PHONY: supabase-setup
-supabase-setup:
-	@echo "Setting up Supabase for local development..."
-	@if ! command -v supabase &> /dev/null; then \
-		echo "Installing Supabase CLI..."; \
-		brew install supabase/tap/supabase; \
-	fi
-	@echo "Initializing Supabase project..."
-	@if [ -f "supabase/config.toml" ]; then \
-		echo "Supabase config already exists, skipping init..."; \
-	else \
-		supabase init; \
-	fi
-	@echo "Starting Supabase..."
-	@supabase start
-	@echo "Supabase is ready! Studio available at: http://localhost:54323"
-
-# Infrastructure and Lambda configuration
-INFRA_DIR=infra
-LAMBDA_DIR=lambda
-LAMBDA_BUCKET?=prod-aws-deploy
-S3_STACK_NAME?=prod-s3-infrastructure
-AWS_REGION?=us-east-1
-
-.PHONY: lambda-build
-lambda-build: lambda-build-database-url-constructor
-
-.PHONY: lambda-build-database-url-constructor
-lambda-build-database-url-constructor:
-	@echo "Building database-url-constructor Lambda function..."
-	@cd $(LAMBDA_DIR)/database-url-constructor && \
-		npm install --production && \
-		./build.sh
-	@echo "✓ Lambda function built: $(LAMBDA_DIR)/database-url-constructor/function.zip"
-	@echo ""
-	@echo "To upload to S3, run:"
-	@echo "  aws s3 cp $(LAMBDA_DIR)/database-url-constructor/function.zip \\"
-	@echo "    s3://$(LAMBDA_BUCKET)/lambda-functions/database-url-constructor/function.zip \\"
-	@echo "    --metadata version=\$$(cd $(LAMBDA_DIR)/database-url-constructor && node -p \"require('./package.json').version\")"
-
-.PHONY: lambda-clean
-lambda-clean:
-	@echo "Cleaning Lambda function build artifacts..."
-	@rm -rf $(LAMBDA_DIR)/database-url-constructor/node_modules
-	@rm -f $(LAMBDA_DIR)/database-url-constructor/function.zip
-	@echo "✓ Lambda function artifacts cleaned"
-
-.PHONY: lambda-version
-lambda-version:
-	@echo "Lambda function versions:"
-	@cd $(LAMBDA_DIR)/database-url-constructor && \
-		echo "  database-url-constructor: v$$(node -p "require('./package.json').version")"
-
+# Phase-0 definition of done: deploys with no backend and no account.
+# Deploys the project in SMOKE_DIR (default: current dir). Needs a Fly token +
+# network + Docker, and provisions REAL infrastructure — not hermetic.
+#   make smoke SMOKE_DIR=test-projects/node-app
+SMOKE_DIR ?= .
+.PHONY: smoke
+smoke:
+	@echo "Clean-room smoke: no backend, no account, deploy '$(SMOKE_DIR)' to Fly.io."
+	@echo "Requires a Fly token + network + Docker. Provisions real infrastructure."
+	@cd cli && go build -o $(CURDIR)/$(BUILD_DIR)/prod-smoke ./cmd
+	@cd $(SMOKE_DIR) && env -u SUPABASE_URL -u SUPABASE_ANON_KEY $(CURDIR)/$(BUILD_DIR)/prod-smoke "deploy this to fly"

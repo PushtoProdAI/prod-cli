@@ -1,2 +1,0 @@
-ALTER TABLE llm_usage_logs ADD COLUMN IF NOT EXISTS prompt_tokens INTEGER DEFAULT 0;
-ALTER TABLE llm_usage_logs ADD COLUMN IF NOT EXISTS completion_tokens INTEGER DEFAULT 0;

@@ -3,7 +3,7 @@ package render
 import (
 	"context"
 
-	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 type RenderAPIStep = deployment.Step[RenderClient]
