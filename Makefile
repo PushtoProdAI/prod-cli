@@ -61,6 +61,29 @@ install-hooks:
 	@chmod +x .githooks/* scripts/check.sh
 	@echo "✓ pre-push gate installed (core.hooksPath -> .githooks)"
 
+# ---------------------------------------------------------------------------
+# Release (local-first — there is no CI; releases are cut from this machine).
+# All targets require GoReleaser installed locally: `brew install goreleaser`.
+# See docs/DISTRIBUTION.md for the full runbook and the CGO cross-compile notes.
+#   make release-check      validate .goreleaser.yml (goreleaser check)
+#   make release-snapshot   build local archives without publishing (no tag/push)
+#   make release            cut a real release from the current git tag (pushes)
+# ---------------------------------------------------------------------------
+.PHONY: release-check
+release-check:
+	@command -v goreleaser >/dev/null 2>&1 || { echo "goreleaser not installed: brew install goreleaser"; exit 1; }
+	@goreleaser check
+
+.PHONY: release-snapshot
+release-snapshot:
+	@command -v goreleaser >/dev/null 2>&1 || { echo "goreleaser not installed: brew install goreleaser"; exit 1; }
+	@goreleaser release --snapshot --clean
+
+.PHONY: release
+release:
+	@command -v goreleaser >/dev/null 2>&1 || { echo "goreleaser not installed: brew install goreleaser"; exit 1; }
+	@goreleaser release --clean
+
 # Phase-0 definition of done: deploys with no backend and no account.
 # Deploys the project in SMOKE_DIR (default: current dir). Needs a Fly token +
 # network + Docker, and provisions REAL infrastructure — not hermetic.
