@@ -846,7 +846,10 @@ func (dg *DockerGenerator) BuildAndPushToRegistry(ctx context.Context, spec *Dep
 		return buildResult, nil, errors.Errorf("docker client not available - cannot push to registry")
 	}
 
-	creds, err := reg.Credentials(spec.Name)
+	// spec.Name comes from package.json / a directory name and may not be a valid
+	// repository component (uppercase, scope, spaces). Normalize before the push
+	// so we fail-safe instead of erroring only after the build.
+	creds, err := reg.Credentials(prodreg.Sanitize(spec.Name))
 	if err != nil {
 		return buildResult, nil, err
 	}

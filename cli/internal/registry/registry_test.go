@@ -138,6 +138,37 @@ func TestTokenHandling(t *testing.T) {
 	}
 }
 
+func TestSanitize(t *testing.T) {
+	// Invariant: Sanitize's output is ALWAYS a valid project name, so it never
+	// fails the adapter's validation (which would otherwise only surface after a
+	// full build).
+	r := mustDockerhub(t)
+	for _, raw := range []string{
+		"my-app", "MyApp", "My App", "@org/my_app", "app:latest", "a..b",
+		"--weird--", "", "@scope/", "Frontend-API", "123", "a/b/c", "!!!",
+	} {
+		s := Sanitize(raw)
+		if _, err := r.Credentials(s); err != nil {
+			t.Errorf("Sanitize(%q)=%q is not a valid project name: %v", raw, s, err)
+		}
+	}
+
+	// Concrete normalizations.
+	for raw, want := range map[string]string{
+		"MyApp":        "myapp",
+		"My App":       "my-app",
+		"app:latest":   "app-latest",
+		"":             "app",
+		"@org/pkg":     "pkg",
+		"Frontend-API": "frontend-api",
+		"--weird--":    "weird",
+	} {
+		if got := Sanitize(raw); got != want {
+			t.Errorf("Sanitize(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
 func mustDockerhub(t *testing.T) Registry {
 	t.Helper()
 	r, err := FromEnv(env(map[string]string{
