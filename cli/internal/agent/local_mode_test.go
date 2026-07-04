@@ -11,16 +11,15 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
-// The backend-dependent platforms must be refused; the backend-free ones must not.
+// Only AWS remains hard-unsupported; Render is now backend-free (gated on a
+// registry, checked separately in refuseUnsupportedPlatform).
 func TestUnsupportedLocalPlatform(t *testing.T) {
-	for _, p := range []Platform{AWS, Render} {
-		if _, unsupported := unsupportedLocalPlatform(p); !unsupported {
-			t.Errorf("%v should be refused in local mode", p)
-		}
+	if _, unsupported := unsupportedLocalPlatform(AWS); !unsupported {
+		t.Error("AWS should be refused in local mode")
 	}
-	for _, p := range []Platform{FlyIO, Vercel, Netlify, Heroku} {
+	for _, p := range []Platform{Render, FlyIO, Vercel, Netlify, Heroku} {
 		if msg, unsupported := unsupportedLocalPlatform(p); unsupported {
-			t.Errorf("%v should be supported locally, got refusal: %q", p, msg)
+			t.Errorf("%v should not be hard-unsupported, got refusal: %q", p, msg)
 		}
 	}
 }
@@ -47,6 +46,22 @@ func TestRefuseUnsupportedPlatformIsModeAware(t *testing.T) {
 		setLocalMode(t)
 		if a.refuseUnsupportedPlatform(&sink, FlyIO) {
 			t.Error("Fly should always be allowed")
+		}
+	})
+	t.Run("local mode refuses Render without a registry", func(t *testing.T) {
+		setLocalMode(t)
+		t.Setenv("PROD_REGISTRY_USERNAME", "")
+		t.Setenv("PROD_REGISTRY_TOKEN", "")
+		if !a.refuseUnsupportedPlatform(&sink, Render) {
+			t.Error("Render without a configured registry should be refused")
+		}
+	})
+	t.Run("local mode allows Render with a registry", func(t *testing.T) {
+		setLocalMode(t)
+		t.Setenv("PROD_REGISTRY_USERNAME", "alice")
+		t.Setenv("PROD_REGISTRY_TOKEN", "tok")
+		if a.refuseUnsupportedPlatform(&sink, Render) {
+			t.Error("Render with a configured registry should be allowed")
 		}
 	})
 }
