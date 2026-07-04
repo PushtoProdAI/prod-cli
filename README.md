@@ -99,13 +99,44 @@ deployments) and `analyze_project` (detect a project's stack). Add to your MCP c
 Today, `prod` deploys directly to:
 
 - **Fly.io**
-- **Render**
+- **Render** — needs a container registry (see below)
 - **Vercel**
 - **Netlify**
 - **Heroku**
 
 **AWS** (App Runner + ECS/Fargate + RDS) is being ported to run entirely in the binary with
 your own AWS credentials — see the [ROADMAP](./ROADMAP.md).
+
+### Deploying to Render — bring your own registry
+
+Render deploys a container image, so `prod` builds the image locally and pushes it to **a
+container registry you own** (no hosted middleman). Point `prod` at your registry with these
+environment variables, then deploy as usual (`prod "deploy this to render"`):
+
+| Variable | Required | Description |
+|---|---|---|
+| `PROD_REGISTRY` | no | `dockerhub` (default), `ghcr`, or `generic` |
+| `PROD_REGISTRY_USERNAME` | **yes** | registry username |
+| `PROD_REGISTRY_TOKEN` | **yes** | registry password / access token |
+| `PROD_REGISTRY_NAMESPACE` | for `ghcr`/`generic` | user or org namespace (defaults to your username on Docker Hub) |
+| `PROD_REGISTRY_HOST` | for `generic` | registry host, e.g. `registry.gitlab.com` |
+
+```bash
+# Docker Hub
+export PROD_REGISTRY=dockerhub
+export PROD_REGISTRY_USERNAME=your-dockerhub-user
+export PROD_REGISTRY_TOKEN=dckr_pat_...        # a Docker Hub access token
+
+# GitHub Container Registry (GHCR)
+export PROD_REGISTRY=ghcr
+export PROD_REGISTRY_NAMESPACE=your-gh-user-or-org
+export PROD_REGISTRY_USERNAME=your-gh-user
+export PROD_REGISTRY_TOKEN=ghp_...             # a PAT with write:packages
+```
+
+`prod` pushes the image to that registry, registers the credentials with Render so it can pull,
+and creates the service — all with **your** Render API key and **your** registry. If the
+registry isn't configured, `prod` tells you exactly what to set before it does any work.
 
 ---
 

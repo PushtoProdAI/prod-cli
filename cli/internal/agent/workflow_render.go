@@ -15,11 +15,6 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	if w.registry == nil {
 		return deployResult{}, errors.New("workflow registry is not set")
 	}
-	token := ""
-	session := CtxWorkflowSession(ctx)
-	if session != nil {
-		token = session.AccessToken
-	}
 
 	// Log deployment start
 	operationId, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentLogDeploymentStart, "render", input.Spec, input.Source, input.Action).Get(ctx)
@@ -66,7 +61,6 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
 	}
 	spec.Metadata["buildContext"] = input.Source
-	spec.Metadata["authToken"] = token
 
 	// Set update mode if existing project detected
 	if existingProject.Exists {
