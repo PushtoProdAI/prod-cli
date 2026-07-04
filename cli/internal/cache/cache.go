@@ -28,7 +28,7 @@ func getCacheDir() (string, error) {
 		return "", errors.Errorf("failed to get user home directory: %w", err)
 	}
 	cacheDir := filepath.Join(homeDir, ".prod", "cache")
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return "", errors.Errorf("failed to create cache directory: %w", err)
 	}
 	return cacheDir, nil
@@ -79,7 +79,7 @@ func fetchURL(url, extension string, processor func(string) (string, error)) (st
 	}
 
 	// Save to cache (ignore errors to not break functionality)
-	_ = os.WriteFile(cacheFile, []byte(content), 0644)
+	_ = os.WriteFile(cacheFile, []byte(content), 0o644)
 
 	return content, nil
 }

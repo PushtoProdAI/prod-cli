@@ -144,7 +144,6 @@ func (c *PricingAPIClient) GetAppRunnerPricing(ctx context.Context, vCPU, memory
 		Filters:     filters,
 		MaxResults:  aws.Int32(10),
 	})
-
 	if err != nil {
 		return nil, errors.Errorf("failed to get App Runner pricing: %w", err)
 	}
@@ -303,7 +302,6 @@ func (c *PricingAPIClient) GetRDSPricing(ctx context.Context, instanceClass, eng
 		Filters:     filters,
 		MaxResults:  aws.Int32(10),
 	})
-
 	if err != nil {
 		return nil, errors.Errorf("failed to get RDS pricing: %w", err)
 	}
@@ -395,7 +393,6 @@ func (c *PricingAPIClient) GetElastiCachePricing(ctx context.Context, nodeType, 
 		Filters:     filters,
 		MaxResults:  aws.Int32(10),
 	})
-
 	if err != nil {
 		return nil, errors.Errorf("failed to get ElastiCache pricing: %w", err)
 	}
@@ -449,7 +446,6 @@ func (c *PricingAPIClient) GetNATGatewayPricing(ctx context.Context, region stri
 		Filters:     filters,
 		MaxResults:  aws.Int32(5),
 	})
-
 	if err != nil {
 		return 0, errors.Errorf("failed to get NAT Gateway pricing: %w", err)
 	}

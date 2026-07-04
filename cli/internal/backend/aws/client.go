@@ -339,7 +339,6 @@ func (c *Client) RunMigration(ctx context.Context, authToken string, req Migrati
 	return &result, nil
 }
 
-
 // GetStackStatus polls the status of a CloudFormation stack
 func (c *Client) GetStackStatus(ctx context.Context, authToken string, stackName string) (*DeploymentResult, error) {
 	payload := map[string]any{

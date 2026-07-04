@@ -23,7 +23,7 @@ func NewTokenStore() (*TokenStore, error) {
 	configDir := filepath.Join(homeDir, ".prod")
 
 	// Create directory with restricted permissions
-	if err := os.MkdirAll(configDir, 0700); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return nil, errors.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -46,7 +46,7 @@ func (ts *TokenStore) SaveSession(session *Session) error {
 	}
 
 	// Write with restricted permissions (owner read/write only)
-	if err := os.WriteFile(sessionFile, data, 0600); err != nil {
+	if err := os.WriteFile(sessionFile, data, 0o600); err != nil {
 		return errors.Errorf("failed to write session file: %w", err)
 	}
 

@@ -15,7 +15,7 @@ func ensureInGitignore(projectPath, entry string) error {
 	file, err := os.Open(gitignorePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return os.WriteFile(gitignorePath, []byte(entry+"\n"), 0644)
+			return os.WriteFile(gitignorePath, []byte(entry+"\n"), 0o644)
 		}
 		return errors.Errorf("failed to open .gitignore: %w", err)
 	}
@@ -33,7 +33,7 @@ func ensureInGitignore(projectPath, entry string) error {
 		return errors.Errorf("failed to read .gitignore: %w", err)
 	}
 
-	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return errors.Errorf("failed to open .gitignore for appending: %w", err)
 	}

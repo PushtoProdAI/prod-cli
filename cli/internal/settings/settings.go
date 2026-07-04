@@ -86,7 +86,7 @@ func saveSettings(settings Settings) error {
 		return errors.WrapPrefix(err, "failed to marshal settings to JSON", 0)
 	}
 
-	err = os.WriteFile(filePath, jsonData, 0644)
+	err = os.WriteFile(filePath, jsonData, 0o644)
 	if err != nil {
 		return errors.WrapPrefix(err, "failed to save settings file", 0)
 	}

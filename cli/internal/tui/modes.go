@@ -191,7 +191,7 @@ func (m Model) handleTextEnter() (tea.Model, tea.Cmd) {
 // handleSearchEnter processes Enter in search mode
 func (m Model) handleSearchEnter() (tea.Model, tea.Cmd) {
 	query := strings.TrimSpace(m.textInput.Value())
-	
+
 	if query == "" {
 		// Empty search, exit search mode
 		m.setMode(ModeNormal)
@@ -199,10 +199,10 @@ func (m Model) handleSearchEnter() (tea.Model, tea.Cmd) {
 		m.textInput.Placeholder = ""
 		return m, nil
 	}
-	
+
 	// Perform search
 	m.performSearch(query)
-	
+
 	// Stay in search mode to allow navigation
 	return m, nil
 }

@@ -27,7 +27,6 @@ var ParseStream = &parse_stream{}
 
 // / Parse version of CategorizeRoutes (Takes in string and returns stream_types.CategorizedRoutes)
 func (*parse_stream) CategorizeRoutes(text string, opts ...CallOptionFunc) (stream_types.CategorizedRoutes, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -74,7 +73,6 @@ func (*parse_stream) CategorizeRoutes(text string, opts ...CallOptionFunc) (stre
 
 // / Parse version of DetermineBuildOutput (Takes in string and returns stream_types.BuildOutput)
 func (*parse_stream) DetermineBuildOutput(text string, opts ...CallOptionFunc) (stream_types.BuildOutput, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -121,7 +119,6 @@ func (*parse_stream) DetermineBuildOutput(text string, opts ...CallOptionFunc) (
 
 // / Parse version of DetermineEnvVarRoles (Takes in string and returns stream_types.EnvVarCategory)
 func (*parse_stream) DetermineEnvVarRoles(text string, opts ...CallOptionFunc) (stream_types.EnvVarCategory, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -168,7 +165,6 @@ func (*parse_stream) DetermineEnvVarRoles(text string, opts ...CallOptionFunc) (
 
 // / Parse version of DetermineLaunchCommand (Takes in string and returns stream_types.LaunchCommand)
 func (*parse_stream) DetermineLaunchCommand(text string, opts ...CallOptionFunc) (stream_types.LaunchCommand, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -215,7 +211,6 @@ func (*parse_stream) DetermineLaunchCommand(text string, opts ...CallOptionFunc)
 
 // / Parse version of DetermineMigrationCommand (Takes in string and returns stream_types.MigrationCommand)
 func (*parse_stream) DetermineMigrationCommand(text string, opts ...CallOptionFunc) (stream_types.MigrationCommand, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -262,7 +257,6 @@ func (*parse_stream) DetermineMigrationCommand(text string, opts ...CallOptionFu
 
 // / Parse version of ExtractIntent (Takes in string and returns stream_types.Intent)
 func (*parse_stream) ExtractIntent(text string, opts ...CallOptionFunc) (stream_types.Intent, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -309,7 +303,6 @@ func (*parse_stream) ExtractIntent(text string, opts ...CallOptionFunc) (stream_
 
 // / Parse version of FetchPricing (Takes in string and returns stream_types.ServicePricing)
 func (*parse_stream) FetchPricing(text string, opts ...CallOptionFunc) (stream_types.ServicePricing, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -356,7 +349,6 @@ func (*parse_stream) FetchPricing(text string, opts ...CallOptionFunc) (stream_t
 
 // / Parse version of SummarizeDeployError (Takes in string and returns stream_types.Error)
 func (*parse_stream) SummarizeDeployError(text string, opts ...CallOptionFunc) (stream_types.Error, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -403,7 +395,6 @@ func (*parse_stream) SummarizeDeployError(text string, opts ...CallOptionFunc) (
 
 // / Parse version of SummarizeIntent (Takes in string and returns stream_types.Summary)
 func (*parse_stream) SummarizeIntent(text string, opts ...CallOptionFunc) (stream_types.Summary, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -450,7 +441,6 @@ func (*parse_stream) SummarizeIntent(text string, opts ...CallOptionFunc) (strea
 
 // / Parse version of SummarizeSteps (Takes in string and returns stream_types.Summary)
 func (*parse_stream) SummarizeSteps(text string, opts ...CallOptionFunc) (stream_types.Summary, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)

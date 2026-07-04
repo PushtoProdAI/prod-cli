@@ -576,7 +576,6 @@ func (m Model) renderViewportContent() string {
 		// Group matches by line
 		matchesByLine := make(map[int][]SearchMatch)
 		for matchIdx, match := range m.searchMatches {
-			match.StartCol = match.StartCol // Keep match data
 			matchesByLine[match.LineIndex] = append(matchesByLine[match.LineIndex], m.searchMatches[matchIdx])
 		}
 
