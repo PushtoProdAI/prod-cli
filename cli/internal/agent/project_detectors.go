@@ -353,64 +353,9 @@ func NewAWSProjectDetector(beClient *backend.Client, uiWriter output.StatusWrite
 	}
 }
 
-// DetectExistingProject checks for existing AWS CloudFormation stacks
-func (d *AWSProjectDetector) DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error) {
-	result := ExistingProjectInfo{
-		Exists:            false,
-		Platform:          AWS,
-		ExistingDatabases: []string{},
-	}
-
-	// Get auth token from context
-	session := CtxSession(ctx)
-	if session == nil {
-		slog.Warn("No session found in context for AWS detection")
-		return result, nil
-	}
-	authToken := session.AccessToken
-
-	// Standard CloudFormation stack naming convention
-	stackName := fmt.Sprintf("prod-%s", projectName)
-	slog.Info("Checking for existing AWS stack", "stackName", stackName)
-
-	// Call backend to check if stack exists
-	response, err := d.beClient.CheckAWSStack(ctx, authToken, stackName)
-	if err != nil {
-		slog.Error("Failed to check for existing AWS stack", "error", err)
-		return result, errors.Errorf("failed to check for existing AWS stack: %w", err)
-	}
-
-	if !response.Exists {
-		slog.Info("No existing AWS stack found", "stackName", stackName)
-		return result, nil
-	}
-
-	// Stack exists - populate existing project info
-	result.Exists = true
-	result.ProjectID = response.StackID
-	result.Name = stackName
-	result.IsUpdate = true
-
-	// Detect existing databases from CloudFormation resources
-	if response.Resources.HasRDS {
-		result.ExistingDatabases = append(result.ExistingDatabases, "postgresql")
-		slog.Info("Detected existing RDS instance", "instances", response.Resources.RDSInstances)
-	}
-	if response.Resources.HasElastiCache {
-		result.ExistingDatabases = append(result.ExistingDatabases, "redis")
-		slog.Info("Detected existing ElastiCache cluster", "instances", response.Resources.ElastiCacheInstances)
-	}
-
-	slog.Info(
-		"Detected existing AWS stack",
-		"stackName", stackName,
-		"stackId", response.StackID,
-		"status", response.Status,
-		"hasRDS", response.Resources.HasRDS,
-		"hasElastiCache", response.Resources.HasElastiCache,
-		"hasAppRunner", response.Resources.HasAppRunner,
-		"existingDatabases", result.ExistingDatabases,
-	)
-
-	return result, nil
+// DetectExistingProject is a no-op for App Runner (idempotent by service name)
+func (d *AWSProjectDetector) DetectExistingProject(_ context.Context, _ string, _ string) (ExistingProjectInfo, error) {
+	// App Runner deploys are idempotent by service name — the deployer finds and
+	// redeploys an existing service — so there's no separate detection step.
+	return ExistingProjectInfo{Platform: AWS, ExistingDatabases: []string{}}, nil
 }
