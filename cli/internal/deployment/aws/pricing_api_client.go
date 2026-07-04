@@ -234,7 +234,8 @@ func (c *PricingAPIClient) GetAppRunnerPricing(ctx context.Context, vCPU, memory
 
 	monthlyCost := activeComputeCost + memoryCost
 
-	slog.Debug("App Runner pricing calculation",
+	slog.Debug(
+		"App Runner pricing calculation",
 		"vCPU", vCPUCount,
 		"memory_gb", memoryCount,
 		"vcpu_hourly", vCPUCostPerHour,

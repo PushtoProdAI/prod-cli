@@ -55,7 +55,8 @@ func (tp *TemplatePricer) EstimateCostFromTemplate(ctx context.Context, template
 		return deployment.CostEstimate{}, errors.Errorf("failed to parse CloudFormation template: %w", err)
 	}
 
-	slog.Info("Estimating costs from CloudFormation template",
+	slog.Info(
+		"Estimating costs from CloudFormation template",
 		"resourceCount", len(template.Resources),
 		"region", tp.region,
 	)
@@ -125,7 +126,8 @@ func (tp *TemplatePricer) EstimateCostFromTemplate(ctx context.Context, template
 		total += c.Cost
 	}
 
-	slog.Debug("Cost estimation complete",
+	slog.Debug(
+		"Cost estimation complete",
 		"total", total,
 		"itemCount", len(costs),
 	)

@@ -166,7 +166,8 @@ func ApplyUsageCosts(baseCost float64, usageCosts []UsageCost, storageGB float64
 			usageAmount := storageGB
 			additionalCost := usageCost.CostPerUnit * usageAmount
 
-			slog.Info("Applying usage-based cost",
+			slog.Info(
+				"Applying usage-based cost",
 				"unit", usageCost.Unit,
 				"cost_per_unit", usageCost.CostPerUnit,
 				"usage_amount", usageAmount,

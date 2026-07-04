@@ -401,7 +401,8 @@ func (d *AWSProjectDetector) DetectExistingProject(ctx context.Context, projectN
 		slog.Info("Detected existing ElastiCache cluster", "instances", response.Resources.ElastiCacheInstances)
 	}
 
-	slog.Info("Detected existing AWS stack",
+	slog.Info(
+		"Detected existing AWS stack",
 		"stackName", stackName,
 		"stackId", response.StackID,
 		"status", response.Status,

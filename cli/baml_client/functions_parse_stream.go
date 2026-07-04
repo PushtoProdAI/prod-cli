@@ -66,7 +66,7 @@ func (*parse_stream) CategorizeRoutes(text string, opts ...CallOptionFunc) (stre
 		return stream_types.CategorizedRoutes{}, err
 	}
 
-	casted := (result).(stream_types.CategorizedRoutes)
+	casted := result.(stream_types.CategorizedRoutes)
 
 	return casted, nil
 }
@@ -112,7 +112,7 @@ func (*parse_stream) DetermineBuildOutput(text string, opts ...CallOptionFunc) (
 		return stream_types.BuildOutput{}, err
 	}
 
-	casted := (result).(stream_types.BuildOutput)
+	casted := result.(stream_types.BuildOutput)
 
 	return casted, nil
 }
@@ -158,7 +158,7 @@ func (*parse_stream) DetermineEnvVarRoles(text string, opts ...CallOptionFunc) (
 		return stream_types.EnvVarCategory{}, err
 	}
 
-	casted := (result).(stream_types.EnvVarCategory)
+	casted := result.(stream_types.EnvVarCategory)
 
 	return casted, nil
 }
@@ -204,7 +204,7 @@ func (*parse_stream) DetermineLaunchCommand(text string, opts ...CallOptionFunc)
 		return stream_types.LaunchCommand{}, err
 	}
 
-	casted := (result).(stream_types.LaunchCommand)
+	casted := result.(stream_types.LaunchCommand)
 
 	return casted, nil
 }
@@ -250,7 +250,7 @@ func (*parse_stream) DetermineMigrationCommand(text string, opts ...CallOptionFu
 		return stream_types.MigrationCommand{}, err
 	}
 
-	casted := (result).(stream_types.MigrationCommand)
+	casted := result.(stream_types.MigrationCommand)
 
 	return casted, nil
 }
@@ -296,7 +296,7 @@ func (*parse_stream) ExtractIntent(text string, opts ...CallOptionFunc) (stream_
 		return stream_types.Intent{}, err
 	}
 
-	casted := (result).(stream_types.Intent)
+	casted := result.(stream_types.Intent)
 
 	return casted, nil
 }
@@ -342,7 +342,7 @@ func (*parse_stream) FetchPricing(text string, opts ...CallOptionFunc) (stream_t
 		return stream_types.ServicePricing{}, err
 	}
 
-	casted := (result).(stream_types.ServicePricing)
+	casted := result.(stream_types.ServicePricing)
 
 	return casted, nil
 }
@@ -388,7 +388,7 @@ func (*parse_stream) SummarizeDeployError(text string, opts ...CallOptionFunc) (
 		return stream_types.Error{}, err
 	}
 
-	casted := (result).(stream_types.Error)
+	casted := result.(stream_types.Error)
 
 	return casted, nil
 }
@@ -434,7 +434,7 @@ func (*parse_stream) SummarizeIntent(text string, opts ...CallOptionFunc) (strea
 		return stream_types.Summary{}, err
 	}
 
-	casted := (result).(stream_types.Summary)
+	casted := result.(stream_types.Summary)
 
 	return casted, nil
 }
@@ -480,7 +480,7 @@ func (*parse_stream) SummarizeSteps(text string, opts ...CallOptionFunc) (stream
 		return stream_types.Summary{}, err
 	}
 
-	casted := (result).(stream_types.Summary)
+	casted := result.(stream_types.Summary)
 
 	return casted, nil
 }

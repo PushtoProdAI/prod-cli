@@ -143,7 +143,8 @@ func SuggestPurchaseOptions(ctx context.Context, client *Client, out io.Writer) 
 	fmt.Fprintf(out, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	for _, pkg := range packages {
-		fmt.Fprintf(out, "  %s - %d tokens for $%.2f\n",
+		fmt.Fprintf(
+			out, "  %s - %d tokens for $%.2f\n",
 			pkg.Name,
 			pkg.TokenCount,
 			pkg.PriceDollars(),

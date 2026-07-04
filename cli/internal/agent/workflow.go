@@ -118,7 +118,8 @@ func (w *Workflows) Register(registry workflowext.Registry) error {
 	w.registry = registry
 	for _, wf := range w.Workflows() {
 		if err := wf.Register(registry); err != nil {
-			errs = errors.Join(errs,
+			errs = errors.Join(
+				errs,
 				errors.Errorf("failed to register agent workflow %q: %w", wf.Name, err),
 			)
 		}
@@ -126,7 +127,8 @@ func (w *Workflows) Register(registry workflowext.Registry) error {
 
 	for _, act := range w.Acts.Activities() {
 		if err := act.Register(registry); err != nil {
-			errs = errors.Join(errs,
+			errs = errors.Join(
+				errs,
 				errors.Errorf("failed to register agent activity %q: %w", act.Name, err),
 			)
 		}
