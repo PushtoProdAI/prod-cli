@@ -23,11 +23,8 @@ const (
 	AgentEstimateNetlifyCosts       = "agent.estimateNetlifyCosts"
 	AgentEstimateVercelCosts        = "agent.estimateVercelCosts"
 	AgentEstimateHerokuCosts        = "agent.estimateHerokuCosts"
-	AgentEstimateAWSCosts           = "agent.estimateAWSCosts"
 	AgentGetRenderServiceURL        = "agent.getRenderServiceURL"
 	AgentWaitForRenderDeploy        = "agent.waitForRenderDeploy"
-	AgentWaitForAWSStack            = "agent.waitForAWSStack"
-	AgentUpdateAWSStack             = "agent.updateAWSStack"
 	AgentIsURLLive                  = "agent.isURLLive"
 	AgentSendProjectStats           = "agent.sendProjectStats"
 	AgentGetFlyIOAppURL             = "agent.getFlyIOAppURL"
@@ -53,7 +50,6 @@ const (
 	AgentUpdateDeploymentStatus     = "agent.updateDeploymentStatus"
 	AgentRollbackDeployment         = "agent.rollbackDeployment"
 	AgentGetPreviousDeployment      = "agent.getPreviousDeployment"
-	AgentRunECSMigration            = "agent.runECSMigration"
 )
 
 type Activities struct {
@@ -80,10 +76,8 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentEstimateNetlifyCosts, ActFunc: a.estimateNetlifyCosts},
 		{Name: AgentEstimateVercelCosts, ActFunc: a.estimateVercelCosts},
 		{Name: AgentEstimateHerokuCosts, ActFunc: a.estimateHerokuCosts},
-		{Name: AgentEstimateAWSCosts, ActFunc: a.estimateAWSCosts},
 		{Name: AgentGetRenderServiceURL, ActFunc: a.getRenderServiceURL},
 		{Name: AgentWaitForRenderDeploy, ActFunc: a.waitForRenderDeploy},
-		{Name: AgentWaitForAWSStack, ActFunc: a.waitForAWSStack},
 		{Name: AgentIsURLLive, ActFunc: a.isURLLive},
 		{Name: AgentSendProjectStats, ActFunc: a.sendProjectStats},
 		{Name: AgentGetFlyIOAppURL, ActFunc: a.getFlyIOAppURL},
@@ -107,7 +101,5 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentUpdateDeploymentStatus, ActFunc: a.updateDeploymentStatus},
 		{Name: AgentGetPreviousDeployment, ActFunc: a.getPreviousDeployment},
 		{Name: AgentRollbackDeployment, ActFunc: a.rollbackDeployment},
-		{Name: AgentRunECSMigration, ActFunc: a.runECSMigration},
-		{Name: AgentUpdateAWSStack, ActFunc: a.updateAWSStack},
 	}
 }

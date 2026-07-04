@@ -7,14 +7,12 @@ import (
 
 // Build-time variables set via ldflags in Makefile
 var (
-	SupabaseURL                  string
-	SupabaseAnonKey              string
-	ProdDebug                    string
-	Environment                  string
-	SentryDSN                    string
-	ProdAWSAccountID             string
-	AWSCloudFormationTemplateURL string
-	Version                      string
+	SupabaseURL     string
+	SupabaseAnonKey string
+	ProdDebug       string
+	Environment     string
+	SentryDSN       string
+	Version         string
 )
 
 // GetEnvironment returns the current environment (local, staging, production)
@@ -75,18 +73,4 @@ func GetProdDebug() string {
 
 func DebugMode() bool {
 	return strings.ToLower(GetProdDebug()) == "true"
-}
-
-// GetProdAWSAccountID returns the Prod AWS account ID
-// Uses build-time variable set via ldflags in Makefile
-// Returns empty string if not set
-func GetProdAWSAccountID() string {
-	return ProdAWSAccountID
-}
-
-// GetAWSCloudFormationTemplateURL returns the S3 URL for the CloudFormation template
-// Uses build-time variable set via ldflags in Makefile
-// Returns empty string if not set
-func GetAWSCloudFormationTemplateURL() string {
-	return AWSCloudFormationTemplateURL
 }
