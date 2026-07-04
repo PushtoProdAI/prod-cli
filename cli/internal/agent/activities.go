@@ -4,6 +4,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/backend"
 	"github.com/meroxa/prod/cli/internal/deployment/flyio"
 	"github.com/meroxa/prod/cli/internal/deployment/render"
+	"github.com/meroxa/prod/cli/internal/history"
 	"github.com/meroxa/prod/cli/internal/llm"
 	"github.com/meroxa/prod/cli/internal/output"
 	"github.com/meroxa/prod/cli/internal/workflowext"
@@ -63,6 +64,7 @@ type Activities struct {
 	uiWriter          output.StatusWriter
 	llmClient         llm.Client
 	frameworkRegistry *FrameworkRegistry
+	history           *history.Store // local deployment history (local mode); nil-safe
 }
 
 func (a *Activities) Activities() []workflowext.Activity {
