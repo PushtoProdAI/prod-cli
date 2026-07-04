@@ -18,7 +18,6 @@ type QueuedDeployment struct {
 	dockerGenerator *deployment.DockerGenerator
 	useDockerfile   bool
 	buildContext    string
-	authToken       string
 	writer          io.Writer
 }
 
@@ -31,18 +30,12 @@ func NewQueuedDeployment(client RenderClient, spec *deployment.DeploymentSpec, d
 	if bc, ok := spec.Metadata["buildContext"].(string); ok {
 		buildContext = bc
 	}
-	authToken := ""
-	if at, ok := spec.Metadata["authToken"].(string); ok {
-		authToken = at
-	}
-
 	return &QueuedDeployment{
 		client:          client,
 		spec:            spec,
 		dockerGenerator: dockerGenerator,
 		useDockerfile:   useDockerfile,
 		buildContext:    buildContext,
-		authToken:       authToken,
 		writer:          writer,
 	}
 }
@@ -284,7 +277,6 @@ func (qd *QueuedDeployment) createDockerDeploymentSteps(ownerID string, startCou
 		DeploymentSpec:  qd.spec,
 		DockerGenerator: qd.dockerGenerator,
 		BuildContext:    qd.buildContext,
-		AuthToken:       qd.authToken,
 		DependsOn:       []string{},
 	})
 	steps = append(steps, dockerStep)
@@ -295,7 +287,6 @@ func (qd *QueuedDeployment) createDockerDeploymentSteps(ownerID string, startCou
 		ID:          regCredStepID,
 		Description: "Create or find Docker registry credential in Render",
 		Name:        fmt.Sprintf("%s-registry-cred", qd.spec.Name),
-		AuthToken:   qd.authToken,
 		ProjectName: qd.spec.Name,
 		OwnerID:     ownerID,
 		DependsOn:   []string{dockerStepID},
@@ -320,7 +311,6 @@ func (qd *QueuedDeployment) createWebServiceStep(ownerID string, envVars []deplo
 		Dockerfile:         config.dockerfile,
 		DockerImageStepID:  config.dockerImageStepID,
 		RegistryCredStepID: config.registryCredStepID,
-		AuthToken:          qd.authToken,
 		ProjectName:        qd.spec.Name,
 		EnvVars:            envVars,
 		ConnectionStepIDs:  connectionStepIDs,

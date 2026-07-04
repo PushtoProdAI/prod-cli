@@ -347,7 +347,6 @@ type BuildAndPushStepConfig struct {
 	DockerGenerator *deployment.DockerGenerator
 	// BuildContext is the directory context for the Docker build (typically ".")
 	BuildContext string
-	AuthToken    string
 	// DependsOn lists the step IDs that must complete before this step runs
 	DependsOn []string
 }
@@ -358,7 +357,6 @@ type BuildAndPushStep struct {
 	DeploymentSpec  *deployment.DeploymentSpec
 	DockerGenerator *deployment.DockerGenerator
 	BuildContext    string
-	AuthToken       string
 }
 
 func NewBuildAndPushStep(config BuildAndPushStepConfig) *BuildAndPushStep {
@@ -371,7 +369,6 @@ func NewBuildAndPushStep(config BuildAndPushStepConfig) *BuildAndPushStep {
 		DeploymentSpec:  config.DeploymentSpec,
 		DockerGenerator: config.DockerGenerator,
 		BuildContext:    config.BuildContext,
-		AuthToken:       config.AuthToken,
 	}
 }
 
@@ -405,7 +402,6 @@ type CreateRegistryCredentialStepConfig struct {
 	Description string
 	// Name is the name of the registry credential to create
 	Name        string
-	AuthToken   string
 	ProjectName string
 	// OwnerID is the Render workspace/owner ID where the credential will be created
 	OwnerID string
@@ -417,7 +413,6 @@ type CreateRegistryCredentialStepConfig struct {
 type CreateRegistryCredentialStep struct {
 	BaseStep
 	Name        string `json:"name"`
-	AuthToken   string `json:"authToken"`
 	ProjectName string `json:"projectName"` // For Docker deployments
 	OwnerID     string `json:"ownerId"`
 }
@@ -430,7 +425,6 @@ func NewCreateRegistryCredentialStep(config CreateRegistryCredentialStepConfig) 
 			DependsOn:   config.DependsOn,
 		},
 		Name:        config.Name,
-		AuthToken:   config.AuthToken,
 		ProjectName: config.ProjectName,
 		OwnerID:     config.OwnerID,
 	}
@@ -536,7 +530,6 @@ type CreateWebServiceStepConfig struct {
 	DockerImageStepID string
 	// RegistryCredStepID is the ID of the step that created registry credentials
 	RegistryCredStepID string
-	AuthToken          string
 	ProjectName        string
 	// EnvVars are the environment variables to set on the service
 	EnvVars []deployment.EnvVar
@@ -559,7 +552,6 @@ type CreateWebServiceStep struct {
 	Dockerfile         string              `json:"dockerfile,omitempty"`
 	DockerImageStepID  string              `json:"dockerImageStepId,omitempty"`  // ID of build & push step
 	RegistryCredStepID string              `json:"registryCredStepId,omitempty"` // ID of registry credential step
-	AuthToken          string              `json:"authToken,omitempty"`          // For Docker deployments
 	ProjectName        string              `json:"projectName,omitempty"`        // For Docker deployments
 	EnvVars            []deployment.EnvVar `json:"envVars"`
 	ConnectionStepIDs  []string            `json:"connectionStepIds"` // IDs of connection info steps
@@ -582,7 +574,6 @@ func NewCreateWebServiceStep(config CreateWebServiceStepConfig) *CreateWebServic
 		Dockerfile:         config.Dockerfile,
 		DockerImageStepID:  config.DockerImageStepID,
 		RegistryCredStepID: config.RegistryCredStepID,
-		AuthToken:          config.AuthToken,
 		ProjectName:        config.ProjectName,
 		EnvVars:            config.EnvVars,
 		ConnectionStepIDs:  config.ConnectionStepIDs,

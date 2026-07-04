@@ -236,20 +236,6 @@ func (a *Activities) getEnvVarsFromEnvFiles(_ context.Context, path string) ([]d
 	return envVars, nil
 }
 
-func (a *Activities) createDockerRepo(ctx context.Context, projectName string) error {
-	session := CtxSession(ctx)
-	if session == nil {
-		// Reached only if a backend-required platform (AWS/Render) slips past the
-		// plan-time gate. Fail permanently and clearly instead of nil-derefing.
-		return workflow.NewPermanentError(errors.New("container registry provisioning requires a hosted backend, which this build does not include"))
-	}
-	err := a.beClient.CreateDockerRepository(ctx, session.AccessToken, projectName)
-	if err != nil {
-		return errors.Errorf("failed to create docker repository: %w", err)
-	}
-	return nil
-}
-
 func (a *Activities) determineBuildOutput(ctx context.Context, candidate analyzer.BuildOutputCandidate) (string, error) {
 	bo := types.BuildOutputCandidate{
 		Framework: candidate.Framework,
