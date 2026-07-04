@@ -217,11 +217,12 @@ account; "deploy this" works hands-free inside Claude Code / Cursor.
 
 Land the one platform that needs a real port, plus the deeper agent runtimes.
 
-- [ ] **AWS deploy in-CLI (Go)** — port the CloudFormation generation + ECR + ECS/App Runner
-      orchestration from the Deno Edge Functions into the CLI, using the **user's own AWS creds**;
-      **embed the templates and the `database-url-constructor` Lambda** in the binary (`go:embed`).
-      No central account, no S3 bucket, no ExternalId dance. This deletes the largest remaining
-      backend surface from the user's world.
+- [ ] **AWS deploy in-CLI (Go), on App Runner** — deploy to AWS from the binary with the
+      **user's own AWS creds** (standard credential chain), using **App Runner** (managed
+      container→HTTPS) rather than reimplementing the CloudFormation control plane. Reuses PR 2's
+      registry adapter via a new **`ecr` kind**; bring-your-own database (`DATABASE_URL`) for v1.
+      This **deletes** the CFN/VPC/ECS/RDS template surface (~3,356 lines of backend-coupled code)
+      instead of porting it. Full plan: [docs/aws-app-runner.md](./docs/aws-app-runner.md).
 - [ ] **True non-HTTP shapes** — long-running **workers**, **cron**, **queue** consumers: a
       shape-aware liveness model (process-running / log-heartbeat instead of HTTP 200), portless
       artifact generation, and health-check auto-rollback made conditional on shape.
@@ -310,8 +311,10 @@ default; an agent passes `confirm`/`--yes` (to be built) to skip.
 - **Phase 0 is the load-bearing work.** Severing the backend from the deploy path (local state +
   no auth gate + direct LLM) is what makes every "no account needed" claim true. CI clean-room
   test = definition of done.
-- **AWS port is the one real lift** — a Deno→Go port of CFN/ECR/ECS orchestration. Scoped to
-  Phase 2 so it doesn't gate the launch; the five direct-API platforms carry Phase 1.
+- **AWS is the one real lift, but smaller than it looks** — using **App Runner** + the ECR
+  registry-adapter kind (not a CloudFormation reimplementation) keeps it to an App Runner client
+  + ECR auth. Scoped to Phase 2 so it doesn't gate the launch; the direct-API platforms carry
+  Phase 1. Plan: [docs/aws-app-runner.md](./docs/aws-app-runner.md).
 - **Agent shape scope** — ship two HTTP shapes (web + MCP server) at launch; the non-HTTP worker
   is a Phase-2 epic touching analyzer + monitoring + adapters.
 - **CGO / cross-compile** already blocks Linux/Windows; solve in Phase 0.
