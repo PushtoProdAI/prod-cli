@@ -11,15 +11,15 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
-// Only AWS remains hard-unsupported; Render is now backend-free (gated on a
-// registry, checked separately in refuseUnsupportedPlatform).
+// AWS deploys to App Runner, but its ROLLBACK isn't supported yet, so only AWS
+// is gated here — and only for rollback (deploy is allowed; see below).
 func TestUnsupportedLocalPlatform(t *testing.T) {
 	if _, unsupported := unsupportedLocalPlatform(AWS); !unsupported {
-		t.Error("AWS should be refused in local mode")
+		t.Error("AWS rollback should be refused (App Runner rollback unimplemented)")
 	}
 	for _, p := range []Platform{Render, FlyIO, Vercel, Netlify, Heroku} {
 		if msg, unsupported := unsupportedLocalPlatform(p); unsupported {
-			t.Errorf("%v should not be hard-unsupported, got refusal: %q", p, msg)
+			t.Errorf("%v should not be gated, got refusal: %q", p, msg)
 		}
 	}
 }
@@ -29,10 +29,16 @@ func TestRefuseUnsupportedPlatformIsModeAware(t *testing.T) {
 	a := &Agent{}
 	var sink discard
 
-	t.Run("local mode refuses AWS", func(t *testing.T) {
+	t.Run("local mode refuses AWS rollback", func(t *testing.T) {
 		setLocalMode(t)
 		if !a.refuseUnsupportedPlatform(&sink, AWS) {
-			t.Error("AWS should be refused in local mode")
+			t.Error("AWS rollback should be refused in local mode")
+		}
+	})
+	t.Run("local mode allows AWS deploy", func(t *testing.T) {
+		setLocalMode(t)
+		if a.refuseDeployPlatform(&sink, AWS) {
+			t.Error("AWS deploy should be allowed (App Runner with the user's own creds)")
 		}
 	})
 	t.Run("managed mode allows AWS", func(t *testing.T) {
