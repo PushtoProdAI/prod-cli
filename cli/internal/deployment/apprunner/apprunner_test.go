@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	arsdk "github.com/aws/aws-sdk-go-v2/service/apprunner"
@@ -35,11 +36,14 @@ func (f *fakeIAM) GetRole(context.Context, *iamsdk.GetRoleInput, ...func(*iamsdk
 }
 
 type fakeAR struct {
-	existing     map[string]string // name -> arn
-	created      bool
-	createArn    string
-	updatedArn   string // arn passed to UpdateService
-	updatedImage string // image ref passed to UpdateService
+	existing      map[string]string // name -> arn
+	created       bool
+	createArn     string
+	updatedArn    string                  // arn passed to UpdateService
+	updatedImage  string                  // image ref passed to UpdateService
+	statuses      []artypes.ServiceStatus // DescribeService returns these in order (last repeats)
+	url           string
+	describeCalls int
 }
 
 func (f *fakeAR) ListServices(context.Context, *arsdk.ListServicesInput, ...func(*arsdk.Options)) (*arsdk.ListServicesOutput, error) {
@@ -59,6 +63,15 @@ func (f *fakeAR) UpdateService(_ context.Context, in *arsdk.UpdateServiceInput, 
 	f.updatedArn = aws.ToString(in.ServiceArn)
 	f.updatedImage = aws.ToString(in.SourceConfiguration.ImageRepository.ImageIdentifier)
 	return &arsdk.UpdateServiceOutput{}, nil
+}
+
+func (f *fakeAR) DescribeService(context.Context, *arsdk.DescribeServiceInput, ...func(*arsdk.Options)) (*arsdk.DescribeServiceOutput, error) {
+	i := f.describeCalls
+	if i >= len(f.statuses) {
+		i = len(f.statuses) - 1 // repeat the last status
+	}
+	f.describeCalls++
+	return &arsdk.DescribeServiceOutput{Service: &artypes.Service{Status: f.statuses[i], ServiceUrl: aws.String(f.url)}}, nil
 }
 
 func TestEnsureAccessRole(t *testing.T) {
@@ -124,6 +137,57 @@ func TestDeploy(t *testing.T) {
 		// The redeploy must carry the NEW image ref, not silently reuse the old one.
 		if ar.updatedImage != cfg.ImageRef {
 			t.Errorf("UpdateService image = %q, want the new ref %q", ar.updatedImage, cfg.ImageRef)
+		}
+	})
+}
+
+func TestWaitForRunning(t *testing.T) {
+	t.Run("returns the url once RUNNING", func(t *testing.T) {
+		ar := &fakeAR{
+			statuses: []artypes.ServiceStatus{
+				artypes.ServiceStatusOperationInProgress,
+				artypes.ServiceStatusOperationInProgress,
+				artypes.ServiceStatusRunning,
+			},
+			url: "https://abc.us-east-1.awsapprunner.com",
+		}
+		d := &Deployer{ar: ar, pollInterval: time.Millisecond}
+		url, err := d.WaitForRunning(context.Background(), "arn:svc")
+		if err != nil || url != ar.url {
+			t.Fatalf("url=%q err=%v", url, err)
+		}
+		if ar.describeCalls != 3 {
+			t.Errorf("expected 3 polls, got %d", ar.describeCalls)
+		}
+	})
+
+	// Every non-RUNNING terminal state must error, not spin.
+	for _, st := range []artypes.ServiceStatus{
+		artypes.ServiceStatusCreateFailed, artypes.ServiceStatusDeleteFailed,
+		artypes.ServiceStatusDeleted, artypes.ServiceStatusPaused,
+	} {
+		t.Run("errors on "+string(st), func(t *testing.T) {
+			ar := &fakeAR{statuses: []artypes.ServiceStatus{st}, url: "x"}
+			if _, err := (&Deployer{ar: ar}).WaitForRunning(context.Background(), "arn:svc"); err == nil {
+				t.Errorf("%s should error", st)
+			}
+		})
+	}
+
+	t.Run("errors if RUNNING without a URL", func(t *testing.T) {
+		ar := &fakeAR{statuses: []artypes.ServiceStatus{artypes.ServiceStatusRunning}} // url empty
+		if _, err := (&Deployer{ar: ar}).WaitForRunning(context.Background(), "arn:svc"); err == nil {
+			t.Error("RUNNING with an empty URL should error")
+		}
+	})
+
+	t.Run("respects context cancellation", func(t *testing.T) {
+		ar := &fakeAR{statuses: []artypes.ServiceStatus{artypes.ServiceStatusOperationInProgress}}
+		d := &Deployer{ar: ar, pollInterval: time.Hour} // would block; ctx must win
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if _, err := d.WaitForRunning(ctx, "arn:svc"); err == nil {
+			t.Error("a cancelled context should stop the wait with an error")
 		}
 	})
 }
