@@ -28,7 +28,7 @@ curl -fsSL https://prod.dev/install.sh | sh
 brew install pushtoprodai/tap/prod
 ```
 
-Requires **Go 1.24+** and a C toolchain to build from source (`prod` links a native
+Requires **Go 1.25+** and a C toolchain to build from source (`prod` links a native
 dependency — see the CGO note in CONTRIBUTING).
 
 ---
@@ -65,7 +65,17 @@ deploy. No signup, no backend, no config file required.
 |---|---|
 | `prod [prompt]` | Start an interactive session, or run a one-shot deploy from the prompt |
 | `prod run <prompt>` | Execute a single command and exit — for automation / scripting (set `PROD_JSON_MODE=true` for structured JSON output) |
-| `prod auth ...` | Sign in to the optional managed tier — **not needed** for local use |
+| `prod mcp` | Start the MCP server (stdio) so AI agents can call prod as a tool |
+
+### Use prod from an AI agent (MCP)
+
+`prod mcp` exposes prod over the [Model Context Protocol](https://modelcontextprotocol.io) so
+agents like Claude Code, Cursor, and Cline can use it. Today it serves `list_deploys` (recent
+deployments) and `analyze_project` (detect a project's stack). Add to your MCP client config:
+
+```jsonc
+{ "mcpServers": { "prod": { "command": "prod", "args": ["mcp"] } } }
+```
 
 ---
 
