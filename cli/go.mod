@@ -2,8 +2,6 @@ module github.com/pushtoprodai/prod-cli
 
 go 1.25.0
 
-replace github.com/cschleiden/go-workflows => github.com/lyuboxa/go-workflows v0.0.0-20241218014403-3f2a5a73e6ee
-
 require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.4.0
 	github.com/atotto/clipboard v0.1.4
@@ -12,7 +10,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/apprunner v1.40.8
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.58.6
 	github.com/aws/aws-sdk-go-v2/service/iam v1.54.7
-	github.com/aws/aws-sdk-go-v2/service/pricing v1.40.5
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.42.5
 	github.com/aws/aws-sdk-go-v2/service/sts v1.40.2
 	github.com/aws/smithy-go v1.27.3
@@ -22,7 +19,7 @@ require (
 	github.com/charmbracelet/lipgloss/v2 v2.0.0-beta1
 	github.com/charmbracelet/x/ansi v0.10.2
 	github.com/conduitio/ecdysis v0.4.2
-	github.com/cschleiden/go-workflows v0.0.0-00010101000000-000000000000
+	github.com/cschleiden/go-workflows v1.4.2
 	github.com/docker/docker v28.3.3+incompatible
 	github.com/getsentry/sentry-go v0.35.3
 	github.com/go-errors/errors v1.5.1
@@ -37,6 +34,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/xo/dburl v0.23.8
 	golang.org/x/net v0.50.0
+	modernc.org/sqlite v1.27.0
 )
 
 require (
@@ -130,7 +128,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.37.0 // indirect
 	go.opentelemetry.io/otel/trace v1.37.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.7.0 // indirect
-	go.uber.org/atomic v1.9.0 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
@@ -151,7 +149,6 @@ require (
 	modernc.org/mathutil v1.6.0 // indirect
 	modernc.org/memory v1.7.2 // indirect
 	modernc.org/opt v0.1.3 // indirect
-	modernc.org/sqlite v1.27.0 // indirect
 	modernc.org/strutil v1.1.3 // indirect
 	modernc.org/token v1.0.1 // indirect
 )
