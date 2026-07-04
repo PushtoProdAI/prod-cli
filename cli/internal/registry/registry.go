@@ -22,6 +22,28 @@ var projectNameRe = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`)
 // tagRe matches a valid container image tag.
 var tagRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
 
+// nonComponentRe matches runs of characters not allowed in a repository component.
+var nonComponentRe = regexp.MustCompile(`[^a-z0-9]+`)
+
+// Sanitize turns an arbitrary project name (from package.json, a directory name,
+// an npm scope like "@org/pkg", etc.) into a valid container-repository
+// component: lowercased, scope/path stripped, runs of disallowed characters
+// collapsed to a single '-', and trimmed. Returns "app" if nothing valid remains.
+// The result always satisfies the adapter's project-name rules, so callers
+// should Sanitize a raw project name before passing it to Credentials/Ref to
+// avoid failing validation only after a build.
+func Sanitize(name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:] // strip npm scope / path segments
+	}
+	name = strings.Trim(nonComponentRe.ReplaceAllString(name, "-"), "-")
+	if name == "" {
+		return "app"
+	}
+	return name
+}
+
 // Credentials authenticate a push to a container registry.
 type Credentials struct {
 	URL        string // registry host used for tagging, e.g. "docker.io", "ghcr.io"
