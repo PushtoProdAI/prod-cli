@@ -13,6 +13,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.58.6
 	github.com/aws/aws-sdk-go-v2/service/iam v1.54.7
 	github.com/aws/aws-sdk-go-v2/service/pricing v1.40.5
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.42.5
 	github.com/aws/aws-sdk-go-v2/service/sts v1.40.2
 	github.com/aws/smithy-go v1.27.3
 	github.com/boundaryml/baml v0.212.0
