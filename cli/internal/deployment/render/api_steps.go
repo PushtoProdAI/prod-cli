@@ -3,13 +3,14 @@ package render
 import (
 	"context"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
 
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
-	"github.com/pushtoprodai/prod-cli/internal/output"
+	prodreg "github.com/pushtoprodai/prod-cli/internal/registry"
 	"github.com/xo/dburl"
 )
 
@@ -375,7 +376,12 @@ func NewBuildAndPushStep(config BuildAndPushStepConfig) *BuildAndPushStep {
 }
 
 func (s *BuildAndPushStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error) {
-	_, pushResult, err := s.DockerGenerator.BuildAndPush(ctx, s.DeploymentSpec, s.BuildContext, s.AuthToken)
+	reg, err := prodreg.FromEnv(os.Getenv)
+	if err != nil {
+		return nil, errors.Errorf("container registry not configured: %w", err)
+	}
+
+	_, pushResult, err := s.DockerGenerator.BuildAndPushToRegistry(ctx, s.DeploymentSpec, s.BuildContext, reg)
 	if err != nil {
 		return nil, errors.Errorf("failed to build and push Docker image: %w", err)
 	}
@@ -431,13 +437,15 @@ func NewCreateRegistryCredentialStep(config CreateRegistryCredentialStepConfig) 
 }
 
 func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client RenderClient, stepResults map[string]any) (any, error) {
-	dockerGenerator := deployment.NewDockerGenerator(output.NewNoOpWriter(), []deployment.EnvVar{})
-	defer dockerGenerator.Close()
-
-	pullCreds, err := dockerGenerator.GetPullCredentials(ctx, s.AuthToken, s.ProjectName)
+	reg, err := prodreg.FromEnv(os.Getenv)
 	if err != nil {
-		return nil, errors.Errorf("failed to get pull credentials: %w", err)
+		return nil, errors.Errorf("container registry not configured: %w", err)
 	}
+	creds, err := reg.Credentials(prodreg.Sanitize(s.ProjectName))
+	if err != nil {
+		return nil, errors.Errorf("registry credentials: %w", err)
+	}
+	regType := renderRegistryType(creds.URL)
 
 	existingCreds, err := client.ListRegistryCredentials(ctx, s.OwnerID)
 	if err != nil {
@@ -449,8 +457,8 @@ func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client Rende
 			if s.isCredentialExpired(cred) {
 				slog.Info("Found expired credential, updating it", "name", s.Name, "credID", cred.ID)
 				updatedCred, err := client.UpdateRegistryCredential(ctx, cred.ID, UpdateRegistryCredentialRequest{
-					Username:  pullCreds.AccountID,
-					AuthToken: pullCreds.Token,
+					Username:  creds.Username,
+					AuthToken: creds.Token,
 				})
 				if err != nil {
 					return nil, errors.Errorf("failed to update registry credential: %w", err)
@@ -464,16 +472,28 @@ func (s *CreateRegistryCredentialStep) Execute(ctx context.Context, client Rende
 
 	registryCred, err := client.CreateRegistryCredential(ctx, CreateRegistryCredentialRequest{
 		Name:      s.Name,
-		Username:  pullCreds.AccountID,
-		AuthToken: pullCreds.Token,
+		Username:  creds.Username,
+		AuthToken: creds.Token,
 		OwnerID:   s.OwnerID,
-		Registry:  "AWS_ECR",
+		Registry:  regType,
 	})
 	if err != nil {
 		return nil, errors.Errorf("failed to create registry credential: %w", err)
 	}
 
 	return registryCred, nil
+}
+
+// renderRegistryType maps a registry host to Render's registry-credential type.
+func renderRegistryType(host string) string {
+	switch host {
+	case "ghcr.io":
+		return "GITHUB"
+	case "docker.io":
+		return "DOCKER"
+	default:
+		return "DOCKER" // generic Docker-compatible registries
+	}
 }
 
 func (s *CreateRegistryCredentialStep) isCredentialExpired(cred *RegistryCredential) bool {
