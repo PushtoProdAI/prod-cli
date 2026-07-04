@@ -18,7 +18,7 @@ import (
 
 	"github.com/go-errors/errors"
 
-	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 // NetlifyAPIClient implements deployment using direct Netlify API calls

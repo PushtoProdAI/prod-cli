@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client/types"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/llm"
+	"github.com/pushtoprodai/prod-cli/baml_client/types"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/llm"
 )
 
 const (

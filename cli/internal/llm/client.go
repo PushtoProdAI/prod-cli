@@ -6,9 +6,9 @@ import (
 
 	baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client"
-	"github.com/meroxa/prod/cli/baml_client/types"
-	"github.com/meroxa/prod/cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/baml_client"
+	"github.com/pushtoprodai/prod-cli/baml_client/types"
+	"github.com/pushtoprodai/prod-cli/internal/config"
 )
 
 // Client provides a high-level interface for LLM operations with automatic proxy configuration.

@@ -3,7 +3,7 @@ package netlify
 import (
 	"time"
 
-	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 // NetlifyClient defines the interface for interacting with Netlify

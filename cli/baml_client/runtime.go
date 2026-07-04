@@ -32,7 +32,7 @@ import (
 	"strings"
 
 	baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
-	"github.com/meroxa/prod/cli/baml_client/type_builder"
+	"github.com/pushtoprodai/prod-cli/baml_client/type_builder"
 )
 
 var bamlRuntime *baml.BamlRuntime

@@ -13,12 +13,12 @@ import (
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
 	"github.com/google/uuid"
-	"github.com/meroxa/prod/cli/baml_client/types"
-	"github.com/meroxa/prod/cli/internal/analyzer"
-	"github.com/meroxa/prod/cli/internal/config"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	prod_error "github.com/meroxa/prod/cli/internal/error"
-	"github.com/meroxa/prod/cli/internal/history"
+	"github.com/pushtoprodai/prod-cli/baml_client/types"
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
+	"github.com/pushtoprodai/prod-cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	prod_error "github.com/pushtoprodai/prod-cli/internal/error"
+	"github.com/pushtoprodai/prod-cli/internal/history"
 )
 
 // planDeploy workflow handles the planning phase of deployment

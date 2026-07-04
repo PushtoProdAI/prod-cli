@@ -7,9 +7,9 @@ import (
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client/types"
-	"github.com/meroxa/prod/cli/internal/analyzer"
-	"github.com/meroxa/prod/cli/internal/deployment/render"
+	"github.com/pushtoprodai/prod-cli/baml_client/types"
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
 )
 
 func (a *Activities) getRenderWorkspace(ctx context.Context) (string, error) {

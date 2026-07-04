@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
 )
 
 // FrameworkHandler defines the unified interface for all framework-specific operations

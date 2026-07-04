@@ -6,9 +6,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/agent"
-	"github.com/meroxa/prod/cli/internal/backend"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/agent"
+	"github.com/pushtoprodai/prod-cli/internal/backend"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 type TeaWriter struct {

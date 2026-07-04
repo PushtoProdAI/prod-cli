@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/analyzer"
-	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/pmezard/go-difflib/difflib"
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 // DjangoHandler implements FrameworkHandler for Django projects

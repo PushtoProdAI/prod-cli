@@ -7,8 +7,8 @@ import (
 
 	"github.com/conduitio/ecdysis"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/agent"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/agent"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 var (

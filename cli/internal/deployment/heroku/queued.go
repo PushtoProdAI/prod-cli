@@ -7,8 +7,8 @@ import (
 	"log/slog"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 // QueuedDeployment represents a queued deployment to Heroku

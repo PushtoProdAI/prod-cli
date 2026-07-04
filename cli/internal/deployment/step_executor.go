@@ -6,7 +6,7 @@ import (
 	"io"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 // Client is a type constraint for deployment provider clients.

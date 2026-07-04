@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-errors/errors"
 
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 	"github.com/xo/dburl"
 )
 

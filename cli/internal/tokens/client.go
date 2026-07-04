@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/internal/config"
 )
 
 // Client is a Go client for the Supabase Edge Function token API

@@ -7,9 +7,9 @@ import (
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/deployment/vercel"
-	prod_error "github.com/meroxa/prod/cli/internal/error"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/vercel"
+	prod_error "github.com/pushtoprodai/prod-cli/internal/error"
 )
 
 func (w *Workflows) deployVercel(ctx workflow.Context, input DeployPlan) (deployResult, error) {

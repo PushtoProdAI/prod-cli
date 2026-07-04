@@ -6,8 +6,8 @@ import (
 	"io"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/backend"
-	"github.com/meroxa/prod/cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/internal/backend"
+	"github.com/pushtoprodai/prod-cli/internal/config"
 )
 
 type AWSAuth struct {

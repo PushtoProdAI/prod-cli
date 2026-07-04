@@ -13,7 +13,7 @@ import (
 
 	"github.com/go-errors/errors"
 
-	"github.com/meroxa/prod/cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/internal/config"
 )
 
 type AuthProvider interface {

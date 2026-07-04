@@ -9,7 +9,7 @@ import (
 
 	"github.com/conduitio/ecdysis"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/auth"
+	"github.com/pushtoprodai/prod-cli/internal/auth"
 )
 
 var (

@@ -7,10 +7,10 @@ import (
 
 	"github.com/go-errors/errors"
 
-	"github.com/meroxa/prod/cli/internal/backend"
-	backendaws "github.com/meroxa/prod/cli/internal/backend/aws"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/backend"
+	backendaws "github.com/pushtoprodai/prod-cli/internal/backend/aws"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 // CreateECRRepositoryStepConfig holds configuration for creating an ECR repository

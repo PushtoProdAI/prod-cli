@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
-	"github.com/meroxa/prod/cli/baml_client/types"
+	"github.com/pushtoprodai/prod-cli/baml_client/types"
 )
 
 func CategorizeRoutes(ctx context.Context, candidates []types.RouteCandidate, opts ...CallOptionFunc) (types.CategorizedRoutes, error) {
