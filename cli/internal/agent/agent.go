@@ -18,6 +18,7 @@ import (
 	"github.com/meroxa/prod/cli/internal/analyzer"
 	"github.com/meroxa/prod/cli/internal/auth"
 	"github.com/meroxa/prod/cli/internal/backend"
+	"github.com/meroxa/prod/cli/internal/config"
 	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/meroxa/prod/cli/internal/deployment/heroku"
 	"github.com/meroxa/prod/cli/internal/deployment/netlify"
@@ -1478,6 +1479,11 @@ func (a *Agent) performOAuthLogin(ctx context.Context, input string, out io.Writ
 }
 
 func (a *Agent) ensureAuthenticated(ctx context.Context, out io.Writer) bool {
+	// Local mode has no backend and requires no prod-account login. Deploys run
+	// with the user's own platform credentials; there's nothing to sign in to.
+	if !config.BackendConfigured() {
+		return true
+	}
 	if !a.internalAuth.IsAuthenticated() {
 		fmt.Fprint(out, "🔐 Before we proceed, let's get you logged in!\n")
 		authenticated := a.authenticateCLI(ctx)
