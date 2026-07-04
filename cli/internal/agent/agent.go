@@ -141,10 +141,14 @@ func (a *Agent) IsErrorTrackingEnabled() bool {
 	return a.errorTrackingEnabled
 }
 
-// Helper methods for TUI operations - direct TUI calls
+// Helper methods for TUI operations. Each degrades to a plain-text render on a
+// non-TUI writer (console/JSON) instead of panicking on the type assertion.
 func (a *Agent) sendPlan(out io.Writer, plan DeployPlan) {
-	tuiWriter := out.(TUIWriter)
-	tuiWriter.SendPlan(plan)
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendPlan(plan)
+		return
+	}
+	fmt.Fprintf(out, "\nPlan: %s to %s — %s\n", plan.Action.String(), plan.Platform.String(), plan.Summary)
 }
 
 func (a *Agent) sendPlanApprovalRequest(out io.Writer, plan DeployPlan) {
@@ -193,33 +197,52 @@ func (a *Agent) waitForPlanApproval(ctx context.Context, input string, out io.Wr
 }
 
 func (a *Agent) sendConfirmation(out io.Writer, message string) {
-	tuiWriter := out.(TUIWriter)
-	tuiWriter.SendConfirmation(message, nil)
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendConfirmation(message, nil)
+		return
+	}
+	fmt.Fprintf(out, "%s\n", message)
 }
 
 func (a *Agent) sendSelect(out io.Writer, message string, options []string) {
-	tuiWriter := out.(TUIWriter)
-	tuiWriter.SendSelect(message, options)
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendSelect(message, options)
+		return
+	}
+	fmt.Fprintf(out, "%s\n", message)
+	for i, opt := range options {
+		fmt.Fprintf(out, "  %d. %s\n", i+1, opt)
+	}
 }
 
 func (a *Agent) sendAPIKeyPrompt(out io.Writer, message string) {
-	tuiWriter := out.(TUIWriter)
-	tuiWriter.SendAPIKeyPrompt(message)
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendAPIKeyPrompt(message)
+		return
+	}
+	fmt.Fprintf(out, "%s\n", message)
 }
 
 func (a *Agent) sendTextPrompt(out io.Writer, message string) {
-	tuiWriter := out.(TUIWriter)
-	tuiWriter.SendTextPrompt(message)
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendTextPrompt(message)
+		return
+	}
+	fmt.Fprintf(out, "%s\n", message)
 }
 
 func (a *Agent) sendTextPromptWithDefault(out io.Writer, message string, defaultValue string) {
-	tuiWriter := out.(TUIWriter)
-	tuiWriter.SendTextPromptWithDefault(message, defaultValue)
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendTextPromptWithDefault(message, defaultValue)
+		return
+	}
+	fmt.Fprintf(out, "%s [%s]\n", message, defaultValue)
 }
 
 func (a *Agent) stopSpinner(out io.Writer) {
-	tuiWriter := out.(TUIWriter)
-	tuiWriter.StopSpinner()
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.StopSpinner()
+	}
 }
 
 func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
@@ -934,7 +957,8 @@ func (a *Agent) prepareLanguage(
 }
 
 func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	return a.prepareLanguage(ctx, input, out,
+	return a.prepareLanguage(
+		ctx, input, out,
 		"node",
 		"🔧 Preparing JavaScript environment...",
 		"✅ JavaScript environment prepared successfully!",
@@ -945,7 +969,8 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 }
 
 func (a *Agent) preparePython(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	return a.prepareLanguage(ctx, input, out,
+	return a.prepareLanguage(
+		ctx, input, out,
 		"python",
 		"🔧 Preparing Python environment...",
 		"✅ Python environment prepared successfully!",
