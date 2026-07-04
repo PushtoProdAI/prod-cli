@@ -223,8 +223,11 @@ as security-sensitive.
   names, image URLs, env var names; block shell metacharacters in migration commands (see the
   existing `deploy-aws-stack/template-generator.ts` logic being ported). Embed templates via
   `go:embed` so user data flows only through parameters, never code.
-- **Secrets:** never commit. Scan history before publishing the public repo; rotate anything that
-  ever touched git (the Supabase anon + service-role keys and Sentry DSN are in old history).
+- **Secrets:** never commit. History was swept before publishing — see
+  [docs/security-sweep.md](./docs/security-sweep.md). Live secrets found in history: a **Render API
+  key** and **two Sentry DSNs** (rotate before public). The real Supabase anon/service-role keys are
+  **not** in git (they were `.env`-only, build-injected). A `gitleaks` pre-commit hook blocks new
+  ones (`make install-hooks`).
 - **MCP / agent surface:** `deploy`/`rollback` are destructive and cost money. Require explicit
   human approval by default; an agent must pass an explicit `confirm`/`--yes` to skip it.
 
