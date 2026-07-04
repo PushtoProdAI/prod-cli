@@ -47,17 +47,29 @@ detect_platform() {
         *) log_error "Unsupported architecture: $(uname -m)"; exit 1 ;;
     esac
 
-    # Only darwin archives are published today (BAML CGO cross-compile blocks
-    # linux/windows — see docs/DISTRIBUTION.md). Fail early with a clear message.
-    if [[ "$os" != "darwin" ]]; then
-        log_error "No published binary for ${os}/${arch} yet."
-        log_error "Only macOS archives are released today (BAML's native CGO dep"
-        log_error "blocks linux/windows cross-compile). Build from source instead:"
+    # Windows binaries aren't published yet.
+    if [[ "$os" == "windows" ]]; then
+        log_error "No published binary for windows/${arch} yet. Build from source:"
         log_error "  git clone https://github.com/${REPO} && cd prod-cli/cli && make build"
         exit 1
     fi
 
+    # BAML ships no musl library, so on Alpine/musl the binary fetches the glibc
+    # lib and panics at first run. Reject it clearly instead of installing that.
+    if [[ "$os" == "linux" ]] && is_musl; then
+        log_error "musl-based Linux (e.g. Alpine) isn't supported: BAML publishes no"
+        log_error "musl build. Use a glibc distro (Debian/Ubuntu/Fedora/…)."
+        exit 1
+    fi
+
     echo "${os}_${arch}"
+}
+
+# is_musl reports whether this is a musl libc system (Alpine et al.).
+is_musl() {
+    if ldd --version 2>&1 | grep -qi musl; then return 0; fi
+    if ls /lib/ld-musl-* >/dev/null 2>&1; then return 0; fi
+    return 1
 }
 
 # Detect shell profile for PATH setup.
@@ -211,6 +223,8 @@ main() {
     install_binary "$platform" "$tag"
 
     log_success "Done. Run 'prod --version' to verify."
+    log_info "On first run, prod downloads the BAML engine library (~56 MB) into"
+    log_info "~/.cache/baml — a network connection and CA certificates are required."
 }
 
 main "$@"

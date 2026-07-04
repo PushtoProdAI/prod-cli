@@ -1,5 +1,5 @@
 # Multi-stage Dockerfile for cross-compilation with CGO
-FROM golang:1.24.4 AS base
+FROM golang:1.25.0 AS base
 
 # Install cross-compilation tools
 RUN apt-get update && apt-get install -y \
@@ -34,18 +34,8 @@ ENV GOARCH=arm64
 ENV CC=aarch64-linux-gnu-gcc
 RUN mkdir -p /build && go build -ldflags="${LDFLAGS}" -o /build/prod-linux-arm64 cmd/main.go
 
-# Build for Darwin AMD64 (this might not work without proper macOS SDK)
-FROM base AS darwin-amd64
-ARG LDFLAGS
-ENV CGO_ENABLED=1
-ENV GOOS=darwin
-ENV GOARCH=amd64
-# Note: Building for macOS from Linux requires macOS SDK which is complex
-# This target is provided for reference but may not work without additional setup
-RUN mkdir -p /build && go build -ldflags="${LDFLAGS}" -o /build/prod-darwin-amd64 cmd/main.go
-
-# Final stage to collect binaries
-FROM scratch AS binaries
-COPY --from=linux-amd64 /build/prod-linux-amd64 /
-COPY --from=linux-arm64 /build/prod-linux-arm64 /
-COPY --from=darwin-amd64 /build/prod-darwin-amd64 /
+# darwin is built natively on the mac (goreleaser), not here — a linux container
+# has no macOS SDK. Only the linux-amd64 / linux-arm64 targets above are used
+# (via `make dist-linux --target linux-<arch>`). There is deliberately no default
+# (last-stage) target, so a bare `docker build` can't silently fall into a broken
+# darwin cross-compile.
