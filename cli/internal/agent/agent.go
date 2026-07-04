@@ -25,6 +25,7 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
 	prod_error "github.com/pushtoprodai/prod-cli/internal/error"
 	"github.com/pushtoprodai/prod-cli/internal/output"
+	prodreg "github.com/pushtoprodai/prod-cli/internal/registry"
 	"github.com/pushtoprodai/prod-cli/internal/settings"
 )
 
@@ -429,11 +430,10 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 		return a.checkPrerequisites, nil
 	}
 
-	// AWS and Render still require the hosted backend, which this build doesn't
-	// ship in local mode. Refuse them with a clear message instead of crashing
-	// downstream. (Re-checked after rollback platform selection — see
-	// executeRollback — because that path reassigns the platform post-plan.)
-	if a.refuseUnsupportedPlatform(out, plan.Platform) {
+	// Gate the deploy: AWS needs the backend (local-refused), Render needs the
+	// user's registry. Rollback is gated separately (executeRollback) since a
+	// Render rollback needs neither.
+	if a.refuseDeployPlatform(out, plan.Platform) {
 		return a.checkPrerequisites, nil
 	}
 	a.DeployPlan = &plan
@@ -1220,9 +1220,30 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 // refuseUnsupportedPlatform prints the "not available in this build" message and
 // returns true when a deploy/rollback to the given platform can't proceed. Only
 // applies in local mode — in managed mode the backend powers AWS/Render.
+// refuseDeployPlatform gates the DEPLOY path. It refuses AWS in local mode
+// (backend-only, Phase 3) and Render when no container registry is configured —
+// Render now always deploys by pushing to the user's own registry (there is no
+// hosted push path), so the registry is required in every mode.
+func (a *Agent) refuseDeployPlatform(out io.Writer, p Platform) bool {
+	if a.refuseUnsupportedPlatform(out, p) {
+		return true
+	}
+	if p == Render {
+		if _, err := prodreg.FromEnv(os.Getenv); err != nil {
+			fmt.Fprint(out, "⚠️  Render needs your own container registry. Set PROD_REGISTRY (dockerhub|ghcr|generic)\n"+
+				"   plus PROD_REGISTRY_USERNAME and PROD_REGISTRY_TOKEN, then retry.\n")
+			return true
+		}
+	}
+	return false
+}
+
+// refuseUnsupportedPlatform gates platforms whose path still needs the hosted
+// backend (AWS). It is shared by deploy AND rollback — a Render rollback calls
+// Render's API directly and needs no registry, so it must NOT be gated here.
 func (a *Agent) refuseUnsupportedPlatform(out io.Writer, p Platform) bool {
 	if config.BackendConfigured() {
-		return false
+		return false // managed mode: the backend powers AWS
 	}
 	if msg, unsupported := unsupportedLocalPlatform(p); unsupported {
 		fmt.Fprint(out, msg)
@@ -1232,17 +1253,14 @@ func (a *Agent) refuseUnsupportedPlatform(out io.Writer, p Platform) bool {
 }
 
 // unsupportedLocalPlatform reports platforms whose deploy path still depends on
-// the hosted backend that the open-source single binary doesn't include. They
-// are being reworked to run backend-free (AWS on your own creds; Render via your
-// own container registry); until then prod refuses them with a clear message
-// rather than crashing in a downstream backend call.
+// the hosted backend that the open-source single binary doesn't include. AWS is
+// being ported to run backend-free (Phase 3); until then prod refuses it with a
+// clear message rather than crashing in a downstream backend call.
 func unsupportedLocalPlatform(p Platform) (string, bool) {
-	const supported = "Supported today: Fly.io, Vercel, Netlify, Heroku."
 	switch p {
 	case AWS:
-		return "⚠️  AWS deploys aren't available in this build yet — they're being ported to run\n   locally with your own AWS credentials. " + supported + "\n", true
-	case Render:
-		return "⚠️  Render deploys are being reworked to use your own container registry (no hosted\n   backend) and aren't available in this build yet. " + supported + "\n", true
+		return "⚠️  AWS deploys aren't available in this build yet — they're being ported to run\n" +
+			"   locally with your own AWS credentials. Supported today: Fly.io, Vercel, Netlify, Heroku, Render.\n", true
 	default:
 		return "", false
 	}

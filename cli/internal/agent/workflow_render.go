@@ -119,48 +119,8 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		return deployResult{Error: summary}, nil
 	}
 
-	_, err = workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentCreateDockerRepo, input.Spec.Name).Get(ctx)
-	if err != nil {
-		// Send the original error before summarizing
-		prod_error.CaptureErrorWithContext(err, map[string]any{
-			"workflow":     DeployRenderWorkflowName,
-			"activity":     AgentCreateDockerRepo,
-			"component":    "deployment",
-			"platform":     "render",
-			"project_name": input.Spec.Name,
-			"language":     input.Spec.Language,
-		})
-		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
-		if e1 != nil {
-			// Send the summarize error
-			prod_error.CaptureErrorWithContext(e1, map[string]any{
-				"workflow":     DeployRenderWorkflowName,
-				"activity":     AgentSummarizeError,
-				"component":    "deployment",
-				"platform":     "render",
-				"project_name": input.Spec.Name,
-				"language":     input.Spec.Language,
-				"operation":    "summarize_original_error",
-			})
-			slog.Info("Failed to summarize error", "error", e1)
-			if operationId != "" {
-				workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
-					"error":    err.Error(),
-					"platform": "render",
-					"stage":    "create_docker_repo",
-				}).Get(ctx)
-			}
-			return deployResult{Error: deployError{Summary: err.Error()}}, nil
-		}
-		if operationId != "" {
-			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{
-				"error":    err.Error(),
-				"platform": "render",
-				"stage":    "create_docker_repo",
-			}).Get(ctx)
-		}
-		return deployResult{Error: summary}, nil
-	}
+	// No separate repository-creation step: repositories auto-create on the first
+	// push to the user's own registry (Docker Hub / GHCR / generic).
 	dockerGen := deployment.NewDockerGenerator(w.uiWriter, spec.EnvVars)
 	d := render.NewQueuedDeployment(w.renderClient, spec, dockerGen, true, w.uiWriter)
 	steps := d.GenerateAPISteps(workspaceID)
