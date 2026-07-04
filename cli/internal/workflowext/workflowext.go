@@ -2,6 +2,8 @@ package workflowext
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -17,6 +19,7 @@ import (
 	"github.com/cschleiden/go-workflows/worker"
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
+	_ "modernc.org/sqlite" // registers the "sqlite" driver (same one go-workflows uses)
 )
 
 // DefaultActivityOptions sets our own default values which flexes the ones by go-workflows.
@@ -41,24 +44,45 @@ var DefaultActivityOptions = workflow.ActivityOptions{
 // Please make sure to call Provider.Shutdown before the application exits
 // to ensure that all workflow and activity tasks are completed.
 func InitWorkflows(ctx context.Context, cfg WorkflowsConfig, mux *http.ServeMux, workflows ...Registerer) (*Provider, error) {
-	sqliteBackend := sqlite.NewInMemoryBackend(sqlite.WithBackendOptions(cfg.backendOptions()...))
+	// db is the file-backed sqlite handle we own (nil for the in-memory backend);
+	// the Provider closes it on Shutdown.
+	var db *sql.DB
+	var sqliteBackend backend.Backend
 
 	if cfg.SQLitePath != "" {
-		err := os.MkdirAll(cfg.sqliteDir(), 0o750) //nolint:gomnd //Permission bits are customarily written in this form.
-		if err != nil {
+		if err := os.MkdirAll(cfg.sqliteDir(), 0o750); err != nil { //nolint:gomnd //Permission bits are customarily written in this form.
 			return nil, errors.Errorf("failed to create workflow sqlite dir: %w", err)
 		}
 
-		// Set up backend.
-		sqliteBackend = sqlite.NewSqliteBackend(
+		// Open the sqlite DB ourselves so we can tune it for concurrent durable
+		// workflows: WAL journaling, a 10s busy timeout, immediate txlock, and a
+		// small connection pool. Upstream go-workflows opens sqlite with
+		// SetMaxOpenConns(1) and no WAL; these settings — previously supplied by a
+		// personal fork's WithMaxOpenConnections/WithSQLiteOption — prevent
+		// "database is locked" under the monoprocess worker. We pass the tuned DB to
+		// NewSqliteBackendWithDB, which lets us use upstream directly (no fork).
+		// modernc.org/sqlite is the same driver upstream registers.
+		dsn := fmt.Sprintf(
+			"file:%s?_txlock=immediate&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)",
 			cfg.sqlitePath(),
-			sqlite.WithBackendOptions(cfg.backendOptions()...),
-			sqlite.WithMaxOpenConnections(10),
-			sqlite.WithSQLiteOption("_pragma", "busy_timeout(10000)"),
-			sqlite.WithSQLiteOption("_pragma", "journal_mode(WAL)"),
-			sqlite.WithSQLiteOption("_txlock", "immediate"),
-			sqlite.WithSQLiteOption("_pragma", "synchronous(NORMAL)"),
 		)
+		var err error
+		db, err = sql.Open("sqlite", dsn)
+		if err != nil {
+			return nil, errors.Errorf("failed to open workflow sqlite db: %w", err)
+		}
+		db.SetMaxOpenConns(10)
+
+		// WithApplyMigrations(true) preserves NewSqliteBackend's default (the
+		// WithDB constructor defaults to false). NewSqliteBackendWithDB does NOT
+		// own/close db, so the Provider does (see Shutdown).
+		sqliteBackend = sqlite.NewSqliteBackendWithDB(
+			db,
+			sqlite.WithBackendOptions(cfg.backendOptions()...),
+			sqlite.WithApplyMigrations(true),
+		)
+	} else {
+		sqliteBackend = sqlite.NewInMemoryBackend(sqlite.WithBackendOptions(cfg.backendOptions()...))
 	}
 
 	// Monoprocess backend ensures the worker is working fast in a single process environment
@@ -73,12 +97,12 @@ func InitWorkflows(ctx context.Context, cfg WorkflowsConfig, mux *http.ServeMux,
 			return nil, errors.Errorf("failed to register workflow: %w", err)
 		}
 	}
-	go func() {
-		err := w.Start(ctx)
-		if err != nil {
-			cfg.logger().Error("workflow worker stopped", "error", err)
-		}
-	}()
+	// Start launches the worker's poller/dispatcher goroutines and returns; it does
+	// not block. Call it synchronously so its internal WaitGroup.Add happens-before
+	// any later Shutdown → WaitForCompletion (a concurrent Add/Wait is a data race).
+	if err := w.Start(ctx); err != nil {
+		return nil, errors.Errorf("failed to start workflow worker: %w", err)
+	}
 
 	diagPath := cfg.diagEndpoint() + "/"
 	mux.Handle(diagPath, http.StripPrefix(cfg.diagEndpoint(), diag.NewServeMux(monoprocessBackend)))
@@ -87,6 +111,7 @@ func InitWorkflows(ctx context.Context, cfg WorkflowsConfig, mux *http.ServeMux,
 		Backend: monoprocessBackend,
 		Client:  client.New(monoprocessBackend),
 		Worker:  w,
+		db:      db,
 	}, nil
 }
 
@@ -94,12 +119,20 @@ type Provider struct {
 	Backend backend.Backend
 	Client  *client.Client
 	Worker  *worker.Worker
+	db      *sql.DB // the file-backed sqlite DB we own; nil for in-memory
 }
 
 func (p *Provider) Shutdown(_ context.Context) error {
 	err := p.Worker.WaitForCompletion()
+	// NewSqliteBackendWithDB doesn't own the connection, so release the pool and
+	// checkpoint the WAL here. Prefer surfacing the worker error if both fail.
+	if p.db != nil {
+		if cerr := p.db.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}
 	if err != nil {
-		return errors.Errorf("failed to wait for workflow worker completion: %w", err)
+		return errors.Errorf("failed to shut down workflows: %w", err)
 	}
 	return nil
 }
