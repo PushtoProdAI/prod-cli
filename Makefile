@@ -43,7 +43,7 @@ clean:
 # Local verification — we run everything locally, not in CI.
 #   make check         fast, hermetic gate (also runs on every push via the hook)
 #   make check-full    + cross-compile the CGO targets via cli/Dockerfile.build
-#   make install-hooks wire the pre-push hook (git config core.hooksPath .githooks)
+#   make install-hooks wire the git hooks: pre-commit secret scan + pre-push gate
 #   make smoke         clean-room deploy test (needs a Fly token + network; not hermetic)
 # ---------------------------------------------------------------------------
 .PHONY: check
@@ -59,7 +59,7 @@ check-full: check
 install-hooks:
 	@git config core.hooksPath .githooks
 	@chmod +x .githooks/* scripts/check.sh
-	@echo "✓ pre-push gate installed (core.hooksPath -> .githooks)"
+	@echo "✓ git hooks installed: pre-commit (gitleaks) + pre-push (make check). core.hooksPath -> .githooks"
 
 # ---------------------------------------------------------------------------
 # Release (local-first — there is no CI; releases are cut from this machine).

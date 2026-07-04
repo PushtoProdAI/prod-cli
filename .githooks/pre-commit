@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#
+# prod-cli pre-commit secret scan. Blocks a commit that would introduce a secret
+# into the staged changes (staged-only, so it does not trip over pre-existing
+# history — that's handled by the one-time sweep in docs/security-sweep.md).
+#
+# Activate with: make install-hooks   (sets git config core.hooksPath .githooks)
+# Bypass a false positive with: git commit --no-verify
+if command -v gitleaks >/dev/null 2>&1; then
+	if ! gitleaks git --staged --no-banner --redact; then
+		echo "" >&2
+		echo "✗ gitleaks found a potential secret in your staged changes (redacted above)." >&2
+		echo "  Remove it, or if it's a false positive: git commit --no-verify" >&2
+		exit 1
+	fi
+else
+	echo "gitleaks not installed — skipping the pre-commit secret scan." >&2
+	echo "Install it: brew install gitleaks" >&2
+fi
