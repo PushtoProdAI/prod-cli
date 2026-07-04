@@ -27,18 +27,20 @@ before:
     - cd cli && go mod tidy
 
 builds:
+  # darwin is built natively on the mac. CGO is on (BAML uses a dlopen shim); the
+  # BAML engine lib is fetched at RUNTIME, not linked here (see docs/DISTRIBUTION.md).
+  # Only the version is stamped — no secrets baked in.
+  #
+  # Linux is NOT built here: GoReleaser OSS can't ingest prebuilt binaries
+  # (`builder: prebuilt` is Pro-only) and can't cross-compile CGO from a mac.
+  # Linux archives are produced by `make -C cli dist-linux` (Docker) and attached
+  # to the release manually — see docs/DISTRIBUTION.md.
   - id: prod
     binary: prod
-    # The Go module root is cli/; the entrypoint is cli/cmd/main.go.
     dir: cli
     main: ./cmd/main.go
     env:
-      # BAML is a native dependency — CGO is required. This is the whole reason
-      # linux/windows cannot be cross-compiled from a mac (see header + docs).
       - CGO_ENABLED=1
-    # The binary reads backend config (PROD_BACKEND_URL / SUPABASE_URL / keys) from
-    # the environment at RUNTIME (cli/internal/config/config.go). Nothing backend-
-    # specific is baked in at build time. Only the version string is stamped.
     ldflags:
       - -s -w
       - -X 'github.com/pushtoprodai/prod-cli/internal/config.Version={{ .Version }}'
@@ -59,6 +61,7 @@ archives:
     files:
       - README.md
       - LICENSE
+      - NOTICE
 
 checksum:
   # install.sh looks for this filename to verify downloads.
