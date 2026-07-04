@@ -6,6 +6,7 @@
 package registry
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -67,9 +68,11 @@ func (c Credentials) GoString() string { return c.String() }
 type Registry interface {
 	// Name is the short identifier used in config/output (e.g. "dockerhub").
 	Name() string
-	// Credentials returns push credentials for the given project's repository,
-	// or an error if the project name isn't a valid repository component.
-	Credentials(project string) (Credentials, error)
+	// Credentials returns push credentials for the given project's repository, or
+	// an error if the project name isn't a valid repository component. Some
+	// registries (e.g. ECR) make API calls here (ensure repo, fetch a token), so
+	// a context is passed; pure registries ignore it.
+	Credentials(ctx context.Context, project string) (Credentials, error)
 	// Ref returns the fully-qualified, pullable image reference for project:tag
 	// (e.g. "docker.io/alice/my-app:1720000000"), or an error if project or tag
 	// is invalid.
@@ -167,7 +170,7 @@ func (r *hostRegistry) repository(project string) (string, error) {
 	return r.namespace + "/" + p, nil
 }
 
-func (r *hostRegistry) Credentials(project string) (Credentials, error) {
+func (r *hostRegistry) Credentials(_ context.Context, project string) (Credentials, error) {
 	repo, err := r.repository(project)
 	if err != nil {
 		return Credentials{}, err
