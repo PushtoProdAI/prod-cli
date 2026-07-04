@@ -51,14 +51,10 @@ func (a *Activities) createDeployable(spec *deployment.DeploymentSpec, platform 
 		}
 		return deployable, nil
 	case AWS:
-		awsClient, err := aws.NewClient("us-east-1")
-		if err != nil {
-			return nil, errors.Errorf("failed to create AWS client: %w", err)
-		}
-		// Create DockerGenerator with spec's env vars for build-time variable support
-		// This matches the pattern used by Render and FlyIO
+		// App Runner deploy: build locally, push to the user's ECR, create/redeploy.
+		// Uses the user's own AWS credentials (no backend, no CloudFormation).
 		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
-		return aws.NewAWSDeployment(awsClient, spec, dockerGen, true, "us-east-1", a.uiWriter), nil
+		return aws.NewAppRunnerDeployment(spec, dockerGen, a.uiWriter), nil
 	default:
 		return nil, errors.Errorf("unsupported platform: %s", platform)
 	}

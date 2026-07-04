@@ -1216,17 +1216,11 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 	return a.checkPrerequisites, nil
 }
 
-// refuseUnsupportedPlatform prints the "not available in this build" message and
-// returns true when a deploy/rollback to the given platform can't proceed. Only
-// applies in local mode — in managed mode the backend powers AWS/Render.
-// refuseDeployPlatform gates the DEPLOY path. It refuses AWS in local mode
-// (backend-only, Phase 3) and Render when no container registry is configured —
-// Render now always deploys by pushing to the user's own registry (there is no
-// hosted push path), so the registry is required in every mode.
+// refuseDeployPlatform gates the DEPLOY path. Render requires the user's own
+// container registry (there is no hosted push path). AWS deploys to App Runner
+// with the user's own credentials, which are validated at the auth step, so it
+// needs no gate here.
 func (a *Agent) refuseDeployPlatform(out io.Writer, p Platform) bool {
-	if a.refuseUnsupportedPlatform(out, p) {
-		return true
-	}
 	if p == Render {
 		if _, err := prodreg.FromEnv(os.Getenv); err != nil {
 			fmt.Fprint(out, "⚠️  Render needs your own container registry. Set PROD_REGISTRY (dockerhub|ghcr|generic)\n"+
@@ -1237,12 +1231,12 @@ func (a *Agent) refuseDeployPlatform(out io.Writer, p Platform) bool {
 	return false
 }
 
-// refuseUnsupportedPlatform gates platforms whose path still needs the hosted
-// backend (AWS). It is shared by deploy AND rollback — a Render rollback calls
-// Render's API directly and needs no registry, so it must NOT be gated here.
+// refuseUnsupportedPlatform gates the ROLLBACK path for platforms whose rollback
+// isn't available in the single binary (AWS App Runner). Deploy is not gated
+// here — a Render or AWS deploy uses the user's own registry/credentials.
 func (a *Agent) refuseUnsupportedPlatform(out io.Writer, p Platform) bool {
 	if config.BackendConfigured() {
-		return false // managed mode: the backend powers AWS
+		return false // managed mode: the backend powers rollback
 	}
 	if msg, unsupported := unsupportedLocalPlatform(p); unsupported {
 		fmt.Fprint(out, msg)
@@ -1251,15 +1245,14 @@ func (a *Agent) refuseUnsupportedPlatform(out io.Writer, p Platform) bool {
 	return false
 }
 
-// unsupportedLocalPlatform reports platforms whose deploy path still depends on
-// the hosted backend that the open-source single binary doesn't include. AWS is
-// being ported to run backend-free (Phase 3); until then prod refuses it with a
-// clear message rather than crashing in a downstream backend call.
+// unsupportedLocalPlatform reports platforms whose ROLLBACK isn't supported in
+// the single binary. AWS deploys to App Runner, but App Runner rollback isn't
+// implemented yet — you redeploy to change the service — so rollback is refused.
 func unsupportedLocalPlatform(p Platform) (string, bool) {
 	switch p {
 	case AWS:
-		return "⚠️  AWS deploys aren't available in this build yet — they're being ported to run\n" +
-			"   locally with your own AWS credentials. Supported today: Fly.io, Vercel, Netlify, Heroku, Render.\n", true
+		return "⚠️  Rolling back an AWS App Runner service isn't supported yet.\n" +
+			"   Deploy again to update the service. (Fly.io, Render, and others support rollback.)\n", true
 	default:
 		return "", false
 	}
