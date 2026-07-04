@@ -9,7 +9,9 @@ require (
 	github.com/atotto/clipboard v0.1.4
 	github.com/aws/aws-sdk-go-v2 v1.42.1
 	github.com/aws/aws-sdk-go-v2/config v1.31.20
+	github.com/aws/aws-sdk-go-v2/service/apprunner v1.40.8
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.58.6
+	github.com/aws/aws-sdk-go-v2/service/iam v1.54.7
 	github.com/aws/aws-sdk-go-v2/service/pricing v1.40.5
 	github.com/aws/aws-sdk-go-v2/service/sts v1.40.2
 	github.com/aws/smithy-go v1.27.3
