@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-errors/errors"
 	"github.com/pushtoprodai/prod-cli/internal/analyzer"
-	"github.com/pushtoprodai/prod-cli/internal/backend/aws"
 	"github.com/pushtoprodai/prod-cli/internal/config"
 )
 
@@ -21,7 +20,6 @@ func getBaseURL() string {
 // Client is the main backend API client
 type Client struct {
 	httpClient *http.Client
-	AWS        *aws.Client
 }
 
 // NewClient creates a new backend client
@@ -29,11 +27,9 @@ func NewClient() *Client {
 	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
 	}
-	baseURL := getBaseURL()
 
 	return &Client{
 		httpClient: httpClient,
-		AWS:        aws.NewClient(baseURL),
 	}
 }
 
@@ -75,43 +71,6 @@ func (c *Client) RecordRequestedStack(ctx context.Context, authToken string, pla
 	return nil
 }
 
-// AWS delegation methods - these delegate to c.AWS.* methods
-
-// CheckAWSAuthentication checks if AWS authentication is set up
-func (c *Client) CheckAWSAuthentication(ctx context.Context, authToken string) (bool, error) {
-	return c.AWS.CheckAuthentication(ctx, authToken)
-}
-
-// InitializeAWSAuth initializes AWS authentication
-func (c *Client) InitializeAWSAuth(ctx context.Context, authToken string, region string) (*aws.AWSAuthSetup, error) {
-	return c.AWS.InitializeAuth(ctx, authToken, region)
-}
-
-// CompleteAWSAuth completes AWS authentication
-func (c *Client) CompleteAWSAuth(ctx context.Context, authToken string, roleArn string, region string) error {
-	return c.AWS.CompleteAuth(ctx, authToken, roleArn, region)
-}
-
-// DeployAWSStack deploys an application stack to AWS
-func (c *Client) DeployAWSStack(ctx context.Context, authToken string, spec AWSDeploymentSpec) (*AWSDeploymentResult, error) {
-	return c.AWS.DeployStack(ctx, authToken, spec)
-}
-
-// GetAWSStackStatus polls the status of a CloudFormation stack
-func (c *Client) GetAWSStackStatus(ctx context.Context, authToken string, stackName string) (*AWSDeploymentResult, error) {
-	return c.AWS.GetStackStatus(ctx, authToken, stackName)
-}
-
-// CheckAWSStack checks if a CloudFormation stack exists
-func (c *Client) CheckAWSStack(ctx context.Context, authToken string, stackName string) (*AWSStackCheckResponse, error) {
-	return c.AWS.CheckStack(ctx, authToken, stackName)
-}
-
-// RunECSMigration runs an ECS Fargate task to execute database migrations
-func (c *Client) RunECSMigration(ctx context.Context, authToken string, req ECSMigrationRequest) (*ECSMigrationResult, error) {
-	return c.AWS.RunMigration(ctx, authToken, req)
-}
-
 // Deployment history types
 type DeploymentHistoryItem struct {
 	OperationID   string         `json:"operation_id"`
@@ -147,17 +106,3 @@ type DeploymentQueryOptions struct {
 	Limit         int    // Max results per page (default: 50, max: 1000)
 	Page          int    // Page number (default: 1)
 }
-
-// Type aliases for AWS types (backward compatibility)
-type (
-	AWSAuthSetup          = aws.AWSAuthSetup
-	BackingService        = aws.BackingService
-	EnvVar                = aws.EnvVar
-	AWSDeploymentSpec     = aws.DeploymentSpec
-	AWSDeploymentResult   = aws.DeploymentResult
-	AWSStackCheckRequest  = aws.StackCheckRequest
-	StackResourceInfo     = aws.StackResourceInfo
-	AWSStackCheckResponse = aws.StackCheckResponse
-	ECSMigrationRequest   = aws.MigrationRequest
-	ECSMigrationResult    = aws.MigrationResult
-)

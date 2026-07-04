@@ -33,8 +33,6 @@ LDFLAGS := -X 'github.com/pushtoprodai/prod-cli/internal/config.SupabaseURL=$(SU
            -X 'github.com/pushtoprodai/prod-cli/internal/config.ProdDebug=$(PROD_DEBUG)' \
 					 -X 'github.com/pushtoprodai/prod-cli/internal/config.Environment=$(ENVIRONMENT)' \
 					 -X 'github.com/pushtoprodai/prod-cli/internal/config.SentryDSN=$(CLI_SENTRY_DSN)' \
-					 -X 'github.com/pushtoprodai/prod-cli/internal/config.ProdAWSAccountID=$(PROD_AWS_ACCOUNT_ID)' \
-					 -X 'github.com/pushtoprodai/prod-cli/internal/config.AWSCloudFormationTemplateURL=$(AWS_CLOUDFORMATION_TEMPLATE_URL)' \
 					 -X 'github.com/pushtoprodai/prod-cli/internal/config.Version=$(VERSION)'
 
 .PHONY: build

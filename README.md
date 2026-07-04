@@ -103,9 +103,7 @@ Today, `prod` deploys directly to:
 - **Vercel**
 - **Netlify**
 - **Heroku**
-
-**AWS** (App Runner + ECS/Fargate + RDS) is being ported to run entirely in the binary with
-your own AWS credentials — see the [ROADMAP](./ROADMAP.md).
+- **AWS** — App Runner, with your own AWS credentials (see below)
 
 ### Deploying to Render — bring your own registry
 
@@ -137,6 +135,29 @@ export PROD_REGISTRY_TOKEN=ghp_...             # a PAT with write:packages
 `prod` pushes the image to that registry, registers the credentials with Render so it can pull,
 and creates the service — all with **your** Render API key and **your** registry. If the
 registry isn't configured, `prod` tells you exactly what to set before it does any work.
+
+### Deploying to AWS — App Runner, your account
+
+`prod` deploys to **AWS App Runner** (a managed container→HTTPS service) using your own AWS
+credentials — no backend, no CloudFormation, no central account. It reads credentials from the
+**standard AWS chain** (`~/.aws`, environment variables, or SSO), exactly like the AWS CLI, so if
+`aws sts get-caller-identity` works, `prod` works. No `PROD_REGISTRY` is needed — the image goes
+to your own **ECR** automatically.
+
+```bash
+# however you normally configure AWS — any of these works:
+export AWS_PROFILE=my-profile          # ~/.aws/config + ~/.aws/credentials
+# or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, or an SSO session
+export AWS_REGION=us-east-1            # required if not set in your profile
+
+prod "deploy this to aws"
+```
+
+On deploy, `prod` builds the image locally, pushes it to ECR (creating the repo on first use),
+creates the App Runner service (with an IAM access role so it can pull the image), and waits for
+it to come up — returning the service URL. Sensitive env vars go into **Secrets Manager**; plain
+ones become runtime env. Bring your own database via `DATABASE_URL`. Redeploy to ship a new
+version. (Rollback and managed RDS provisioning are planned — see the [ROADMAP](./ROADMAP.md).)
 
 ---
 
