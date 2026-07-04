@@ -1,6 +1,33 @@
 package llm
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
+
+type fakeSession struct{ token string }
+
+func (f fakeSession) GetAccessToken() string { return f.token }
+
+// getCallOptions must never return empty options: no session → direct client
+// registry (the fix), session → proxy env. Empty options was the old bug that
+// left BAML on the ProxyClient with an empty base_url.
+func TestGetCallOptionsNeverEmpty(t *testing.T) {
+	noSession := &client{config: Config{
+		SessionExtractor: func(context.Context) SessionProvider { return nil },
+	}}
+	if opts := noSession.getCallOptions(context.Background(), "ExtractIntent"); len(opts) == 0 {
+		t.Error("no-session getCallOptions returned empty options (would fall back to the broken ProxyClient)")
+	}
+
+	withSession := &client{config: Config{
+		ProxyURL:         "https://backend.example.com/functions/v1/llm-proxy",
+		SessionExtractor: func(context.Context) SessionProvider { return fakeSession{token: "tok"} },
+	}}
+	if opts := withSession.getCallOptions(context.Background(), "ExtractIntent"); len(opts) == 0 {
+		t.Error("session getCallOptions returned empty options")
+	}
+}
 
 func TestSelectDirectClient(t *testing.T) {
 	tests := []struct {

@@ -18,46 +18,30 @@ type SlashCommand struct {
 	Handler     func(context.Context, io.Writer) (stateFn, error)
 }
 
-// GetAvailableSlashCommands returns all available slash commands
+// GetAvailableSlashCommands returns all available slash commands.
 func (a *Agent) GetAvailableSlashCommands() []SlashCommand {
-	return []SlashCommand{
-		{
-			Name:        "/clear",
-			Description: "Clear the screen",
-			Handler:     a.handleClearCommand,
-		},
-		{
-			Name:        "/deploys",
-			Description: "Show deployment history",
-			Handler:     a.handleDeploysCommand,
-		},
-		{
-			Name:        "/login",
-			Description: "Login to Prod CLI",
-			Handler:     a.handleLoginCommand,
-		},
-
-		{
-			Name:        "/logout",
-			Description: "Logout from Prod CLI",
-			Handler:     a.handleLogoutCommand,
-		},
-		{
-			Name:        "/quit",
-			Description: "Exit the application",
-			Handler:     a.handleQuitCommand,
-		},
-		{
-			Name:        "/search",
-			Description: "Search through the output buffer",
-			Handler:     a.handleSearchCommand,
-		},
-		{
-			Name:        "/version",
-			Description: "Show the current Prod CLI version",
-			Handler:     a.handleVersionCommand,
-		},
+	commands := []SlashCommand{
+		{Name: "/clear", Description: "Clear the screen", Handler: a.handleClearCommand},
+		{Name: "/deploys", Description: "Show deployment history", Handler: a.handleDeploysCommand},
 	}
+
+	// /login and /logout only make sense with a managed backend to sign into.
+	// In local mode there's no account, and /login would open an OAuth page
+	// against a backend that isn't there and hang — so hide them.
+	if config.BackendConfigured() {
+		commands = append(
+			commands,
+			SlashCommand{Name: "/login", Description: "Login to Prod CLI", Handler: a.handleLoginCommand},
+			SlashCommand{Name: "/logout", Description: "Logout from Prod CLI", Handler: a.handleLogoutCommand},
+		)
+	}
+
+	return append(
+		commands,
+		SlashCommand{Name: "/quit", Description: "Exit the application", Handler: a.handleQuitCommand},
+		SlashCommand{Name: "/search", Description: "Search through the output buffer", Handler: a.handleSearchCommand},
+		SlashCommand{Name: "/version", Description: "Show the current Prod CLI version", Handler: a.handleVersionCommand},
+	)
 }
 
 // Command handlers
@@ -92,6 +76,12 @@ func (a *Agent) handleSearchCommand(ctx context.Context, out io.Writer) (stateFn
 }
 
 func (a *Agent) handleLoginCommand(ctx context.Context, out io.Writer) (stateFn, error) {
+	// Defense in depth: even if invoked directly, don't attempt a browser login
+	// against a backend that isn't configured (it would hang for minutes).
+	if !config.BackendConfigured() {
+		fmt.Fprintln(out, "Login isn't needed in this build — deploys use your own platform credentials.")
+		return a.checkPrerequisites, nil
+	}
 	a.authenticateCLI(ctx)
 	return a.sm.currentState, nil
 }

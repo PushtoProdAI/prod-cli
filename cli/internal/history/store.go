@@ -5,6 +5,7 @@ package history
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -132,7 +133,15 @@ func (s *Store) load() ([]Record, error) {
 	}
 	var records []Record
 	if err := json.Unmarshal(data, &records); err != nil {
-		return nil, errors.WrapPrefix(err, "failed to parse history", 0)
+		// A corrupt/hand-edited file must not wedge history forever. Quarantine it
+		// and continue with an empty history so writes and reads recover.
+		quarantine := s.path + ".corrupt"
+		if renameErr := os.Rename(s.path, quarantine); renameErr != nil {
+			slog.Warn("failed to quarantine corrupt history file", "path", s.path, "error", renameErr)
+		} else {
+			slog.Warn("history file was unparseable; quarantined and reset", "from", s.path, "to", quarantine)
+		}
+		return nil, nil
 	}
 	return records, nil
 }

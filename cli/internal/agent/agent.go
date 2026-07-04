@@ -429,10 +429,11 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 		return a.checkPrerequisites, nil
 	}
 
-	// AWS and Render still require the hosted backend that the OSS build doesn't
-	// ship. Refuse them with a clear message instead of crashing downstream.
-	if msg, unsupported := unsupportedLocalPlatform(plan.Platform); unsupported {
-		fmt.Fprint(out, msg)
+	// AWS and Render still require the hosted backend, which this build doesn't
+	// ship in local mode. Refuse them with a clear message instead of crashing
+	// downstream. (Re-checked after rollback platform selection — see
+	// executeRollback — because that path reassigns the platform post-plan.)
+	if a.refuseUnsupportedPlatform(out, plan.Platform) {
 		return a.checkPrerequisites, nil
 	}
 	a.DeployPlan = &plan
@@ -1146,6 +1147,12 @@ func (a *Agent) waitForPlatformSelection(ctx context.Context, input string, out 
 func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (stateFn, error) {
 	a.nextStateAfterAuth = nil
 
+	// Multi-platform rollback reassigns the platform after the plan-time gate, so
+	// re-check here — executeRollback is the single chokepoint for every rollback.
+	if a.refuseUnsupportedPlatform(out, a.DeployPlan.Platform) {
+		return a.checkPrerequisites, nil
+	}
+
 	wf, err := Workflows{}.Rollback(ctx, a.wfClient, *a.DeployPlan)
 	if err != nil {
 		slog.Error("Rollback workflow execution failed", "error", err)
@@ -1208,6 +1215,20 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 		return nil, nil
 	}
 	return a.checkPrerequisites, nil
+}
+
+// refuseUnsupportedPlatform prints the "not available in this build" message and
+// returns true when a deploy/rollback to the given platform can't proceed. Only
+// applies in local mode — in managed mode the backend powers AWS/Render.
+func (a *Agent) refuseUnsupportedPlatform(out io.Writer, p Platform) bool {
+	if config.BackendConfigured() {
+		return false
+	}
+	if msg, unsupported := unsupportedLocalPlatform(p); unsupported {
+		fmt.Fprint(out, msg)
+		return true
+	}
+	return false
 }
 
 // unsupportedLocalPlatform reports platforms whose deploy path still depends on

@@ -13,7 +13,8 @@ func TestServerToolsOverInMemoryTransport(t *testing.T) {
 	// Isolate history to a temp HOME so list_deploys doesn't touch the real ~/.prod.
 	t.Setenv("HOME", t.TempDir())
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	clientT, serverT := mcp.NewInMemoryTransports()
 
 	serverErr := make(chan error, 1)

@@ -1,10 +1,38 @@
 package history
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+// A corrupt history file must not wedge the store: it's quarantined and reset so
+// reads and writes recover.
+func TestStoreQuarantinesCorruptFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.json")
+	if err := os.WriteFile(path, []byte("{ not valid json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := Open(path)
+
+	recs, err := s.List(0)
+	if err != nil {
+		t.Fatalf("List on corrupt file should recover, not error: %v", err)
+	}
+	if len(recs) != 0 {
+		t.Fatalf("expected empty history after reset, got %d", len(recs))
+	}
+	if _, err := os.Stat(path + ".corrupt"); err != nil {
+		t.Errorf("corrupt file was not quarantined: %v", err)
+	}
+	if err := s.Add(Record{ID: "x", Status: "started", StartedAt: time.Now()}); err != nil {
+		t.Fatalf("writes should resume after reset: %v", err)
+	}
+	if recs, _ := s.List(0); len(recs) != 1 {
+		t.Fatalf("expected 1 record after recovery, got %d", len(recs))
+	}
+}
 
 func TestStoreAddUpdateList(t *testing.T) {
 	s := Open(filepath.Join(t.TempDir(), "history.json"))
