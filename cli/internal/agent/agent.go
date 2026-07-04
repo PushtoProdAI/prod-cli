@@ -428,6 +428,13 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 		fmt.Fprintf(out, "Cannot proceed with deployment plan\n")
 		return a.checkPrerequisites, nil
 	}
+
+	// AWS and Render still require the hosted backend that the OSS build doesn't
+	// ship. Refuse them with a clear message instead of crashing downstream.
+	if msg, unsupported := unsupportedLocalPlatform(plan.Platform); unsupported {
+		fmt.Fprint(out, msg)
+		return a.checkPrerequisites, nil
+	}
 	a.DeployPlan = &plan
 
 	// Check if we're in JSON mode (VSCode extension integration)
@@ -1201,6 +1208,23 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 		return nil, nil
 	}
 	return a.checkPrerequisites, nil
+}
+
+// unsupportedLocalPlatform reports platforms whose deploy path still depends on
+// the hosted backend that the open-source single binary doesn't include. They
+// are being reworked to run backend-free (AWS on your own creds; Render via your
+// own container registry); until then prod refuses them with a clear message
+// rather than crashing in a downstream backend call.
+func unsupportedLocalPlatform(p Platform) (string, bool) {
+	const supported = "Supported today: Fly.io, Vercel, Netlify, Heroku."
+	switch p {
+	case AWS:
+		return "⚠️  AWS deploys aren't available in this build yet — they're being ported to run\n   locally with your own AWS credentials. " + supported + "\n", true
+	case Render:
+		return "⚠️  Render deploys are being reworked to use your own container registry (no hosted\n   backend) and aren't available in this build yet. " + supported + "\n", true
+	default:
+		return "", false
+	}
 }
 
 func shouldProceed(plan DeployPlan) bool {
