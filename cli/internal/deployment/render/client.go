@@ -17,7 +17,7 @@ import (
 
 	"github.com/go-errors/errors"
 
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 // RateLimitError represents a rate limit error with retry information

@@ -2,11 +2,13 @@ package llm
 
 import (
 	"context"
+	"os"
 
+	baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client"
-	"github.com/meroxa/prod/cli/baml_client/types"
-	"github.com/meroxa/prod/cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/baml_client"
+	"github.com/pushtoprodai/prod-cli/baml_client/types"
+	"github.com/pushtoprodai/prod-cli/internal/config"
 )
 
 // Client provides a high-level interface for LLM operations with automatic proxy configuration.
@@ -97,8 +99,74 @@ func (c *client) getCallOptions(ctx context.Context, functionName string) []baml
 			}),
 		}
 	}
-	// Return empty options for direct LLM calls when no session is available
-	return []baml_client.CallOptionFunc{}
+	// No backend session → local (BYO-keys) mode. Select a direct LLM client at
+	// call time via a ClientRegistry, so we bypass the ProxyClient default
+	// without editing the generated BAML client.
+	return []baml_client.CallOptionFunc{
+		baml_client.WithClientRegistry(directRegistry(os.Getenv)),
+	}
+}
+
+// directClient describes a directly-configured (BYO-keys) LLM client used in
+// local mode when there's no backend session to proxy through.
+type directClient struct {
+	name     string
+	provider string
+	options  map[string]any
+}
+
+// selectDirectClient picks a direct LLM provider from the environment in
+// priority order: OpenAI, then Anthropic, then a local Ollama fallback (so the
+// tool still works with zero cloud keys if Ollama is running locally).
+// getenv is injected for testability. Model can be overridden with PROD_LLM_MODEL.
+func selectDirectClient(getenv func(string) string) directClient {
+	model := getenv("PROD_LLM_MODEL")
+
+	if key := getenv("OPENAI_API_KEY"); key != "" {
+		if model == "" {
+			model = "gpt-4o"
+		}
+		return directClient{
+			name:     "prod-direct-openai",
+			provider: "openai",
+			options:  map[string]any{"model": model, "api_key": key},
+		}
+	}
+
+	if key := getenv("ANTHROPIC_API_KEY"); key != "" {
+		if model == "" {
+			model = "claude-3-5-sonnet-20241022"
+		}
+		return directClient{
+			name:     "prod-direct-anthropic",
+			provider: "anthropic",
+			options:  map[string]any{"model": model, "api_key": key},
+		}
+	}
+
+	// Fallback: local Ollama. No cloud keys required.
+	baseURL := getenv("OLLAMA_BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:11434/v1"
+	}
+	if model == "" {
+		model = "llama3.1"
+	}
+	return directClient{
+		name:     "prod-direct-ollama",
+		provider: "openai-generic",
+		options:  map[string]any{"base_url": baseURL, "model": model},
+	}
+}
+
+// directRegistry builds a BAML ClientRegistry that overrides the default
+// ProxyClient with a directly-configured provider for local (BYO-keys) mode.
+func directRegistry(getenv func(string) string) *baml.ClientRegistry {
+	dc := selectDirectClient(getenv)
+	cr := baml.NewClientRegistry()
+	cr.AddLlmClient(dc.name, dc.provider, dc.options)
+	cr.SetPrimaryClient(dc.name)
+	return cr
 }
 
 // ExtractIntent extracts user intent from a prompt.

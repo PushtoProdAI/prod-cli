@@ -310,7 +310,7 @@ func (c *FlyctlClient) DeployApp(ctx context.Context, appID string, config *Flyi
 		}()
 	}
 
-	if err := os.WriteFile(flyTomlPath, []byte(flyToml), 0644); err != nil {
+	if err := os.WriteFile(flyTomlPath, []byte(flyToml), 0o644); err != nil {
 		return errors.Errorf("failed to write fly.toml: %w", err)
 	}
 	defer func() {

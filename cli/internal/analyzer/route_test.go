@@ -57,7 +57,7 @@ router.delete('/api/orders/:id', handleDeleteOrder);`,
 
 			for filename, content := range tt.files {
 				filePath := filepath.Join(tmpDir, filename)
-				if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+				if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -171,7 +171,7 @@ urlpatterns = [
 
 			for filename, content := range tt.files {
 				filePath := filepath.Join(tmpDir, filename)
-				if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+				if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			}

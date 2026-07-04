@@ -15,16 +15,17 @@ import (
 	"github.com/cschleiden/go-workflows/client"
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/analyzer"
-	"github.com/meroxa/prod/cli/internal/auth"
-	"github.com/meroxa/prod/cli/internal/backend"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/deployment/heroku"
-	"github.com/meroxa/prod/cli/internal/deployment/netlify"
-	"github.com/meroxa/prod/cli/internal/deployment/render"
-	prod_error "github.com/meroxa/prod/cli/internal/error"
-	"github.com/meroxa/prod/cli/internal/output"
-	"github.com/meroxa/prod/cli/internal/settings"
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
+	"github.com/pushtoprodai/prod-cli/internal/auth"
+	"github.com/pushtoprodai/prod-cli/internal/backend"
+	"github.com/pushtoprodai/prod-cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/heroku"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/netlify"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
+	prod_error "github.com/pushtoprodai/prod-cli/internal/error"
+	"github.com/pushtoprodai/prod-cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/settings"
 )
 
 type TUIWriter interface {
@@ -140,10 +141,14 @@ func (a *Agent) IsErrorTrackingEnabled() bool {
 	return a.errorTrackingEnabled
 }
 
-// Helper methods for TUI operations - direct TUI calls
+// Helper methods for TUI operations. Each degrades to a plain-text render on a
+// non-TUI writer (console/JSON) instead of panicking on the type assertion.
 func (a *Agent) sendPlan(out io.Writer, plan DeployPlan) {
-	tuiWriter := out.(TUIWriter)
-	tuiWriter.SendPlan(plan)
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendPlan(plan)
+		return
+	}
+	fmt.Fprintf(out, "\nPlan: %s to %s — %s\n", plan.Action.String(), plan.Platform.String(), plan.Summary)
 }
 
 func (a *Agent) sendPlanApprovalRequest(out io.Writer, plan DeployPlan) {
@@ -192,33 +197,52 @@ func (a *Agent) waitForPlanApproval(ctx context.Context, input string, out io.Wr
 }
 
 func (a *Agent) sendConfirmation(out io.Writer, message string) {
-	tuiWriter := out.(TUIWriter)
-	tuiWriter.SendConfirmation(message, nil)
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendConfirmation(message, nil)
+		return
+	}
+	fmt.Fprintf(out, "%s\n", message)
 }
 
 func (a *Agent) sendSelect(out io.Writer, message string, options []string) {
-	tuiWriter := out.(TUIWriter)
-	tuiWriter.SendSelect(message, options)
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendSelect(message, options)
+		return
+	}
+	fmt.Fprintf(out, "%s\n", message)
+	for i, opt := range options {
+		fmt.Fprintf(out, "  %d. %s\n", i+1, opt)
+	}
 }
 
 func (a *Agent) sendAPIKeyPrompt(out io.Writer, message string) {
-	tuiWriter := out.(TUIWriter)
-	tuiWriter.SendAPIKeyPrompt(message)
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendAPIKeyPrompt(message)
+		return
+	}
+	fmt.Fprintf(out, "%s\n", message)
 }
 
 func (a *Agent) sendTextPrompt(out io.Writer, message string) {
-	tuiWriter := out.(TUIWriter)
-	tuiWriter.SendTextPrompt(message)
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendTextPrompt(message)
+		return
+	}
+	fmt.Fprintf(out, "%s\n", message)
 }
 
 func (a *Agent) sendTextPromptWithDefault(out io.Writer, message string, defaultValue string) {
-	tuiWriter := out.(TUIWriter)
-	tuiWriter.SendTextPromptWithDefault(message, defaultValue)
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendTextPromptWithDefault(message, defaultValue)
+		return
+	}
+	fmt.Fprintf(out, "%s [%s]\n", message, defaultValue)
 }
 
 func (a *Agent) stopSpinner(out io.Writer) {
-	tuiWriter := out.(TUIWriter)
-	tuiWriter.StopSpinner()
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.StopSpinner()
+	}
 }
 
 func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
@@ -402,6 +426,14 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 
 	if !shouldProceed(plan) {
 		fmt.Fprintf(out, "Cannot proceed with deployment plan\n")
+		return a.checkPrerequisites, nil
+	}
+
+	// AWS and Render still require the hosted backend, which this build doesn't
+	// ship in local mode. Refuse them with a clear message instead of crashing
+	// downstream. (Re-checked after rollback platform selection — see
+	// executeRollback — because that path reassigns the platform post-plan.)
+	if a.refuseUnsupportedPlatform(out, plan.Platform) {
 		return a.checkPrerequisites, nil
 	}
 	a.DeployPlan = &plan
@@ -933,7 +965,8 @@ func (a *Agent) prepareLanguage(
 }
 
 func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	return a.prepareLanguage(ctx, input, out,
+	return a.prepareLanguage(
+		ctx, input, out,
 		"node",
 		"🔧 Preparing JavaScript environment...",
 		"✅ JavaScript environment prepared successfully!",
@@ -944,7 +977,8 @@ func (a *Agent) prepareJS(ctx context.Context, input string, out io.Writer) (sta
 }
 
 func (a *Agent) preparePython(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	return a.prepareLanguage(ctx, input, out,
+	return a.prepareLanguage(
+		ctx, input, out,
 		"python",
 		"🔧 Preparing Python environment...",
 		"✅ Python environment prepared successfully!",
@@ -1113,6 +1147,12 @@ func (a *Agent) waitForPlatformSelection(ctx context.Context, input string, out 
 func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (stateFn, error) {
 	a.nextStateAfterAuth = nil
 
+	// Multi-platform rollback reassigns the platform after the plan-time gate, so
+	// re-check here — executeRollback is the single chokepoint for every rollback.
+	if a.refuseUnsupportedPlatform(out, a.DeployPlan.Platform) {
+		return a.checkPrerequisites, nil
+	}
+
 	wf, err := Workflows{}.Rollback(ctx, a.wfClient, *a.DeployPlan)
 	if err != nil {
 		slog.Error("Rollback workflow execution failed", "error", err)
@@ -1175,6 +1215,37 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 		return nil, nil
 	}
 	return a.checkPrerequisites, nil
+}
+
+// refuseUnsupportedPlatform prints the "not available in this build" message and
+// returns true when a deploy/rollback to the given platform can't proceed. Only
+// applies in local mode — in managed mode the backend powers AWS/Render.
+func (a *Agent) refuseUnsupportedPlatform(out io.Writer, p Platform) bool {
+	if config.BackendConfigured() {
+		return false
+	}
+	if msg, unsupported := unsupportedLocalPlatform(p); unsupported {
+		fmt.Fprint(out, msg)
+		return true
+	}
+	return false
+}
+
+// unsupportedLocalPlatform reports platforms whose deploy path still depends on
+// the hosted backend that the open-source single binary doesn't include. They
+// are being reworked to run backend-free (AWS on your own creds; Render via your
+// own container registry); until then prod refuses them with a clear message
+// rather than crashing in a downstream backend call.
+func unsupportedLocalPlatform(p Platform) (string, bool) {
+	const supported = "Supported today: Fly.io, Vercel, Netlify, Heroku."
+	switch p {
+	case AWS:
+		return "⚠️  AWS deploys aren't available in this build yet — they're being ported to run\n   locally with your own AWS credentials. " + supported + "\n", true
+	case Render:
+		return "⚠️  Render deploys are being reworked to use your own container registry (no hosted\n   backend) and aren't available in this build yet. " + supported + "\n", true
+	default:
+		return "", false
+	}
 }
 
 func shouldProceed(plan DeployPlan) bool {
@@ -1478,6 +1549,11 @@ func (a *Agent) performOAuthLogin(ctx context.Context, input string, out io.Writ
 }
 
 func (a *Agent) ensureAuthenticated(ctx context.Context, out io.Writer) bool {
+	// Local mode has no backend and requires no prod-account login. Deploys run
+	// with the user's own platform credentials; there's nothing to sign in to.
+	if !config.BackendConfigured() {
+		return true
+	}
 	if !a.internalAuth.IsAuthenticated() {
 		fmt.Fprint(out, "🔐 Before we proceed, let's get you logged in!\n")
 		authenticated := a.authenticateCLI(ctx)

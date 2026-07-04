@@ -7,8 +7,8 @@ import (
 
 	"github.com/conduitio/ecdysis"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/agent"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/agent"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 var (
@@ -18,8 +18,7 @@ var (
 	_ ecdysis.CommandWithFlags   = (*RunCommand)(nil)
 )
 
-type RunFlags struct {
-}
+type RunFlags struct{}
 
 type RunArgs struct {
 	prompt string

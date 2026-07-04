@@ -18,5 +18,5 @@ generator target {
 
     // Your Go packages name as specified in go.mod
     // We need this to generate correct imports in the generated baml_client
-    client_package_name "github.com/meroxa/prod/cli"
+    client_package_name "github.com/pushtoprodai/prod-cli"
 }

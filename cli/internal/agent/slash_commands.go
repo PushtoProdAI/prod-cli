@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
-	"github.com/meroxa/prod/cli/internal/backend"
-	"github.com/meroxa/prod/cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/internal/backend"
+	"github.com/pushtoprodai/prod-cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/internal/history"
 )
 
 // SlashCommand represents a command that can be executed from the TUI
@@ -16,46 +18,30 @@ type SlashCommand struct {
 	Handler     func(context.Context, io.Writer) (stateFn, error)
 }
 
-// GetAvailableSlashCommands returns all available slash commands
+// GetAvailableSlashCommands returns all available slash commands.
 func (a *Agent) GetAvailableSlashCommands() []SlashCommand {
-	return []SlashCommand{
-		{
-			Name:        "/clear",
-			Description: "Clear the screen",
-			Handler:     a.handleClearCommand,
-		},
-		{
-			Name:        "/deploys",
-			Description: "Show deployment history",
-			Handler:     a.handleDeploysCommand,
-		},
-		{
-			Name:        "/login",
-			Description: "Login to Prod CLI",
-			Handler:     a.handleLoginCommand,
-		},
-
-		{
-			Name:        "/logout",
-			Description: "Logout from Prod CLI",
-			Handler:     a.handleLogoutCommand,
-		},
-		{
-			Name:        "/quit",
-			Description: "Exit the application",
-			Handler:     a.handleQuitCommand,
-		},
-		{
-			Name:        "/search",
-			Description: "Search through the output buffer",
-			Handler:     a.handleSearchCommand,
-		},
-		{
-			Name:        "/version",
-			Description: "Show the current Prod CLI version",
-			Handler:     a.handleVersionCommand,
-		},
+	commands := []SlashCommand{
+		{Name: "/clear", Description: "Clear the screen", Handler: a.handleClearCommand},
+		{Name: "/deploys", Description: "Show deployment history", Handler: a.handleDeploysCommand},
 	}
+
+	// /login and /logout only make sense with a managed backend to sign into.
+	// In local mode there's no account, and /login would open an OAuth page
+	// against a backend that isn't there and hang — so hide them.
+	if config.BackendConfigured() {
+		commands = append(
+			commands,
+			SlashCommand{Name: "/login", Description: "Login to Prod CLI", Handler: a.handleLoginCommand},
+			SlashCommand{Name: "/logout", Description: "Logout from Prod CLI", Handler: a.handleLogoutCommand},
+		)
+	}
+
+	return append(
+		commands,
+		SlashCommand{Name: "/quit", Description: "Exit the application", Handler: a.handleQuitCommand},
+		SlashCommand{Name: "/search", Description: "Search through the output buffer", Handler: a.handleSearchCommand},
+		SlashCommand{Name: "/version", Description: "Show the current Prod CLI version", Handler: a.handleVersionCommand},
+	)
 }
 
 // Command handlers
@@ -90,6 +76,12 @@ func (a *Agent) handleSearchCommand(ctx context.Context, out io.Writer) (stateFn
 }
 
 func (a *Agent) handleLoginCommand(ctx context.Context, out io.Writer) (stateFn, error) {
+	// Defense in depth: even if invoked directly, don't attempt a browser login
+	// against a backend that isn't configured (it would hang for minutes).
+	if !config.BackendConfigured() {
+		fmt.Fprintln(out, "Login isn't needed in this build — deploys use your own platform credentials.")
+		return a.checkPrerequisites, nil
+	}
 	a.authenticateCLI(ctx)
 	return a.sm.currentState, nil
 }
@@ -97,6 +89,26 @@ func (a *Agent) handleLoginCommand(ctx context.Context, out io.Writer) (stateFn,
 func (a *Agent) handleDeploysCommand(ctx context.Context, out io.Writer) (stateFn, error) {
 	tuiWriter, ok := out.(TUIWriter)
 	if !ok {
+		return a.checkPrerequisites, nil
+	}
+
+	// Local mode: read from the local history store; no login required.
+	if !config.BackendConfigured() {
+		store, err := history.NewStore()
+		if err != nil {
+			fmt.Fprintf(out, "❌ Failed to open local history: %v\n", err)
+			return a.checkPrerequisites, nil
+		}
+		records, err := store.List(20)
+		if err != nil {
+			fmt.Fprintf(out, "❌ Failed to read local history: %v\n", err)
+			return a.checkPrerequisites, nil
+		}
+		if len(records) == 0 {
+			fmt.Fprintln(out, "ℹ️  No deployments found.")
+			return a.checkPrerequisites, nil
+		}
+		tuiWriter.SendDeploymentHistory(historyRecordsToItems(records))
 		return a.checkPrerequisites, nil
 	}
 
@@ -139,6 +151,30 @@ func (a *Agent) handleDeploysCommand(ctx context.Context, out io.Writer) (stateF
 	tuiWriter.SendDeploymentHistory(response.Data)
 
 	return a.checkPrerequisites, nil
+}
+
+// historyRecordsToItems adapts local history records to the display type shared
+// with the backend-backed path, so the TUI renders both identically.
+func historyRecordsToItems(records []history.Record) []backend.DeploymentHistoryItem {
+	items := make([]backend.DeploymentHistoryItem, 0, len(records))
+	for _, r := range records {
+		completed := ""
+		if r.CompletedAt != nil {
+			completed = r.CompletedAt.Format(time.RFC3339)
+		}
+		items = append(items, backend.DeploymentHistoryItem{
+			OperationID:   r.ID,
+			OperationType: r.OperationType,
+			ResourceName:  r.ResourceName,
+			Status:        r.Status,
+			Platform:      r.Platform,
+			Language:      r.Language,
+			StartedAt:     r.StartedAt.Format(time.RFC3339),
+			CompletedAt:   completed,
+			Metadata:      r.Metadata,
+		})
+	}
+	return items
 }
 
 func (a *Agent) handleVersionCommand(ctx context.Context, out io.Writer) (stateFn, error) {

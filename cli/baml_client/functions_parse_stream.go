@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
-	"github.com/meroxa/prod/cli/baml_client/stream_types"
+	"github.com/pushtoprodai/prod-cli/baml_client/stream_types"
 )
 
 type parse_stream struct{}
@@ -27,7 +27,6 @@ var ParseStream = &parse_stream{}
 
 // / Parse version of CategorizeRoutes (Takes in string and returns stream_types.CategorizedRoutes)
 func (*parse_stream) CategorizeRoutes(text string, opts ...CallOptionFunc) (stream_types.CategorizedRoutes, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -67,14 +66,13 @@ func (*parse_stream) CategorizeRoutes(text string, opts ...CallOptionFunc) (stre
 		return stream_types.CategorizedRoutes{}, err
 	}
 
-	casted := (result).(stream_types.CategorizedRoutes)
+	casted := result.(stream_types.CategorizedRoutes)
 
 	return casted, nil
 }
 
 // / Parse version of DetermineBuildOutput (Takes in string and returns stream_types.BuildOutput)
 func (*parse_stream) DetermineBuildOutput(text string, opts ...CallOptionFunc) (stream_types.BuildOutput, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -114,14 +112,13 @@ func (*parse_stream) DetermineBuildOutput(text string, opts ...CallOptionFunc) (
 		return stream_types.BuildOutput{}, err
 	}
 
-	casted := (result).(stream_types.BuildOutput)
+	casted := result.(stream_types.BuildOutput)
 
 	return casted, nil
 }
 
 // / Parse version of DetermineEnvVarRoles (Takes in string and returns stream_types.EnvVarCategory)
 func (*parse_stream) DetermineEnvVarRoles(text string, opts ...CallOptionFunc) (stream_types.EnvVarCategory, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -161,14 +158,13 @@ func (*parse_stream) DetermineEnvVarRoles(text string, opts ...CallOptionFunc) (
 		return stream_types.EnvVarCategory{}, err
 	}
 
-	casted := (result).(stream_types.EnvVarCategory)
+	casted := result.(stream_types.EnvVarCategory)
 
 	return casted, nil
 }
 
 // / Parse version of DetermineLaunchCommand (Takes in string and returns stream_types.LaunchCommand)
 func (*parse_stream) DetermineLaunchCommand(text string, opts ...CallOptionFunc) (stream_types.LaunchCommand, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -208,14 +204,13 @@ func (*parse_stream) DetermineLaunchCommand(text string, opts ...CallOptionFunc)
 		return stream_types.LaunchCommand{}, err
 	}
 
-	casted := (result).(stream_types.LaunchCommand)
+	casted := result.(stream_types.LaunchCommand)
 
 	return casted, nil
 }
 
 // / Parse version of DetermineMigrationCommand (Takes in string and returns stream_types.MigrationCommand)
 func (*parse_stream) DetermineMigrationCommand(text string, opts ...CallOptionFunc) (stream_types.MigrationCommand, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -255,14 +250,13 @@ func (*parse_stream) DetermineMigrationCommand(text string, opts ...CallOptionFu
 		return stream_types.MigrationCommand{}, err
 	}
 
-	casted := (result).(stream_types.MigrationCommand)
+	casted := result.(stream_types.MigrationCommand)
 
 	return casted, nil
 }
 
 // / Parse version of ExtractIntent (Takes in string and returns stream_types.Intent)
 func (*parse_stream) ExtractIntent(text string, opts ...CallOptionFunc) (stream_types.Intent, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -302,14 +296,13 @@ func (*parse_stream) ExtractIntent(text string, opts ...CallOptionFunc) (stream_
 		return stream_types.Intent{}, err
 	}
 
-	casted := (result).(stream_types.Intent)
+	casted := result.(stream_types.Intent)
 
 	return casted, nil
 }
 
 // / Parse version of FetchPricing (Takes in string and returns stream_types.ServicePricing)
 func (*parse_stream) FetchPricing(text string, opts ...CallOptionFunc) (stream_types.ServicePricing, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -349,14 +342,13 @@ func (*parse_stream) FetchPricing(text string, opts ...CallOptionFunc) (stream_t
 		return stream_types.ServicePricing{}, err
 	}
 
-	casted := (result).(stream_types.ServicePricing)
+	casted := result.(stream_types.ServicePricing)
 
 	return casted, nil
 }
 
 // / Parse version of SummarizeDeployError (Takes in string and returns stream_types.Error)
 func (*parse_stream) SummarizeDeployError(text string, opts ...CallOptionFunc) (stream_types.Error, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -396,14 +388,13 @@ func (*parse_stream) SummarizeDeployError(text string, opts ...CallOptionFunc) (
 		return stream_types.Error{}, err
 	}
 
-	casted := (result).(stream_types.Error)
+	casted := result.(stream_types.Error)
 
 	return casted, nil
 }
 
 // / Parse version of SummarizeIntent (Takes in string and returns stream_types.Summary)
 func (*parse_stream) SummarizeIntent(text string, opts ...CallOptionFunc) (stream_types.Summary, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -443,14 +434,13 @@ func (*parse_stream) SummarizeIntent(text string, opts ...CallOptionFunc) (strea
 		return stream_types.Summary{}, err
 	}
 
-	casted := (result).(stream_types.Summary)
+	casted := result.(stream_types.Summary)
 
 	return casted, nil
 }
 
 // / Parse version of SummarizeSteps (Takes in string and returns stream_types.Summary)
 func (*parse_stream) SummarizeSteps(text string, opts ...CallOptionFunc) (stream_types.Summary, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -490,7 +480,7 @@ func (*parse_stream) SummarizeSteps(text string, opts ...CallOptionFunc) (stream
 		return stream_types.Summary{}, err
 	}
 
-	casted := (result).(stream_types.Summary)
+	casted := result.(stream_types.Summary)
 
 	return casted, nil
 }

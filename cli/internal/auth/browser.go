@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"github.com/go-errors/errors"
 	"bytes"
 	"context"
 	"embed"
@@ -15,6 +14,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/go-errors/errors"
 )
 
 // Embed all assets as a filesystem

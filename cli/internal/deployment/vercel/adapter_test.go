@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/deployment/pricing"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/pricing"
 )
 
 func TestVercelDeploymentAdapter_EstimateCost(t *testing.T) {

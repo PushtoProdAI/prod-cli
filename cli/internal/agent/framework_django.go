@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/analyzer"
-	"github.com/meroxa/prod/cli/internal/deployment"
 	"github.com/pmezard/go-difflib/difflib"
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 // DjangoHandler implements FrameworkHandler for Django projects
@@ -211,7 +211,7 @@ func (h *DjangoHandler) HandleConfig(projectPath string, platform Platform) ([]D
 	}
 
 	// Write updated settings
-	if err := os.WriteFile(settingsPath, updatedContent, 0644); err != nil {
+	if err := os.WriteFile(settingsPath, updatedContent, 0o644); err != nil {
 		return nil, "", errors.Errorf("failed to write updated settings: %w", err)
 	}
 
@@ -250,7 +250,7 @@ func (h *DjangoHandler) RestoreConfigFromBackup(ctx context.Context, plan Deploy
 		return nil, errors.Errorf("failed to read current settings: %w", err)
 	}
 
-	if err := os.WriteFile(settingsPath, backupContent, 0644); err != nil {
+	if err := os.WriteFile(settingsPath, backupContent, 0o644); err != nil {
 		return nil, errors.Errorf("failed to restore settings: %w", err)
 	}
 
@@ -401,7 +401,6 @@ func (h *DjangoHandler) detectDjangoServer(projectPath string, dependencies []an
 		}
 		return nil
 	})
-
 	if err != nil {
 		return nil, errors.Errorf("failed to walk project directory: %w", err)
 	}
@@ -489,7 +488,7 @@ func (h *DjangoHandler) addServerDependency(projectPath string, serverType Serve
 		newContent += requiredServer + "\n"
 
 		// Write back
-		if err := os.WriteFile(requirementsPath, []byte(newContent), 0644); err != nil {
+		if err := os.WriteFile(requirementsPath, []byte(newContent), 0o644); err != nil {
 			return errors.Errorf("failed to write requirements.txt: %w", err)
 		}
 
@@ -553,7 +552,6 @@ func (h *DjangoHandler) detectStaticFilesSetup(projectPath string, settingsPath 
 		}
 		return nil
 	})
-
 	if err != nil {
 		return nil, errors.Errorf("failed to walk project directory: %w", err)
 	}
@@ -647,7 +645,7 @@ func (h *DjangoHandler) addWhiteNoiseDependency(projectPath string) error {
 		}
 		newContent += "whitenoise\n"
 
-		if err := os.WriteFile(requirementsPath, []byte(newContent), 0644); err != nil {
+		if err := os.WriteFile(requirementsPath, []byte(newContent), 0o644); err != nil {
 			return errors.Errorf("failed to write requirements.txt: %w", err)
 		}
 

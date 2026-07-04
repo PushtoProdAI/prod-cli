@@ -8,17 +8,17 @@ import (
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/baml_client/types"
-	"github.com/meroxa/prod/cli/internal/analyzer"
-	"github.com/meroxa/prod/cli/internal/backend"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/deployment/aws"
-	"github.com/meroxa/prod/cli/internal/deployment/flyio"
-	"github.com/meroxa/prod/cli/internal/deployment/heroku"
-	"github.com/meroxa/prod/cli/internal/deployment/netlify"
-	"github.com/meroxa/prod/cli/internal/deployment/render"
-	"github.com/meroxa/prod/cli/internal/deployment/vercel"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/baml_client/types"
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
+	"github.com/pushtoprodai/prod-cli/internal/backend"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/aws"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/flyio"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/heroku"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/netlify"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/vercel"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 func (a *Activities) createDeployable(spec *deployment.DeploymentSpec, platform Platform) (deployment.Deployable, error) {
@@ -238,6 +238,11 @@ func (a *Activities) getEnvVarsFromEnvFiles(_ context.Context, path string) ([]d
 
 func (a *Activities) createDockerRepo(ctx context.Context, projectName string) error {
 	session := CtxSession(ctx)
+	if session == nil {
+		// Reached only if a backend-required platform (AWS/Render) slips past the
+		// plan-time gate. Fail permanently and clearly instead of nil-derefing.
+		return workflow.NewPermanentError(errors.New("container registry provisioning requires a hosted backend, which this build does not include"))
+	}
 	err := a.beClient.CreateDockerRepository(ctx, session.AccessToken, projectName)
 	if err != nil {
 		return errors.Errorf("failed to create docker repository: %w", err)

@@ -1,10 +1,24 @@
-# GoReleaser configuration for multi-architecture CLI builds
-# This configuration builds the CLI for multiple platforms and architectures
-# and can be extended to upload to Supabase storage
-# NOTE: used for local testing only, CI uses a different config
+# GoReleaser configuration for the `prod` OSS single binary.
+# Module: github.com/pushtoprodai/prod-cli  ·  binary: prod  ·  module root: cli/
+#
+# We are local-first: there is NO CI. Releases are cut LOCALLY (see docs/DISTRIBUTION.md
+# for the runbook). Validate this file with `goreleaser check` (Makefile: `make release-check`).
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# CGO / cross-compile reality (read docs/DISTRIBUTION.md for the full story):
+#   BAML (github.com/boundaryml/baml) is a native CGO dependency, so CGO_ENABLED=1
+#   is mandatory and every target needs a working C toolchain for its OS+arch.
+#   - darwin/arm64 + darwin/amd64: both build from an Apple-Silicon mac. Apple's
+#     clang cross-compiles between the two darwin arches (`-arch x86_64`) natively,
+#     so a single `goreleaser release` on a mac produces BOTH darwin archives.
+#   - linux/windows: cannot be produced reliably by this darwin-hosted run. They
+#     need a real per-OS toolchain (native runner, `zig cc` cross-compiler, or the
+#     cli/Dockerfile.build image for linux). They are intentionally NOT listed
+#     below so `goreleaser release` succeeds on a mac instead of failing on a
+#     broken cross-compile. See docs/DISTRIBUTION.md for how to add them.
+# ─────────────────────────────────────────────────────────────────────────────
 version: 2
 
-# Project metadata
 project_name: prod
 
 before:
@@ -12,95 +26,100 @@ before:
     - cd cli && go mod download
     - cd cli && go mod tidy
 
-# Build configuration - focus on macOS only for now
-# Windows and Linux builds have cross-compilation issues with BAML dependencies
 builds:
-  - id: prod-cli
+  - id: prod
     binary: prod
+    # The Go module root is cli/; the entrypoint is cli/cmd/main.go.
+    dir: cli
     main: ./cmd/main.go
-    dir: ./cli
     env:
+      # BAML is a native dependency — CGO is required. This is the whole reason
+      # linux/windows cannot be cross-compiled from a mac (see header + docs).
       - CGO_ENABLED=1
-      - SUPABASE_URL={{.Env.SUPABASE_URL}}
-      - SUPABASE_ANON_KEY={{.Env.SUPABASE_ANON_KEY}}
-      - PROD_DEBUG={{.Env.PROD_DEBUG}}
+    # The binary reads backend config (PROD_BACKEND_URL / SUPABASE_URL / keys) from
+    # the environment at RUNTIME (cli/internal/config/config.go). Nothing backend-
+    # specific is baked in at build time. Only the version string is stamped.
     ldflags:
       - -s -w
-      - -X 'github.com/meroxa/prod/cli/internal/config.SupabaseURL={{.Env.SUPABASE_URL}}'
-      - -X 'github.com/meroxa/prod/cli/internal/config.SupabaseAnonKey={{.Env.SUPABASE_ANON_KEY}}'
-      - -X 'github.com/meroxa/prod/cli/internal/config.ProdDebug={{.Env.PROD_DEBUG}}'
+      - -X 'github.com/pushtoprodai/prod-cli/internal/config.Version={{ .Version }}'
     goos:
       - darwin
     goarch:
       - amd64
       - arm64
 
-# Archive configuration
 archives:
-  - id: prod-cli
+  - id: prod
+    ids:
+      - prod
+    # e.g. prod_0.1.0_darwin_arm64.tar.gz — install.sh depends on this exact shape.
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format: tar.gz
+    formats:
+      - tar.gz
     files:
       - README.md
+      - LICENSE
 
-# Checksum configuration
 checksum:
+  # install.sh looks for this filename to verify downloads.
   name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
   algorithm: sha256
 
-# Release configuration
 release:
   github:
-    owner: meroxa
-    name: prod
+    owner: pushtoprodai
+    name: prod-cli
   draft: false
-  prerelease: false
+  prerelease: auto
   name_template: "{{ .ProjectName }} {{ .Tag }}"
   header: |
     ## What's Changed
     See the [changelog](CHANGELOG.md) for details.
   footer: |
     ## Installation
-    
-    ### Using the installer script (recommended)
+
+    ### Installer script (recommended)
     ```bash
-    curl -sSL https://install.prod.dev | sh
+    curl -sSL https://raw.githubusercontent.com/pushtoprodai/prod-cli/main/scripts/install.sh | sh
     ```
-    
-    ### Manual installation
-    Download the appropriate binary for your platform:
-    
-    - **macOS AMD64**: `prod_{{ .Tag }}_darwin_amd64.tar.gz`
-    - **macOS ARM64**: `prod_{{ .Tag }}_darwin_arm64.tar.gz`
-    
-    **Note**: Windows and Linux builds are not available due to cross-compilation constraints with BAML dependencies. Use Docker or platform-specific CI environments for these builds.
-    
-    ### Verify installation
+
+    ### Homebrew
+    ```bash
+    brew install pushtoprodai/tap/prod
+    ```
+
+    ### Manual
+    Download the archive for your platform and extract `prod` onto your PATH:
+
+    - **macOS Apple Silicon**: `prod_{{ .Version }}_darwin_arm64.tar.gz`
+    - **macOS Intel**: `prod_{{ .Version }}_darwin_amd64.tar.gz`
+
+    > **Linux / Windows:** not published from this darwin-hosted release because
+    > BAML's native CGO dependency can't be reliably cross-compiled from macOS.
+    > Build locally with `cd cli && make build`, or see
+    > [docs/DISTRIBUTION.md](https://github.com/pushtoprodai/prod-cli/blob/main/docs/DISTRIBUTION.md)
+    > for producing linux binaries via the cross toolchain.
+
+    ### Verify
     ```bash
     prod --version
     ```
 
-# Homebrew formula (optional)
+# Homebrew tap. Publishes a formula to github.com/pushtoprodai/homebrew-tap.
+# Only the darwin archives above feed this, so the formula is macOS-only today —
+# honest, given the CGO constraint. Add linux archives here once they're built.
 brews:
   - name: prod
-    description: "Prod CLI for deployment automation"
-    homepage: "https://prod.dev"
+    ids:
+      - prod
+    repository:
+      owner: pushtoprodai
+      name: homebrew-tap
+    directory: Formula
+    homepage: "https://github.com/pushtoprodai/prod-cli"
+    description: "Deploy code and agents with natural language. One binary, no backend."
     license: "MIT"
-    test: |
-      system "#{bin}/prod --version"
     install: |
       bin.install "prod"
-    dependencies:
-      - go
-
-# Custom publishers for Supabase storage
-publishers:
-  - name: supabase-storage
-    # This will be implemented as a custom publisher
-    # that uploads binaries to Supabase storage
-    # See scripts/upload-to-supabase.sh for implementation
-    cmd: ./scripts/upload-to-supabase.sh
-    env:
-      - SUPABASE_URL
-      - SUPABASE_ANON_KEY
-      - SUPABASE_SERVICE_ROLE_KEY
+    test: |
+      system "#{bin}/prod", "--version"

@@ -11,14 +11,15 @@ import (
 	"github.com/cschleiden/go-workflows/client"
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/backend"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/deployment/flyio"
-	"github.com/meroxa/prod/cli/internal/deployment/render"
-	prod_error "github.com/meroxa/prod/cli/internal/error"
-	"github.com/meroxa/prod/cli/internal/llm"
-	"github.com/meroxa/prod/cli/internal/output"
-	"github.com/meroxa/prod/cli/internal/workflowext"
+	"github.com/pushtoprodai/prod-cli/internal/backend"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/flyio"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
+	prod_error "github.com/pushtoprodai/prod-cli/internal/error"
+	"github.com/pushtoprodai/prod-cli/internal/history"
+	"github.com/pushtoprodai/prod-cli/internal/llm"
+	"github.com/pushtoprodai/prod-cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/workflowext"
 )
 
 const (
@@ -89,6 +90,12 @@ func newAgentLLMClient() llm.Client {
 func NewWorkflows(renderClient render.RenderClient, flyClient flyio.FlyioClient, beClient *backend.Client, uiWriter output.StatusWriter) *Workflows {
 	llmClient := newAgentLLMClient()
 	frameworkRegistry := NewFrameworkRegistry()
+	// Local deployment history (used in local mode). If it can't be created we
+	// still deploy — history just isn't recorded — so failure is non-fatal.
+	histStore, err := history.NewStore()
+	if err != nil {
+		slog.Warn("failed to initialize local history store; deploy history will not be recorded", "error", err)
+	}
 	return &Workflows{
 		Acts: &Activities{
 			renderClient:      renderClient,
@@ -97,6 +104,7 @@ func NewWorkflows(renderClient render.RenderClient, flyClient flyio.FlyioClient,
 			uiWriter:          uiWriter,
 			llmClient:         llmClient,
 			frameworkRegistry: frameworkRegistry,
+			history:           histStore,
 		},
 		renderClient: renderClient,
 		flyClient:    flyClient,
@@ -110,7 +118,8 @@ func (w *Workflows) Register(registry workflowext.Registry) error {
 	w.registry = registry
 	for _, wf := range w.Workflows() {
 		if err := wf.Register(registry); err != nil {
-			errs = errors.Join(errs,
+			errs = errors.Join(
+				errs,
 				errors.Errorf("failed to register agent workflow %q: %w", wf.Name, err),
 			)
 		}
@@ -118,7 +127,8 @@ func (w *Workflows) Register(registry workflowext.Registry) error {
 
 	for _, act := range w.Acts.Activities() {
 		if err := act.Register(registry); err != nil {
-			errs = errors.Join(errs,
+			errs = errors.Join(
+				errs,
 				errors.Errorf("failed to register agent activity %q: %w", act.Name, err),
 			)
 		}

@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
 )
 
 func main() {

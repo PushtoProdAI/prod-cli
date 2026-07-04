@@ -13,7 +13,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/xo/dburl"
 
-	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 // CreateFlyioAppStep creates a new Fly.io app
@@ -656,14 +656,14 @@ func (g *GenerateDockerfileStep) Execute(ctx context.Context, client FlyioClient
 
 	// Write Dockerfile to build context
 	dockerfilePath := filepath.Join(buildContext, "Dockerfile")
-	if err := os.WriteFile(dockerfilePath, []byte(artifacts.Dockerfile), 0644); err != nil {
+	if err := os.WriteFile(dockerfilePath, []byte(artifacts.Dockerfile), 0o644); err != nil {
 		return nil, errors.Errorf("failed to write Dockerfile: %w", err)
 	}
 
 	// Write .dockerignore if provided
 	if artifacts.DockerIgnore != "" {
 		dockerignorePath := filepath.Join(buildContext, ".dockerignore")
-		if err := os.WriteFile(dockerignorePath, []byte(artifacts.DockerIgnore), 0644); err != nil {
+		if err := os.WriteFile(dockerignorePath, []byte(artifacts.DockerIgnore), 0o644); err != nil {
 			return nil, errors.Errorf("failed to write .dockerignore: %w", err)
 		}
 	}
@@ -671,7 +671,7 @@ func (g *GenerateDockerfileStep) Execute(ctx context.Context, client FlyioClient
 	// Write additional files to build context
 	for filename, content := range artifacts.AdditionalFiles {
 		filePath := filepath.Join(buildContext, filename)
-		if err := os.WriteFile(filePath, []byte(content), 0755); err != nil {
+		if err := os.WriteFile(filePath, []byte(content), 0o755); err != nil {
 			return nil, errors.Errorf("failed to write additional file %s: %w", filename, err)
 		}
 	}

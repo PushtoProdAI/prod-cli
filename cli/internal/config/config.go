@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"strings"
 )
 
@@ -25,31 +26,42 @@ func GetEnvironment() string {
 	return "staging" // Default to staging for local development
 }
 
-// GetSupabaseURL returns the Supabase URL
-// Uses build-time variable set via ldflags in Makefile
+// GetSupabaseURL returns the configured backend URL, or "" in local mode.
+//
+// Precedence: PROD_BACKEND_URL env → SUPABASE_URL env → build-time ldflags → "".
+// There is no hard-coded backend fallback: the OSS default is local mode (no
+// backend), and a managed/self-hosted backend is opted into via env or ldflags.
 func GetSupabaseURL() string {
-	if SupabaseURL != "" {
-		return SupabaseURL
+	if v := os.Getenv("PROD_BACKEND_URL"); v != "" {
+		return v
 	}
-
-	// Fallback defaults based on environment
-	env := GetEnvironment()
-	switch env {
-	case "local":
-		return "http://localhost:54321"
-	case "staging":
-		return "https://PROJECT_REDACTED.supabase.co"
-	case "production":
-		return "https://PROJECT_REDACTED.supabase.co"
-	default:
-		return "https://PROJECT_REDACTED.supabase.co"
+	if v := os.Getenv("SUPABASE_URL"); v != "" {
+		return v
 	}
+	return SupabaseURL // ldflags; empty in a plain OSS build
 }
 
-// GetSupabaseAnonKey returns the Supabase anon key
-// Uses build-time variable set via ldflags in Makefile
+// GetSupabaseAnonKey returns the backend anon key.
+// Precedence: SUPABASE_ANON_KEY env → build-time ldflags → "".
 func GetSupabaseAnonKey() string {
+	if v := os.Getenv("SUPABASE_ANON_KEY"); v != "" {
+		return v
+	}
 	return SupabaseAnonKey
+}
+
+// BackendConfigured reports whether a managed/self-hosted backend is available.
+// When false, prod runs in local mode: no backend, local state, BYO LLM keys.
+func BackendConfigured() bool {
+	return GetSupabaseURL() != "" && GetSupabaseAnonKey() != ""
+}
+
+// Mode returns the run mode: "managed" when a backend is configured, else "local".
+func Mode() string {
+	if BackendConfigured() {
+		return "managed"
+	}
+	return "local"
 }
 
 // GetProdDebug returns the debug setting

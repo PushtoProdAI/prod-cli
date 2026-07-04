@@ -18,11 +18,10 @@ import (
 	"fmt"
 
 	baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
-	"github.com/meroxa/prod/cli/baml_client/types"
+	"github.com/pushtoprodai/prod-cli/baml_client/types"
 )
 
 func CategorizeRoutes(ctx context.Context, candidates []types.RouteCandidate, opts ...CallOptionFunc) (types.CategorizedRoutes, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -64,7 +63,7 @@ func CategorizeRoutes(ctx context.Context, candidates []types.RouteCandidate, op
 			return types.CategorizedRoutes{}, result.Error
 		}
 
-		casted := (result.Data).(types.CategorizedRoutes)
+		casted := result.Data.(types.CategorizedRoutes)
 
 		return casted, nil
 	} else {
@@ -88,7 +87,6 @@ func CategorizeRoutes(ctx context.Context, candidates []types.RouteCandidate, op
 }
 
 func DetermineBuildOutput(ctx context.Context, candidate types.BuildOutputCandidate, opts ...CallOptionFunc) (types.BuildOutput, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -130,7 +128,7 @@ func DetermineBuildOutput(ctx context.Context, candidate types.BuildOutputCandid
 			return types.BuildOutput{}, result.Error
 		}
 
-		casted := (result.Data).(types.BuildOutput)
+		casted := result.Data.(types.BuildOutput)
 
 		return casted, nil
 	} else {
@@ -154,7 +152,6 @@ func DetermineBuildOutput(ctx context.Context, candidate types.BuildOutputCandid
 }
 
 func DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCandidate, dbList []string, opts ...CallOptionFunc) (types.EnvVarCategory, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -196,7 +193,7 @@ func DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCandidate, dbL
 			return types.EnvVarCategory{}, result.Error
 		}
 
-		casted := (result.Data).(types.EnvVarCategory)
+		casted := result.Data.(types.EnvVarCategory)
 
 		return casted, nil
 	} else {
@@ -220,7 +217,6 @@ func DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCandidate, dbL
 }
 
 func DetermineLaunchCommand(ctx context.Context, language string, frameworks []string, envVars []string, lc types.LaunchContext, opts ...CallOptionFunc) (types.LaunchCommand, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -262,7 +258,7 @@ func DetermineLaunchCommand(ctx context.Context, language string, frameworks []s
 			return types.LaunchCommand{}, result.Error
 		}
 
-		casted := (result.Data).(types.LaunchCommand)
+		casted := result.Data.(types.LaunchCommand)
 
 		return casted, nil
 	} else {
@@ -286,7 +282,6 @@ func DetermineLaunchCommand(ctx context.Context, language string, frameworks []s
 }
 
 func DetermineMigrationCommand(ctx context.Context, language string, frameworks []string, ormTools []string, migrationContext types.MigrationContext, opts ...CallOptionFunc) (types.MigrationCommand, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -328,7 +323,7 @@ func DetermineMigrationCommand(ctx context.Context, language string, frameworks 
 			return types.MigrationCommand{}, result.Error
 		}
 
-		casted := (result.Data).(types.MigrationCommand)
+		casted := result.Data.(types.MigrationCommand)
 
 		return casted, nil
 	} else {
@@ -352,7 +347,6 @@ func DetermineMigrationCommand(ctx context.Context, language string, frameworks 
 }
 
 func ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) (types.Intent, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -394,7 +388,7 @@ func ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) 
 			return types.Intent{}, result.Error
 		}
 
-		casted := (result.Data).(types.Intent)
+		casted := result.Data.(types.Intent)
 
 		return casted, nil
 	} else {
@@ -418,7 +412,6 @@ func ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) 
 }
 
 func FetchPricing(ctx context.Context, service types.Service, content string, opts ...CallOptionFunc) (types.ServicePricing, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -460,7 +453,7 @@ func FetchPricing(ctx context.Context, service types.Service, content string, op
 			return types.ServicePricing{}, result.Error
 		}
 
-		casted := (result.Data).(types.ServicePricing)
+		casted := result.Data.(types.ServicePricing)
 
 		return casted, nil
 	} else {
@@ -484,7 +477,6 @@ func FetchPricing(ctx context.Context, service types.Service, content string, op
 }
 
 func SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Intent, spec types.ProjectSpec, os string, violations []string, opts ...CallOptionFunc) (types.Error, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -526,7 +518,7 @@ func SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Int
 			return types.Error{}, result.Error
 		}
 
-		casted := (result.Data).(types.Error)
+		casted := result.Data.(types.Error)
 
 		return casted, nil
 	} else {
@@ -550,7 +542,6 @@ func SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Int
 }
 
 func SummarizeIntent(ctx context.Context, intent types.Intent, name string, language string, detectedPlatforms []string, opts ...CallOptionFunc) (types.Summary, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -592,7 +583,7 @@ func SummarizeIntent(ctx context.Context, intent types.Intent, name string, lang
 			return types.Summary{}, result.Error
 		}
 
-		casted := (result.Data).(types.Summary)
+		casted := result.Data.(types.Summary)
 
 		return casted, nil
 	} else {
@@ -616,7 +607,6 @@ func SummarizeIntent(ctx context.Context, intent types.Intent, name string, lang
 }
 
 func SummarizeSteps(ctx context.Context, steps []string, opts ...CallOptionFunc) (types.Summary, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -658,7 +648,7 @@ func SummarizeSteps(ctx context.Context, steps []string, opts ...CallOptionFunc)
 			return types.Summary{}, result.Error
 		}
 
-		casted := (result.Data).(types.Summary)
+		casted := result.Data.(types.Summary)
 
 		return casted, nil
 	} else {

@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/deployment/netlify"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/netlify"
 )
 
 // NetlifyAuth handles authentication checking and login flow for Netlify

@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/v2/viewport"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
-	"github.com/meroxa/prod/cli/internal/agent"
+	"github.com/pushtoprodai/prod-cli/internal/agent"
 )
 
 type UIMode int
@@ -576,7 +576,6 @@ func (m Model) renderViewportContent() string {
 		// Group matches by line
 		matchesByLine := make(map[int][]SearchMatch)
 		for matchIdx, match := range m.searchMatches {
-			match.StartCol = match.StartCol // Keep match data
 			matchesByLine[match.LineIndex] = append(matchesByLine[match.LineIndex], m.searchMatches[matchIdx])
 		}
 

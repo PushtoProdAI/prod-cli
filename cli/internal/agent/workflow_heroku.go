@@ -7,9 +7,9 @@ import (
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/deployment/heroku"
-	prod_error "github.com/meroxa/prod/cli/internal/error"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/heroku"
+	prod_error "github.com/pushtoprodai/prod-cli/internal/error"
 )
 
 func (w *Workflows) deployHeroku(ctx workflow.Context, input DeployPlan) (deployResult, error) {

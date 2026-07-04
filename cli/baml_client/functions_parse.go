@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
-	"github.com/meroxa/prod/cli/baml_client/types"
+	"github.com/pushtoprodai/prod-cli/baml_client/types"
 )
 
 type parse struct{}
@@ -27,7 +27,6 @@ var Parse = &parse{}
 
 // / Parse version of CategorizeRoutes (Takes in string and returns types.CategorizedRoutes)
 func (*parse) CategorizeRoutes(text string, opts ...CallOptionFunc) (types.CategorizedRoutes, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -67,14 +66,13 @@ func (*parse) CategorizeRoutes(text string, opts ...CallOptionFunc) (types.Categ
 		return types.CategorizedRoutes{}, err
 	}
 
-	casted := (result).(types.CategorizedRoutes)
+	casted := result.(types.CategorizedRoutes)
 
 	return casted, nil
 }
 
 // / Parse version of DetermineBuildOutput (Takes in string and returns types.BuildOutput)
 func (*parse) DetermineBuildOutput(text string, opts ...CallOptionFunc) (types.BuildOutput, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -114,14 +112,13 @@ func (*parse) DetermineBuildOutput(text string, opts ...CallOptionFunc) (types.B
 		return types.BuildOutput{}, err
 	}
 
-	casted := (result).(types.BuildOutput)
+	casted := result.(types.BuildOutput)
 
 	return casted, nil
 }
 
 // / Parse version of DetermineEnvVarRoles (Takes in string and returns types.EnvVarCategory)
 func (*parse) DetermineEnvVarRoles(text string, opts ...CallOptionFunc) (types.EnvVarCategory, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -161,14 +158,13 @@ func (*parse) DetermineEnvVarRoles(text string, opts ...CallOptionFunc) (types.E
 		return types.EnvVarCategory{}, err
 	}
 
-	casted := (result).(types.EnvVarCategory)
+	casted := result.(types.EnvVarCategory)
 
 	return casted, nil
 }
 
 // / Parse version of DetermineLaunchCommand (Takes in string and returns types.LaunchCommand)
 func (*parse) DetermineLaunchCommand(text string, opts ...CallOptionFunc) (types.LaunchCommand, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -208,14 +204,13 @@ func (*parse) DetermineLaunchCommand(text string, opts ...CallOptionFunc) (types
 		return types.LaunchCommand{}, err
 	}
 
-	casted := (result).(types.LaunchCommand)
+	casted := result.(types.LaunchCommand)
 
 	return casted, nil
 }
 
 // / Parse version of DetermineMigrationCommand (Takes in string and returns types.MigrationCommand)
 func (*parse) DetermineMigrationCommand(text string, opts ...CallOptionFunc) (types.MigrationCommand, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -255,14 +250,13 @@ func (*parse) DetermineMigrationCommand(text string, opts ...CallOptionFunc) (ty
 		return types.MigrationCommand{}, err
 	}
 
-	casted := (result).(types.MigrationCommand)
+	casted := result.(types.MigrationCommand)
 
 	return casted, nil
 }
 
 // / Parse version of ExtractIntent (Takes in string and returns types.Intent)
 func (*parse) ExtractIntent(text string, opts ...CallOptionFunc) (types.Intent, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -302,14 +296,13 @@ func (*parse) ExtractIntent(text string, opts ...CallOptionFunc) (types.Intent, 
 		return types.Intent{}, err
 	}
 
-	casted := (result).(types.Intent)
+	casted := result.(types.Intent)
 
 	return casted, nil
 }
 
 // / Parse version of FetchPricing (Takes in string and returns types.ServicePricing)
 func (*parse) FetchPricing(text string, opts ...CallOptionFunc) (types.ServicePricing, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -349,14 +342,13 @@ func (*parse) FetchPricing(text string, opts ...CallOptionFunc) (types.ServicePr
 		return types.ServicePricing{}, err
 	}
 
-	casted := (result).(types.ServicePricing)
+	casted := result.(types.ServicePricing)
 
 	return casted, nil
 }
 
 // / Parse version of SummarizeDeployError (Takes in string and returns types.Error)
 func (*parse) SummarizeDeployError(text string, opts ...CallOptionFunc) (types.Error, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -396,14 +388,13 @@ func (*parse) SummarizeDeployError(text string, opts ...CallOptionFunc) (types.E
 		return types.Error{}, err
 	}
 
-	casted := (result).(types.Error)
+	casted := result.(types.Error)
 
 	return casted, nil
 }
 
 // / Parse version of SummarizeIntent (Takes in string and returns types.Summary)
 func (*parse) SummarizeIntent(text string, opts ...CallOptionFunc) (types.Summary, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -443,14 +434,13 @@ func (*parse) SummarizeIntent(text string, opts ...CallOptionFunc) (types.Summar
 		return types.Summary{}, err
 	}
 
-	casted := (result).(types.Summary)
+	casted := result.(types.Summary)
 
 	return casted, nil
 }
 
 // / Parse version of SummarizeSteps (Takes in string and returns types.Summary)
 func (*parse) SummarizeSteps(text string, opts ...CallOptionFunc) (types.Summary, error) {
-
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -490,7 +480,7 @@ func (*parse) SummarizeSteps(text string, opts ...CallOptionFunc) (types.Summary
 		return types.Summary{}, err
 	}
 
-	casted := (result).(types.Summary)
+	casted := result.(types.Summary)
 
 	return casted, nil
 }

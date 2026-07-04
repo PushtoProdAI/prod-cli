@@ -141,7 +141,6 @@ func FindMigrationFiles(root string) ([]string, error) {
 
 		return nil
 	})
-
 	if err != nil {
 		return migrationFiles, err
 	}

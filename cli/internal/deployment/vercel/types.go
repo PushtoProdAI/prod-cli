@@ -3,7 +3,7 @@ package vercel
 import (
 	"time"
 
-	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 // VercelClient defines the interface for interacting with Vercel

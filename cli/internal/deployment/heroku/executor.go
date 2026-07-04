@@ -6,7 +6,7 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/meroxa/prod/cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
 type StepExecutor = deployment.StepExecutor[*HerokuClient]

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/config"
+	"github.com/pushtoprodai/prod-cli/internal/config"
 )
 
 // Client is a Go client for the Supabase Edge Function token API
@@ -270,7 +270,8 @@ func FormatTokenSummary(summary *TokenSummary, writer io.Writer) {
 
 			timestamp, _ := time.Parse(time.RFC3339, createdAt)
 
-			fmt.Fprintf(writer, "  • %s - %s (%d tokens) - %s\n",
+			fmt.Fprintf(
+				writer, "  • %s - %s (%d tokens) - %s\n",
 				timestamp.Format("Jan 2 15:04"),
 				operation,
 				int(tokensConsumed),

@@ -32,7 +32,7 @@ func TestFilterConfiguredMigrationTools(t *testing.T) {
 				"alembic.ini",
 			},
 			setupFunc: func(rootPath string) {
-				os.WriteFile(filepath.Join(rootPath, "alembic.ini"), []byte("[alembic]"), 0644)
+				os.WriteFile(filepath.Join(rootPath, "alembic.ini"), []byte("[alembic]"), 0o644)
 			},
 			expected: []string{"alembic"},
 		},
@@ -43,7 +43,7 @@ func TestFilterConfiguredMigrationTools(t *testing.T) {
 				"alembic/versions",
 			},
 			setupFunc: func(rootPath string) {
-				os.MkdirAll(filepath.Join(rootPath, "alembic/versions"), 0755)
+				os.MkdirAll(filepath.Join(rootPath, "alembic/versions"), 0o755)
 			},
 			expected: []string{"alembic"},
 		},
@@ -52,7 +52,7 @@ func TestFilterConfiguredMigrationTools(t *testing.T) {
 			detectedTools:  []string{"django"},
 			migrationFiles: []string{},
 			setupFunc: func(rootPath string) {
-				os.WriteFile(filepath.Join(rootPath, "manage.py"), []byte("#!/usr/bin/env python"), 0755)
+				os.WriteFile(filepath.Join(rootPath, "manage.py"), []byte("#!/usr/bin/env python"), 0o755)
 			},
 			expected: []string{},
 		},
@@ -63,8 +63,8 @@ func TestFilterConfiguredMigrationTools(t *testing.T) {
 				"migrations",
 			},
 			setupFunc: func(rootPath string) {
-				os.WriteFile(filepath.Join(rootPath, "manage.py"), []byte("#!/usr/bin/env python"), 0755)
-				os.MkdirAll(filepath.Join(rootPath, "migrations"), 0755)
+				os.WriteFile(filepath.Join(rootPath, "manage.py"), []byte("#!/usr/bin/env python"), 0o755)
+				os.MkdirAll(filepath.Join(rootPath, "migrations"), 0o755)
 			},
 			expected: []string{"django"},
 		},
@@ -76,11 +76,11 @@ func TestFilterConfiguredMigrationTools(t *testing.T) {
 				"users/migrations",
 			},
 			setupFunc: func(rootPath string) {
-				os.WriteFile(filepath.Join(rootPath, "manage.py"), []byte("#!/usr/bin/env python"), 0755)
-				os.MkdirAll(filepath.Join(rootPath, "calendar/migrations"), 0755)
-				os.WriteFile(filepath.Join(rootPath, "calendar/migrations/__init__.py"), []byte(""), 0644)
-				os.MkdirAll(filepath.Join(rootPath, "users/migrations"), 0755)
-				os.WriteFile(filepath.Join(rootPath, "users/migrations/__init__.py"), []byte(""), 0644)
+				os.WriteFile(filepath.Join(rootPath, "manage.py"), []byte("#!/usr/bin/env python"), 0o755)
+				os.MkdirAll(filepath.Join(rootPath, "calendar/migrations"), 0o755)
+				os.WriteFile(filepath.Join(rootPath, "calendar/migrations/__init__.py"), []byte(""), 0o644)
+				os.MkdirAll(filepath.Join(rootPath, "users/migrations"), 0o755)
+				os.WriteFile(filepath.Join(rootPath, "users/migrations/__init__.py"), []byte(""), 0o644)
 			},
 			expected: []string{"django"},
 		},
@@ -98,8 +98,8 @@ func TestFilterConfiguredMigrationTools(t *testing.T) {
 				"prisma/schema.prisma",
 			},
 			setupFunc: func(rootPath string) {
-				os.MkdirAll(filepath.Join(rootPath, "prisma"), 0755)
-				os.WriteFile(filepath.Join(rootPath, "prisma/schema.prisma"), []byte("datasource db {}"), 0644)
+				os.MkdirAll(filepath.Join(rootPath, "prisma"), 0o755)
+				os.WriteFile(filepath.Join(rootPath, "prisma/schema.prisma"), []byte("datasource db {}"), 0o644)
 			},
 			expected: []string{"prisma"},
 		},
@@ -110,7 +110,7 @@ func TestFilterConfiguredMigrationTools(t *testing.T) {
 				"prisma/migrations",
 			},
 			setupFunc: func(rootPath string) {
-				os.MkdirAll(filepath.Join(rootPath, "prisma/migrations"), 0755)
+				os.MkdirAll(filepath.Join(rootPath, "prisma/migrations"), 0o755)
 			},
 			expected: []string{"prisma"},
 		},
@@ -128,7 +128,7 @@ func TestFilterConfiguredMigrationTools(t *testing.T) {
 				"migrations",
 			},
 			setupFunc: func(rootPath string) {
-				os.WriteFile(filepath.Join(rootPath, "ormconfig.json"), []byte("{}"), 0644)
+				os.WriteFile(filepath.Join(rootPath, "ormconfig.json"), []byte("{}"), 0o644)
 			},
 			expected: []string{"typeorm"},
 		},
@@ -139,7 +139,7 @@ func TestFilterConfiguredMigrationTools(t *testing.T) {
 				"migrations",
 			},
 			setupFunc: func(rootPath string) {
-				os.MkdirAll(filepath.Join(rootPath, "migrations"), 0755)
+				os.MkdirAll(filepath.Join(rootPath, "migrations"), 0o755)
 			},
 			expected: []string{},
 		},
@@ -157,7 +157,7 @@ func TestFilterConfiguredMigrationTools(t *testing.T) {
 				"drizzle.config.ts",
 			},
 			setupFunc: func(rootPath string) {
-				os.WriteFile(filepath.Join(rootPath, "drizzle.config.ts"), []byte("export default {}"), 0644)
+				os.WriteFile(filepath.Join(rootPath, "drizzle.config.ts"), []byte("export default {}"), 0o644)
 			},
 			expected: []string{"drizzle-orm"},
 		},
@@ -168,8 +168,8 @@ func TestFilterConfiguredMigrationTools(t *testing.T) {
 				"migrations",
 			},
 			setupFunc: func(rootPath string) {
-				os.MkdirAll(filepath.Join(rootPath, "migrations"), 0755)
-				os.WriteFile(filepath.Join(rootPath, "drizzle.config.ts"), []byte("export default {}"), 0644)
+				os.MkdirAll(filepath.Join(rootPath, "migrations"), 0o755)
+				os.WriteFile(filepath.Join(rootPath, "drizzle.config.ts"), []byte("export default {}"), 0o644)
 			},
 			expected: []string{"drizzle-kit"},
 		},
@@ -281,14 +281,14 @@ func TestFindMigrationFiles_CustomMigrations(t *testing.T) {
 			for _, file := range tt.setupFiles {
 				fullPath := filepath.Join(tmpDir, file)
 				dir := filepath.Dir(fullPath)
-				os.MkdirAll(dir, 0755)
+				os.MkdirAll(dir, 0o755)
 
 				if filepath.Ext(file) == "" {
 					// It's a directory
-					os.MkdirAll(fullPath, 0755)
+					os.MkdirAll(fullPath, 0o755)
 				} else {
 					// It's a file
-					os.WriteFile(fullPath, []byte("test content"), 0644)
+					os.WriteFile(fullPath, []byte("test content"), 0o644)
 				}
 			}
 

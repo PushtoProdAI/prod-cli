@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/meroxa/prod/cli/internal/analyzer"
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
 )
 
 func TestGetDomainPatterns(t *testing.T) {
@@ -290,7 +290,7 @@ ALLOWED_HOSTS = [
 			// Create temp file
 			tmpDir := t.TempDir()
 			tmpFile := filepath.Join(tmpDir, "settings.py")
-			if err := os.WriteFile(tmpFile, []byte(tt.input), 0644); err != nil {
+			if err := os.WriteFile(tmpFile, []byte(tt.input), 0o644); err != nil {
 				t.Fatalf("Failed to create temp file: %v", err)
 			}
 
@@ -406,10 +406,10 @@ if __name__ == '__main__':
 			// Create all setup files
 			for path, content := range tt.setupFiles {
 				fullPath := filepath.Join(tmpDir, path)
-				if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+				if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 					t.Fatalf("Failed to create directory: %v", err)
 				}
-				if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+				if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
 					t.Fatalf("Failed to create file %s: %v", path, err)
 				}
 			}
@@ -568,7 +568,7 @@ ALLOWED_HOSTS = ['localhost']`,
 			// Create temp project directory with settings
 			tmpDir := t.TempDir()
 			settingsPath := filepath.Join(tmpDir, "settings.py")
-			if err := os.WriteFile(settingsPath, []byte(tt.settingsFile), 0644); err != nil {
+			if err := os.WriteFile(settingsPath, []byte(tt.settingsFile), 0o644); err != nil {
 				t.Fatalf("Failed to create settings file: %v", err)
 			}
 
@@ -727,10 +727,10 @@ func TestDetectDjangoServer(t *testing.T) {
 			// Create all setup files
 			for path, content := range tt.setupFiles {
 				fullPath := filepath.Join(tmpDir, path)
-				if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+				if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 					t.Fatalf("Failed to create directory: %v", err)
 				}
-				if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+				if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
 					t.Fatalf("Failed to create file %s: %v", path, err)
 				}
 			}
@@ -952,7 +952,7 @@ channels==4.0.0
 			reqsPath := filepath.Join(tmpDir, "requirements.txt")
 
 			// Create requirements.txt
-			if err := os.WriteFile(reqsPath, []byte(tt.existingReqs), 0644); err != nil {
+			if err := os.WriteFile(reqsPath, []byte(tt.existingReqs), 0o644); err != nil {
 				t.Fatalf("Failed to create requirements.txt: %v", err)
 			}
 
@@ -1025,7 +1025,7 @@ channels~=4.0.0`,
 			tmpDir := t.TempDir()
 			reqsPath := filepath.Join(tmpDir, "requirements.txt")
 
-			if err := os.WriteFile(reqsPath, []byte(tt.requirementsFile), 0644); err != nil {
+			if err := os.WriteFile(reqsPath, []byte(tt.requirementsFile), 0o644); err != nil {
 				t.Fatalf("Failed to create requirements.txt: %v", err)
 			}
 

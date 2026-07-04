@@ -32,7 +32,7 @@ func TestEnsureInGitignore(t *testing.T) {
 		gitignorePath := filepath.Join(tmpDir, ".gitignore")
 
 		existingContent := "node_modules/\n*.log\n"
-		err := os.WriteFile(gitignorePath, []byte(existingContent), 0644)
+		err := os.WriteFile(gitignorePath, []byte(existingContent), 0o644)
 		if err != nil {
 			t.Fatalf("failed to create test .gitignore: %v", err)
 		}
@@ -58,7 +58,7 @@ func TestEnsureInGitignore(t *testing.T) {
 		gitignorePath := filepath.Join(tmpDir, ".gitignore")
 
 		existingContent := "node_modules/\n.prod\n*.log\n"
-		err := os.WriteFile(gitignorePath, []byte(existingContent), 0644)
+		err := os.WriteFile(gitignorePath, []byte(existingContent), 0o644)
 		if err != nil {
 			t.Fatalf("failed to create test .gitignore: %v", err)
 		}

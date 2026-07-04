@@ -215,21 +215,23 @@ func (d DeploymentHistoryDisplayMessage) String() string {
 	return "Deployment History Display"
 }
 
-var _ tea.Msg = UIMessage{}
-var _ tea.Msg = ConfirmationPrompt{}
-var _ tea.Msg = SpinnerStartMsg{}
-var _ tea.Msg = SpinnerStopMsg{}
-var _ tea.Msg = AuthSelectionPrompt{}
-var _ tea.Msg = APIKeyPrompt{}
-var _ tea.Msg = SelectPrompt{}
-var _ tea.Msg = TextPrompt{}
-var _ tea.Msg = PlanDisplayMessage{}
-var _ tea.Msg = ClipboardCopyMsg{}
-var _ tea.Msg = ErrorDisplayMessage{}
-var _ tea.Msg = WarningDisplayMessage{}
-var _ tea.Msg = SuccessDisplayMessage{}
-var _ tea.Msg = InfoBoxMessage{}
-var _ tea.Msg = ClearScreenMsg{}
-var _ tea.Msg = QuitMsg{}
-var _ tea.Msg = SearchMsg{}
-var _ tea.Msg = DeploymentHistoryDisplayMessage{}
+var (
+	_ tea.Msg = UIMessage{}
+	_ tea.Msg = ConfirmationPrompt{}
+	_ tea.Msg = SpinnerStartMsg{}
+	_ tea.Msg = SpinnerStopMsg{}
+	_ tea.Msg = AuthSelectionPrompt{}
+	_ tea.Msg = APIKeyPrompt{}
+	_ tea.Msg = SelectPrompt{}
+	_ tea.Msg = TextPrompt{}
+	_ tea.Msg = PlanDisplayMessage{}
+	_ tea.Msg = ClipboardCopyMsg{}
+	_ tea.Msg = ErrorDisplayMessage{}
+	_ tea.Msg = WarningDisplayMessage{}
+	_ tea.Msg = SuccessDisplayMessage{}
+	_ tea.Msg = InfoBoxMessage{}
+	_ tea.Msg = ClearScreenMsg{}
+	_ tea.Msg = QuitMsg{}
+	_ tea.Msg = SearchMsg{}
+	_ tea.Msg = DeploymentHistoryDisplayMessage{}
+)

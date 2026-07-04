@@ -3,7 +3,7 @@ package llm
 import (
 	"context"
 
-	"github.com/meroxa/prod/cli/internal/workflowext"
+	"github.com/pushtoprodai/prod-cli/internal/workflowext"
 )
 
 // AgentSessionExtractor creates a session extractor that works with the agent's session propagator.

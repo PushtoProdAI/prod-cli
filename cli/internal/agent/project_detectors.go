@@ -7,13 +7,13 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/meroxa/prod/cli/internal/backend"
-	"github.com/meroxa/prod/cli/internal/deployment/flyio"
-	"github.com/meroxa/prod/cli/internal/deployment/heroku"
-	"github.com/meroxa/prod/cli/internal/deployment/netlify"
-	"github.com/meroxa/prod/cli/internal/deployment/render"
-	"github.com/meroxa/prod/cli/internal/deployment/vercel"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/backend"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/flyio"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/heroku"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/netlify"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/vercel"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 // ExistingProjectInfo contains information about an existing deployment
@@ -401,7 +401,8 @@ func (d *AWSProjectDetector) DetectExistingProject(ctx context.Context, projectN
 		slog.Info("Detected existing ElastiCache cluster", "instances", response.Resources.ElastiCacheInstances)
 	}
 
-	slog.Info("Detected existing AWS stack",
+	slog.Info(
+		"Detected existing AWS stack",
 		"stackName", stackName,
 		"stackId", response.StackID,
 		"status", response.Status,

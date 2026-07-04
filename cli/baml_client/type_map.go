@@ -16,8 +16,8 @@ package baml_client
 import (
 	"reflect"
 
-	"github.com/meroxa/prod/cli/baml_client/stream_types"
-	"github.com/meroxa/prod/cli/baml_client/types"
+	"github.com/pushtoprodai/prod-cli/baml_client/stream_types"
+	"github.com/pushtoprodai/prod-cli/baml_client/types"
 )
 
 var typeMap = map[string]reflect.Type{

@@ -249,19 +249,47 @@ func (w *ConsoleWriter) SendDeploymentStart(platform, projectPath string) {
 	// No-op
 }
 
-// SendDeploymentComplete is a no-op for console writer
+// SendDeploymentComplete prints the final deployment result.
 func (w *ConsoleWriter) SendDeploymentComplete(platform, status, url, errorMsg string, durationMs int64) {
-	// No-op
+	switch status {
+	case "success":
+		if url != "" {
+			fmt.Printf("✅ Deployed to %s — %s\n", platform, url)
+		} else {
+			fmt.Printf("✅ Deployed to %s\n", platform)
+		}
+	case "failed":
+		if errorMsg != "" {
+			fmt.Printf("❌ Deployment to %s failed: %s\n", platform, errorMsg)
+		} else {
+			fmt.Printf("❌ Deployment to %s failed\n", platform)
+		}
+	default:
+		fmt.Printf("[%s] deployment to %s\n", strings.ToUpper(status), platform)
+	}
 }
 
-// SendPlanApprovalRequest is a no-op for console writer
+// SendPlanApprovalRequest prints a concise summary of the deployment plan.
 func (w *ConsoleWriter) SendPlanApprovalRequest(plan map[string]interface{}) {
-	// No-op
+	action, _ := plan["action"].(string)
+	platform, _ := plan["platform"].(string)
+	summary, _ := plan["summary"].(string)
+	fmt.Printf("\nPlan: %s to %s\n", action, platform)
+	if summary != "" {
+		fmt.Printf("%s\n", summary)
+	}
 }
 
-// SendEnvVarPrompt is a no-op for console writer
+// SendEnvVarPrompt prints an environment-variable prompt.
 func (w *ConsoleWriter) SendEnvVarPrompt(varName, defaultValue, message string) {
-	// No-op
+	if message != "" {
+		fmt.Printf("%s\n", message)
+	}
+	if defaultValue != "" {
+		fmt.Printf("%s [%s]: ", varName, defaultValue)
+	} else {
+		fmt.Printf("%s: ", varName)
+	}
 }
 
 // StartSpinner outputs spinner message to stdout (no actual spinner)

@@ -8,9 +8,9 @@ import (
 
 	"github.com/go-errors/errors"
 
-	"github.com/meroxa/prod/cli/internal/backend"
-	"github.com/meroxa/prod/cli/internal/deployment"
-	"github.com/meroxa/prod/cli/internal/output"
+	"github.com/pushtoprodai/prod-cli/internal/backend"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 // AWSDeployment represents a deployment to AWS using App Runner, RDS, and ElastiCache
