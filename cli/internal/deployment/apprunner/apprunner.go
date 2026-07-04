@@ -8,6 +8,7 @@ package apprunner
 import (
 	"context"
 	stderrors "errors"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	arsdk "github.com/aws/aws-sdk-go-v2/service/apprunner"
@@ -36,17 +37,23 @@ type appRunnerAPI interface {
 	ListServices(context.Context, *arsdk.ListServicesInput, ...func(*arsdk.Options)) (*arsdk.ListServicesOutput, error)
 	CreateService(context.Context, *arsdk.CreateServiceInput, ...func(*arsdk.Options)) (*arsdk.CreateServiceOutput, error)
 	UpdateService(context.Context, *arsdk.UpdateServiceInput, ...func(*arsdk.Options)) (*arsdk.UpdateServiceOutput, error)
+	DescribeService(context.Context, *arsdk.DescribeServiceInput, ...func(*arsdk.Options)) (*arsdk.DescribeServiceOutput, error)
 }
 
 // Deployer creates and updates App Runner services.
 type Deployer struct {
-	ar  appRunnerAPI
-	iam iamAPI
+	ar           appRunnerAPI
+	iam          iamAPI
+	pollInterval time.Duration // between DescribeService polls in WaitForRunning
 }
 
 // New builds a Deployer from the user's AWS config.
 func New(cfg aws.Config) *Deployer {
-	return &Deployer{ar: arsdk.NewFromConfig(cfg), iam: iamsdk.NewFromConfig(cfg)}
+	return &Deployer{
+		ar:           arsdk.NewFromConfig(cfg),
+		iam:          iamsdk.NewFromConfig(cfg),
+		pollInterval: 15 * time.Second,
+	}
 }
 
 // ServiceConfig describes an App Runner web service.
@@ -128,6 +135,43 @@ func (d *Deployer) Deploy(ctx context.Context, cfg ServiceConfig) (string, error
 		return "", errors.Errorf("App Runner returned no service")
 	}
 	return aws.ToString(out.Service.ServiceArn), nil
+}
+
+// WaitForRunning polls the service until it reaches RUNNING (returning its
+// public URL) or a terminal state, or until ctx is done. The caller sets a
+// deadline on ctx to bound the wait.
+func (d *Deployer) WaitForRunning(ctx context.Context, serviceArn string) (string, error) {
+	interval := d.pollInterval
+	if interval <= 0 {
+		interval = 15 * time.Second // guard: a zero-value Deployer must not busy-spin
+	}
+	for {
+		out, err := d.ar.DescribeService(ctx, &arsdk.DescribeServiceInput{ServiceArn: aws.String(serviceArn)})
+		if err != nil {
+			return "", errors.Errorf("failed to describe App Runner service: %w", err)
+		}
+		if out.Service == nil {
+			return "", errors.Errorf("App Runner returned no service")
+		}
+		switch out.Service.Status {
+		case artypes.ServiceStatusRunning:
+			url := aws.ToString(out.Service.ServiceUrl)
+			if url == "" {
+				return "", errors.Errorf("App Runner service is RUNNING but reported no URL")
+			}
+			return url, nil
+		case artypes.ServiceStatusCreateFailed, artypes.ServiceStatusDeleteFailed,
+			artypes.ServiceStatusDeleted, artypes.ServiceStatusPaused:
+			return "", errors.Errorf("App Runner service is in state %s — deploy failed", out.Service.Status)
+		}
+		// OPERATION_IN_PROGRESS (or any not-yet-terminal status): wait and re-poll,
+		// unless the caller's ctx deadline/cancel gives up first.
+		select {
+		case <-ctx.Done():
+			return "", errors.Errorf("stopped waiting for App Runner service to become RUNNING: %w", ctx.Err())
+		case <-time.After(interval):
+		}
+	}
 }
 
 // findService returns the ARN of a service with the given name, or "" if none.
