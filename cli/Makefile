@@ -27,6 +27,12 @@ else ifneq (,$(wildcard .env))
     export
 endif
 
+# Release builds stamp ONLY the version — no secrets. Unlike LDFLAGS below (which
+# injects Supabase/Sentry values from .env into local dev builds), release
+# artifacts must never embed secrets. Used by dist-linux; goreleaser stamps the
+# same for darwin.
+RELEASE_LDFLAGS := -s -w -X 'github.com/pushtoprodai/prod-cli/internal/config.Version=$(VERSION)'
+
 # Build flags for setting variables at build time
 LDFLAGS := -X 'github.com/pushtoprodai/prod-cli/internal/config.SupabaseURL=$(SUPABASE_URL)' \
            -X 'github.com/pushtoprodai/prod-cli/internal/config.SupabaseAnonKey=$(SUPABASE_ANON_KEY)' \
@@ -61,6 +67,33 @@ build-linux-all: build-cli-linux build-cli-linux-arm64
 
 .PHONY: build-darwin-all
 build-darwin-all: build-cli-darwin build-cli-darwin-arm64
+
+# dist-linux builds release linux binaries (no secrets) via Docker and packages
+# them into cli/dist/ as tar.gz archives + a checksums file, matching the
+# name shape install.sh expects. GoReleaser OSS can't cross-compile CGO from a
+# mac or ingest prebuilt binaries (that's Pro), so linux ships via these archives
+# attached to the release manually — see docs/DISTRIBUTION.md.
+#
+# Pass VERSION=v0.1.0 (the release tag) so the stamped version matches darwin;
+# otherwise VERSION falls back to the short commit hash.
+.PHONY: dist-linux
+dist-linux:
+	@command -v docker >/dev/null 2>&1 || { echo "Docker is required for linux release builds"; exit 1; }
+	@rm -rf dist-prebuilt && mkdir -p dist-prebuilt/linux_amd64 dist-prebuilt/linux_arm64 dist
+	@echo "Building linux/amd64 (release, no secrets)..."
+	docker build --target linux-amd64 --build-arg LDFLAGS="$(RELEASE_LDFLAGS)" -f Dockerfile.build -t prod-linux-amd64-dist .
+	docker run --rm -v "$(CURDIR)/dist-prebuilt/linux_amd64:/out" prod-linux-amd64-dist sh -c "cp /build/prod-linux-amd64 /out/prod"
+	@echo "Building linux/arm64 (release, no secrets)..."
+	docker build --target linux-arm64 --build-arg LDFLAGS="$(RELEASE_LDFLAGS)" -f Dockerfile.build -t prod-linux-arm64-dist .
+	docker run --rm -v "$(CURDIR)/dist-prebuilt/linux_arm64:/out" prod-linux-arm64-dist sh -c "cp /build/prod-linux-arm64 /out/prod"
+	@echo "Packaging linux archives → cli/dist/ ..."
+	@for arch in amd64 arm64; do \
+		cp ../README.md ../LICENSE ../NOTICE dist-prebuilt/linux_$$arch/; \
+		tar -czf dist/$(BINARY_NAME)_$(VERSION)_linux_$$arch.tar.gz -C dist-prebuilt/linux_$$arch prod README.md LICENSE NOTICE; \
+	done
+	@cd dist && shasum -a 256 $(BINARY_NAME)_$(VERSION)_linux_*.tar.gz > $(BINARY_NAME)_$(VERSION)_linux_checksums.txt
+	@echo "→ cli/dist/ (attach these to the GitHub release; see the runbook):"
+	@ls dist/$(BINARY_NAME)_$(VERSION)_linux_*
 
 .PHONY: build-cli-linux
 build-cli-linux:
