@@ -9,7 +9,7 @@ has the plan and the open-core boundary.
 
 - **Module path:** `github.com/pushtoprodai/prod-cli`
 - **License:** MIT (by contributing, you agree your work is licensed under it)
-- **Go:** 1.24+, with **CGO enabled** (see the caveat below)
+- **Go:** 1.25+, with **CGO enabled** (see the caveat below)
 
 ---
 

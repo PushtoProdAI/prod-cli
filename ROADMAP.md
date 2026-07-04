@@ -146,8 +146,9 @@ the load-bearing work.
       all sources, `go.mod`, `baml_src/generators.baml`, `cli/Makefile`, and `.goreleaser.yml`
       (ldflags + `owner`). Build + tests green under the new path.
 - [x] `config.go` — hard-coded Supabase ref removed; backend resolved from `PROD_BACKEND_URL` /
-      `SUPABASE_URL` env or ldflags. **Remaining:** `scripts/install.sh` still points at the old
-      Supabase storage bucket and needs reworking for the GoReleaser/brew distribution.
+      `SUPABASE_URL` env or ldflags.
+- [x] `scripts/install.sh` reworked to pull release archives from GitHub Releases (checksum
+      verified); GoReleaser + Homebrew tap set up (see `docs/DISTRIBUTION.md`).
 
 **De-risk the toolchain (spikes with their own proof)**
 - [ ] **CGO cross-compile** — BAML is a native dep; the existing `.goreleaser.yml` is darwin-only
