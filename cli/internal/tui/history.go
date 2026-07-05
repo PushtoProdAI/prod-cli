@@ -4,8 +4,20 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
+
+// defaultHistoryFile returns the prompt-history path under the user's private
+// ~/.prod directory. It replaces the old world-readable /tmp/.prodcli_app_history,
+// which leaked prompt history to other local users and invited symlink attacks.
+func defaultHistoryFile() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "" // no persistent history rather than a shared /tmp file
+	}
+	return filepath.Join(home, ".prod", "history")
+}
 
 func (m *Model) loadHistory() {
 	file, err := os.Open(m.historyFile)
@@ -32,7 +44,14 @@ func (m *Model) loadHistory() {
 }
 
 func (m *Model) saveHistory() {
-	file, err := os.Create(m.historyFile)
+	if m.historyFile == "" {
+		return
+	}
+	// Keep history private (0600) under ~/.prod (dir 0700), per CLAUDE.md §7.
+	if dir := filepath.Dir(m.historyFile); dir != "" {
+		_ = os.MkdirAll(dir, 0o700)
+	}
+	file, err := os.OpenFile(m.historyFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		// Log error but don't crash
 		fmt.Fprintf(os.Stderr, "Warning: Failed to save history: %v\n", err)

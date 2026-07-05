@@ -3,7 +3,6 @@ package root
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
@@ -78,15 +77,6 @@ func (c *RootCommand) Output(output ecdysis.Output) {
 }
 
 func (c *RootCommand) Execute(ctx context.Context) error {
-	const banner = `
-______              _ 
-| ___ \            | |
-| |_/ / __ ___   __| |
-|  __/ '__/ _ \ / _` + "`" + ` |
-| |  | | | (_) | (_| |
-\_|  |_|  \___/ \__,_|
-`
-
 	if c.flags.Version {
 		c.output.Stdout(fmt.Sprintf("%s\n", config.Version))
 		return nil
@@ -176,33 +166,4 @@ func (c *RootCommand) Write(p []byte) (n int, err error) {
 		return len(p), nil
 	}
 	return 0, errors.New("output not set")
-}
-
-func greetUser() string {
-	prompts := []string{
-		"What would you like to deploy today?",
-		"Ready to launch something new?",
-		"What’s next on your cloud adventure?",
-		"Need a hand with your app or infra today?",
-		"What’s cooking—deployments, logs, or maybe scaling?",
-		"What can I help you ship today?",
-		"How can I make your cloud life easier?",
-		"Working on something exciting? Let's get it live.",
-		"Want to check on a service, deploy something, or try something new?",
-		"Let’s turn code into something live—what’s the plan?",
-		"Your cloud assistant is ready. What’s on the agenda?",
-		"Deploy. Debug. Discover. What’s your move?",
-		"One terminal. Infinite possibility. What shall we do?",
-		"Just me and you—what should we take care of today?",
-		"Looking to deploy, inspect, or tweak something?",
-		"Need insights, deployments, or just a friend in the cloud?",
-		"What mission are we embarking on today?",
-		"Want to push some code or peek under the hood?",
-		"Cloud control is yours. What’s first?",
-		"I’m all ears (and APIs). What’s the task?",
-	}
-
-	prompt := prompts[rand.Intn(len(prompts))]
-
-	return prompt
 }
