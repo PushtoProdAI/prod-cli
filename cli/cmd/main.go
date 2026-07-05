@@ -23,6 +23,7 @@ import (
 	prod_log "github.com/pushtoprodai/prod-cli/internal/log"
 	"github.com/pushtoprodai/prod-cli/internal/output"
 	"github.com/pushtoprodai/prod-cli/internal/workflowext"
+	"github.com/spf13/cobra"
 )
 
 func main() {
@@ -114,6 +115,10 @@ func main() {
 	rootCmd.Run.StatusWriter = statusWriter
 
 	cmd := e.MustBuildCobraCommand(rootCmd)
+	// Accept a bare prompt as a positional arg (`prod "deploy this to fly"`).
+	// ecdysis wires RootCommand.Args into PreRunE, not cobra's Args, which would
+	// otherwise reject a non-subcommand positional with "unknown command".
+	cmd.Args = cobra.ArbitraryArgs
 	if err := cmd.Execute(); err != nil {
 		log.Fatal(err)
 	}
