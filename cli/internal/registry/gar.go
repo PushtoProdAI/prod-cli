@@ -35,7 +35,10 @@ type garRegistry struct {
 var _ Registry = (*garRegistry)(nil)
 
 // NewGAR builds a GAR registry from the user's ADC token source, GCP project,
-// region, and Artifact Registry repository name.
+// region, and Artifact Registry repository name. The token source must carry the
+// cloud-platform scope (https://www.googleapis.com/auth/cloud-platform) — needed
+// for both the Artifact Registry admin API and the docker push. `gcloud auth
+// application-default login` grants it by default.
 func NewGAR(ctx context.Context, ts oauth2.TokenSource, project, region, repo string) (Registry, error) {
 	if project == "" || region == "" || repo == "" {
 		return nil, errors.Errorf("GAR requires a GCP project, region, and repository name")
@@ -120,11 +123,18 @@ func (a *arService) ensureDockerRepo(ctx context.Context, project, region, repo 
 		if time.Now().After(deadline) {
 			return errors.Errorf("timed out waiting for Artifact Registry repository %q to be created", repo)
 		}
-		time.Sleep(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
 		op, err = a.svc.Projects.Locations.Operations.Get(op.Name).Context(ctx).Do()
 		if err != nil {
 			return errors.Errorf("failed to poll Artifact Registry repository creation: %w", err)
 		}
+	}
+	if op != nil && op.Error != nil {
+		return errors.Errorf("Artifact Registry repository %q creation failed: %s", repo, op.Error.Message)
 	}
 	return nil
 }
