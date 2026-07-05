@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/conduitio/ecdysis"
@@ -31,6 +32,7 @@ const exitPrompt = "exit"
 type RootFlags struct {
 	Version bool `long:"version" short:"v" usage:"show the current Prod version"`
 	DryRun  bool `long:"dry-run" usage:"show the plan and estimated cost without deploying"`
+	Yes     bool `long:"yes" short:"y" usage:"skip the approval prompt and deploy (for automation)"`
 }
 
 type RootArgs struct {
@@ -141,7 +143,10 @@ ______              _
 func (c *RootCommand) processPrompt(prompt string) {
 	ctx := context.Background()
 	c.Agent.SetDryRun(c.flags.DryRun)
-	c.Agent.Process(ctx, prompt, c)
+	// Drive the multi-step flow to completion: read approval/env-var answers from
+	// the terminal, or auto-approve with --yes. A single Process call would
+	// dead-end at the confirmation prompt.
+	c.Agent.DriveOneShot(ctx, prompt, c, os.Stdin, c.flags.Yes)
 }
 
 func (c *RootCommand) Usage() string { return "prod" }
@@ -153,7 +158,15 @@ func (c *RootCommand) Flags() []ecdysis.Flag {
 func (c *RootCommand) Docs() ecdysis.Docs {
 	return ecdysis.Docs{
 		Short: "Prod",
-		Long:  `Prod starts an interactive session by default.`,
+		Long: `Deploy from a sentence. Describe intent in English; prod plans it, shows
+you the plan and estimated cost, and — once you approve — deploys to your cloud
+with your own credentials.
+
+  prod                          start an interactive session
+  prod "deploy this to fly"     deploy from a one-line request
+  prod --dry-run "deploy ..."   show the plan + cost, deploy nothing
+  prod --yes "deploy ..."       skip the approval prompt (automation)
+  prod "rollback"               roll back the last deploy`,
 	}
 }
 
