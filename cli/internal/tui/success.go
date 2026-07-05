@@ -83,5 +83,16 @@ func (m Model) formatSuccessDisplay(msg SuccessDisplayMessage) string {
 	result.WriteString(celebrationMsg)
 	result.WriteString("\n")
 
+	// Make rollback discoverable here too, not just in console. (App Runner
+	// rollback isn't supported yet, so skip it for AWS.)
+	if !strings.EqualFold(msg.Platform, "aws") {
+		hint := lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Margin(0, 1, 0, 1).
+			Render(`Undo? Run:  prod "rollback"`)
+		result.WriteString(hint)
+		result.WriteString("\n")
+	}
+
 	return result.String()
 }
