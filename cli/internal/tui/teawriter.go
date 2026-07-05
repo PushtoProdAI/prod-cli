@@ -109,6 +109,11 @@ func (w *TeaWriter) SendEnvVarPrompt(varName, defaultValue, message string) {
 	// No-op for TUI
 }
 
+// SendDoctorResult is a no-op for TeaWriter (doctor runs in console/JSON mode)
+func (w *TeaWriter) SendDoctorResult(check, status, detail, fix string) {
+	// No-op for TUI
+}
+
 // handleSpinnerLogic processes automatic spinner start/stop based on message content
 func (w *TeaWriter) handleSpinnerLogic(message string) {
 	// Check if this message should start a spinner

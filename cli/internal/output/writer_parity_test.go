@@ -27,6 +27,8 @@ func exerciseAllEvents(w StatusWriter) {
 		"pricing": map[string]interface{}{"total": 12.5},
 	})
 	w.SendEnvVarPrompt("DATABASE_URL", "", "Enter your database URL")
+	w.SendDoctorResult("LLM", "ok", "OpenAI (gpt-4o) — using OPENAI_API_KEY", "")
+	w.SendDoctorResult("Docker", "fail", "not running", "Fix: https://docs.docker.com/get-docker/")
 	if ib, ok := w.(InfoBoxWriter); ok {
 		ib.SendInfoBox("Title", "content", "info")
 	}
@@ -103,6 +105,7 @@ func TestJSONWriterEmitsWellFormedEvents(t *testing.T) {
 	for _, want := range []string{
 		"log", "status", "status_complete", "deployment_start",
 		"deployment_complete", "plan_approval_request", "env_var_prompt",
+		"doctor_result",
 	} {
 		if !seen[want] {
 			t.Errorf("JSON writer never emitted event type %q; saw %s", want, fmt.Sprint(seen))
