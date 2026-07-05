@@ -333,6 +333,78 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 		})
 	}
 
+	// "deploy this" with no platform named is the most natural command a newcomer
+	// types. Prompt for one (interactive) or give a clear, actionable error instead
+	// of dead-ending in shouldProceed.
+	if plan.Action == Deploy && plan.Platform == UnknownPlatform {
+		return a.selectDeployPlatform(ctx, plan, input, out)
+	}
+
+	return a.proceedWithPlan(ctx, plan, input, out)
+}
+
+// deployPlatforms are the platforms prod can deploy to, in menu order.
+var deployPlatforms = []Platform{FlyIO, Render, Vercel, Netlify, Heroku, AWS}
+
+func deployPlatformNames() []string {
+	names := make([]string, len(deployPlatforms))
+	for i, p := range deployPlatforms {
+		names[i] = p.String()
+	}
+	return names
+}
+
+// parseDeployPlatform accepts a menu index (the TUI select convention) or a
+// platform name (so a user can just type "fly").
+func parseDeployPlatform(input string) Platform {
+	s := strings.ToLower(strings.TrimSpace(input))
+	var idx int
+	if _, err := fmt.Sscanf(s, "%d", &idx); err == nil && idx >= 0 && idx < len(deployPlatforms) {
+		return deployPlatforms[idx]
+	}
+	switch s {
+	case "fly", "fly.io", "flyio":
+		return FlyIO
+	case "render":
+		return Render
+	case "vercel":
+		return Vercel
+	case "netlify":
+		return Netlify
+	case "heroku":
+		return Heroku
+	case "aws":
+		return AWS
+	}
+	return UnknownPlatform
+}
+
+func (a *Agent) selectDeployPlatform(_ context.Context, plan DeployPlan, _ string, out io.Writer) (stateFn, error) {
+	if !a.interactive || a.isJSONMode() {
+		fmt.Fprint(out, "I couldn't tell which platform to deploy to. Add one to your prompt, e.g.:\n"+
+			"  prod \"deploy this to fly\"\n"+
+			"Supported: Fly.io, Render, Vercel, Netlify, Heroku, AWS.\n")
+		return a.checkPrerequisites, nil
+	}
+	a.DeployPlan = &plan // stash; the selection fills in the platform
+	a.sendSelect(out, "Which platform should I deploy to?", deployPlatformNames())
+	return a.waitForDeployPlatformSelection, nil
+}
+
+func (a *Agent) waitForDeployPlatformSelection(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	p := parseDeployPlatform(input)
+	if p == UnknownPlatform {
+		a.sendSelect(out, "Please pick a platform:", deployPlatformNames())
+		return a.waitForDeployPlatformSelection, nil
+	}
+	a.DeployPlan.Platform = p
+	fmt.Fprintf(out, "Deploying to %s.\n", p.String())
+	return a.proceedWithPlan(ctx, *a.DeployPlan, input, out)
+}
+
+// proceedWithPlan runs the shared post-plan gate + approval dispatch, used both
+// for a fully-specified plan and after a platform is chosen interactively.
+func (a *Agent) proceedWithPlan(ctx context.Context, plan DeployPlan, input string, out io.Writer) (stateFn, error) {
 	if !shouldProceed(plan) {
 		fmt.Fprintf(out, "Cannot proceed with deployment plan\n")
 		return a.checkPrerequisites, nil
