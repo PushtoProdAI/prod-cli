@@ -536,11 +536,34 @@ func (a *Agent) proceedWithPlan(ctx context.Context, plan DeployPlan, input stri
 	return a.confirm, nil
 }
 
+// confirmMessage frames approval as one decision block — the action, the target,
+// and (for a deploy) the estimated cost — so y/N isn't asked in the abstract right
+// after a plan the user has to scroll back to.
+func (a *Agent) confirmMessage() string {
+	p := a.DeployPlan
+	if p == nil {
+		return "Do you want to proceed?"
+	}
+	verb := "Deploy"
+	if p.Action == Rollback {
+		verb = "Roll back"
+	}
+	name := p.Spec.Name
+	if name == "" {
+		name = "this project"
+	}
+	msg := fmt.Sprintf("%s %s to %s", verb, name, p.Platform.String())
+	if p.Action == Deploy && p.Pricing.Total > 0 {
+		msg += fmt.Sprintf(" (~$%.2f/mo)", p.Pricing.Total)
+	}
+	return msg + "?"
+}
+
 func (a *Agent) confirmWithPrompt(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	// Check if this is the initial call or a response to confirmation
 	if input == "" {
 		// Initial call - send confirmation prompt
-		a.sendConfirmation(out, "Do you want to proceed with the deployment?")
+		a.sendConfirmation(out, a.confirmMessage())
 		return a.waitForConfirmation, nil
 	}
 	// This is a response to confirmation - process it
@@ -585,11 +608,8 @@ func (a *Agent) processConfirmationResponse(ctx context.Context, input string, o
 	}
 
 	// Invalid response - ask again
-	if a.DeployPlan.Action == Rollback {
-		a.sendConfirmation(out, "Do you want to proceed with the rollback?")
-	} else {
-		a.sendConfirmation(out, "Do you want to proceed with the deployment?")
-	}
+	fmt.Fprintf(out, "Please answer y or n.\n")
+	a.sendConfirmation(out, a.confirmMessage())
 	return a.waitForConfirmation, nil
 }
 

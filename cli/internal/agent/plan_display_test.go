@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
 
@@ -27,6 +28,46 @@ func TestSendPlanConsoleShowsShapeAndCost(t *testing.T) {
 	}
 	if !strings.Contains(s, "7.00") {
 		t.Errorf("console plan should show the estimated cost, got %q", s)
+	}
+}
+
+func TestConfirmMessage(t *testing.T) {
+	cases := []struct {
+		name string
+		plan *DeployPlan
+		want string
+	}{
+		{
+			"deploy with cost",
+			&DeployPlan{Action: Deploy, Platform: FlyIO, Spec: analyzer.ProjectSpec{Name: "myapp"}, Pricing: deployment.CostEstimate{Total: 7}},
+			"Deploy myapp to FlyIO (~$7.00/mo)?",
+		},
+		{
+			"deploy without cost",
+			&DeployPlan{Action: Deploy, Platform: Render, Spec: analyzer.ProjectSpec{Name: "api"}},
+			"Deploy api to Render?",
+		},
+		{
+			"rollback (no cost even if set)",
+			&DeployPlan{Action: Rollback, Platform: FlyIO, Spec: analyzer.ProjectSpec{Name: "myapp"}},
+			"Roll back myapp to FlyIO?",
+		},
+		{
+			"missing name",
+			&DeployPlan{Action: Deploy, Platform: Heroku},
+			"Deploy this project to Heroku?",
+		},
+	}
+	for _, c := range cases {
+		a := &Agent{DeployPlan: c.plan}
+		if got := a.confirmMessage(); got != c.want {
+			t.Errorf("%s: confirmMessage() = %q, want %q", c.name, got, c.want)
+		}
+	}
+
+	// nil plan must not panic
+	if (&Agent{}).confirmMessage() == "" {
+		t.Error("nil-plan confirmMessage should return a fallback")
 	}
 }
 
