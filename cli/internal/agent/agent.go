@@ -208,7 +208,16 @@ func (a *Agent) sendPlan(out io.Writer, plan DeployPlan) {
 		tuiWriter.SendPlan(plan)
 		return
 	}
+	// Console fallback: include shape and estimated cost so a decision to spend
+	// money is made with the numbers in view (the TUI renders these in its card).
 	fmt.Fprintf(out, "\nPlan: %s to %s — %s\n", plan.Action.String(), plan.Platform.String(), plan.Summary)
+	// Only surface a non-default shape — "web" is the norm and would just be noise.
+	if plan.Shape != "" && plan.Shape != deployment.ShapeWeb {
+		fmt.Fprintf(out, "  Shape: %s\n", plan.Shape)
+	}
+	if plan.Pricing.Total > 0 {
+		fmt.Fprintf(out, "  Estimated cost: ~$%.2f/mo\n", plan.Pricing.Total)
+	}
 }
 
 func (a *Agent) sendPlanApprovalRequest(out io.Writer, plan DeployPlan) {
@@ -217,6 +226,7 @@ func (a *Agent) sendPlanApprovalRequest(out io.Writer, plan DeployPlan) {
 		"action":   plan.Action.String(),
 		"platform": plan.Platform.String(),
 		"summary":  plan.Summary,
+		"shape":    plan.Shape.String(),
 		"project": map[string]interface{}{
 			"name":     plan.Spec.Name,
 			"language": plan.Spec.Language,
@@ -500,12 +510,10 @@ func (a *Agent) proceedWithPlan(ctx context.Context, plan DeployPlan, input stri
 	}
 	a.DeployPlan = &plan
 
-	// Dry run: show the plan (and cost) and stop — nothing is created in the cloud.
+	// Dry run: show the plan (with shape + cost, via sendPlan) and stop — nothing
+	// is created in the cloud.
 	if a.dryRun {
 		a.sendPlan(out, plan)
-		if plan.Pricing.Total > 0 {
-			fmt.Fprintf(out, "Estimated cost: ~$%.2f/mo\n", plan.Pricing.Total)
-		}
 		fmt.Fprint(out, "\n🔎 Dry run — nothing was deployed. Re-run without --dry-run to ship it.\n")
 		if !a.interactive {
 			return nil, nil
