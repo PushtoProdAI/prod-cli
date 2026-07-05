@@ -2,6 +2,8 @@ package registry
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"golang.org/x/oauth2"
@@ -69,8 +71,16 @@ func TestGARCredentials(t *testing.T) {
 		t.Errorf("Token = %q, want tok123", c.Token)
 	}
 	// token never leaks via String()
-	if s := c.String(); contains(s, "tok123") {
+	if s := c.String(); strings.Contains(s, "tok123") {
 		t.Errorf("String() leaked the token: %s", s)
+	}
+
+	// The push path tags as host + "/" + Repository + ":" + tag; that must equal
+	// Ref() — this consistency carries the whole GAR design.
+	ref, _ := r.Ref("My-App", "1720000000")
+	reconstructed := fmt.Sprintf("%s/%s:%s", c.URL, c.Repository, "1720000000")
+	if reconstructed != ref {
+		t.Errorf("push path %q != Ref %q — host/Repository split is inconsistent", reconstructed, ref)
 	}
 }
 
@@ -98,13 +108,4 @@ func TestGARName(t *testing.T) {
 	if garFixture().Name() != "gar" {
 		t.Error("Name should be gar")
 	}
-}
-
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }
