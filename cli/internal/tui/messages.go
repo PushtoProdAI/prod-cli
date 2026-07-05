@@ -69,6 +69,7 @@ func (s SelectPrompt) String() string {
 type TextPrompt struct {
 	Message      string
 	DefaultValue string
+	Masked       bool // hide input (sensitive values like secrets/tokens)
 }
 
 func (t TextPrompt) String() string {
