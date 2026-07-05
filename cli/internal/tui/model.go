@@ -100,6 +100,11 @@ type SearchMatch struct {
 
 func (m *Model) setMode(mode UIMode) {
 	m.currentMode = mode
+	// Returning to the normal prompt must always show typed input — a prior masked
+	// secret / API-key prompt must not leave the shared input masked.
+	if mode == ModeNormal {
+		m.textInput.EchoMode = textinput.EchoNormal
+	}
 }
 
 func (m Model) isMode(mode UIMode) bool {
@@ -247,6 +252,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case TextPrompt:
 		m.textPrompt = &msg
 		m.setMode(ModeText)
+		// Mask sensitive values as they're typed; reset to visible otherwise (a
+		// prior masked/API-key prompt may have left EchoPassword set).
+		if msg.Masked {
+			m.textInput.EchoMode = textinput.EchoPassword
+			m.textInput.EchoCharacter = '*'
+		} else {
+			m.textInput.EchoMode = textinput.EchoNormal
+		}
 		if msg.DefaultValue != "" {
 			m.textInput.SetValue(msg.DefaultValue)
 			m.textInput.CursorEnd()
