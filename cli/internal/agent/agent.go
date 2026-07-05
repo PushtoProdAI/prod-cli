@@ -56,6 +56,7 @@ type Agent struct {
 	sm                 deploySM
 	wfClient           *client.Client
 	interactive        bool
+	dryRun             bool
 	DeployPlan         *DeployPlan
 	UIOutput           io.Writer
 	auth               auth.AuthProvider
@@ -121,6 +122,12 @@ func (sm *deploySM) next(ctx context.Context, input string, out io.Writer) error
 
 func (a *Agent) SetInteractive(interactive bool) {
 	a.interactive = interactive
+}
+
+// SetDryRun makes a deploy stop after showing the plan (and cost), touching
+// nothing in the cloud.
+func (a *Agent) SetDryRun(dryRun bool) {
+	a.dryRun = dryRun
 }
 
 // IsComplete returns true if the state machine has finished (no current state)
@@ -431,6 +438,19 @@ func (a *Agent) proceedWithPlan(ctx context.Context, plan DeployPlan, input stri
 		return a.checkPrerequisites, nil
 	}
 	a.DeployPlan = &plan
+
+	// Dry run: show the plan (and cost) and stop — nothing is created in the cloud.
+	if a.dryRun {
+		a.sendPlan(out, plan)
+		if plan.Pricing.Total > 0 {
+			fmt.Fprintf(out, "Estimated cost: ~$%.2f/mo\n", plan.Pricing.Total)
+		}
+		fmt.Fprint(out, "\n🔎 Dry run — nothing was deployed. Re-run without --dry-run to ship it.\n")
+		if !a.interactive {
+			return nil, nil
+		}
+		return a.checkPrerequisites, nil
+	}
 
 	// Check if we're in JSON mode (VSCode extension integration)
 	if a.isJSONMode() {
@@ -1088,6 +1108,10 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 		if result.Url != "" {
 			fmt.Fprintf(out, "You can access your deployment at: %s\n", result.Url)
 			openInBrowser(result.Url)
+		}
+		// Make rollback discoverable. (App Runner rollback isn't supported yet.)
+		if a.DeployPlan.Platform != AWS {
+			io.WriteString(out, "Need to undo this? Run:  prod \"rollback\"\n")
 		}
 	}
 
