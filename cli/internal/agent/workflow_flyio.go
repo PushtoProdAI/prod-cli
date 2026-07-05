@@ -185,12 +185,12 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 		fullUrl = u
 	}
 
-	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
+	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentVerifyLiveness, input.Shape, fullUrl).Get(ctx)
 	if err != nil {
 		// Send the original error before summarizing
 		prod_error.CaptureErrorWithContext(err, map[string]any{
 			"workflow":     DeployFlyioWorkflowName,
-			"activity":     AgentIsURLLive,
+			"activity":     AgentVerifyLiveness,
 			"component":    "deployment",
 			"platform":     "flyio",
 			"project_name": input.Spec.Name,
