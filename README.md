@@ -73,6 +73,7 @@ deploy. No signup, no backend, no config file required.
 
 ```bash
 prod --dry-run "deploy this to fly"   # show the plan + estimated cost, deploy nothing
+prod --yes "deploy this to fly"       # skip the approval prompt (automation / CI)
 prod "rollback"                       # roll back the last deploy (auto-detects the platform)
 ```
 
