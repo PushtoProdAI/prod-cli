@@ -30,6 +30,7 @@ const exitPrompt = "exit"
 
 type RootFlags struct {
 	Version bool `long:"version" short:"v" usage:"show the current Prod version"`
+	DryRun  bool `long:"dry-run" usage:"show the plan and estimated cost without deploying"`
 }
 
 type RootArgs struct {
@@ -139,6 +140,7 @@ ______              _
 // and when input is captured from interactive mode
 func (c *RootCommand) processPrompt(prompt string) {
 	ctx := context.Background()
+	c.Agent.SetDryRun(c.flags.DryRun)
 	c.Agent.Process(ctx, prompt, c)
 }
 
