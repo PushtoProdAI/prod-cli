@@ -47,6 +47,7 @@ func (c *BuildOutput) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) 
 
 		}
 	}
+
 }
 
 func (c BuildOutput) Encode() (*cffi.CFFIValueHolder, error) {
@@ -107,6 +108,7 @@ func (c *BuildOutputCandidate) Decode(holder *cffi.CFFIValueClass, typeMap baml.
 
 		}
 	}
+
 }
 
 func (c BuildOutputCandidate) Encode() (*cffi.CFFIValueHolder, error) {
@@ -165,6 +167,7 @@ func (c *CategorizedRoutes) Decode(holder *cffi.CFFIValueClass, typeMap baml.Typ
 
 		}
 	}
+
 }
 
 func (c CategorizedRoutes) Encode() (*cffi.CFFIValueHolder, error) {
@@ -227,6 +230,7 @@ func (c *EnvVarCandidate) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeM
 
 		}
 	}
+
 }
 
 func (c EnvVarCandidate) Encode() (*cffi.CFFIValueHolder, error) {
@@ -297,6 +301,7 @@ func (c *EnvVarCategory) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMa
 
 		}
 	}
+
 }
 
 func (c EnvVarCategory) Encode() (*cffi.CFFIValueHolder, error) {
@@ -357,6 +362,7 @@ func (c *Error) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 
 		}
 	}
+
 }
 
 func (c Error) Encode() (*cffi.CFFIValueHolder, error) {
@@ -381,9 +387,10 @@ func (u Error) BamlEncodeName() *cffi.CFFITypeName {
 }
 
 type Intent struct {
-	Action   *string `json:"action"`
-	Platform *string `json:"platform"`
-	Source   *string `json:"source"`
+	Action      *string `json:"action"`
+	Platform    *string `json:"platform"`
+	Source      *string `json:"source"`
+	DeployShape *string `json:"deployShape"`
 }
 
 func (c *Intent) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -409,12 +416,16 @@ func (c *Intent) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		case "source":
 			c.Source = baml.Decode(valueHolder).Interface().(*string)
 
+		case "deployShape":
+			c.DeployShape = baml.Decode(valueHolder).Interface().(*string)
+
 		default:
 
 			panic(fmt.Sprintf("unexpected field: %s in class Intent", key))
 
 		}
 	}
+
 }
 
 func (c Intent) Encode() (*cffi.CFFIValueHolder, error) {
@@ -425,6 +436,8 @@ func (c Intent) Encode() (*cffi.CFFIValueHolder, error) {
 	fields["platform"] = c.Platform
 
 	fields["source"] = c.Source
+
+	fields["deployShape"] = c.DeployShape
 
 	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
 }
@@ -467,6 +480,7 @@ func (c *LaunchCommand) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap
 
 		}
 	}
+
 }
 
 func (c LaunchCommand) Encode() (*cffi.CFFIValueHolder, error) {
@@ -519,6 +533,7 @@ func (c *LaunchContext) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap
 
 		}
 	}
+
 }
 
 func (c LaunchContext) Encode() (*cffi.CFFIValueHolder, error) {
@@ -573,6 +588,7 @@ func (c *LauncherFile) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap)
 
 		}
 	}
+
 }
 
 func (c LauncherFile) Encode() (*cffi.CFFIValueHolder, error) {
@@ -631,6 +647,7 @@ func (c *MigrationCommand) Decode(holder *cffi.CFFIValueClass, typeMap baml.Type
 
 		}
 	}
+
 }
 
 func (c MigrationCommand) Encode() (*cffi.CFFIValueHolder, error) {
@@ -695,6 +712,7 @@ func (c *MigrationContext) Decode(holder *cffi.CFFIValueClass, typeMap baml.Type
 
 		}
 	}
+
 }
 
 func (c MigrationContext) Encode() (*cffi.CFFIValueHolder, error) {
@@ -753,6 +771,7 @@ func (c *MigrationFile) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap
 
 		}
 	}
+
 }
 
 func (c MigrationFile) Encode() (*cffi.CFFIValueHolder, error) {
@@ -807,6 +826,7 @@ func (c *PricingResponse) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeM
 
 		}
 	}
+
 }
 
 func (c PricingResponse) Encode() (*cffi.CFFIValueHolder, error) {
@@ -873,6 +893,7 @@ func (c *ProjectSpec) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) 
 
 		}
 	}
+
 }
 
 func (c ProjectSpec) Encode() (*cffi.CFFIValueHolder, error) {
@@ -933,6 +954,7 @@ func (c *Remediation) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) 
 
 		}
 	}
+
 }
 
 func (c Remediation) Encode() (*cffi.CFFIValueHolder, error) {
@@ -991,6 +1013,7 @@ func (c *Route) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 
 		}
 	}
+
 }
 
 func (c Route) Encode() (*cffi.CFFIValueHolder, error) {
@@ -1059,6 +1082,7 @@ func (c *RouteCandidate) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMa
 
 		}
 	}
+
 }
 
 func (c RouteCandidate) Encode() (*cffi.CFFIValueHolder, error) {
@@ -1127,6 +1151,7 @@ func (c *Service) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 
 		}
 	}
+
 }
 
 func (c Service) Encode() (*cffi.CFFIValueHolder, error) {
@@ -1197,6 +1222,7 @@ func (c *ServicePricing) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMa
 
 		}
 	}
+
 }
 
 func (c ServicePricing) Encode() (*cffi.CFFIValueHolder, error) {
@@ -1257,6 +1283,7 @@ func (c *ServiceRequirement) Decode(holder *cffi.CFFIValueClass, typeMap baml.Ty
 
 		}
 	}
+
 }
 
 func (c ServiceRequirement) Encode() (*cffi.CFFIValueHolder, error) {
@@ -1307,6 +1334,7 @@ func (c *Summary) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 
 		}
 	}
+
 }
 
 func (c Summary) Encode() (*cffi.CFFIValueHolder, error) {
@@ -1359,6 +1387,7 @@ func (c *UsageCost) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 
 		}
 	}
+
 }
 
 func (c UsageCost) Encode() (*cffi.CFFIValueHolder, error) {

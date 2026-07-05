@@ -4,6 +4,7 @@ class Intent {
     action string
     platform string
     source string
+    deployShape string
   }
 
 class Summary {
@@ -132,6 +133,21 @@ You are a strict classifier. Your only job is to analyze deployment requests and
   ## SOURCE EXTRACTION
   Extract the source path if one is given (e.g., a full path like `/Users/alice/project/app`). If not, set:
     "source": "pwd"
+
+  ## DEPLOY SHAPE
+  Classify what is being deployed as `deployShape`, one of:
+    - web         a normal web app or API that serves HTTP (the default)
+    - mcp-server  a Model Context Protocol (MCP) server
+    - worker      a background worker, queue/stream consumer, bot, or any process that
+                  runs continuously WITHOUT serving HTTP
+    - cron        a scheduled or periodic job ("every night", "on a schedule", "cron")
+
+  Default to `web` unless the request clearly indicates otherwise. Only use the words
+  in the request; never infer the shape from a project name. Examples:
+    - "deploy this mcp server to fly"   -> mcp-server
+    - "deploy my worker" / "my bot"     -> worker
+    - "run this every night"            -> cron
+    - "deploy this" / "ship my app"     -> web
 
   ## OUTPUT FORMAT
   Respond ONLY with a JSON object in this format:
