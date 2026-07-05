@@ -141,7 +141,7 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 		fullUrl = deploymentURL
 	}
 
-	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentIsURLLive, fullUrl).Get(ctx)
+	_, err = workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentVerifyLiveness, input.Shape, fullUrl).Get(ctx)
 	if err != nil {
 		slog.Error("Health check failed, attempting rollback", "error", err, "url", fullUrl)
 

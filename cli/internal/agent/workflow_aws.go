@@ -102,9 +102,9 @@ func (w *Workflows) deployAWS(ctx workflow.Context, input DeployPlan) (deployRes
 
 	liveCheckOpts := ActivityOpts
 	liveCheckOpts.RetryOptions.MaxAttempts = 15
-	if _, err := workflow.ExecuteActivity[string](ctx, liveCheckOpts, AgentIsURLLive, fullUrl).Get(ctx); err != nil {
+	if _, err := workflow.ExecuteActivity[string](ctx, liveCheckOpts, AgentVerifyLiveness, input.Shape, fullUrl).Get(ctx); err != nil {
 		prod_error.CaptureErrorWithContext(err, map[string]any{
-			"workflow": DeployAWSWorkflowName, "activity": AgentIsURLLive,
+			"workflow": DeployAWSWorkflowName, "activity": AgentVerifyLiveness,
 			"component": "deployment", "platform": "aws",
 			"project_name": input.Spec.Name, "language": input.Spec.Language,
 		})
