@@ -1371,8 +1371,6 @@ func shouldProceed(plan DeployPlan) bool {
 }
 
 func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	fmt.Fprint(out, "Checking authentication...\n")
-
 	authProvider, err := a.getAuthProvider(out)
 	if err != nil {
 		fmt.Fprintf(out, "Error getting authentication provider: %v\n", err)
@@ -1386,7 +1384,8 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 	}
 
 	if !authenticated {
-		fmt.Fprintf(out, "🔐 Authentication required for %s deployment\n\n", a.DeployPlan.Platform)
+		// This is the platform's own credentials, not a prod account — prod has none.
+		fmt.Fprintf(out, "🔐 Connect your %s account to deploy — prod uses your own credentials.\n\n", a.DeployPlan.Platform)
 
 		// Store the auth provider for use in authentication states
 		a.auth = authProvider
@@ -1403,9 +1402,9 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 		}
 
 		// In interactive TUI mode, show selection and transition to auth selection state
-		a.sendSelect(out, "Choose authentication method:", []string{
-			"Interactive login (recommended)",
-			"Enter API key directly",
+		a.sendSelect(out, fmt.Sprintf("How would you like to connect to %s?", a.DeployPlan.Platform), []string{
+			"Log in via browser (recommended)",
+			"Paste an API token",
 		})
 		return a.waitForAuthSelection, nil
 	}
@@ -1456,9 +1455,9 @@ func (a *Agent) waitForAuthSelection(ctx context.Context, input string, out io.W
 		return a.promptForAPIKey(ctx, input, out)
 	default:
 		// Invalid selection, ask again
-		a.sendSelect(out, "Choose authentication method:", []string{
-			"Interactive login (recommended)",
-			"Enter API key directly",
+		a.sendSelect(out, "Please choose how to connect:", []string{
+			"Log in via browser (recommended)",
+			"Paste an API token",
 		})
 		return a.waitForAuthSelection, nil
 	}
