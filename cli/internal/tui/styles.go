@@ -3,30 +3,34 @@ package tui
 import "github.com/charmbracelet/lipgloss/v2"
 
 var (
-	// Dark theme colors
-	primaryColor    = lipgloss.Color("#05B55E") // Green as used in our branding
-	secondaryColor  = lipgloss.Color("#7C3AED") // Purple
-	accentColor     = lipgloss.Color("#F59E0B") // Amber
-	textColor       = lipgloss.Color("#F3F4F6") // Light gray
-	mutedColor      = lipgloss.Color("#9CA3AF") // Gray
-	backgroundColor = lipgloss.Color("#111827") // Dark gray
-	borderColor     = lipgloss.Color("#374151") // Medium gray
-	errorColor      = lipgloss.Color("#EF4444") // Red
-	successColor    = lipgloss.Color("#05B55E") // Green
-	warningColor    = lipgloss.Color("#F59E0B") // Amber
+	// Accent palette — these read acceptably on both light and dark terminals,
+	// so they are kept as fixed colors regardless of the terminal theme.
+	primaryColor   = lipgloss.Color("#05B55E") // Green as used in our branding
+	secondaryColor = lipgloss.Color("#7C3AED") // Purple
+	accentColor    = lipgloss.Color("#F59E0B") // Amber
+	textColor      = lipgloss.Color("#F3F4F6") // Light gray — only used on fixed dark surfaces (e.g. status bar)
+	mutedColor     = lipgloss.Color("#9CA3AF") // Gray
+	borderColor    = lipgloss.Color("#374151") // Medium gray
+	errorColor     = lipgloss.Color("#EF4444") // Red
+	successColor   = lipgloss.Color("#05B55E") // Green
+	warningColor   = lipgloss.Color("#F59E0B") // Amber
 
-	// Output view styles
+	// onAccentColor is a fixed dark foreground painted ON TOP of a bright accent
+	// background (chips/cursor/selection). Dark text on a bright accent is
+	// readable on both light and dark terminals, so this stays fixed. It is
+	// intentionally distinct from any notion of "app background".
+	onAccentColor = lipgloss.Color("#111827") // Dark gray
+
+	// Output view styles. No Background/Foreground is set so the terminal's own
+	// theme (background + default foreground) shows through instead of a forced
+	// dark box.
 	outputViewStyle = lipgloss.NewStyle().
-			Background(backgroundColor).
-			Foreground(textColor).
 			Padding(1, 2).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(borderColor)
 
-	// Prompt view styles
+	// Prompt view styles. Terminal-native background/foreground (see above).
 	promptViewStyle = lipgloss.NewStyle().
-			Background(backgroundColor).
-			Foreground(textColor).
 			Padding(0, 2, 1, 2).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(borderColor)
@@ -40,14 +44,14 @@ var (
 				Foreground(warningColor).
 				Bold(true)
 
-	// Input text style
-	inputStyle = lipgloss.NewStyle().
-			Foreground(textColor)
+	// Input text style. Foreground left unset so typed text uses the terminal's
+	// default foreground (readable on both light and dark themes).
+	inputStyle = lipgloss.NewStyle()
 
-	// Cursor styles
+	// Cursor styles. Dark text on the bright primary accent — kept fixed.
 	cursorStyle = lipgloss.NewStyle().
 			Background(primaryColor).
-			Foreground(backgroundColor).
+			Foreground(onAccentColor).
 			Bold(true)
 	// Header style
 	headerStyle = lipgloss.NewStyle().
@@ -55,9 +59,8 @@ var (
 			Bold(true).
 			Padding(0, 2)
 
-	// Log message styles
-	logStyle = lipgloss.NewStyle().
-			Foreground(textColor)
+	// Log message styles. Default log text inherits the terminal foreground.
+	logStyle = lipgloss.NewStyle()
 
 	errorLogStyle = lipgloss.NewStyle().
 			Foreground(errorColor)
@@ -86,28 +89,27 @@ var (
 			Foreground(accentColor).
 			Bold(true)
 
-	tableValueStyle = lipgloss.NewStyle().
-			Foreground(textColor)
+	// Table values inherit the terminal foreground (sit on terminal surface).
+	tableValueStyle = lipgloss.NewStyle()
 
-	// List styles
-	listItemStyle = lipgloss.NewStyle().
-			Foreground(textColor)
+	// List styles. Items inherit the terminal foreground.
+	listItemStyle = lipgloss.NewStyle()
 
 	listBulletStyle = lipgloss.NewStyle().
 			Foreground(primaryColor).
 			Bold(true)
 
+	// Container background left unset so the terminal theme shows through.
 	listContainerStyle = lipgloss.NewStyle().
-				Background(backgroundColor).
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(borderColor).
 				Padding(1, 2).
 				Margin(0, 1)
 
-	// Text selection styles
+	// Text selection styles. Dark text on the bright primary accent — fixed.
 	selectionStyle = lipgloss.NewStyle().
 			Background(primaryColor).
-			Foreground(backgroundColor).
+			Foreground(onAccentColor).
 			Bold(true)
 
 	selectionIndicatorStyle = lipgloss.NewStyle().
@@ -128,7 +130,6 @@ var (
 				Bold(true)
 
 	errorSummaryStyle = lipgloss.NewStyle().
-				Foreground(textColor).
 				Padding(1, 2)
 
 	errorContainerStyle = lipgloss.NewStyle().
@@ -142,7 +143,6 @@ var (
 				Bold(true)
 
 	remediationItemStyle = lipgloss.NewStyle().
-				Foreground(textColor).
 				Padding(0, 2)
 
 	codeBlockStyle = lipgloss.NewStyle().
