@@ -58,3 +58,34 @@ func TestNonSensitiveEnvVarUsesTextPrompt(t *testing.T) {
 		t.Error("a non-sensitive env var should use the plain text prompt")
 	}
 }
+
+// The awaitingSecret flag is what the console one-shot driver reads to decide
+// whether to mask the next input; it must track the current var's sensitivity.
+func TestAwaitingSecretFlagTracksSensitivity(t *testing.T) {
+	t.Setenv("PROD_JSON_MODE", "")
+
+	// Sensitive var → flag set so the console driver reads masked.
+	a := &Agent{envVars: []EnvVarWithStatus{
+		{EnvVar: deployment.EnvVar{Name: "SECRET_KEY", Sensitive: true}, Status: "pending"},
+	}}
+	if _, err := a.promptForEnvVarValue(context.Background(), "", &promptRecorder{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !a.awaitingSecret {
+		t.Error("awaitingSecret must be set when prompting for a sensitive var")
+	}
+
+	// Non-sensitive var → flag cleared even if a previous prompt had set it.
+	a2 := &Agent{
+		awaitingSecret: true,
+		envVars: []EnvVarWithStatus{
+			{EnvVar: deployment.EnvVar{Name: "PORT"}, Status: "pending"},
+		},
+	}
+	if _, err := a2.promptForEnvVarValue(context.Background(), "", &promptRecorder{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if a2.awaitingSecret {
+		t.Error("awaitingSecret must be cleared when prompting for a non-sensitive var")
+	}
+}
