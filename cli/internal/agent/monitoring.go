@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/pushtoprodai/prod-cli/baml_client/types"
 	"github.com/pushtoprodai/prod-cli/internal/analyzer"
+	"github.com/pushtoprodai/prod-cli/internal/deployment"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
 )
 
@@ -72,6 +74,20 @@ func (a *Activities) getFlyIOAppURL(ctx context.Context, appID string) (string, 
 		return "", errors.Errorf("failed to get service info: %w", err)
 	}
 	return service.Hostname, nil
+}
+
+// verifyLiveness confirms a freshly-deployed service is up, according to its
+// shape. Web and MCP servers answer HTTP, so we probe the URL. A worker or cron
+// job has no URL — its liveness is the platform's concern (adapter-owned), not an
+// HTTP GET — so we skip the probe instead of auto-failing (and auto-rolling-back)
+// a perfectly healthy non-HTTP deploy. Only the two explicitly non-HTTP shapes
+// skip; anything else (including an unset shape) is URL-probed.
+func (a *Activities) verifyLiveness(ctx context.Context, shape deployment.DeployShape, url string) error {
+	if shape == deployment.ShapeWorker || shape == deployment.ShapeCron {
+		a.uiWriter.SendStatusComplete("deploying", fmt.Sprintf("✅ %s deploy — no HTTP liveness check", shape))
+		return nil
+	}
+	return a.isURLLive(ctx, url)
 }
 
 func (a *Activities) isURLLive(ctx context.Context, url string) error {

@@ -26,6 +26,7 @@ const (
 	AgentGetRenderServiceURL        = "agent.getRenderServiceURL"
 	AgentWaitForRenderDeploy        = "agent.waitForRenderDeploy"
 	AgentIsURLLive                  = "agent.isURLLive"
+	AgentVerifyLiveness             = "agent.verifyLiveness"
 	AgentSendProjectStats           = "agent.sendProjectStats"
 	AgentGetFlyIOAppURL             = "agent.getFlyIOAppURL"
 	AgentCategorizeEnvVars          = "agent.categorizeEnvVars"
@@ -79,6 +80,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentGetRenderServiceURL, ActFunc: a.getRenderServiceURL},
 		{Name: AgentWaitForRenderDeploy, ActFunc: a.waitForRenderDeploy},
 		{Name: AgentIsURLLive, ActFunc: a.isURLLive},
+		{Name: AgentVerifyLiveness, ActFunc: a.verifyLiveness},
 		{Name: AgentSendProjectStats, ActFunc: a.sendProjectStats},
 		{Name: AgentGetFlyIOAppURL, ActFunc: a.getFlyIOAppURL},
 		{Name: AgentCategorizeEnvVars, ActFunc: a.categorizeEnvVarsForDeployment},
