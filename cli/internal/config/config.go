@@ -11,7 +11,6 @@ var (
 	SupabaseAnonKey string
 	ProdDebug       string
 	Environment     string
-	SentryDSN       string
 	Version         string
 )
 

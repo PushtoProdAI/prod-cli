@@ -26,7 +26,6 @@ import (
 	prod_error "github.com/pushtoprodai/prod-cli/internal/error"
 	"github.com/pushtoprodai/prod-cli/internal/output"
 	prodreg "github.com/pushtoprodai/prod-cli/internal/registry"
-	"github.com/pushtoprodai/prod-cli/internal/settings"
 )
 
 type TUIWriter interface {
@@ -53,31 +52,27 @@ type EnvVarWithStatus struct {
 }
 
 type Agent struct {
-	sm                   deploySM
-	wfClient             *client.Client
-	interactive          bool
-	DeployPlan           *DeployPlan
-	UIOutput             io.Writer
-	auth                 auth.AuthProvider
-	envVars              []EnvVarWithStatus
-	internalAuth         *auth.SupabaseAuth
-	errorTrackingEnabled bool
-	inConsentFlow        bool
-	originalInput        string
-	nextStateAfterAuth   stateFn // State to transition to after successful PaaS authentication
+	sm                 deploySM
+	wfClient           *client.Client
+	interactive        bool
+	DeployPlan         *DeployPlan
+	UIOutput           io.Writer
+	auth               auth.AuthProvider
+	envVars            []EnvVarWithStatus
+	internalAuth       *auth.SupabaseAuth
+	nextStateAfterAuth stateFn // State to transition to after successful PaaS authentication
 }
 
 type agentContextKey string
 
 const agentAuthSession agentContextKey = "AuthSession"
 
-func NewAgent(wfClient *client.Client, internalAuth *auth.SupabaseAuth, errorTrackingEnabled bool) *Agent {
+func NewAgent(wfClient *client.Client, internalAuth *auth.SupabaseAuth) *Agent {
 	a := &Agent{
-		wfClient:             wfClient,
-		interactive:          true, // Default to interactive
-		envVars:              make([]EnvVarWithStatus, 0),
-		internalAuth:         internalAuth,
-		errorTrackingEnabled: errorTrackingEnabled,
+		wfClient:     wfClient,
+		interactive:  true, // Default to interactive
+		envVars:      make([]EnvVarWithStatus, 0),
+		internalAuth: internalAuth,
 	}
 	sm := deploySM{currentState: a.checkPrerequisites}
 	a.sm = sm
@@ -135,10 +130,6 @@ func (a *Agent) IsComplete() bool {
 // isJSONMode checks if the agent is running in JSON mode (VSCode extension integration)
 func (a *Agent) isJSONMode() bool {
 	return os.Getenv("PROD_JSON_MODE") == "true"
-}
-
-func (a *Agent) IsErrorTrackingEnabled() bool {
-	return a.errorTrackingEnabled
 }
 
 // Helper methods for TUI operations. Each degrades to a plain-text render on a
@@ -284,32 +275,6 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 func (a *Agent) checkPrerequisites(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	slog.Info("checkPrerequisites called", "isAuthenticated", a.internalAuth.IsAuthenticated())
 
-	// If we're in consent flow, continue with that
-	if a.inConsentFlow {
-		return nil, nil // The consent states will handle the flow
-	}
-
-	// Check for error tracking consent first
-	if !a.errorTrackingEnabled {
-		hasConsentValue, err := settings.HasConsent()
-		if err != nil {
-			slog.Error("Failed to check consent", "error", err)
-		} else if !hasConsentValue {
-			// Check if settings file exists - if not, this is first run
-			filePath, err := settings.GetSettingsPath()
-			if err == nil {
-				if _, err := os.Stat(filePath); os.IsNotExist(err) {
-					// First run - need to prompt for consent using state machine
-					a.inConsentFlow = true
-					a.originalInput = input // Store original input to use after consent
-					return a.promptForConsent(ctx, input, out)
-				}
-			}
-		} else {
-			a.errorTrackingEnabled = true
-		}
-	}
-
 	// Always check authentication when checkPrerequisites is called
 	// This ensures auth is validated on every new user input
 	if !a.ensureAuthenticated(ctx, out) {
@@ -323,64 +288,8 @@ func (a *Agent) checkPrerequisites(ctx context.Context, input string, out io.Wri
 	}
 	ctxWithSession := WithCtxSession(ctx, session)
 
-	// Both consent and auth are complete, proceed to plan
+	// Auth is complete, proceed to plan
 	return a.plan(ctxWithSession, input, out)
-}
-
-func (a *Agent) promptForConsent(_ context.Context, _ string, out io.Writer) (stateFn, error) {
-	a.inConsentFlow = true
-	fmt.Fprint(out, `
-📊 We'd like to collect anonymous diagnostic data to help improve Prod CLI.
-   This helps us identify and fix issues faster. No personal information 
-   or code content is collected.
-
-`)
-	a.sendConfirmation(out, "Would you like to enable error tracking?")
-	return a.waitForConsentResponse, nil
-}
-
-func (a *Agent) waitForConsentResponse(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	return a.processConsentResponse(ctx, input, out)
-}
-
-func (a *Agent) processConsentResponse(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	input = strings.TrimSpace(strings.ToLower(input))
-
-	var consentGiven bool
-	switch input {
-	case "y", "yes":
-		consentGiven = true
-		fmt.Fprint(out, "✅ Diagnostics tracking enabled. Thank you!\n")
-	case "n", "no":
-		consentGiven = false
-		fmt.Fprint(out, "✅ Diagnostics tracking disabled.\n")
-	default:
-		// Invalid response - ask again
-		a.sendConfirmation(out, "Would you like to enable error tracking?")
-		return a.waitForConsentResponse, nil
-	}
-
-	// Save the consent choice
-	err := settings.SaveConsent(consentGiven)
-	if err != nil {
-		slog.Error("Failed to save consent", "error", err)
-	} else {
-		a.errorTrackingEnabled = consentGiven
-	}
-
-	// Clear consent flow flag
-	a.inConsentFlow = false
-
-	// Continue with the original input through checkPrerequisites
-	// This will handle authentication and then proceed to plan
-	if a.originalInput != "" {
-		originalInput := a.originalInput
-		a.originalInput = "" // Clear it
-		return a.checkPrerequisites(ctx, originalInput, out)
-	}
-
-	// No original input, go back to checkPrerequisites which will proceed to plan
-	return a.checkPrerequisites, nil
 }
 
 func (a *Agent) handleSlashCommand(ctx context.Context, input string, out io.Writer) (stateFn, error) {

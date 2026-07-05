@@ -103,7 +103,7 @@ func main() {
 		fmt.Println("failed to initialize auth:", err)
 		log.Fatalf("failed to initialize auth: %v", err)
 	}
-	a := agent.NewAgent(provider.Client, supabaseAuth, false)
+	a := agent.NewAgent(provider.Client, supabaseAuth)
 	rootCmd := &root.RootCommand{
 		Agent:        a,
 		StatusWriter: statusWriter,

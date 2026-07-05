@@ -21,35 +21,49 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
-func TestGlobalInitialize(t *testing.T) {
-	// Test with empty DSN (should still work for testing)
-	err := Initialize()
-	if err != nil {
-		t.Errorf("Initialize with empty DSN failed: %v", err)
-	}
+// Telemetry is OFF by default: with no PROD_SENTRY_DSN, Initialize is a no-op and
+// the client is never marked initialized (nothing phones home).
+func TestGlobalInitializeDisabledByDefault(t *testing.T) {
+	t.Setenv("PROD_SENTRY_DSN", "")
+	sentryClient = nil
+	once = sync.Once{}
 
+	if err := Initialize(); err != nil {
+		t.Errorf("Initialize should be a no-op nil without a DSN, got: %v", err)
+	}
 	if sentryClient == nil {
-		t.Error("Global client should be initialized")
+		t.Fatal("global client should be set")
+	}
+	if sentryClient.initialized {
+		t.Error("client must NOT be initialized without PROD_SENTRY_DSN (telemetry off by default)")
 	}
 
-	if !sentryClient.initialized {
-		t.Error("Client should be marked as initialized")
+	sentryClient = nil
+	once = sync.Once{}
+}
+
+// A user's OWN Sentry DSN opts in.
+func TestGlobalInitializeOptIn(t *testing.T) {
+	t.Setenv("PROD_SENTRY_DSN", "https://0123456789abcdef0123456789abcdef@o1.ingest.sentry.io/1")
+	sentryClient = nil
+	once = sync.Once{}
+
+	if err := Initialize(); err != nil {
+		t.Errorf("Initialize with a valid DSN failed: %v", err)
+	}
+	if sentryClient == nil || !sentryClient.initialized {
+		t.Error("client should be initialized when PROD_SENTRY_DSN is set")
 	}
 
-	// Reset for other tests
 	sentryClient = nil
 	once = sync.Once{}
 }
 
 func TestCaptureErrorViaGlobal(t *testing.T) {
-	Initialize() // Initialize with empty DSN for testing
+	Initialize() // no DSN in the test env → disabled
 
-	// This test verifies that consent is checked
-	// The actual consent status depends on user settings
-	testErr := errors.Errorf("test error")
-
-	// This should not panic and should handle consent gracefully (no return value now)
-	CaptureError(testErr)
+	// Must not panic and must no-op when telemetry is disabled.
+	CaptureError(errors.Errorf("test error"))
 }
 
 func TestCaptureMessageViaGlobal(t *testing.T) {
