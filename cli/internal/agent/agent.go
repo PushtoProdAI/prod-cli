@@ -24,6 +24,7 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/deployment/netlify"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
 	prod_error "github.com/pushtoprodai/prod-cli/internal/error"
+	"github.com/pushtoprodai/prod-cli/internal/llm"
 	"github.com/pushtoprodai/prod-cli/internal/output"
 	prodreg "github.com/pushtoprodai/prod-cli/internal/registry"
 )
@@ -313,6 +314,19 @@ func (a *Agent) handleSlashCommand(ctx context.Context, input string, out io.Wri
 }
 
 func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn, error) {
+	// Preflight: prod needs an LLM to plan. Cloud keys are trusted if present; the
+	// local Ollama fallback is probed, so a keyless user without Ollama gets a clear
+	// message here instead of a raw connection error mid-plan.
+	if p := llm.Detect(os.Getenv); !p.Ready {
+		fmt.Fprintf(out, "prod needs an LLM to plan a deploy, but %s.\n"+
+			"Set OPENAI_API_KEY or ANTHROPIC_API_KEY, or run a local Ollama (https://ollama.com).\n"+
+			"Run `prod doctor` to check your setup.\n", p.Detail)
+		if !a.interactive {
+			return nil, nil
+		}
+		return a.checkPrerequisites, nil
+	}
+
 	wf, err := Workflows{}.PlanDeploy(ctx, a.wfClient, input)
 	if err != nil {
 		slog.Info("Workflow execution result", "error", err)
