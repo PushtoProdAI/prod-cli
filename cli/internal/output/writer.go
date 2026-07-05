@@ -145,6 +145,10 @@ type StatusWriter interface {
 	SendDeploymentComplete(platform, status, url, errorMsg string, durationMs int64)
 	SendPlanApprovalRequest(plan map[string]interface{})
 	SendEnvVarPrompt(varName, defaultValue, message string)
+	// SendDoctorResult reports one `prod doctor` prerequisite check. status is
+	// "ok" or "fail"; detail describes the outcome; fix is a (possibly
+	// multi-line) remediation hint, empty when the check passed.
+	SendDoctorResult(check, status, detail, fix string)
 }
 
 // InfoBoxWriter defines the interface for sending info box messages
@@ -192,6 +196,11 @@ func (w *NoOpWriter) SendPlanApprovalRequest(plan map[string]interface{}) {
 
 // SendEnvVarPrompt does nothing
 func (w *NoOpWriter) SendEnvVarPrompt(varName, defaultValue, message string) {
+	// Do nothing
+}
+
+// SendDoctorResult does nothing
+func (w *NoOpWriter) SendDoctorResult(check, status, detail, fix string) {
 	// Do nothing
 }
 
@@ -297,6 +306,22 @@ func (w *ConsoleWriter) SendEnvVarPrompt(varName, defaultValue, message string) 
 		fmt.Printf("%s [%s]: ", varName, defaultValue)
 	} else {
 		fmt.Printf("%s: ", varName)
+	}
+}
+
+// SendDoctorResult renders one prerequisite check as a ✓/✗ line, followed by an
+// indented fix hint when the check failed. The check name is padded to a fixed
+// column so LLM/Docker lines align.
+func (w *ConsoleWriter) SendDoctorResult(check, status, detail, fix string) {
+	mark := "✓"
+	if status != "ok" {
+		mark = "✗"
+	}
+	fmt.Printf("  %s %-9s%s\n", mark, check, detail)
+	if fix != "" {
+		for _, line := range strings.Split(fix, "\n") {
+			fmt.Printf("             %s\n", line)
+		}
 	}
 }
 
@@ -514,6 +539,27 @@ func (w *JSONWriter) SendEnvVarPrompt(varName, defaultValue, message string) {
 	}
 }
 
+// SendDoctorResult emits a doctor_result event, one per prerequisite check.
+func (w *JSONWriter) SendDoctorResult(check, status, detail, fix string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	event := map[string]interface{}{
+		"type":      "doctor_result",
+		"check":     check,
+		"status":    status,
+		"detail":    detail,
+		"timestamp": time.Now().Format(time.RFC3339),
+	}
+	if fix != "" {
+		event["fix"] = fix
+	}
+
+	if err := w.encoder.Encode(event); err != nil {
+		slog.Error("Failed to encode doctor result", "error", err)
+	}
+}
+
 // Ensure JSONWriter implements StatusWriter
 var _ StatusWriter = (*JSONWriter)(nil)
 
@@ -592,6 +638,13 @@ func (p *ProxyWriter) SendEnvVarPrompt(varName, defaultValue, message string) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	p.target.SendEnvVarPrompt(varName, defaultValue, message)
+}
+
+// SendDoctorResult implements StatusWriter
+func (p *ProxyWriter) SendDoctorResult(check, status, detail, fix string) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	p.target.SendDoctorResult(check, status, detail, fix)
 }
 
 // SendInfoBox forwards info box messages to the target if it supports them

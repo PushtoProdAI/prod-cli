@@ -8,9 +8,11 @@ import (
 	"os"
 
 	"github.com/conduitio/ecdysis"
+	"github.com/go-errors/errors"
 
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
 	"github.com/pushtoprodai/prod-cli/internal/llm"
+	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
 var (
@@ -18,36 +20,48 @@ var (
 	_ ecdysis.CommandWithDocs    = (*DoctorCommand)(nil)
 )
 
-// DoctorCommand runs environment checks and prints a checklist.
-type DoctorCommand struct{}
+// DoctorCommand runs environment checks and emits them through a StatusWriter so
+// the same checklist renders in console mode and as structured events for
+// JSON/MCP/agent consumers.
+type DoctorCommand struct {
+	StatusWriter output.StatusWriter
+}
 
 func (c *DoctorCommand) Execute(_ context.Context) error {
-	fmt.Fprint(os.Stdout, "prod doctor — checking your environment\n\n")
+	// Defensive: if the writer wasn't injected, fall back to plain console output
+	// so `prod doctor` still works rather than nil-panicking.
+	w := c.StatusWriter
+	if w == nil {
+		w = output.NewConsoleWriter()
+	}
+
+	fmt.Fprint(w, "prod doctor — checking your environment\n\n")
 
 	p := llm.Detect(os.Getenv)
 	if p.Ready {
-		fmt.Fprintf(os.Stdout, "  ✓ LLM      %s (%s) — %s\n", p.Name, p.Model, p.Detail)
+		w.SendDoctorResult("LLM", "ok", fmt.Sprintf("%s (%s) — %s", p.Name, p.Model, p.Detail), "")
 	} else {
-		fmt.Fprintf(os.Stdout, "  ✗ LLM      %s\n", p.Detail)
-		fmt.Fprintln(os.Stdout, "             Fix: set OPENAI_API_KEY or ANTHROPIC_API_KEY, or run a local Ollama —")
-		fmt.Fprintln(os.Stdout, "                  https://ollama.com, then `ollama pull llama3.1 && ollama serve`")
+		w.SendDoctorResult("LLM", "fail", p.Detail,
+			"Fix: set OPENAI_API_KEY or ANTHROPIC_API_KEY, or run a local Ollama —\n"+
+				"     https://ollama.com, then `ollama pull llama3.1 && ollama serve`")
 	}
 
 	if deployment.IsDockerAvailable() {
-		fmt.Fprintln(os.Stdout, "  ✓ Docker   available (needed for Render and AWS container builds)")
+		w.SendDoctorResult("Docker", "ok", "available (needed for Render and AWS container builds)", "")
 	} else {
-		fmt.Fprintln(os.Stdout, "  ✗ Docker   not running — needed for Render and AWS deploys")
-		fmt.Fprintln(os.Stdout, "             Fix: https://docs.docker.com/get-docker/")
+		w.SendDoctorResult("Docker", "fail", "not running — needed for Render and AWS deploys",
+			"Fix: https://docs.docker.com/get-docker/")
 	}
 
-	fmt.Fprintln(os.Stdout, "\nPlatform credentials are checked when you deploy — prod uses your own")
-	fmt.Fprintln(os.Stdout, "(a Fly token, ~/.aws, a Render login, ...). Nothing to configure here.")
+	fmt.Fprint(w, "\nPlatform credentials are checked when you deploy — prod uses your own\n"+
+		"(a Fly token, ~/.aws, a Render login, ...). Nothing to configure here.\n")
 
 	if !p.Ready {
-		// Exit non-zero so `prod doctor && prod "deploy ..."` short-circuits. Use
-		// os.Exit rather than returning an error so the clean checklist above isn't
-		// followed by a timestamped log.Fatal re-print of the message.
-		os.Exit(1)
+		// Return an error so the process exits non-zero (`prod doctor && prod
+		// "deploy ..."` short-circuits) and JSON/MCP consumers see the failure via
+		// the emitted doctor_result events. The clean checklist above already went
+		// to stdout; this message goes to stderr.
+		return errors.New("no usable LLM provider — set OPENAI_API_KEY/ANTHROPIC_API_KEY or run Ollama")
 	}
 	return nil
 }
