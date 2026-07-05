@@ -59,6 +59,13 @@ prod "deploy this to fly with a postgres"
 `prod` parses the request, analyzes your project, shows you a plan to approve, and runs the
 deploy. No signup, no backend, no config file required.
 
+**Preview first, or undo:**
+
+```bash
+prod --dry-run "deploy this to fly"   # show the plan + estimated cost, deploy nothing
+prod "rollback"                       # roll back the last deploy (auto-detects the platform)
+```
+
 ### Command surface
 
 | Command | What it does |
