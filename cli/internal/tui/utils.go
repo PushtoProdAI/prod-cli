@@ -40,31 +40,17 @@ func getBanner() string {
 }
 
 func greetUser() string {
+	// Tool voice: name what prod actually does (deploy, rollback) with a concrete
+	// example — not a chatty "cloud assistant" persona or capabilities it lacks.
 	prompts := []string{
-		"What would you like to deploy today?",
-		"Ready to launch something new?",
-		"What's next on your cloud adventure?",
-		"Need a hand with your app or infra today?",
-		"What's cooking—deployments, logs, or maybe scaling?",
-		"What can I help you ship today?",
-		"How can I make your cloud life easier?",
-		"Working on something exciting? Let's get it live.",
-		"Want to check on a service, deploy something, or try something new?",
-		"Let's turn code into something live—what's the plan?",
-		"Your cloud assistant is ready. What's on the agenda?",
-		"Deploy. Debug. Discover. What's your move?",
-		"One terminal. Infinite possibility. What shall we do?",
-		"Just me and you—what should we take care of today?",
-		"Looking to deploy, inspect, or tweak something?",
-		"Need insights, deployments, or just a friend in the cloud?",
-		"What mission are we embarking on today?",
-		"Want to push some code or peek under the hood?",
-		"Cloud control is yours. What's first?",
-		"I'm all ears (and APIs). What's the task?",
+		"What should I deploy?  e.g. deploy this to fly with a postgres",
+		"Describe a deploy in plain English — or type: rollback",
+		"Ready. Try:  deploy this to render",
+		"What are we shipping? (deploy · rollback)",
+		"Type a deploy request, or `rollback` to undo the last one.",
 	}
 
-	prompt := prompts[rng.Intn(len(prompts))]
-	return prompt
+	return prompts[rng.Intn(len(prompts))]
 }
 
 // formatCurrentDir formats the current directory for display
