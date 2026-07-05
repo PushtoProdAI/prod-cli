@@ -65,6 +65,7 @@ deploy. No signup, no backend, no config file required.
 |---|---|
 | `prod [prompt]` | Start an interactive session, or run a one-shot deploy from the prompt |
 | `prod run <prompt>` | Execute a single command and exit — for automation / scripting (set `PROD_JSON_MODE=true` for structured JSON output) |
+| `prod doctor` | Check prerequisites (LLM provider reachable? Docker available?) — run this if a deploy won't start |
 | `prod mcp` | Start the MCP server (stdio) so AI agents can call prod as a tool |
 
 ### Use prod from an AI agent (MCP)

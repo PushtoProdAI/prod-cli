@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/conduitio/ecdysis"
 	"github.com/go-errors/errors"
+	doctorcmd "github.com/pushtoprodai/prod-cli/cmd/doctor"
 	mcpcmd "github.com/pushtoprodai/prod-cli/cmd/mcp"
 	"github.com/pushtoprodai/prod-cli/cmd/run"
 	"github.com/pushtoprodai/prod-cli/internal/agent"
@@ -44,14 +45,16 @@ type RootCommand struct {
 	WriterType   output.WriterType
 
 	// Subcommands
-	Run run.RunCommand    `cmd:"" help:"Run a deployment command"`
-	MCP mcpcmd.MCPCommand `cmd:"" help:"Start the prod MCP server (stdio)"`
+	Run    run.RunCommand          `cmd:"" help:"Run a deployment command"`
+	MCP    mcpcmd.MCPCommand       `cmd:"" help:"Start the prod MCP server (stdio)"`
+	Doctor doctorcmd.DoctorCommand `cmd:"" help:"Check prerequisites (LLM, Docker)"`
 }
 
 func (c *RootCommand) SubCommands() []ecdysis.Command {
 	return []ecdysis.Command{
 		&c.Run,
 		&c.MCP,
+		&c.Doctor,
 	}
 }
 
