@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -29,6 +28,7 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/llm"
 	"github.com/pushtoprodai/prod-cli/internal/output"
 	prodreg "github.com/pushtoprodai/prod-cli/internal/registry"
+	"golang.org/x/term"
 )
 
 type TUIWriter interface {
@@ -67,6 +67,9 @@ type Agent struct {
 	envVars            []EnvVarWithStatus
 	internalAuth       *auth.SupabaseAuth
 	nextStateAfterAuth stateFn // State to transition to after successful PaaS authentication
+	// awaitingSecret tells the console one-shot driver that the value it is about to
+	// read is sensitive, so it reads it masked (no echo) on a real terminal.
+	awaitingSecret bool
 }
 
 type agentContextKey string
@@ -177,12 +180,65 @@ func (a *Agent) DriveOneShot(ctx context.Context, prompt string, out io.Writer, 
 		return
 	}
 
-	scanner := bufio.NewScanner(in)
 	for !a.IsComplete() {
-		if !scanner.Scan() {
+		line, ok := a.readOneShotLine(out, in)
+		if !ok {
 			return // EOF / non-interactive input: stop instead of hanging
 		}
-		a.Process(ctx, scanner.Text(), out)
+		a.Process(ctx, line, out)
+	}
+}
+
+// readOneShotLine reads the next answer for the console one-shot driver. When the
+// agent is awaiting a sensitive value and the input is a real terminal, it reads
+// masked (no echo) via term.ReadPassword; otherwise it reads a plain line. It
+// returns ok=false to signal "stop" (EOF with nothing buffered, or a masked read
+// error), preserving the driver's "never hang" behavior.
+//
+// It deliberately avoids a persistent buffered reader: readLine consumes exactly
+// up to the newline with no read-ahead, so switching to term.ReadPassword on the
+// same fd for a sensitive line cannot lose bytes a buffer had already swallowed.
+func (a *Agent) readOneShotLine(out io.Writer, in io.Reader) (string, bool) {
+	if a.awaitingSecret {
+		// Only a real *os.File terminal can be masked. A pipe/redirect can't be
+		// masked (and often is EOF), so fall through to the normal line read.
+		if f, ok := in.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+			b, err := term.ReadPassword(int(f.Fd()))
+			if err != nil {
+				return "", false
+			}
+			// ReadPassword consumes the Enter keystroke without echoing it, so the
+			// cursor stays on the prompt line; emit the newline ourselves.
+			fmt.Fprintln(out)
+			return string(b), true
+		}
+	}
+
+	line, err := readLine(in)
+	if err != nil && line == "" {
+		return "", false // EOF with nothing buffered: stop instead of hanging
+	}
+	return line, true
+}
+
+// readLine reads a single line from r one byte at a time (no read-ahead), so a
+// later masked read on the same fd loses no bytes. The trailing '\n' is stripped;
+// a trailing '\r' (CRLF) is trimmed. A final line without a newline is returned
+// together with the underlying error (e.g. io.EOF).
+func readLine(r io.Reader) (string, error) {
+	var sb strings.Builder
+	buf := make([]byte, 1)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			if buf[0] == '\n' {
+				return strings.TrimSuffix(sb.String(), "\r"), nil
+			}
+			sb.WriteByte(buf[0])
+		}
+		if err != nil {
+			return strings.TrimSuffix(sb.String(), "\r"), err
+		}
 	}
 }
 
@@ -871,7 +927,10 @@ func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.W
 	}
 
 	if currentEnvVar == nil {
-		// No more pending env vars, proceed with language-specific preparation
+		// No more pending env vars, proceed with language-specific preparation.
+		// Clear the secret flag in case the last var read was sensitive, so the
+		// driver doesn't treat unrelated later input as masked.
+		a.awaitingSecret = false
 		fmt.Fprintf(out, "All environment variable values collected. Proceeding to project preparation...\n")
 		return a.prepareProject(ctx, input, out)
 	}
@@ -888,6 +947,10 @@ func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.W
 
 	// TUI mode: use text prompt
 	promptMessage := fmt.Sprintf("Enter value for environment variable '%s':", currentEnvVar.Name)
+	// Tell the console one-shot driver whether the value it's about to read is
+	// sensitive, so it can read it masked on a real terminal (the TUI masks via
+	// its own SendSecretPrompt widget; this flag drives the plain-terminal path).
+	a.awaitingSecret = currentEnvVar.Sensitive
 	switch {
 	case currentEnvVar.Sensitive:
 		// Mask secrets/tokens as they're typed (TUI).

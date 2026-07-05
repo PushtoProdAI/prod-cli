@@ -121,6 +121,34 @@ func TestDriveOneShotInteractiveExitsAtTerminal(t *testing.T) {
 	}
 }
 
+// A sensitive value can only be masked on a real TTY; on a non-TTY reader (a
+// pipe/strings.Reader, which is all a unit test can supply) the driver must fall
+// back to a normal line read and still deliver the answer.
+func TestDriveOneShotSensitiveNonTTYReadsPlainLine(t *testing.T) {
+	a := &Agent{}
+	var got string
+	var wait stateFn
+	wait = func(_ context.Context, in string, _ io.Writer) (stateFn, error) {
+		got = in
+		return nil, nil
+	}
+	// The initial Process marks the next read sensitive and parks in wait.
+	a.sm.currentState = func(_ context.Context, _ string, _ io.Writer) (stateFn, error) {
+		a.awaitingSecret = true
+		return wait, nil
+	}
+
+	var out strings.Builder
+	a.DriveOneShot(context.Background(), "", &out, strings.NewReader("s3cr3t\n"), false)
+
+	if got != "s3cr3t" {
+		t.Errorf("sensitive value on a non-TTY should read as a normal line, got %q", got)
+	}
+	if !a.IsComplete() {
+		t.Error("flow should have completed")
+	}
+}
+
 // Interactive with no input (piped/non-TTY) stops instead of hanging.
 func TestDriveOneShotInteractiveStopsOnEOF(t *testing.T) {
 	a := &Agent{}

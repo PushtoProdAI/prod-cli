@@ -36,6 +36,7 @@ require (
 	github.com/xo/dburl v0.23.8
 	golang.org/x/net v0.56.0
 	golang.org/x/oauth2 v0.36.0
+	golang.org/x/term v0.44.0
 	google.golang.org/api v0.287.0
 	modernc.org/sqlite v1.27.0
 )
