@@ -2,11 +2,12 @@
 // agents (Claude, Cursor, Cline, ...) can call prod as a tool. It runs in the
 // same single binary via `prod mcp` and speaks MCP over stdio.
 //
-// Tools today are the safe, read-only ones that need no interactive deploy
-// state: list_deploys (local history) and analyze_project (stack detection).
-// The mutating deploy/plan/rollback tools are the next iteration — they require
-// driving the interactive deploy state machine with an explicit human-approval
-// (confirm) gate; see ROADMAP.md "The MCP server".
+// Tools: list_deploys (local history), analyze_project (stack detection), and
+// deploy — a natural-language deploy with a required human-approval gate
+// (confirm=false previews the plan + cost and deploys nothing; confirm=true
+// deploys). deploy drives prod's own `prod run` over the JSON event substrate, so
+// it reuses the exact, tested deploy path and enforces the confirm gate by
+// replying to the plan-approval event.
 package mcpserver
 
 import (
@@ -30,7 +31,55 @@ func New(version string) *mcp.Server {
 
 	addListDeploys(s)
 	addAnalyzeProject(s)
+	addDeploy(s)
 	return s
+}
+
+// --- deploy ------------------------------------------------------------------
+
+type deployInput struct {
+	Prompt  string `json:"prompt" jsonschema:"the natural-language deploy request, e.g. 'deploy this to fly with a postgres'"`
+	Confirm bool   `json:"confirm,omitempty" jsonschema:"set true to ACTUALLY deploy (destructive, provisions cloud resources, costs money); false or omitted only PREVIEWS the plan and estimated cost and deploys nothing"`
+	Path    string `json:"path,omitempty" jsonschema:"the project directory to deploy (defaults to the current directory)"`
+}
+
+type deployOutput struct {
+	Deployed bool         `json:"deployed"`        // true only if confirm=true and the deploy succeeded
+	Status   string       `json:"status"`          // "preview" | "success" | "failed"
+	URL      string       `json:"url,omitempty"`   // the live URL, on a successful deploy
+	Error    string       `json:"error,omitempty"` // failure reason, if any
+	Plan     *planSummary `json:"plan,omitempty"`  // what would be / was deployed
+}
+
+func addDeploy(s *mcp.Server) {
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "deploy",
+		Description: "Deploy the project in `path` to a cloud platform from a natural-language request " +
+			"(e.g. \"deploy this to fly with a postgres\"). DESTRUCTIVE and COSTS MONEY. " +
+			"With confirm=false (the default) it only PREVIEWS — it returns the plan and estimated monthly cost and deploys NOTHING. " +
+			"You MUST pass confirm=true to actually deploy. Always preview first, show the human the plan + cost, and only deploy after explicit human approval. " +
+			"Platform credentials must already be in the environment (a Fly token, ~/.aws, a Render login, ...) — prod uses the user's own, like the CLI.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deployInput) (*mcp.CallToolResult, deployOutput, error) {
+		path := in.Path
+		if path == "" {
+			path = "."
+		}
+		res, err := runProd(ctx, in.Prompt, in.Confirm, path)
+		if err != nil {
+			return nil, deployOutput{}, err
+		}
+
+		out := deployOutput{Plan: summarizePlan(res.Plan)}
+		if in.Confirm {
+			out.Status = res.Status
+			out.URL = res.URL
+			out.Error = res.Error
+			out.Deployed = res.Status == "success"
+		} else {
+			out.Status = "preview"
+		}
+		return nil, out, nil
+	})
 }
 
 // Serve runs the MCP server over stdio until ctx is done.
