@@ -19,6 +19,8 @@ func TestClassifyLog(t *testing.T) {
 		{"0 errors", logDefault},
 		{"Build finished with no errors", logDefault},
 		{"completed without errors", logDefault},
+		// negated "error" but a real "failed" on the same line → still an error
+		{"Tests: 0 errors, 3 failed", logError},
 		// success + warning
 		{"✅ Deployed — https://x.fly.dev", logSuccess},
 		{"deployment successful", logSuccess},
