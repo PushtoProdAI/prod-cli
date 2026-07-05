@@ -34,7 +34,6 @@ func (m Model) formatSuccessDisplay(msg SuccessDisplayMessage) string {
 			Bold(true).
 			Render("Platform: ")
 		platformValue := lipgloss.NewStyle().
-			Foreground(textColor).
 			Render(msg.Platform)
 		contentLines = append(contentLines, styledPlatform+platformValue)
 	}
@@ -45,7 +44,6 @@ func (m Model) formatSuccessDisplay(msg SuccessDisplayMessage) string {
 			Bold(true).
 			Render("Application: ")
 		appValue := lipgloss.NewStyle().
-			Foreground(textColor).
 			Render(msg.AppName)
 		contentLines = append(contentLines, styledApp+appValue)
 	}

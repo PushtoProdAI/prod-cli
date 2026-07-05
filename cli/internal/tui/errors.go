@@ -124,7 +124,6 @@ func (m Model) formatRemediation(index int, remediation RemediationItem) string 
 		Render(fmt.Sprintf("[%d]", index+1))
 
 	descriptionStyled := lipgloss.NewStyle().
-		Foreground(textColor).
 		Bold(false).
 		Render(remediation.Description)
 
