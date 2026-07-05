@@ -90,6 +90,7 @@ type DeployPlan struct {
 	CollectedEnvVars    []deployment.EnvVar
 	Pricing             deployment.CostEstimate
 	ExistingProjectInfo ExistingProjectInfo
+	Shape               deployment.DeployShape // web (default) | mcp-server | worker | cron
 }
 
 // Plan approval response constants

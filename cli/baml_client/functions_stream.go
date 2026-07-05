@@ -44,6 +44,7 @@ func (s *StreamValue[TStream, TFinal]) Stream() *TStream {
 
 // / Streaming version of CategorizeRoutes
 func (*stream) CategorizeRoutes(ctx context.Context, candidates []types.RouteCandidate, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.CategorizedRoutes, types.CategorizedRoutes], error) {
+
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -95,13 +96,13 @@ func (*stream) CategorizeRoutes(ctx context.Context, candidates []types.RouteCan
 				return
 			}
 			if result.HasData {
-				data := result.Data.(types.CategorizedRoutes)
+				data := (result.Data).(types.CategorizedRoutes)
 				channel <- StreamValue[stream_types.CategorizedRoutes, types.CategorizedRoutes]{
 					IsFinal:  true,
 					as_final: &data,
 				}
 			} else {
-				data := result.StreamData.(stream_types.CategorizedRoutes)
+				data := (result.StreamData).(stream_types.CategorizedRoutes)
 				channel <- StreamValue[stream_types.CategorizedRoutes, types.CategorizedRoutes]{
 					IsFinal:   false,
 					as_stream: &data,
@@ -117,6 +118,7 @@ func (*stream) CategorizeRoutes(ctx context.Context, candidates []types.RouteCan
 
 // / Streaming version of DetermineBuildOutput
 func (*stream) DetermineBuildOutput(ctx context.Context, candidate types.BuildOutputCandidate, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.BuildOutput, types.BuildOutput], error) {
+
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -168,13 +170,13 @@ func (*stream) DetermineBuildOutput(ctx context.Context, candidate types.BuildOu
 				return
 			}
 			if result.HasData {
-				data := result.Data.(types.BuildOutput)
+				data := (result.Data).(types.BuildOutput)
 				channel <- StreamValue[stream_types.BuildOutput, types.BuildOutput]{
 					IsFinal:  true,
 					as_final: &data,
 				}
 			} else {
-				data := result.StreamData.(stream_types.BuildOutput)
+				data := (result.StreamData).(stream_types.BuildOutput)
 				channel <- StreamValue[stream_types.BuildOutput, types.BuildOutput]{
 					IsFinal:   false,
 					as_stream: &data,
@@ -190,6 +192,7 @@ func (*stream) DetermineBuildOutput(ctx context.Context, candidate types.BuildOu
 
 // / Streaming version of DetermineEnvVarRoles
 func (*stream) DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCandidate, dbList []string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.EnvVarCategory, types.EnvVarCategory], error) {
+
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -241,13 +244,13 @@ func (*stream) DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCand
 				return
 			}
 			if result.HasData {
-				data := result.Data.(types.EnvVarCategory)
+				data := (result.Data).(types.EnvVarCategory)
 				channel <- StreamValue[stream_types.EnvVarCategory, types.EnvVarCategory]{
 					IsFinal:  true,
 					as_final: &data,
 				}
 			} else {
-				data := result.StreamData.(stream_types.EnvVarCategory)
+				data := (result.StreamData).(stream_types.EnvVarCategory)
 				channel <- StreamValue[stream_types.EnvVarCategory, types.EnvVarCategory]{
 					IsFinal:   false,
 					as_stream: &data,
@@ -263,6 +266,7 @@ func (*stream) DetermineEnvVarRoles(ctx context.Context, envVar types.EnvVarCand
 
 // / Streaming version of DetermineLaunchCommand
 func (*stream) DetermineLaunchCommand(ctx context.Context, language string, frameworks []string, envVars []string, lc types.LaunchContext, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.LaunchCommand, types.LaunchCommand], error) {
+
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -314,13 +318,13 @@ func (*stream) DetermineLaunchCommand(ctx context.Context, language string, fram
 				return
 			}
 			if result.HasData {
-				data := result.Data.(types.LaunchCommand)
+				data := (result.Data).(types.LaunchCommand)
 				channel <- StreamValue[stream_types.LaunchCommand, types.LaunchCommand]{
 					IsFinal:  true,
 					as_final: &data,
 				}
 			} else {
-				data := result.StreamData.(stream_types.LaunchCommand)
+				data := (result.StreamData).(stream_types.LaunchCommand)
 				channel <- StreamValue[stream_types.LaunchCommand, types.LaunchCommand]{
 					IsFinal:   false,
 					as_stream: &data,
@@ -336,6 +340,7 @@ func (*stream) DetermineLaunchCommand(ctx context.Context, language string, fram
 
 // / Streaming version of DetermineMigrationCommand
 func (*stream) DetermineMigrationCommand(ctx context.Context, language string, frameworks []string, ormTools []string, migrationContext types.MigrationContext, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.MigrationCommand, types.MigrationCommand], error) {
+
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -387,13 +392,13 @@ func (*stream) DetermineMigrationCommand(ctx context.Context, language string, f
 				return
 			}
 			if result.HasData {
-				data := result.Data.(types.MigrationCommand)
+				data := (result.Data).(types.MigrationCommand)
 				channel <- StreamValue[stream_types.MigrationCommand, types.MigrationCommand]{
 					IsFinal:  true,
 					as_final: &data,
 				}
 			} else {
-				data := result.StreamData.(stream_types.MigrationCommand)
+				data := (result.StreamData).(stream_types.MigrationCommand)
 				channel <- StreamValue[stream_types.MigrationCommand, types.MigrationCommand]{
 					IsFinal:   false,
 					as_stream: &data,
@@ -409,6 +414,7 @@ func (*stream) DetermineMigrationCommand(ctx context.Context, language string, f
 
 // / Streaming version of ExtractIntent
 func (*stream) ExtractIntent(ctx context.Context, request string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Intent, types.Intent], error) {
+
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -460,13 +466,13 @@ func (*stream) ExtractIntent(ctx context.Context, request string, opts ...CallOp
 				return
 			}
 			if result.HasData {
-				data := result.Data.(types.Intent)
+				data := (result.Data).(types.Intent)
 				channel <- StreamValue[stream_types.Intent, types.Intent]{
 					IsFinal:  true,
 					as_final: &data,
 				}
 			} else {
-				data := result.StreamData.(stream_types.Intent)
+				data := (result.StreamData).(stream_types.Intent)
 				channel <- StreamValue[stream_types.Intent, types.Intent]{
 					IsFinal:   false,
 					as_stream: &data,
@@ -482,6 +488,7 @@ func (*stream) ExtractIntent(ctx context.Context, request string, opts ...CallOp
 
 // / Streaming version of FetchPricing
 func (*stream) FetchPricing(ctx context.Context, service types.Service, content string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.ServicePricing, types.ServicePricing], error) {
+
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -533,13 +540,13 @@ func (*stream) FetchPricing(ctx context.Context, service types.Service, content 
 				return
 			}
 			if result.HasData {
-				data := result.Data.(types.ServicePricing)
+				data := (result.Data).(types.ServicePricing)
 				channel <- StreamValue[stream_types.ServicePricing, types.ServicePricing]{
 					IsFinal:  true,
 					as_final: &data,
 				}
 			} else {
-				data := result.StreamData.(stream_types.ServicePricing)
+				data := (result.StreamData).(stream_types.ServicePricing)
 				channel <- StreamValue[stream_types.ServicePricing, types.ServicePricing]{
 					IsFinal:   false,
 					as_stream: &data,
@@ -555,6 +562,7 @@ func (*stream) FetchPricing(ctx context.Context, service types.Service, content 
 
 // / Streaming version of SummarizeDeployError
 func (*stream) SummarizeDeployError(ctx context.Context, errorMsg string, intent types.Intent, spec types.ProjectSpec, os string, violations []string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Error, types.Error], error) {
+
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -606,13 +614,13 @@ func (*stream) SummarizeDeployError(ctx context.Context, errorMsg string, intent
 				return
 			}
 			if result.HasData {
-				data := result.Data.(types.Error)
+				data := (result.Data).(types.Error)
 				channel <- StreamValue[stream_types.Error, types.Error]{
 					IsFinal:  true,
 					as_final: &data,
 				}
 			} else {
-				data := result.StreamData.(stream_types.Error)
+				data := (result.StreamData).(stream_types.Error)
 				channel <- StreamValue[stream_types.Error, types.Error]{
 					IsFinal:   false,
 					as_stream: &data,
@@ -628,6 +636,7 @@ func (*stream) SummarizeDeployError(ctx context.Context, errorMsg string, intent
 
 // / Streaming version of SummarizeIntent
 func (*stream) SummarizeIntent(ctx context.Context, intent types.Intent, name string, language string, detectedPlatforms []string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Summary, types.Summary], error) {
+
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -679,13 +688,13 @@ func (*stream) SummarizeIntent(ctx context.Context, intent types.Intent, name st
 				return
 			}
 			if result.HasData {
-				data := result.Data.(types.Summary)
+				data := (result.Data).(types.Summary)
 				channel <- StreamValue[stream_types.Summary, types.Summary]{
 					IsFinal:  true,
 					as_final: &data,
 				}
 			} else {
-				data := result.StreamData.(stream_types.Summary)
+				data := (result.StreamData).(stream_types.Summary)
 				channel <- StreamValue[stream_types.Summary, types.Summary]{
 					IsFinal:   false,
 					as_stream: &data,
@@ -701,6 +710,7 @@ func (*stream) SummarizeIntent(ctx context.Context, intent types.Intent, name st
 
 // / Streaming version of SummarizeSteps
 func (*stream) SummarizeSteps(ctx context.Context, steps []string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Summary, types.Summary], error) {
+
 	var callOpts callOption
 	for _, opt := range opts {
 		opt(&callOpts)
@@ -752,13 +762,13 @@ func (*stream) SummarizeSteps(ctx context.Context, steps []string, opts ...CallO
 				return
 			}
 			if result.HasData {
-				data := result.Data.(types.Summary)
+				data := (result.Data).(types.Summary)
 				channel <- StreamValue[stream_types.Summary, types.Summary]{
 					IsFinal:  true,
 					as_final: &data,
 				}
 			} else {
-				data := result.StreamData.(stream_types.Summary)
+				data := (result.StreamData).(stream_types.Summary)
 				channel <- StreamValue[stream_types.Summary, types.Summary]{
 					IsFinal:   false,
 					as_stream: &data,

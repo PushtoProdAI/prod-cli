@@ -38,7 +38,7 @@ import (
 var bamlRuntime *baml.BamlRuntime
 
 func getEnvVars(overrides map[string]string) map[string]string {
-	env := map[string]string{}
+	var env = map[string]string{}
 	for _, env_var := range os.Environ() {
 		key, value, _ := strings.Cut(env_var, "=")
 		env[key] = value
@@ -155,13 +155,11 @@ func WithCollectors(collectors []baml.Collector) CallOptionFunc {
 }
 
 // Constructors
-type (
-	Collector = baml.Collector
-	Image     = baml.Image
-	Audio     = baml.Audio
-	PDF       = baml.PDF
-	Video     = baml.Video
-)
+type Collector = baml.Collector
+type Image = baml.Image
+type Audio = baml.Audio
+type PDF = baml.PDF
+type Video = baml.Video
 
 func NewCollector(name string) (Collector, error) {
 	return bamlRuntime.NewCollector(name)
