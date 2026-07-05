@@ -275,11 +275,11 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	}
 	liveCheckOpts := ActivityOpts
 	liveCheckOpts.RetryOptions.MaxAttempts = 15
-	_, err = workflow.ExecuteActivity[string](ctx, liveCheckOpts, AgentIsURLLive, fullUrl).Get(ctx)
+	_, err = workflow.ExecuteActivity[string](ctx, liveCheckOpts, AgentVerifyLiveness, input.Shape, fullUrl).Get(ctx)
 	if err != nil {
 		prod_error.CaptureErrorWithContext(err, map[string]any{
 			"workflow":     DeployRenderWorkflowName,
-			"activity":     AgentIsURLLive,
+			"activity":     AgentVerifyLiveness,
 			"component":    "deployment",
 			"platform":     "render",
 			"project_name": input.Spec.Name,
