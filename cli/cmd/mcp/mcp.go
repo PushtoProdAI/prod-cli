@@ -29,7 +29,12 @@ func (c *MCPCommand) Docs() ecdysis.Docs {
 	return ecdysis.Docs{
 		Short: "Start the prod MCP server (stdio)",
 		Long: `Expose prod as Model Context Protocol tools over stdio so AI agents
-(Claude Code, Cursor, Cline, ...) can call it. Tools: list_deploys, analyze_project.
+(Claude Code, Cursor, Cline, ...) can call it. Tools:
+
+  - list_deploys     recall recent deployments from local history
+  - analyze_project  detect a project's stack and required services
+  - deploy           natural-language deploy with a human-approval gate
+                     (confirm=false previews the plan + cost; confirm=true deploys)
 
 Add to an MCP client config:
 
