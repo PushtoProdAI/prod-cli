@@ -150,26 +150,50 @@ func wrapText(text string, width int) []string {
 	return lines
 }
 
-func (m *Model) styleLogMessage(content string) string {
+type logKind int
+
+const (
+	logDefault logKind = iota
+	logError
+	logSuccess
+	logWarning
+)
+
+// classifyLog picks a severity for a log line from its content. It guards the
+// error case against negated phrasings ("0 errors", "no errors", "without
+// errors") so a clean result isn't rendered as a failure.
+func classifyLog(content string) logKind {
 	lower := strings.ToLower(content)
 
-	// Error messages
-	if strings.Contains(lower, "error") || strings.Contains(lower, "failed") || strings.Contains(lower, "❌") {
+	isError := strings.Contains(content, "❌") ||
+		((strings.Contains(lower, "error") || strings.Contains(lower, "failed")) &&
+			!strings.Contains(lower, "0 error") &&
+			!strings.Contains(lower, "no error") &&
+			!strings.Contains(lower, "without error"))
+	switch {
+	case isError:
+		return logError
+	case strings.Contains(lower, "success") || strings.Contains(lower, "deployed") ||
+		strings.Contains(content, "✅") || strings.Contains(content, "🚀"):
+		return logSuccess
+	case strings.Contains(lower, "warning") || strings.Contains(content, "⚠️"):
+		return logWarning
+	default:
+		return logDefault
+	}
+}
+
+func (m *Model) styleLogMessage(content string) string {
+	switch classifyLog(content) {
+	case logError:
 		return errorLogStyle.Render(content)
-	}
-
-	// Success messages
-	if strings.Contains(lower, "success") || strings.Contains(lower, "deployed") || strings.Contains(lower, "✅") || strings.Contains(lower, "🚀") {
+	case logSuccess:
 		return successLogStyle.Render(content)
-	}
-
-	// Warning messages
-	if strings.Contains(lower, "warning") || strings.Contains(lower, "⚠️") {
+	case logWarning:
 		return warningLogStyle.Render(content)
+	default:
+		return logStyle.Render(content)
 	}
-
-	// Default styling
-	return logStyle.Render(content)
 }
 
 // clearSelection clears the current text selection
