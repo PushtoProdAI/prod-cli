@@ -165,8 +165,11 @@ const (
 func classifyLog(content string) logKind {
 	lower := strings.ToLower(content)
 
+	// "failed" is a strong signal on its own; only "error" gets the negation guard,
+	// so a mixed line like "0 errors, 1 failed" still reads as a failure.
 	isError := strings.Contains(content, "❌") ||
-		((strings.Contains(lower, "error") || strings.Contains(lower, "failed")) &&
+		strings.Contains(lower, "failed") ||
+		(strings.Contains(lower, "error") &&
 			!strings.Contains(lower, "0 error") &&
 			!strings.Contains(lower, "no error") &&
 			!strings.Contains(lower, "without error"))
