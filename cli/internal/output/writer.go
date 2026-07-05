@@ -278,6 +278,14 @@ func (w *ConsoleWriter) SendPlanApprovalRequest(plan map[string]interface{}) {
 	if summary != "" {
 		fmt.Printf("%s\n", summary)
 	}
+	if shape, _ := plan["shape"].(string); shape != "" && shape != "web" {
+		fmt.Printf("Shape: %s\n", shape)
+	}
+	if pricing, ok := plan["pricing"].(map[string]interface{}); ok {
+		if total, ok := pricing["total"].(float64); ok && total > 0 {
+			fmt.Printf("Estimated cost: ~$%.2f/mo\n", total)
+		}
+	}
 }
 
 // SendEnvVarPrompt prints an environment-variable prompt.
