@@ -170,6 +170,13 @@ func (w *TeaWriter) SendTextPromptWithDefault(message string, defaultValue strin
 	})
 }
 
+func (w *TeaWriter) SendSecretPrompt(message string) {
+	w.send(TextPrompt{
+		Message: message,
+		Masked:  true,
+	})
+}
+
 func (w *TeaWriter) SendPlan(plan agent.DeployPlan) {
 	// Convert agent types to TUI types
 	tuiServices := make([]ServiceRequirement, len(plan.Spec.ServiceRequirements))

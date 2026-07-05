@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/bubbles/v2/textinput"
 )
 
 func TestSuccessBoxRollbackHint(t *testing.T) {
@@ -17,5 +19,14 @@ func TestSuccessBoxRollbackHint(t *testing.T) {
 	aws := m.formatSuccessDisplay(SuccessDisplayMessage{Platform: "AWS", AppName: "x", Url: "https://y"})
 	if strings.Contains(aws, "rollback") {
 		t.Errorf("AWS success must not offer rollback, got:\n%s", aws)
+	}
+}
+
+func TestSetModeNormalUnmasksInput(t *testing.T) {
+	m := Model{}
+	m.textInput.EchoMode = textinput.EchoPassword // as if a masked prompt just ran
+	m.setMode(ModeNormal)
+	if m.textInput.EchoMode != textinput.EchoNormal {
+		t.Error("returning to normal mode must un-mask the input (no sticky masking)")
 	}
 }

@@ -38,6 +38,7 @@ type TUIWriter interface {
 	SendSelect(message string, options []string)
 	SendTextPrompt(message string)
 	SendTextPromptWithDefault(message string, defaultValue string)
+	SendSecretPrompt(message string)
 	SendPlan(plan DeployPlan)
 	SendError(summary string, remediations []Remediation)
 	SendWarning(summary string, remediations []Remediation)
@@ -296,6 +297,16 @@ func (a *Agent) sendAPIKeyPrompt(out io.Writer, message string) {
 func (a *Agent) sendTextPrompt(out io.Writer, message string) {
 	if tuiWriter, ok := out.(TUIWriter); ok {
 		tuiWriter.SendTextPrompt(message)
+		return
+	}
+	fmt.Fprintf(out, "%s\n", message)
+}
+
+// sendSecretPrompt prompts for a sensitive value; the TUI masks input as it's
+// typed. (Console input isn't masked yet — see the env-var prompt.)
+func (a *Agent) sendSecretPrompt(out io.Writer, message string) {
+	if tuiWriter, ok := out.(TUIWriter); ok {
+		tuiWriter.SendSecretPrompt(message)
 		return
 	}
 	fmt.Fprintf(out, "%s\n", message)
@@ -839,7 +850,7 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 		}
 		fmt.Fprint(out, "\n")
 		if len(sensitivePending) > 0 {
-			fmt.Fprintf(out, "🔒 Sensitive variables are marked with 🔒. We'll display the values you enter in plaintext, but they are handled securely when we deploy!\n")
+			fmt.Fprintf(out, "🔒 marks sensitive values. prod stores them as encrypted secrets on the platform — never in plain config. (Masked as you type in the interactive UI.)\n")
 		}
 		return a.promptForEnvVarValue(ctx, input, out)
 	}
@@ -877,10 +888,14 @@ func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.W
 
 	// TUI mode: use text prompt
 	promptMessage := fmt.Sprintf("Enter value for environment variable '%s':", currentEnvVar.Name)
-	if currentEnvVar.Value != "" {
-		// Use the enhanced method that pre-fills the input with the default value
+	switch {
+	case currentEnvVar.Sensitive:
+		// Mask secrets/tokens as they're typed (TUI).
+		a.sendSecretPrompt(out, promptMessage)
+	case currentEnvVar.Value != "":
+		// Pre-fill the input with the detected default value.
 		a.sendTextPromptWithDefault(out, promptMessage, currentEnvVar.Value)
-	} else {
+	default:
 		a.sendTextPrompt(out, promptMessage)
 	}
 	return a.waitForEnvVarValue, nil
