@@ -1,12 +1,14 @@
 package agent
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"os/exec"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -57,6 +59,7 @@ type Agent struct {
 	wfClient           *client.Client
 	interactive        bool
 	dryRun             bool
+	oneShot            bool
 	DeployPlan         *DeployPlan
 	UIOutput           io.Writer
 	auth               auth.AuthProvider
@@ -123,6 +126,63 @@ func (sm *deploySM) next(ctx context.Context, input string, out io.Writer) error
 
 func (a *Agent) SetInteractive(interactive bool) {
 	a.interactive = interactive
+}
+
+// done is the terminal transition after a completed action (deploy, rollback,
+// error, cancel). In the interactive TUI it returns to checkPrerequisites to
+// accept the next command; in a one-shot run (`prod "..."`, `--yes`) it ends the
+// state machine so the process exits instead of blocking for more input.
+func (a *Agent) done() stateFn {
+	if a.oneShot {
+		return nil
+	}
+	return a.checkPrerequisites
+}
+
+// stateID identifies the current state so a driver can tell whether a Process
+// call made forward progress. Distinct states are distinct methods, so distinct
+// code pointers; a state that waits for input returns itself → same pointer.
+func (a *Agent) stateID() uintptr {
+	if a.sm.currentState == nil {
+		return 0
+	}
+	return reflect.ValueOf(a.sm.currentState).Pointer()
+}
+
+// DriveOneShot runs a single prompt to completion on the non-TUI console path.
+// The deploy is a multi-state flow but Process advances one state per call, so a
+// single call would dead-end at the confirmation prompt. This drives it:
+//   - autoApprove (--yes): proceed without prompting, with a no-progress guard so
+//     a step that needs input we can't supply (e.g. an env-var value) fails fast
+//     instead of spinning.
+//   - otherwise: answer prompts (confirmation, env-var values) by reading lines
+//     from in until the flow completes or input ends (EOF/non-TTY → stop, never
+//     hang), so a plain-terminal `prod "deploy ..."` reaches a URL.
+func (a *Agent) DriveOneShot(ctx context.Context, prompt string, out io.Writer, in io.Reader, autoApprove bool) {
+	a.interactive = !autoApprove
+	a.oneShot = true // terminal states end the machine instead of looping for more commands
+	a.Process(ctx, prompt, out)
+
+	if autoApprove {
+		for !a.IsComplete() {
+			before := a.stateID()
+			a.Process(ctx, "", out)
+			if !a.IsComplete() && a.stateID() == before {
+				fmt.Fprintln(out, "This step needs input that can't be provided with --yes. "+
+					"Run it in a terminal, or set the values (e.g. environment variables) in your environment.")
+				return
+			}
+		}
+		return
+	}
+
+	scanner := bufio.NewScanner(in)
+	for !a.IsComplete() {
+		if !scanner.Scan() {
+			return // EOF / non-interactive input: stop instead of hanging
+		}
+		a.Process(ctx, scanner.Text(), out)
+	}
 }
 
 // SetDryRun makes a deploy stop after showing the plan (and cost), touching
@@ -268,7 +328,7 @@ func (a *Agent) Process(ctx context.Context, input string, out io.Writer) {
 
 	// Enrich context with session if authenticated
 	contextWithSession := ctx
-	if a.internalAuth.IsAuthenticated() {
+	if a.internalAuth != nil && a.internalAuth.IsAuthenticated() {
 		session, err := a.internalAuth.GetSession()
 		if err != nil {
 			slog.Error("Failed to get session", "error", err)
@@ -287,7 +347,7 @@ func (a *Agent) checkPrerequisites(ctx context.Context, input string, out io.Wri
 	// Always check authentication when checkPrerequisites is called
 	// This ensures auth is validated on every new user input
 	if !a.ensureAuthenticated(ctx, out) {
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	// Get session and enrich context after successful authentication
@@ -304,7 +364,7 @@ func (a *Agent) checkPrerequisites(ctx context.Context, input string, out io.Wri
 func (a *Agent) handleSlashCommand(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	parts := strings.Fields(input)
 	if len(parts) == 0 {
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	commandName := parts[0]
@@ -318,7 +378,7 @@ func (a *Agent) handleSlashCommand(ctx context.Context, input string, out io.Wri
 
 	// Command not found
 	fmt.Fprintf(out, "Unknown command: %s\n", commandName)
-	return a.checkPrerequisites, nil
+	return a.done(), nil
 }
 
 func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -332,7 +392,7 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 		if !a.interactive {
 			return nil, nil
 		}
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	wf, err := Workflows{}.PlanDeploy(ctx, a.wfClient, input)
@@ -406,7 +466,7 @@ func (a *Agent) selectDeployPlatform(_ context.Context, plan DeployPlan, _ strin
 		fmt.Fprint(out, "I couldn't tell which platform to deploy to. Add one to your prompt, e.g.:\n"+
 			"  prod \"deploy this to fly\"\n"+
 			"Supported: Fly.io, Render, Vercel, Netlify, Heroku, AWS.\n")
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 	a.DeployPlan = &plan // stash; the selection fills in the platform
 	a.sendSelect(out, "Which platform should I deploy to?", deployPlatformNames())
@@ -429,14 +489,14 @@ func (a *Agent) waitForDeployPlatformSelection(ctx context.Context, input string
 func (a *Agent) proceedWithPlan(ctx context.Context, plan DeployPlan, input string, out io.Writer) (stateFn, error) {
 	if !shouldProceed(plan) {
 		fmt.Fprintf(out, "Cannot proceed with deployment plan\n")
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	// Gate the deploy: AWS needs the backend (local-refused), Render needs the
 	// user's registry. Rollback is gated separately (executeRollback) since a
 	// Render rollback needs neither.
 	if a.refuseDeployPlatform(out, plan.Platform) {
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 	a.DeployPlan = &plan
 
@@ -450,7 +510,7 @@ func (a *Agent) proceedWithPlan(ctx context.Context, plan DeployPlan, input stri
 		if !a.interactive {
 			return nil, nil
 		}
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	// Check if we're in JSON mode (VSCode extension integration)
@@ -513,7 +573,7 @@ func (a *Agent) processConfirmationResponse(ctx context.Context, input string, o
 		} else {
 			fmt.Fprintf(out, "Deployment cancelled\n")
 		}
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	// Invalid response - ask again
@@ -545,7 +605,7 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 			"platform":     a.DeployPlan.Platform,
 			"project_name": a.DeployPlan.Spec.Name,
 		})
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	result, err := client.GetWorkflowResult[ExistingProjectInfo](ctx, a.wfClient, wf, 2*time.Minute)
@@ -558,7 +618,7 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 			"platform":     a.DeployPlan.Platform,
 			"project_name": a.DeployPlan.Spec.Name,
 		})
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	a.DeployPlan.ExistingProjectInfo = result
@@ -927,7 +987,7 @@ func (a *Agent) prepareLanguage(
 			"project_type": projectType,
 		})
 		fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	result, err := client.GetWorkflowResult[SetupProjectResult](ctx, a.wfClient, wf, 2*time.Minute)
@@ -1037,7 +1097,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 			"language":     DeployPlanWithEnvVars.Spec.Language,
 		})
 		fmt.Fprint(out, "Sorry, couldn't create a deployment plan \n")
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	// give a generous timeout for the deployment to complete
@@ -1057,7 +1117,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 		})
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
 		fmt.Fprint(out, "Sorry, we had trouble deploying your project \n")
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	if result.Error.Summary != "" {
@@ -1094,7 +1154,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 		if !a.interactive {
 			return nil, nil
 		}
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	// deployment_complete event is emitted from planning.go workflow layer
@@ -1121,7 +1181,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 		return nil, nil
 	}
 	// In interactive mode, return to input processing state for more commands
-	return a.checkPrerequisites, nil
+	return a.done(), nil
 }
 
 func (a *Agent) selectPlatform(_ context.Context, _ string, out io.Writer) (stateFn, error) {
@@ -1169,7 +1229,7 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 	// Multi-platform rollback reassigns the platform after the plan-time gate, so
 	// re-check here — executeRollback is the single chokepoint for every rollback.
 	if a.refuseUnsupportedPlatform(out, a.DeployPlan.Platform) {
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	wf, err := Workflows{}.Rollback(ctx, a.wfClient, *a.DeployPlan)
@@ -1183,7 +1243,7 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 			"project_name": a.DeployPlan.Spec.Name,
 		})
 		fmt.Fprint(out, "Sorry, couldn't execute the rollback\n")
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	result, err := client.GetWorkflowResult[deployResult](ctx, a.wfClient, wf, 10*time.Minute)
@@ -1200,7 +1260,7 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 		})
 		a.wfClient.CancelWorkflowInstance(ctx, wf)
 		fmt.Fprint(out, "Sorry, we had trouble rolling back your deployment\n")
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	if result.Error.Summary != "" {
@@ -1213,7 +1273,7 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 		if !a.interactive {
 			return nil, nil
 		}
-		return a.checkPrerequisites, nil
+		return a.done(), nil
 	}
 
 	// Success
@@ -1233,7 +1293,7 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 	if !a.interactive {
 		return nil, nil
 	}
-	return a.checkPrerequisites, nil
+	return a.done(), nil
 }
 
 // refuseDeployPlatform gates the DEPLOY path. Render requires the user's own
@@ -1314,7 +1374,7 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 	authenticated, err := authProvider.CheckAuthentication(ctx)
 	if err != nil {
 		fmt.Fprintf(out, "Error checking authentication: %v\n", err)
-		return a.checkPrerequisites, err
+		return a.done(), err
 	}
 
 	if !authenticated {
