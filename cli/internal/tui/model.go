@@ -312,7 +312,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() (string, *tea.Cursor) {
 	if !m.ready {
 		return lipgloss.NewStyle().
-			Foreground(textColor).
 			Render("Loading..."), nil
 	}
 
@@ -682,14 +681,14 @@ func (m Model) highlightSearchMatches(cleanLine string, matches []SearchMatch, l
 			// Current match - use bright purple/magenta highlight
 			result.WriteString(lipgloss.NewStyle().
 				Background(secondaryColor).
-				Foreground(backgroundColor).
+				Foreground(onAccentColor).
 				Bold(true).
 				Render(matchText))
 		} else {
 			// Other matches - use muted purple
 			result.WriteString(lipgloss.NewStyle().
 				Background(lipgloss.Color("#9333EA")).
-				Foreground(backgroundColor).
+				Foreground(onAccentColor).
 				Render(matchText))
 		}
 
