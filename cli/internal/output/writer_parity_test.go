@@ -21,7 +21,11 @@ func exerciseAllEvents(w StatusWriter) {
 	w.SendDeploymentStart("aws", "/path/to/project")
 	w.SendDeploymentComplete("aws", "success", "https://x.us-east-1.awsapprunner.com", "", 1234)
 	w.SendDeploymentComplete("aws", "failed", "", "something broke", 100)
-	w.SendPlanApprovalRequest(map[string]interface{}{"action": "deploy", "platform": "aws", "summary": "deploy to aws"})
+	w.SendPlanApprovalRequest(map[string]interface{}{
+		"action": "deploy", "platform": "aws", "summary": "deploy to aws",
+		"shape":   "mcp-server",
+		"pricing": map[string]interface{}{"total": 12.5},
+	})
 	w.SendEnvVarPrompt("DATABASE_URL", "", "Enter your database URL")
 	if ib, ok := w.(InfoBoxWriter); ok {
 		ib.SendInfoBox("Title", "content", "info")
@@ -103,5 +107,44 @@ func TestJSONWriterEmitsWellFormedEvents(t *testing.T) {
 		if !seen[want] {
 			t.Errorf("JSON writer never emitted event type %q; saw %s", want, fmt.Sprint(seen))
 		}
+	}
+}
+
+// The plan event must carry shape + estimated cost through the writers, so a
+// spend/undo decision isn't made blind (the point of the Phase 1 enrichment).
+func TestPlanEventCarriesShapeAndCost(t *testing.T) {
+	// JSON: the plan_approval_request event includes shape + pricing.total.
+	out := captureStdout(t, func() { exerciseAllEvents(NewJSONWriter()) })
+	var planEv map[string]any
+	sc := bufio.NewScanner(strings.NewReader(out))
+	for sc.Scan() {
+		var ev map[string]any
+		if json.Unmarshal([]byte(strings.TrimSpace(sc.Text())), &ev) == nil && ev["type"] == "plan_approval_request" {
+			planEv = ev
+		}
+	}
+	if planEv == nil {
+		t.Fatal("no plan_approval_request event emitted")
+	}
+	if planEv["shape"] != "mcp-server" {
+		t.Errorf("JSON plan missing shape, got %v", planEv["shape"])
+	}
+	if pricing, _ := planEv["pricing"].(map[string]any); pricing == nil || pricing["total"] != 12.5 {
+		t.Errorf("JSON plan missing cost, got %v", planEv["pricing"])
+	}
+
+	// Console: renders shape + cost.
+	cout := captureStdout(t, func() {
+		NewConsoleWriter().SendPlanApprovalRequest(map[string]interface{}{
+			"action": "deploy", "platform": "aws", "summary": "x",
+			"shape":   "worker",
+			"pricing": map[string]interface{}{"total": 7.0},
+		})
+	})
+	if !strings.Contains(cout, "worker") {
+		t.Errorf("console plan missing shape, got %q", cout)
+	}
+	if !strings.Contains(cout, "7.00") {
+		t.Errorf("console plan missing cost, got %q", cout)
 	}
 }
