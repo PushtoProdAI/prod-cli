@@ -91,6 +91,9 @@ deployments) and `analyze_project` (detect a project's stack). Add to your MCP c
 - **Local history.** Deploy history lives in a file you can read: `~/.prod/history.json`.
 - **Your cloud, your creds.** Deploys run against your own platform account using your own
   tokens — like any other local CLI.
+- **No phone-home.** `prod` sends no telemetry to us — ever. Errors go to your local logs.
+  If you *want* error tracking, point it at **your own** Sentry with `PROD_SENTRY_DSN`; unset
+  (the default) means it's off.
 
 ---
 

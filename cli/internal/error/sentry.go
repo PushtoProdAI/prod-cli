@@ -2,15 +2,16 @@ package error
 
 import (
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/go-errors/errors"
 	"github.com/pushtoprodai/prod-cli/internal/config"
-	"github.com/pushtoprodai/prod-cli/internal/settings"
 )
 
-// provides error tracking functionality with consent checks
+// client provides opt-in error tracking. It is enabled only when the user sets
+// PROD_SENTRY_DSN (their own Sentry); otherwise every method is a no-op.
 type client struct {
 	initialized bool
 }
@@ -29,8 +30,15 @@ func (c *client) initialize() error {
 		return nil // Already initialized
 	}
 
+	// Opt-in only: prod never reports to the maintainer. Error tracking is enabled
+	// solely when the user points it at THEIR OWN Sentry via PROD_SENTRY_DSN.
+	dsn := os.Getenv("PROD_SENTRY_DSN")
+	if dsn == "" {
+		return nil // telemetry disabled — the default for the local-first binary
+	}
+
 	err := sentry.Init(sentry.ClientOptions{
-		Dsn: config.SentryDSN,
+		Dsn: dsn,
 		// Set sample rate for performance monitoring
 		TracesSampleRate: 0.1,
 		// Set the environment (can be overridden by caller if needed)
@@ -59,22 +67,10 @@ func (c *client) initialize() error {
 	return nil
 }
 
-// captureError sends an error to Sentry if the user has consented to error tracking
-// Errors in the tracking process are logged rather than returned to avoid disrupting application flow
+// captureError sends an error to the user's own Sentry. It's a no-op unless the
+// user opted in via PROD_SENTRY_DSN (c.initialized). Tracking-process errors are
+// logged, not returned, so they never disrupt the application flow.
 func (c *client) captureError(err error) {
-	// Check if user has consented to error tracking
-	hasConsent, consentErr := settings.HasConsent()
-	if consentErr != nil {
-		// If we can't check consent, don't send the error and log the issue
-		slog.Debug("Error tracking: failed to check consent", "error", consentErr)
-		return
-	}
-
-	if !hasConsent {
-		// User hasn't consented, silently skip
-		return
-	}
-
 	if !c.initialized {
 		slog.Debug("Error tracking: Sentry  not initialized")
 		return
@@ -86,18 +82,6 @@ func (c *client) captureError(err error) {
 
 // captureErrorWithContext sends an error to Sentry with additional context
 func (c *client) captureErrorWithContext(err error, context map[string]any) {
-	// Check consent first
-	hasConsent, consentErr := settings.HasConsent()
-	if consentErr != nil {
-		slog.Debug("Error tracking: failed to check consent", "error", consentErr)
-		return
-	}
-
-	if !hasConsent {
-		// User hasn't consented, silently skip
-		return
-	}
-
 	if !c.initialized {
 		slog.Debug("Error tracking: Sentry  not initialized")
 		return
@@ -123,18 +107,6 @@ func (c *client) captureErrorWithContext(err error, context map[string]any) {
 
 // captureMessage sends a message to Sentry (for non-error events)
 func (c *client) captureMessage(message string, level sentry.Level) {
-	// Check consent
-	hasConsent, consentErr := settings.HasConsent()
-	if consentErr != nil {
-		slog.Debug("Error tracking: failed to check consent", "error", consentErr)
-		return
-	}
-
-	if !hasConsent {
-		// User hasn't consented, silently skip
-		return
-	}
-
 	if !c.initialized {
 		slog.Debug("Error tracking: Sentry  not initialized")
 		return
@@ -160,18 +132,6 @@ func (c *client) flush() {
 
 // addBreadcrumb adds a breadcrumb to help with debugging
 func (c *client) addBreadcrumb(message, category string, level sentry.Level) {
-	// Check consent
-	hasConsent, consentErr := settings.HasConsent()
-	if consentErr != nil {
-		slog.Debug("Error tracking: failed to check consent", "error", consentErr)
-		return
-	}
-
-	if !hasConsent {
-		// User hasn't consented, silently skip
-		return
-	}
-
 	if !c.initialized {
 		slog.Debug("Error tracking: Sentry  not initialized")
 		return

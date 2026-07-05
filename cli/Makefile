@@ -38,7 +38,6 @@ LDFLAGS := -X 'github.com/pushtoprodai/prod-cli/internal/config.SupabaseURL=$(SU
            -X 'github.com/pushtoprodai/prod-cli/internal/config.SupabaseAnonKey=$(SUPABASE_ANON_KEY)' \
            -X 'github.com/pushtoprodai/prod-cli/internal/config.ProdDebug=$(PROD_DEBUG)' \
 					 -X 'github.com/pushtoprodai/prod-cli/internal/config.Environment=$(ENVIRONMENT)' \
-					 -X 'github.com/pushtoprodai/prod-cli/internal/config.SentryDSN=$(CLI_SENTRY_DSN)' \
 					 -X 'github.com/pushtoprodai/prod-cli/internal/config.Version=$(VERSION)'
 
 .PHONY: build
