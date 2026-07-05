@@ -88,8 +88,11 @@ prod "rollback"                       # roll back the last deploy (auto-detects 
 ### Use prod from an AI agent (MCP)
 
 `prod mcp` exposes prod over the [Model Context Protocol](https://modelcontextprotocol.io) so
-agents like Claude Code, Cursor, and Cline can use it. Today it serves `list_deploys` (recent
-deployments) and `analyze_project` (detect a project's stack). Add to your MCP client config:
+agents like Claude Code, Cursor, and Cline can use it. Tools: `list_deploys` (recent
+deployments), `analyze_project` (detect a project's stack), and **`deploy`** — a
+natural-language deploy with a **human-approval gate**: `confirm=false` (the default) returns
+the plan + estimated cost and deploys *nothing*; the agent must pass `confirm=true` to actually
+deploy. Add to your MCP client config:
 
 ```jsonc
 { "mcpServers": { "prod": { "command": "prod", "args": ["mcp"] } } }
