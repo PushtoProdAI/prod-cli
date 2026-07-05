@@ -19,17 +19,27 @@ state in a local file, and talks straight to each platform — like `terraform`,
 
 ## Install
 
-> Signed one-line and Homebrew installs land with the distribution work — until then, build
-> from source (see [CONTRIBUTING.md](./CONTRIBUTING.md)).
+**Build from source** — works today on macOS and Linux:
 
 ```bash
-# coming soon
-curl -fsSL https://prod.dev/install.sh | sh
+git clone https://github.com/PushtoProdAI/prod && cd prod/cli
+go build -o prod ./cmd/main.go        # → ./prod   (or `make build` for a versioned binary in ../bin)
+```
+
+Requires **Go 1.25+** and a C toolchain (`prod` links a native dependency — see the CGO note
+in [CONTRIBUTING.md](./CONTRIBUTING.md)).
+
+**One-line and Homebrew** land with the first tagged release — the release tooling is ready
+(see [docs/DISTRIBUTION.md](./docs/DISTRIBUTION.md)):
+
+```bash
+# available once the first release is cut:
+curl -fsSL https://raw.githubusercontent.com/PushtoProdAI/prod/main/scripts/install.sh | sh
 brew install pushtoprodai/tap/prod
 ```
 
-Requires **Go 1.25+** and a C toolchain to build from source (`prod` links a native
-dependency — see the CGO note in CONTRIBUTING).
+On first run, `prod` downloads the BAML engine library (~56 MB, needs network + CA
+certificates); `prod doctor` checks your setup.
 
 ---
 
@@ -182,6 +192,14 @@ version. (Rollback and managed RDS provisioning are planned — see the [ROADMAP
   live in [ROADMAP.md](./ROADMAP.md).
 
 ---
+
+## Documentation
+
+- [ROADMAP.md](./ROADMAP.md) — the plan, phases, and the open-core boundary
+- [CONTRIBUTING.md](./CONTRIBUTING.md) — build, the local `make check` gate, the CGO note
+- [docs/DISTRIBUTION.md](./docs/DISTRIBUTION.md) — how releases are cut (GoReleaser + the Linux build)
+- [docs/aws-app-runner.md](./docs/aws-app-runner.md) — the AWS App Runner deploy design
+- [CLAUDE.md](./CLAUDE.md) — architecture, conventions, and extension points (for contributors and AI agents)
 
 ## Contributing
 
