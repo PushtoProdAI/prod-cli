@@ -154,7 +154,7 @@ func NewModel(agent *agent.Agent) Model {
 		ready:                false,
 		history:              []string{},
 		historyIndex:         0,
-		historyFile:          "/tmp/.prodcli_app_history",
+		historyFile:          defaultHistoryFile(),
 		currentMode:          ModeNormal,
 		content:              initialContent,
 		spinner:              s,
