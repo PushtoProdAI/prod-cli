@@ -166,6 +166,11 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		Spec:                spec,
 		Summary:             summary,
 		ExistingProjectInfo: existingProjectInfo,
+		// Classified by the LLM from the request ("deploy this mcp server", "my
+		// worker", "every night"); defaults to web. Nothing acts on it yet — the
+		// shape-aware liveness dispatch is the next increment (see
+		// docs/agent-native-plan.md §1e).
+		Shape: deployment.ParseShape(intent.DeployShape),
 	}
 
 	// Estimate costs during planning phase
