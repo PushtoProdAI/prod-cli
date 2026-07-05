@@ -113,6 +113,8 @@ func main() {
 	// Set Agent and StatusWriter for the Run subcommand
 	rootCmd.Run.Agent = a
 	rootCmd.Run.StatusWriter = statusWriter
+	// Doctor emits its checklist through the same writer (console / JSON events).
+	rootCmd.Doctor.StatusWriter = statusWriter
 
 	cmd := e.MustBuildCobraCommand(rootCmd)
 	// Accept a bare prompt as a positional arg (`prod "deploy this to fly"`).
