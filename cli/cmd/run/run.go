@@ -18,7 +18,9 @@ var (
 	_ ecdysis.CommandWithFlags   = (*RunCommand)(nil)
 )
 
-type RunFlags struct{}
+type RunFlags struct {
+	DryRun bool `long:"dry-run" usage:"show the plan and estimated cost without deploying"`
+}
 
 type RunArgs struct {
 	prompt string
@@ -43,6 +45,7 @@ func (c *RunCommand) Args(args []string) error {
 func (c *RunCommand) Execute(ctx context.Context) error {
 	// Keep interactive=true for JSON mode so state machine waits for user responses
 	c.Agent.SetInteractive(true)
+	c.Agent.SetDryRun(c.flags.DryRun)
 
 	// Use StatusWriter as the output writer - this ensures all output
 	// goes through the appropriate writer (JSONWriter in JSON mode)
