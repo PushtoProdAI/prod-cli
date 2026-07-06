@@ -3,7 +3,6 @@ package gcprun
 import (
 	"testing"
 
-	"github.com/pushtoprodai/prod-cli/internal/deployment"
 	run "google.golang.org/api/run/v2"
 )
 
@@ -38,22 +37,6 @@ func TestBuildService(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("env missing FOO=bar: %+v", c.Env)
-	}
-}
-
-func TestEnvMapForcesPort(t *testing.T) {
-	m := envMap([]deployment.EnvVar{
-		{Name: "FOO", Value: "bar"},
-		{Name: "SECRET", Value: "s", Sensitive: true},
-	})
-	if m["FOO"] != "bar" {
-		t.Errorf("FOO = %q", m["FOO"])
-	}
-	if m["PORT"] != "8080" {
-		t.Errorf("PORT should be forced to the container port, got %q", m["PORT"])
-	}
-	if m["SECRET"] != "s" {
-		t.Errorf("SECRET should be present (plain env for v1), got %q", m["SECRET"])
 	}
 }
 

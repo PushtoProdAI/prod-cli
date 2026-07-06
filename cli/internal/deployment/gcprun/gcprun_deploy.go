@@ -11,6 +11,7 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/managedcontainer"
 	prodreg "github.com/pushtoprodai/prod-cli/internal/registry"
+	"golang.org/x/oauth2"
 )
 
 const (
@@ -68,13 +69,24 @@ func (d *Deployment) Prepare(ctx context.Context, spec *deployment.DeploymentSpe
 
 	deploy := func(ctx context.Context, imageRef string) (managedcontainer.DeployResult, error) {
 		name := prodreg.Sanitize(spec.Name)
+		plain, sensitive := partitionEnvVars(spec.EnvVars)
+		plain["PORT"] = strconv.FormatInt(defaultPort, 10)
+
+		// Store sensitive env in Secret Manager and reference it, rather than setting
+		// it inline on the service config.
+		secretEnv, err := provisionSecrets(ctx, ts, project, name, sensitive)
+		if err != nil {
+			return managedcontainer.DeployResult{}, err
+		}
+
 		if _, err := dep.Deploy(ctx, ServiceConfig{
-			Name:     name,
-			ImageRef: imageRef,
-			Port:     defaultPort,
-			CPU:      defaultCPU,
-			Memory:   defaultMemory,
-			EnvVars:  envMap(spec.EnvVars),
+			Name:      name,
+			ImageRef:  imageRef,
+			Port:      defaultPort,
+			CPU:       defaultCPU,
+			Memory:    defaultMemory,
+			EnvVars:   plain,
+			SecretEnv: secretEnv,
 		}); err != nil {
 			return managedcontainer.DeployResult{}, err
 		}
@@ -140,14 +152,60 @@ func (d *Deployment) deployer(ctx context.Context) (*Deployer, string, error) {
 	return dep, prodreg.Sanitize(d.spec.Name), nil
 }
 
-// envMap flattens env vars and forces PORT to the container port so the app
-// listens where Cloud Run routes. (Sensitive values are set as plain env for now;
-// Secret Manager integration is a planned fast-follow.)
-func envMap(vars []deployment.EnvVar) map[string]string {
-	m := map[string]string{}
+// partitionEnvVars splits env vars into non-sensitive (set inline on the container)
+// and sensitive (stored in Secret Manager and referenced). The caller adds PORT to the
+// plain set so the app listens where Cloud Run routes.
+func partitionEnvVars(vars []deployment.EnvVar) (plain, sensitive map[string]string) {
+	plain = map[string]string{}
+	sensitive = map[string]string{}
 	for _, v := range vars {
-		m[v.Name] = v.Value
+		if v.Sensitive {
+			sensitive[v.Name] = v.Value
+		} else {
+			plain[v.Name] = v.Value
+		}
 	}
-	m["PORT"] = strconv.FormatInt(defaultPort, 10)
-	return m
+	return plain, sensitive
+}
+
+// provisionSecrets stores each sensitive value in Secret Manager, grants the Cloud Run
+// runtime service account access, and returns an env-name → secret-path map for
+// SecretKeyRef. Returns an empty map when there are no secrets (no API calls made).
+func provisionSecrets(ctx context.Context, ts oauth2.TokenSource, project, appName string, sensitive map[string]string) (map[string]string, error) {
+	secretEnv := map[string]string{}
+	if len(sensitive) == 0 {
+		return secretEnv, nil
+	}
+	sm, err := newSecretManager(ctx, ts, project)
+	if err != nil {
+		return nil, err
+	}
+	// Resolve the runtime SA once — every secret is granted to the same account.
+	sa, err := sm.runtimeServiceAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	usedIDs := map[string]string{} // secret id → the env var that claimed it
+	for name, value := range sensitive {
+		id := secretID(appName, name)
+		// Two env names that differ only in punctuation sanitize to the same id; refuse
+		// rather than silently store one value under both (map order is nondeterministic).
+		if other, dup := usedIDs[id]; dup {
+			return nil, errors.Errorf("env vars %q and %q map to the same secret id %q — rename one", other, name, id)
+		}
+		usedIDs[id] = name
+
+		secretName, err := sm.EnsureSecret(ctx, id, value)
+		if err != nil {
+			return nil, err
+		}
+		// Grant BEFORE the service references the secret, so the container can read it
+		// at startup. IAM is eventually consistent; Cloud Run's readiness polling
+		// absorbs brief propagation lag.
+		if err := sm.GrantAccessor(ctx, secretName, sa); err != nil {
+			return nil, err
+		}
+		secretEnv[name] = secretName
+	}
+	return secretEnv, nil
 }
