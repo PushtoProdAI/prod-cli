@@ -534,6 +534,15 @@ func (fqd *FlyioQueuedDeployment) GetPreviousDeployment(ctx context.Context) (*d
 	return nil, errors.Errorf("no previous release found for app %s", fqd.spec.Name)
 }
 
+// Destroy deletes the Fly.io app, which removes its machines and attached volumes.
+func (fqd *FlyioQueuedDeployment) Destroy(ctx context.Context) error {
+	appName := NormalizeFlyAppName(fqd.spec.Name)
+	if err := fqd.client.DestroyApp(ctx, appName); err != nil {
+		return errors.Errorf("failed to destroy Fly.io app %q: %w", appName, err)
+	}
+	return nil
+}
+
 func (fqd *FlyioQueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
 	if fqd.spec.Name == "" {
 		return errors.Errorf("no app name available for rollback")

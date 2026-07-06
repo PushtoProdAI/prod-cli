@@ -392,6 +392,18 @@ func (qd *QueuedDeployment) GetPreviousDeployment(ctx context.Context) (*deploym
 	return nil, errors.Errorf("no previous deployment found for app %s", qd.spec.ExistingProjectID)
 }
 
+// Destroy deletes the Heroku app; Heroku removes its add-ons (Postgres, Redis) with it.
+func (qd *QueuedDeployment) Destroy(ctx context.Context) error {
+	appName := qd.spec.ExistingProjectID
+	if appName == "" {
+		return errors.Errorf("no Heroku app to destroy (its name is unknown — deploy history is required)")
+	}
+	if _, err := qd.client.DeleteApp(ctx, appName); err != nil {
+		return errors.Errorf("failed to destroy Heroku app %q: %w", appName, err)
+	}
+	return nil
+}
+
 func (qd *QueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
 	if qd.spec.ExistingProjectID == "" {
 		return errors.Errorf("no app name available for rollback")
