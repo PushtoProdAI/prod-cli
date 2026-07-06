@@ -36,6 +36,7 @@ const (
 	DeployContainerWorkflowName        = "agent.deploy.container"
 	RollbackDeploymentWorkflowName     = "agent.rollbackDeployment"
 	DestroyDeploymentWorkflowName      = "agent.destroyDeployment"
+	DeployModalWorkflowName            = "agent.deploy.modal"
 )
 
 var ActivityOpts = workflow.ActivityOptions{
@@ -152,6 +153,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: DeployVercelWorkflowName, WorkflowFunc: w.deployVercel},
 		{Name: DeployHerokuWorkflowName, WorkflowFunc: w.deployHeroku},
 		{Name: DeployContainerWorkflowName, WorkflowFunc: w.deployContainer},
+		{Name: DeployModalWorkflowName, WorkflowFunc: w.deployModal},
 		{Name: RollbackDeploymentWorkflowName, WorkflowFunc: w.rollbackDeployment},
 		{Name: DestroyDeploymentWorkflowName, WorkflowFunc: w.destroyDeployment},
 	}
@@ -192,6 +194,8 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input DeployPlan)
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployVercelWorkflowName, time.Now().Unix())}, DeployVercelWorkflowName, input)
 	case Heroku:
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployHerokuWorkflowName, time.Now().Unix())}, DeployHerokuWorkflowName, input)
+	case Modal:
+		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployModalWorkflowName, time.Now().Unix())}, DeployModalWorkflowName, input)
 	default:
 		return nil, errors.New("unsupported platform for deployment")
 	}
