@@ -91,20 +91,40 @@ func (a *Activities) verifyLiveness(ctx context.Context, shape deployment.Deploy
 }
 
 func (a *Activities) isURLLive(ctx context.Context, url string) error {
-	// we could also use the deploys endpoint and check the status of the latest deploy,
-	// but using the URL saves us on the rate limiting and ultimately is what the user cares about
+	// We probe the URL rather than the platform's deploy API — it avoids rate limits and
+	// is what the user actually cares about. "Live" means the service is *responding*:
+	// an auth wall (401/403), a redirect to a login page, or any 2xx all mean it's up and
+	// serving. Only a connection failure, a timeout, or a 5xx (the app itself is broken)
+	// counts as not-live. Treating every status >300 as dead — the old behavior — failed
+	// deploys of any app behind auth or a redirect.
 	client := &http.Client{
 		Timeout: 10 * time.Second,
+		// Follow exactly one redirect, then judge the destination (a 302→/login is a
+		// live app). CheckRedirect is called *before* each hop with `via` holding the
+		// requests already made, so the first redirect has len(via)==1 (allow it) and
+		// the second has len(via)==2 (stop and judge the first hop's target).
+		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+			if len(via) >= 2 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
 	}
 	a.uiWriter.SendStatus("deploying", "Waiting for URL to be live...")
-	resp, err := client.Get(url)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return errors.Errorf("failed to make GET request to %s: %w", url, err)
+		return errors.Errorf("failed to build request to %s: %w", url, err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		// Connection refused / DNS / timeout — genuinely not reachable.
+		return errors.Errorf("failed to reach %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode > 300 {
-		return errors.Errorf("received non-success status code %d from %s", resp.StatusCode, url)
+	if resp.StatusCode >= 500 {
+		return errors.Errorf("received server error %d from %s", resp.StatusCode, url)
 	}
 	a.uiWriter.SendStatusComplete("deploying", "✅ URL is live")
 	return nil

@@ -3,6 +3,9 @@ package mcpserver
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"os"
@@ -15,6 +18,31 @@ import (
 // deployRunTimeout bounds a headless deploy when the caller's context has no
 // deadline, so an unexpected interactive prompt in the child can't hang forever.
 const deployRunTimeout = 30 * time.Minute
+
+// planDigestSalt is a per-process random salt. A planDigest returned by a deploy
+// preview is therefore reproducible only within this server session — an agent can't
+// precompute a valid one, so it must call deploy(confirm=false) first (and show the
+// human the plan) before it can confirm. See ACB.2 in docs/agentic-deploy-plan.md.
+var planDigestSalt = mustRandomSalt()
+
+func mustRandomSalt() []byte {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic("mcpserver: cannot seed the plan-digest salt: " + err.Error())
+	}
+	return b
+}
+
+// planDigest binds a deploy preview to its (prompt, path) so confirm=true can require a
+// matching prior preview.
+func planDigest(prompt, path string) string {
+	h := sha256.New()
+	h.Write(planDigestSalt)
+	h.Write([]byte(prompt))
+	h.Write([]byte{0}) // separator so (prompt,path) can't be ambiguously re-split
+	h.Write([]byte(path))
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
 
 // deployResult is what a deploy run captures from the JSON event stream.
 type deployResult struct {

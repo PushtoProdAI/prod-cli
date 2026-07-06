@@ -36,7 +36,7 @@ func TestServerToolsOverInMemoryTransport(t *testing.T) {
 	for _, tool := range tools.Tools {
 		got[tool.Name] = true
 	}
-	for _, want := range []string{"list_deploys", "analyze_project", "deploy", "rollback", "doctor"} {
+	for _, want := range []string{"list_deploys", "analyze_project", "deploy", "rollback", "destroy", "doctor"} {
 		if !got[want] {
 			t.Errorf("tool %q not advertised; got %v", want, got)
 		}
@@ -59,5 +59,38 @@ func TestServerToolsOverInMemoryTransport(t *testing.T) {
 	}
 	if out["mode"] != "local" {
 		t.Errorf("mode = %v, want local", out["mode"])
+	}
+
+	// ACB.2: deploy(confirm=true) with no planDigest is refused BEFORE any deploy runs
+	// (the gate returns before runProd, so no subprocess is spawned in this test).
+	dres, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "deploy",
+		Arguments: map[string]any{"prompt": "deploy this to fly", "confirm": true},
+	})
+	if err != nil {
+		t.Fatalf("CallTool(deploy): %v", err)
+	}
+	if !dres.IsError {
+		t.Error("deploy(confirm=true) without a planDigest must be refused (preview first), but it was not")
+	}
+}
+
+func TestPlanDigest(t *testing.T) {
+	d := planDigest("deploy this to fly", "/app")
+	if len(d) != 16 {
+		t.Errorf("digest length = %d, want 16", len(d))
+	}
+	if planDigest("deploy this to fly", "/app") != d {
+		t.Error("digest must be deterministic for the same prompt+path")
+	}
+	if planDigest("deploy this to fly", "/other") == d {
+		t.Error("digest must change with the path")
+	}
+	if planDigest("deploy this to render", "/app") == d {
+		t.Error("digest must change with the prompt")
+	}
+	// The separator prevents (prompt,path) ambiguity: "ab"+"c" must not equal "a"+"bc".
+	if planDigest("ab", "c") == planDigest("a", "bc") {
+		t.Error("prompt/path boundary must be unambiguous")
 	}
 }
