@@ -99,15 +99,15 @@ Fix the framework, then breadth is cheap. Full design + acceptance criteria:
 1. **Google Cloud Run — DONE** (`gar` registry + `gcprun` adapter + wiring). Managed
    container → HTTPS via the user's ADC. Follow-ups: real revision rollback, Secret
    Manager for secrets, a GCP cost estimator.
-2. **Cloud-adapter framework, Level 1 — a registration table (`PlatformCatalog`)** so
-   adding a cloud is *one adapter + one Register call*, the ~10 switches derive from the
-   catalog, a completeness test kills the silent-miss class, and the container-cloud
-   workflows collapse into one generic workflow. **Do this before Azure** so Azure is a
-   one-file add. *(M–L.)*
+2. **Cloud-adapter framework, Level 1 — DONE** (`PlatformCatalog`, #253/#254/#255).
+   Adding a cloud is now one registration: the dispatch/auth/detector/planning/menu
+   switches, Django hosts, the rollback gate, and a single shared container workflow all
+   derive from the catalog. A completeness test kills the silent-miss class.
 3. **Azure Container Apps** — rides Level 1: a new `acr` (Azure Container Registry) kind
    mirroring `ecr`/`gar`, `azidentity` auth, create→poll→URL, **real revision rollback**.
-   Completes AWS/GCP/Azure managed-container parity + the PaaS five = "deploy anywhere,
-   in English." *(M, less once L1 lands.)*
+   The registration itself is one PlatformSpec (ManagedContainer + DomainSuffix); the work
+   is the acr kind + the aca Deployable + the resource-group/environment provisioning.
+   Completes AWS/GCP/Azure managed-container parity + the PaaS five. *(M.)*
 4. **Framework Level 2 — a shared managed-container base** (extract the common
    build→push→create→poll→URL from App Runner/Cloud Run so a new container cloud is
    ~100 lines). Do a *light* extraction before Azure so Azure lands on the base. *(M.)*
