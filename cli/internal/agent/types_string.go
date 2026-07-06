@@ -15,12 +15,13 @@ func _() {
 	_ = x[Heroku-4]
 	_ = x[AWS-5]
 	_ = x[GoogleCloudRun-6]
-	_ = x[UnknownPlatform-7]
+	_ = x[Azure-7]
+	_ = x[UnknownPlatform-8]
 }
 
-const _Platform_name = "RenderFlyIONetlifyVercelHerokuAWSGoogleCloudRunUnknownPlatform"
+const _Platform_name = "RenderFlyIONetlifyVercelHerokuAWSGoogleCloudRunAzureUnknownPlatform"
 
-var _Platform_index = [...]uint8{0, 6, 11, 18, 24, 30, 33, 47, 62}
+var _Platform_index = [...]uint8{0, 6, 11, 18, 24, 30, 33, 47, 52, 67}
 
 func (i Platform) String() string {
 	idx := int(i) - 0
