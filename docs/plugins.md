@@ -75,24 +75,22 @@ go build -o prod-provider-acme ./cmd/prod-provider-acme
 
 ## 3. Install it
 
-Register the binary with prod (the `prod plugin` CLI lands with the installer; until
-then, add an entry to `~/.prod/plugins.json`):
-
-```json
-[
-  {
-    "name": "Acme Cloud",
-    "aliases": ["acme", "acme-cloud"],
-    "domainSuffix": ".acme.app",
-    "supportsRollback": true,
-    "path": "/usr/local/bin/prod-provider-acme",
-    "checksum": "<hex sha256 of the binary>"
-  }
-]
+```
+prod plugin install ./prod-provider-acme
 ```
 
-prod reads this at startup and registers "Acme Cloud" as a deploy target — it appears
-in the menu and resolves by its aliases.
+prod verifies it's a valid provider, records its sha256, and registers it — from now on
+"Acme Cloud" is a deploy target that appears in the menu and resolves by its aliases.
+Manage them with:
+
+```
+prod plugin list                 # installed plugins + whether their binary still matches
+prod plugin remove "Acme Cloud"
+```
+
+Pass `--checksum <sha256>` to verify the binary against an out-of-band hash before it
+runs. (Installs are local-path for now; the recorded checksum is re-verified at every
+launch, so a swapped binary is refused.)
 
 ## 4. Deploy to it
 
