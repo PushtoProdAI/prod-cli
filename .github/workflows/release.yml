@@ -1,0 +1,88 @@
+name: Release
+
+# Publishes cross-platform archives so the install one-liner works everywhere — not
+# just macOS. Runs on a version tag. CGO is on (BAML shim); Linux builds natively on
+# an Ubuntu runner (amd64 native, arm64 via the cross toolchain), darwin on a mac.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the GitHub Release
+
+jobs:
+  build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, goos: linux, goarch: amd64, cc: gcc, apt: "" }
+          - { os: ubuntu-latest, goos: linux, goarch: arm64, cc: aarch64-linux-gnu-gcc, apt: gcc-aarch64-linux-gnu }
+          - { os: macos-latest, goos: darwin, goarch: amd64, cc: clang, apt: "" }
+          - { os: macos-latest, goos: darwin, goarch: arm64, cc: clang, apt: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+      - name: Install cross toolchain
+        if: matrix.apt != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.apt }}
+      - name: Build + package
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
+          CGO_ENABLED: "1"
+          REF_NAME: ${{ github.ref_name }}
+        working-directory: cli
+        run: |
+          set -euo pipefail
+          VERSION="${REF_NAME#v}"
+          # Version-only ldflags — no secrets baked into an OSS release binary.
+          LDFLAGS="-s -w -X 'github.com/pushtoprodai/prod-cli/internal/config.Version=${VERSION}'"
+          stage="stage/${GOOS}_${GOARCH}"
+          mkdir -p "$stage"
+          go build -ldflags "$LDFLAGS" -o "$stage/prod" ./cmd/main.go
+          # Include license/readme (and NOTICE if present).
+          cp ../README.md ../LICENSE "$stage/"
+          [ -f ../NOTICE ] && cp ../NOTICE "$stage/" || true
+          archive="prod_${VERSION}_${GOOS}_${GOARCH}.tar.gz"
+          tar -czf "$archive" -C "$stage" .
+          echo "ARCHIVE=cli/$archive" >>"$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: archive-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.ARCHIVE }}
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${REF_NAME#v}"
+          cd dist
+          # install.sh expects prod_<version>_checksums.txt with "sha256␣␣filename".
+          sha256sum prod_*.tar.gz > "prod_${VERSION}_checksums.txt"
+          ls -la
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/prod_*.tar.gz
+            dist/prod_*_checksums.txt
+          generate_release_notes: true
+          fail_on_unmatched_files: true
