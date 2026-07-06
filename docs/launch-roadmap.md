@@ -9,6 +9,15 @@ to a live URL*.
 public — far fewer than it feels. The *big* work isn't a blocker to open-sourcing;
 it's what makes people **choose** prod once they arrive. Don't conflate the two.
 
+> **Status update — much of Part 3 has since shipped.** Google Cloud Run + Azure Container
+> Apps (the full 8-cloud managed-container set), **Modal** (experimental), the L1/L2/L3
+> cloud-adapter framework + **plugins**, **Go** language support, **`prod destroy`**, the
+> `rollback`/`destroy`/`doctor` MCP tools, Cloud Run Secret Manager, WSL2 Windows, and the
+> **automated CI + release pipeline** (with Homebrew) are all done. What genuinely remains:
+> the owner-gated launch gate below (secrets purge, first release, real-account validation of
+> the manual-verify clouds + Modal, the demo GIF), plus `prod logs` (still unbuilt). Treat the
+> per-item "TODO" framing in Part 3 as historical where it conflicts with this.
+
 ---
 
 ## 0. Where we are (the moat is already substantial)
@@ -18,9 +27,11 @@ Shipped and merged:
   SQLite/JSON state in `~/.prod`. Direct LLM (OpenAI > Anthropic > local Ollama) —
   the direct-client path is wired (`directRegistry` bypasses the old proxy). No
   phone-home.
-- **7 deploy targets:** Fly, Render, Vercel, Netlify, Heroku (direct API) + **AWS App
-  Runner** (managed container, your creds). Every one supports the plan→approve→deploy
-  flow with rollback.
+- **8 deploy targets + Modal + plugins:** Fly, Render, Vercel, Netlify, Heroku (direct API)
+  + **AWS App Runner, Google Cloud Run, Azure Container Apps** (managed container, your creds)
+  + **Modal** (experimental) + **out-of-tree provider plugins**. All support plan→approve→
+  deploy; rollback on every revision-keeping cloud (App Runner is the exception — teardown
+  only). `destroy` teardown shipped too.
 - **The deploy spine works.** `prod "deploy this to fly"` runs (the flagship command
   was broken — fixed), `--yes` for CI, `--dry-run` + cost preview, `prod doctor`,
   discoverable rollback.

@@ -1,12 +1,19 @@
 # Distributing `prod`
 
-How we ship the `prod` single binary. We are **local-first**: there is no CI. Every
-release is cut from a maintainer's machine with [GoReleaser](https://goreleaser.com).
+How we ship the `prod` single binary. Releases are **automated**: push a `vX.Y.Z` tag and
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) builds every platform on
+native runners, publishes the GitHub Release, and updates the Homebrew tap.
 
 - Module: `github.com/pushtoprodai/prod-cli`
 - Binary: `prod`
 - Go module root: `cli/` (entrypoint `cli/cmd/main.go`)
-- Config: [`.goreleaser.yml`](../.goreleaser.yml) · Installer: [`scripts/install.sh`](../scripts/install.sh)
+- Release: [`.github/workflows/release.yml`](../.github/workflows/release.yml) · Installer:
+  [`scripts/install.sh`](../scripts/install.sh) · Brew template:
+  [`.github/homebrew-formula.rb.template`](../.github/homebrew-formula.rb.template)
+
+> The legacy manual GoReleaser flow (`.goreleaser.yml`, `make release`) is superseded by the
+> workflow below and kept only as a local fallback. Don't run it *and* push a tag — you'd
+> double-release.
 
 ---
 
@@ -89,55 +96,46 @@ users and to build into any container image:
 
 ---
 
-## Shipping linux (GoReleaser OSS can't do it directly)
+## Cutting a release (the automated path)
 
-GoReleaser **OSS** builds darwin natively on the mac, but it can neither cross-compile CGO
-from a mac nor ingest prebuilt binaries — **`builder: prebuilt` is GoReleaser Pro-only**. So
-linux ships as **separate archives** attached to the same release:
+Because BAML's native lib is fetched at runtime (above), each OS builds its own arch on a
+native runner — no cross-CGO. `release.yml` does this in one matrix:
 
-1. `make -C cli dist-linux VERSION=<tag>` — Docker-builds linux/amd64 + arm64 and packages
-   `cli/dist/prod_<tag>_linux_{amd64,arm64}.tar.gz` (+ `…_linux_checksums.txt`), matching the
-   name shape `install.sh` expects. **Pass `VERSION=<tag>`** so the stamped version matches
-   darwin (otherwise it's the short commit hash).
-2. GoReleaser cuts the darwin release (darwin archives + `prod_<tag>_checksums.txt` + the
-   Homebrew tap).
-3. `gh release upload <tag> cli/dist/prod_<tag>_linux_*.tar.gz` — attach the linux archives.
-   Optionally append the linux sha256 lines to the release's `checksums.txt` so `install.sh`
-   verifies them; if you don't, `install.sh` installs linux with a "checksum not found"
-   warning (it degrades gracefully — it does not fail).
-4. `install.sh` already allows linux (musl rejected with a clear message).
-
-> **Alternative:** with **GoReleaser Pro**, a `builder: prebuilt` build ingests the
-> `cli/dist-prebuilt/linux_<arch>/prod` binaries directly into a unified archive + checksum
-> matrix. We stay on OSS, so linux is the manual attach above.
-
----
-
-## Local release runbook
-
-Prerequisites: `brew install goreleaser`, Docker running (for linux), a clean working tree,
-a `GITHUB_TOKEN` with `repo` scope, and the [`gh`](https://cli.github.com) CLI.
-
-1. **Tag** (so darwin and linux stamp the same version): `git tag -a v0.1.0 -m "v0.1.0"`.
-2. **Build + package linux** (Docker): `make -C cli dist-linux VERSION=v0.1.0`. Smoke-test a
-   linux archive **in a glibc container with `ca-certificates`** — the darwin host can't
-   exercise the linux runtime path.
-3. **Validate darwin config:** `make release-check` (`goreleaser check`).
-4. **Dry-run darwin:** `make release-snapshot` (`goreleaser release --snapshot --clean`);
-   smoke-test `tar -xzf dist/prod_*_darwin_arm64.tar.gz && ./prod --version`.
-5. **Push the tag + cut darwin:** `git push origin v0.1.0` then
-   `export GITHUB_TOKEN=… && make release` (`goreleaser release --clean`).
-6. **Attach linux:** `gh release upload v0.1.0 cli/dist/prod_v0.1.0_linux_*.tar.gz`.
-7. **Verify installs** on both a mac and a glibc Linux box:
+1. **Bump the version** and update [`CHANGELOG.md`](../CHANGELOG.md).
+2. **Tag and push:** `git tag -a v0.1.0 -m "v0.1.0" && git push origin v0.1.0`.
+3. The workflow then, automatically:
+   - builds **linux/amd64 + arm64** (ubuntu, arm64 via the cross toolchain) and
+     **darwin/amd64 + arm64** (macOS), each with `CGO_ENABLED=1`;
+   - packages `prod_<version>_<os>_<arch>.tar.gz` (binary + README + LICENSE);
+   - generates `prod_<version>_checksums.txt` (`sha256␣␣filename`, what `install.sh` verifies);
+   - publishes the GitHub Release with all four archives + the checksums;
+   - **updates the Homebrew tap** (see below).
+4. **Verify** on a clean mac and a glibc Linux box:
    ```bash
    curl -sSL https://raw.githubusercontent.com/pushtoprodai/prod-cli/main/scripts/install.sh | sh
    brew install pushtoprodai/tap/prod
    ```
 
-### What the release produces
-- darwin (GoReleaser): `prod_<version>_{darwin_arm64,darwin_amd64}.tar.gz` +
-  `prod_<version>_checksums.txt` + a `prod` Homebrew formula.
-- linux (manual attach): `prod_<version>_{linux_amd64,linux_arm64}.tar.gz`.
+`install.sh` allows linux (musl/Alpine rejected with a clear message) and points Windows
+users at WSL2. The archive name shape `prod_<version>_<os>_<arch>.tar.gz` is a contract with
+`install.sh` and the brew template — change it in all three or installs break.
 
-The archive name shape `prod_<version>_<os>_<arch>.tar.gz` is a contract with
-`scripts/install.sh` — change it in both places or installs break.
+## Homebrew tap — one-time setup
+
+The `homebrew` job in `release.yml` fills
+[`.github/homebrew-formula.rb.template`](../.github/homebrew-formula.rb.template) with the
+release's version + per-arch sha256s and commits `Formula/prod.rb` to the tap. To enable it:
+
+1. Create a **public** repo `github.com/pushtoprodai/homebrew-tap` (empty is fine).
+2. Create a token that can push to it — a fine-grained PAT with **Contents: read/write** on
+   `homebrew-tap` (or a classic PAT with `repo`) — and add it to `prod-cli` as the repo
+   **secret `HOMEBREW_TAP_TOKEN`**.
+
+Until the secret exists, the job **skips cleanly** (it logs a notice; the release still
+succeeds). Once set, every tagged release updates the formula and
+`brew install pushtoprodai/tap/prod` works on macOS and (glibc) Linux.
+
+### What the release produces
+- `prod_<version>_{darwin_arm64,darwin_amd64,linux_amd64,linux_arm64}.tar.gz`
+- `prod_<version>_checksums.txt`
+- `Formula/prod.rb` in the `homebrew-tap` repo (when `HOMEBREW_TAP_TOKEN` is set)
