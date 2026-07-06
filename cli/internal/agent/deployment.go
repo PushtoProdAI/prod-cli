@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
@@ -131,6 +132,17 @@ func (a *Activities) estimateHerokuCosts(ctx context.Context, spec deployment.De
 		return deployment.CostEstimate{}, errors.Errorf("failed to estimate costs: %w", err)
 	}
 	return costs, nil
+}
+
+// estimateContainerCosts returns a rough monthly estimate for the managed-container
+// clouds (App Runner, Cloud Run, Azure Container Apps), which share one pricing shape.
+// A missing rate yields a zero estimate (no preview), never an error.
+func (a *Activities) estimateContainerCosts(_ context.Context, _ deployment.DeploymentSpec, platform Platform) (deployment.CostEstimate, error) {
+	key := strings.ToLower(platform.String())
+	if ce, ok := deployment.EstimateManagedContainerCost(key); ok {
+		return ce, nil
+	}
+	return deployment.CostEstimate{}, nil
 }
 
 func (a *Activities) categorizeEnvVarsForDeployment(ctx context.Context, dbList []string, envVar analyzer.EnvVarCandidate) (deployment.EnvVar, error) {
