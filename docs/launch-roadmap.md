@@ -112,10 +112,14 @@ Fix the framework, then breadth is cheap. Full design + acceptance criteria:
    Runner, Cloud Run, and Azure Container Apps share one `Run(Provider, …)` flow; a cloud
    implements only its API calls (Prepare → registry + deploy closure). The base
    guarantees the Primary CreatedResource the generic workflow needs.
-5. **Framework Level 3 — out-of-tree gRPC provider plugins** (`hashicorp/go-plugin`): a
-   third party ships `prod-provider-x` and `prod "deploy to x"` works *without forking
-   prod*. Registers *through* Level 1. The platform/ecosystem play for the devops
-   audience; credential-scoping is the #1 security constraint. *(L, the big bet.)*
+5. **Framework Level 3 — out-of-tree provider plugins** (`hashicorp/go-plugin`, net/rpc
+   for v1; gRPC cross-language a follow-up): a third party ships `prod-provider-x` and
+   `prod "deploy to x"` works *without forking prod*. A plugin is an **L2 `Provider`
+   proxied over a subprocess, registered through the L1 catalog** with a dynamic
+   `Platform` value. Reviewed design + acceptance criteria (incl. env-isolation +
+   Node-framework compat + the trust model): [docs/l3-plugin-plan.md](./l3-plugin-plan.md).
+   The platform/ecosystem play for the devops audience; **credential isolation
+   (`SkipHostEnv` + curated env) is the #1 constraint**. *(L, the big bet.)*
 
 ### B. The agent-native moat — this is the reason to *pick* prod  *(highest differentiation)*
 1. **Finish the shape model:** a `LivenessChecker` interface so worker/cron adapters own
