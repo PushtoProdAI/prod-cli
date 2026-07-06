@@ -308,6 +308,18 @@ func secretName(envVar string) string {
 	return name
 }
 
+// Delete removes the Container App.
+func (d *Deployer) Delete(ctx context.Context, appName string) error {
+	poller, err := d.apps.BeginDelete(ctx, d.resourceGroup, appName, nil)
+	if err != nil {
+		return errors.Errorf("failed to delete Container App %q: %w", appName, err)
+	}
+	if _, err := poller.PollUntilDone(ctx, nil); err != nil {
+		return errors.Errorf("failed waiting for Container App %q to delete: %w", appName, err)
+	}
+	return nil
+}
+
 // ingressFqdn extracts the app's public hostname from a ContainerApp result.
 func ingressFqdn(app armappcontainers.ContainerApp) string {
 	if app.Properties == nil || app.Properties.Configuration == nil || app.Properties.Configuration.Ingress == nil || app.Properties.Configuration.Ingress.Fqdn == nil {

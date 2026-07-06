@@ -100,6 +100,15 @@ func (d *Deployment) Rollback(_ context.Context, _ string) error {
 	return errors.Errorf("App Runner rollback isn't supported yet")
 }
 
+// Destroy deletes the App Runner service.
+func (d *Deployment) Destroy(ctx context.Context) error {
+	cfg, _, err := auth.NewAWSAuth(d.writer).Config(ctx)
+	if err != nil {
+		return err
+	}
+	return apprunner.New(cfg).Delete(ctx, prodreg.Sanitize(d.spec.Name))
+}
+
 // splitEnvVars partitions env vars into plain (RuntimeEnvironmentVariables) and
 // sensitive (stored in Secrets Manager). PORT is forced to the App Runner port so
 // the app listens where App Runner routes.
