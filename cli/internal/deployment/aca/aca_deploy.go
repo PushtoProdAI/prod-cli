@@ -135,6 +135,15 @@ func (d *Deployment) Rollback(ctx context.Context, targetRevision string) error 
 	return dep.RollbackToRevision(ctx, name, targetRevision)
 }
 
+// Destroy deletes the Container App.
+func (d *Deployment) Destroy(ctx context.Context) error {
+	dep, name, err := d.deployer(ctx)
+	if err != nil {
+		return err
+	}
+	return dep.Delete(ctx, name)
+}
+
 // deployer resolves the user's Azure credentials and builds a Deployer + the app
 // name, shared by the rollback methods.
 func (d *Deployment) deployer(ctx context.Context) (*Deployer, string, error) {

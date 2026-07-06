@@ -85,6 +85,7 @@ type fakeAR struct {
 	describeCalls int
 	lastCreate    *arsdk.CreateServiceInput
 	lastUpdate    *arsdk.UpdateServiceInput
+	deletedArn    string // arn passed to DeleteService
 }
 
 func (f *fakeAR) ListServices(context.Context, *arsdk.ListServicesInput, ...func(*arsdk.Options)) (*arsdk.ListServicesOutput, error) {
@@ -93,6 +94,11 @@ func (f *fakeAR) ListServices(context.Context, *arsdk.ListServicesInput, ...func
 		list = append(list, artypes.ServiceSummary{ServiceName: aws.String(name), ServiceArn: aws.String(arn)})
 	}
 	return &arsdk.ListServicesOutput{ServiceSummaryList: list}, nil
+}
+
+func (f *fakeAR) DeleteService(_ context.Context, in *arsdk.DeleteServiceInput, _ ...func(*arsdk.Options)) (*arsdk.DeleteServiceOutput, error) {
+	f.deletedArn = aws.ToString(in.ServiceArn)
+	return &arsdk.DeleteServiceOutput{}, nil
 }
 
 func (f *fakeAR) CreateService(_ context.Context, in *arsdk.CreateServiceInput, _ ...func(*arsdk.Options)) (*arsdk.CreateServiceOutput, error) {
@@ -147,6 +153,30 @@ func TestEnsureAccessRole(t *testing.T) {
 		d := &Deployer{iam: &fakeIAM{createErr: errors.New("access denied")}}
 		if _, err := d.EnsureAccessRole(context.Background()); err == nil {
 			t.Error("a non-already-exists error should propagate")
+		}
+	})
+}
+
+func TestDelete(t *testing.T) {
+	t.Run("deletes the service by name", func(t *testing.T) {
+		ar := &fakeAR{existing: map[string]string{"myapp": "arn:aws:apprunner:svc/myapp"}}
+		d := &Deployer{ar: ar}
+		if err := d.Delete(context.Background(), "myapp"); err != nil {
+			t.Fatalf("Delete: %v", err)
+		}
+		if ar.deletedArn != "arn:aws:apprunner:svc/myapp" {
+			t.Errorf("DeleteService got arn %q, want the service's arn", ar.deletedArn)
+		}
+	})
+
+	t.Run("no-op when the service is already gone", func(t *testing.T) {
+		ar := &fakeAR{existing: map[string]string{}}
+		d := &Deployer{ar: ar}
+		if err := d.Delete(context.Background(), "gone"); err != nil {
+			t.Errorf("Delete of a missing service should be nil, got %v", err)
+		}
+		if ar.deletedArn != "" {
+			t.Errorf("DeleteService should not be called for a missing service")
 		}
 	})
 }
