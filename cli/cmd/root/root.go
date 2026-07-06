@@ -10,6 +10,7 @@ import (
 	"github.com/go-errors/errors"
 	doctorcmd "github.com/pushtoprodai/prod-cli/cmd/doctor"
 	mcpcmd "github.com/pushtoprodai/prod-cli/cmd/mcp"
+	plugincmd "github.com/pushtoprodai/prod-cli/cmd/plugin"
 	"github.com/pushtoprodai/prod-cli/cmd/run"
 	"github.com/pushtoprodai/prod-cli/internal/agent"
 	"github.com/pushtoprodai/prod-cli/internal/config"
@@ -50,6 +51,7 @@ type RootCommand struct {
 	Run    run.RunCommand          `cmd:"" help:"Run a deployment command"`
 	MCP    mcpcmd.MCPCommand       `cmd:"" help:"Start the prod MCP server (stdio)"`
 	Doctor doctorcmd.DoctorCommand `cmd:"" help:"Check prerequisites (LLM, Docker)"`
+	Plugin plugincmd.PluginCommand `cmd:"" help:"Manage provider plugins (add deploy targets)"`
 }
 
 func (c *RootCommand) SubCommands() []ecdysis.Command {
@@ -57,6 +59,7 @@ func (c *RootCommand) SubCommands() []ecdysis.Command {
 		&c.Run,
 		&c.MCP,
 		&c.Doctor,
+		&c.Plugin,
 	}
 }
 
