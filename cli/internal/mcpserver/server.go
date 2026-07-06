@@ -15,6 +15,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-errors/errors"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/pushtoprodai/prod-cli/internal/analyzer"
@@ -42,17 +43,19 @@ func New(version string) *mcp.Server {
 // --- deploy ------------------------------------------------------------------
 
 type deployInput struct {
-	Prompt  string `json:"prompt" jsonschema:"the natural-language deploy request, e.g. 'deploy this to fly with a postgres'"`
-	Confirm bool   `json:"confirm,omitempty" jsonschema:"set true to ACTUALLY deploy (destructive, provisions cloud resources, costs money); false or omitted only PREVIEWS the plan and estimated cost and deploys nothing"`
-	Path    string `json:"path,omitempty" jsonschema:"the project directory to deploy (defaults to the current directory)"`
+	Prompt     string `json:"prompt" jsonschema:"the natural-language deploy request, e.g. 'deploy this to fly with a postgres'"`
+	Confirm    bool   `json:"confirm,omitempty" jsonschema:"set true to ACTUALLY deploy (destructive, provisions cloud resources, costs money); false or omitted only PREVIEWS the plan and estimated cost and deploys nothing"`
+	Path       string `json:"path,omitempty" jsonschema:"the project directory to deploy (defaults to the current directory)"`
+	PlanDigest string `json:"planDigest,omitempty" jsonschema:"the planDigest returned by a prior confirm=false preview of the SAME prompt and path; REQUIRED when confirm=true — deploy is refused without it, so you must preview and show the human the plan first"`
 }
 
 type deployOutput struct {
-	Deployed bool         `json:"deployed"`        // true only if confirm=true and the deploy succeeded
-	Status   string       `json:"status"`          // "preview" | "success" | "failed"
-	URL      string       `json:"url,omitempty"`   // the live URL, on a successful deploy
-	Error    string       `json:"error,omitempty"` // failure reason, if any
-	Plan     *planSummary `json:"plan,omitempty"`  // what would be / was deployed
+	Deployed   bool         `json:"deployed"`             // true only if confirm=true and the deploy succeeded
+	Status     string       `json:"status"`               // "preview" | "success" | "failed"
+	URL        string       `json:"url,omitempty"`        // the live URL, on a successful deploy
+	Error      string       `json:"error,omitempty"`      // failure reason, if any
+	Plan       *planSummary `json:"plan,omitempty"`       // what would be / was deployed
+	PlanDigest string       `json:"planDigest,omitempty"` // on a preview: echo this back with confirm=true to deploy
 }
 
 func addDeploy(s *mcp.Server) {
@@ -68,6 +71,19 @@ func addDeploy(s *mcp.Server) {
 		if path == "" {
 			path = "."
 		}
+		digest := planDigest(in.Prompt, path)
+
+		// Preview-first gate (ACB.2): confirm=true must echo the planDigest from a prior
+		// preview of the same prompt+path. The digest is salted per-process, so an agent
+		// can't fabricate one — it must call confirm=false first (and show the human the
+		// plan) before it can deploy. This is a structural nudge; human approval is still
+		// the real gate.
+		if in.Confirm && in.PlanDigest != digest {
+			return nil, deployOutput{Status: "preview-required"}, errors.Errorf(
+				"preview first: call deploy with confirm=false to get a planDigest, show the human the plan + estimated cost, then call again with confirm=true and that planDigest",
+			)
+		}
+
 		res, err := runProd(ctx, in.Prompt, in.Confirm, path)
 		if err != nil {
 			return nil, deployOutput{}, err
@@ -81,6 +97,7 @@ func addDeploy(s *mcp.Server) {
 			out.Deployed = res.Status == "success"
 		} else {
 			out.Status = "preview"
+			out.PlanDigest = digest // echo this back with confirm=true to deploy
 		}
 		return nil, out, nil
 	})
@@ -104,6 +121,7 @@ type deployRecord struct {
 	Platform      string `json:"platform"`
 	Language      string `json:"language"`
 	Status        string `json:"status"`
+	URL           string `json:"url,omitempty"` // the live URL of a successful deploy
 	StartedAt     string `json:"startedAt"`
 	CompletedAt   string `json:"completedAt,omitempty"`
 }
@@ -116,7 +134,7 @@ type listDeploysOutput struct {
 func addListDeploys(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_deploys",
-		Description: "List recent deployments prod has performed, most recent first, from local history (~/.prod/history.json). Use this to recall what has been shipped, to which platform, and whether it succeeded.",
+		Description: "List recent deployments prod has performed, most recent first, from local history (~/.prod/history.json). Each record includes the resource name, platform, language, status, and the live `url` of a successful deploy. Use this to recall what has been shipped, to which platform, whether it succeeded, and where it's running.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in listDeploysInput) (*mcp.CallToolResult, listDeploysOutput, error) {
 		limit := in.Limit
 		if limit <= 0 {
@@ -144,6 +162,11 @@ func addListDeploys(s *mcp.Server) {
 			}
 			if r.CompletedAt != nil {
 				rec.CompletedAt = r.CompletedAt.Format(time.RFC3339)
+			}
+			// Surface the live URL so an agent can report where the app is running
+			// without a second tool call (ACB.1).
+			if u, ok := r.Metadata["url"].(string); ok {
+				rec.URL = u
 			}
 			out.Deployments = append(out.Deployments, rec)
 		}
