@@ -81,6 +81,7 @@ func (d *Deployment) Deploy(ctx context.Context) ([]deployment.CreatedResource, 
 	}
 
 	name := containerAppName(d.spec.Name)
+	plainEnv, secretEnv := partitionEnv(d.spec.EnvVars)
 	url, err := dep.Deploy(ctx, AppConfig{
 		Name:             name,
 		EnvironmentID:    envID,
@@ -88,7 +89,8 @@ func (d *Deployment) Deploy(ctx context.Context) ([]deployment.CreatedResource, 
 		Port:             defaultPort,
 		CPU:              defaultCPU,
 		Memory:           defaultMemory,
-		EnvVars:          envMap(d.spec.EnvVars),
+		PlainEnv:         plainEnv,
+		SecretEnv:        secretEnv,
 		RegistryServer:   acrCreds.URL,
 		RegistryUsername: acrCreds.Username,
 		RegistryPassword: acrCreds.Token,
@@ -150,16 +152,21 @@ func (d *Deployment) deployer(ctx context.Context) (*Deployer, string, error) {
 	return dep, containerAppName(d.spec.Name), nil
 }
 
-// envMap flattens env vars and forces PORT to the container port so the app listens
-// where the ingress routes. (Sensitive values are set as plain env for now; Key
-// Vault / secret refs are a planned fast-follow.)
-func envMap(vars []deployment.EnvVar) map[string]string {
-	m := map[string]string{}
+// partitionEnv splits env vars into non-sensitive (set inline on the container) and
+// sensitive (stored as Container Apps secrets and referenced by name). PORT is forced
+// into the plain set so the app listens where the ingress routes.
+func partitionEnv(vars []deployment.EnvVar) (plain, secret map[string]string) {
+	plain = map[string]string{}
+	secret = map[string]string{}
 	for _, v := range vars {
-		m[v.Name] = v.Value
+		if v.Sensitive {
+			secret[v.Name] = v.Value
+		} else {
+			plain[v.Name] = v.Value
+		}
 	}
-	m["PORT"] = strconv.FormatInt(int64(defaultPort), 10)
-	return m
+	plain["PORT"] = strconv.FormatInt(int64(defaultPort), 10)
+	return plain, secret
 }
 
 // containerAppName produces a valid Container Apps name from a project name:
