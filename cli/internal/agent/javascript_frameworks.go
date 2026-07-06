@@ -714,7 +714,7 @@ func (h *TanStackStartHandler) HandleConfig(projectPath string, platform Platfor
 	}
 
 	// Only handle platforms with specific config requirements
-	if platform != Netlify && platform != Vercel && platform != Render && platform != FlyIO && platform != Heroku && platform != AWS {
+	if platform != Netlify && platform != Vercel && platform != Render && platform != FlyIO && platform != Heroku && platform != AWS && platform != GoogleCloudRun {
 		return nil, "", nil
 	}
 

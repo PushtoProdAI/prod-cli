@@ -89,18 +89,32 @@ breadth matters. This is the conversion funnel; treat it as P0 alongside Part 1.
 None of this blocks going public. All of it makes prod win. Ranked by *reasons-to-choose
 × reach ÷ effort*.
 
-### A. Cloud breadth — managed-container parity across the big three  *(highest reach)*
-The registry-adapter + managed-container pattern generalizes cleanly (proven by App
-Runner → GAR). Finish the set:
-1. **Google Cloud Run** — the `gar` kind is done; remaining is the `gcprun` Deployable
-   (Cloud Run v2 API: create/update service → poll Ready → URL) + the 5-switch wiring +
-   the `Platform.GoogleCloudRun` enum. ~80% an App Runner port. **Real revision-based
-   rollback** (App Runner's is a stub). *(M. Finish this before Azure — it's already
-   half-built.)*
-2. **Azure Container Apps** — the same port a third time: a new `acr` (Azure Container
-   Registry) kind mirroring `ecr`/`gar`, Azure AD auth (`azidentity`), the
-   create→poll→URL flow, **real revision rollback**. Completes AWS/GCP/Azure
-   managed-container parity + the PaaS five = "deploy anywhere, in English." *(M.)*
+### A. Cloud breadth + the adapter framework — reach *and* the extensibility play  *(highest reach)*
+The registry-adapter + managed-container pattern generalizes cleanly (proven: App
+Runner → Cloud Run). But adding a cloud touches **~10 dispatch switches**, and a silent
+miss (`getProjectDetector`) can break every deploy — so breadth is gated by boilerplate.
+Fix the framework, then breadth is cheap. Full design + acceptance criteria:
+[docs/cloud-framework-plan.md](./cloud-framework-plan.md).
+
+1. **Google Cloud Run — DONE** (`gar` registry + `gcprun` adapter + wiring). Managed
+   container → HTTPS via the user's ADC. Follow-ups: real revision rollback, Secret
+   Manager for secrets, a GCP cost estimator.
+2. **Cloud-adapter framework, Level 1 — a registration table (`PlatformCatalog`)** so
+   adding a cloud is *one adapter + one Register call*, the ~10 switches derive from the
+   catalog, a completeness test kills the silent-miss class, and the container-cloud
+   workflows collapse into one generic workflow. **Do this before Azure** so Azure is a
+   one-file add. *(M–L.)*
+3. **Azure Container Apps** — rides Level 1: a new `acr` (Azure Container Registry) kind
+   mirroring `ecr`/`gar`, `azidentity` auth, create→poll→URL, **real revision rollback**.
+   Completes AWS/GCP/Azure managed-container parity + the PaaS five = "deploy anywhere,
+   in English." *(M, less once L1 lands.)*
+4. **Framework Level 2 — a shared managed-container base** (extract the common
+   build→push→create→poll→URL from App Runner/Cloud Run so a new container cloud is
+   ~100 lines). Do a *light* extraction before Azure so Azure lands on the base. *(M.)*
+5. **Framework Level 3 — out-of-tree gRPC provider plugins** (`hashicorp/go-plugin`): a
+   third party ships `prod-provider-x` and `prod "deploy to x"` works *without forking
+   prod*. Registers *through* Level 1. The platform/ecosystem play for the devops
+   audience; credential-scoping is the #1 security constraint. *(L, the big bet.)*
 
 ### B. The agent-native moat — this is the reason to *pick* prod  *(highest differentiation)*
 1. **Finish the shape model:** a `LivenessChecker` interface so worker/cron adapters own
@@ -110,8 +124,15 @@ Runner → GAR). Finish the set:
    with an A10G"* in English is a headline no competitor can match. The first genuinely
    non-container, non-HTTP target — it's why the shape work exists. *(L, the strategic
    payload.)*
-3. **Grow the MCP toolset** to `plan`/`status`/`rollback` (an agent that can ship but not
-   recover is unsafe) + a `shape` param on `deploy`. *(M.)*
+3. **Grow the local MCP server into a first-class agentic citizen** — it already exposes
+   `deploy` (approval-gated), `list_deploys`, `analyze_project` over stdio (any MCP client
+   spawns `prod mcp`). Add `rollback` (deploy-without-rollback is unsafe for autonomy) +
+   `doctor` (self-diagnose) tools and surface `deployShape` in the deploy preview. *(M.)*
+4. **[COMMERCIAL] Network MCP server** (`prod mcp --http` / `prod serve`) — the MCP
+   HTTP/SSE transport so *remote* tools, *multiple* clients, or a *hosted/shared* prod can
+   connect (vs today's per-client stdio subprocess). This is a **paid/hosted-tier
+   feature**, not OSS: a network server that can deploy (spend money, mutate clouds) needs
+   auth, and it's the natural shape of the commercial tier. Keep it out of the OSS core.
 
 ### C. Reach — more languages  *(broadens the top of funnel)*
 Node + Python today. Order: **Go** (self-serving, single static binary, trivial),
