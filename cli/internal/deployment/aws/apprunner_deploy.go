@@ -13,6 +13,7 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/auth"
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/apprunner"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/managedcontainer"
 	prodreg "github.com/pushtoprodai/prod-cli/internal/registry"
 )
 
@@ -37,61 +38,56 @@ func NewAppRunnerDeployment(spec *deployment.DeploymentSpec, dockerGen *deployme
 	return &Deployment{spec: spec, dockerGen: dockerGen, writer: writer}
 }
 
-// Deploy resolves the user's AWS credentials, pushes the image to their ECR, and
-// creates or redeploys the App Runner service, returning it once RUNNING.
+// Deploy runs the shared managed-container flow with App Runner as the provider.
 func (d *Deployment) Deploy(ctx context.Context) ([]deployment.CreatedResource, error) {
+	return managedcontainer.Run(ctx, d, d.spec, d.dockerGen)
+}
+
+// ResourceType is the primary CreatedResource type for App Runner.
+func (d *Deployment) ResourceType() string { return "apprunner_service" }
+
+// Prepare resolves AWS credentials, ensures ECR, and returns a deploy step that
+// creates/redeploys the App Runner service (with an ECR access role) and waits until
+// RUNNING.
+func (d *Deployment) Prepare(ctx context.Context, spec *deployment.DeploymentSpec) (prodreg.Registry, managedcontainer.DeployFunc, error) {
 	cfg, accountID, err := auth.NewAWSAuth(d.writer).Config(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
-	// Build locally and push to the user's ECR.
 	reg := prodreg.NewECR(cfg, accountID)
-	buildContext, _ := d.spec.Metadata["buildContext"].(string)
-	_, pushResult, err := d.dockerGen.BuildAndPushToRegistry(ctx, d.spec, buildContext, reg)
-	if err != nil {
-		return nil, errors.Errorf("failed to build and push image to ECR: %w", err)
-	}
-
-	// Deploy to App Runner (create or redeploy) with an ECR access role.
 	dep := apprunner.New(cfg)
-	accessRole, err := dep.EnsureAccessRole(ctx)
-	if err != nil {
-		return nil, err
-	}
 
-	plain, secrets := splitEnvVars(d.spec.EnvVars)
-	name := prodreg.Sanitize(d.spec.Name)
-	serviceArn, err := dep.Deploy(ctx, apprunner.ServiceConfig{
-		Name:          name,
-		ImageRef:      pushResult.PushedImageURL,
-		AccessRoleArn: accessRole,
-		Port:          defaultPort,
-		CPU:           defaultCPU,
-		Memory:        defaultMemory,
-		StartCommand:  d.spec.StartCommand,
-		EnvVars:       plain,
-		Secrets:       secrets,
-	})
-	if err != nil {
-		return nil, err
-	}
+	deploy := func(ctx context.Context, imageRef string) (managedcontainer.DeployResult, error) {
+		accessRole, err := dep.EnsureAccessRole(ctx)
+		if err != nil {
+			return managedcontainer.DeployResult{}, err
+		}
+		plain, secrets := splitEnvVars(spec.EnvVars)
+		name := prodreg.Sanitize(spec.Name)
+		serviceArn, err := dep.Deploy(ctx, apprunner.ServiceConfig{
+			Name:          name,
+			ImageRef:      imageRef,
+			AccessRoleArn: accessRole,
+			Port:          defaultPort,
+			CPU:           defaultCPU,
+			Memory:        defaultMemory,
+			StartCommand:  spec.StartCommand,
+			EnvVars:       plain,
+			Secrets:       secrets,
+		})
+		if err != nil {
+			return managedcontainer.DeployResult{}, err
+		}
 
-	// Wait for the service to become RUNNING (bounded).
-	waitCtx, cancel := context.WithTimeout(ctx, waitTimeout)
-	defer cancel()
-	serviceURL, err := dep.WaitForRunning(waitCtx, serviceArn)
-	if err != nil {
-		return nil, err
+		waitCtx, cancel := context.WithTimeout(ctx, waitTimeout)
+		defer cancel()
+		serviceURL, err := dep.WaitForRunning(waitCtx, serviceArn)
+		if err != nil {
+			return managedcontainer.DeployResult{}, err
+		}
+		return managedcontainer.DeployResult{ID: serviceArn, Name: name, URL: "https://" + serviceURL}, nil
 	}
-
-	return []deployment.CreatedResource{{
-		ID:       serviceArn,
-		Type:     "apprunner_service",
-		Name:     name,
-		Primary:  true,
-		Metadata: map[string]any{"url": "https://" + serviceURL},
-	}}, nil
+	return reg, deploy, nil
 }
 
 // GetPreviousDeployment is not yet implemented for App Runner.
