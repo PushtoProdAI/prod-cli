@@ -121,8 +121,10 @@ You are a strict classifier. Your only job is to analyze deployment requests and
     - Vercel
     - Heroku
     - AWS
+    - Google Cloud Run
 
-  NOTE: AWS is Amazon Web Services. So consider strings like "deploy to Amazon" having a target of AWS. 
+  NOTE: AWS is Amazon Web Services. So consider strings like "deploy to Amazon" having a target of AWS.
+  NOTE: "Google Cloud Run", "Cloud Run", "GCP", or "Google Cloud" map to the platform "Google Cloud Run".
   
   If the user mentions one of these explicitly, extract it as `platform`.
   If they mention a platform NOT on this list (e.g. Kubernetes), set:

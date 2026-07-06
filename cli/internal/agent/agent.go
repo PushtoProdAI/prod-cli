@@ -503,7 +503,7 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 }
 
 // deployPlatforms are the platforms prod can deploy to, in menu order.
-var deployPlatforms = []Platform{FlyIO, Render, Vercel, Netlify, Heroku, AWS}
+var deployPlatforms = []Platform{FlyIO, Render, Vercel, Netlify, Heroku, AWS, GoogleCloudRun}
 
 func deployPlatformNames() []string {
 	names := make([]string, len(deployPlatforms))
@@ -534,6 +534,8 @@ func parseDeployPlatform(input string) Platform {
 		return Heroku
 	case "aws":
 		return AWS
+	case "google cloud run", "cloud run", "gcp", "gcp run", "gcprun", "googlecloudrun":
+		return GoogleCloudRun
 	}
 	return UnknownPlatform
 }
@@ -1439,6 +1441,9 @@ func unsupportedLocalPlatform(p Platform) (string, bool) {
 	case AWS:
 		return "⚠️  Rolling back an AWS App Runner service isn't supported yet.\n" +
 			"   Deploy again to update the service. (Fly.io, Render, and others support rollback.)\n", true
+	case GoogleCloudRun:
+		return "⚠️  Rolling back a Google Cloud Run service isn't supported yet.\n" +
+			"   Deploy again to update the service. (Fly.io, Render, and others support rollback.)\n", true
 	default:
 		return "", false
 	}
@@ -1538,6 +1543,8 @@ func (a *Agent) getAuthProvider(out io.Writer) (auth.AuthProvider, error) {
 		return herokuAuth, nil
 	case AWS:
 		return auth.NewAWSAuth(out), nil
+	case GoogleCloudRun:
+		return auth.NewGCPAuth(out), nil
 	default:
 		return nil, errors.Errorf("unsupported platform: %s", a.DeployPlan.Platform)
 	}

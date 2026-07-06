@@ -12,6 +12,7 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/aws"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/flyio"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/gcprun"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/heroku"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/netlify"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
@@ -53,6 +54,11 @@ func (a *Activities) createDeployable(spec *deployment.DeploymentSpec, platform 
 		// Uses the user's own AWS credentials (no backend, no CloudFormation).
 		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
 		return aws.NewAppRunnerDeployment(spec, dockerGen, a.uiWriter), nil
+	case GoogleCloudRun:
+		// Cloud Run deploy: build locally, push to the user's Artifact Registry,
+		// create/update the service. Uses the user's own GCP credentials (ADC).
+		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
+		return gcprun.NewCloudRunDeployment(spec, dockerGen, a.uiWriter), nil
 	default:
 		return nil, errors.Errorf("unsupported platform: %s", platform)
 	}
