@@ -151,7 +151,7 @@ func (a *Activities) patchPackageJSONForPlatform(origPackageJson []byte, platfor
 		return origPackageJson, false, nil
 	}
 
-	return handler.PatchPackageJSON(origPackageJson, platform)
+	return handler.PatchPackageJSON(origPackageJson, canonicalFrameworkPlatform(platform))
 }
 
 // updateJavaScriptConfig handles both framework config and package.json updates for JavaScript projects
@@ -226,7 +226,8 @@ func (a *Activities) updateJavaScriptConfig(_ context.Context, plan DeployPlan) 
 
 	// Handle framework-specific config if we have a handler
 	if handler != nil {
-		configDiff, configPath, err := handler.HandleConfig(projectPath, plan.Platform)
+		fwPlatform := canonicalFrameworkPlatform(plan.Platform)
+		configDiff, configPath, err := handler.HandleConfig(projectPath, fwPlatform)
 		if err != nil {
 			return JavaScriptConfigResult{}, err
 		}
@@ -235,7 +236,7 @@ func (a *Activities) updateJavaScriptConfig(_ context.Context, plan DeployPlan) 
 		result.ConfigPath = configPath
 
 		// Handle any platform-specific files (like .npmrc for Remix)
-		if err := handler.HandlePlatformSpecificFiles(projectPath, plan.Platform); err != nil {
+		if err := handler.HandlePlatformSpecificFiles(projectPath, fwPlatform); err != nil {
 			// Don't fail the whole process for file operations, just log
 			a.uiWriter.SendStatus("configuring", fmt.Sprintf("⚠️ Could not handle platform-specific files: %v", err))
 		}
@@ -265,7 +266,14 @@ func (a *Activities) prepareDeployment(_ context.Context, plan DeployPlan) (Depl
 		return plan, nil
 	}
 
+	// Normalize a plugin to a node-container built-in so PrepareDeployment sets the
+	// framework start command + env (e.g. SvelteKit "node build", Nuxt NITRO_PRESET)
+	// instead of falling through to no match. Restore the real platform after — it only
+	// reads plan.Platform and writes plan.Spec / plan.CollectedEnvVars.
+	realPlatform := plan.Platform
+	plan.Platform = canonicalFrameworkPlatform(plan.Platform)
 	plan = handler.PrepareDeployment(plan)
+	plan.Platform = realPlatform
 
 	a.uiWriter.SendStatusComplete("configuring", fmt.Sprintf("✅ %s deployment configuration complete", runtimeFramework))
 	return plan, nil
