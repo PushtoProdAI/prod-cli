@@ -1431,17 +1431,16 @@ func (a *Agent) refuseUnsupportedPlatform(out io.Writer, p Platform) bool {
 // unsupportedLocalPlatform reports platforms whose ROLLBACK isn't supported in
 // the single binary. AWS deploys to App Runner, but App Runner rollback isn't
 // implemented yet — you redeploy to change the service — so rollback is refused.
+// unsupportedLocalPlatform returns a friendly message (and true) when a platform's
+// rollback isn't implemented yet, so the deploy path can refuse cleanly instead of
+// failing mid-workflow. Derived from the catalog's SupportsRollback flag.
 func unsupportedLocalPlatform(p Platform) (string, bool) {
-	switch p {
-	case AWS:
-		return "⚠️  Rolling back an AWS App Runner service isn't supported yet.\n" +
-			"   Deploy again to update the service. (Fly.io, Render, and others support rollback.)\n", true
-	case GoogleCloudRun:
-		return "⚠️  Rolling back a Google Cloud Run service isn't supported yet.\n" +
-			"   Deploy again to update the service. (Fly.io, Render, and others support rollback.)\n", true
-	default:
+	s, ok := LookupPlatform(p)
+	if !ok || s.SupportsRollback {
 		return "", false
 	}
+	return fmt.Sprintf("⚠️  Rolling back your %s deployment isn't supported yet.\n"+
+		"   Deploy again to update the service. (Fly.io, Render, and others support rollback.)\n", s.Name), true
 }
 
 func shouldProceed(plan DeployPlan) bool {
