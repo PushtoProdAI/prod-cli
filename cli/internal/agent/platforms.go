@@ -52,6 +52,9 @@ type PlatformSpec struct {
 	// service clouds (App Runner, Cloud Run, Azure Container Apps). They share one
 	// generic deploy workflow instead of a per-platform clone.
 	ManagedContainer bool
+	// Experimental marks a target that hasn't been validated end-to-end (e.g. Modal).
+	// The menu appends "(experimental)" so the caveat is visible at selection time.
+	Experimental bool
 }
 
 // platformCatalog is the registered set, in menu order. Seeded once by
@@ -226,7 +229,7 @@ func registerPlatforms() {
 	// validated against a live Modal account.
 	RegisterPlatform(PlatformSpec{
 		Platform: Modal, Name: "Modal", Aliases: []string{"modal"},
-		DomainSuffix: ".modal.run", SupportsRollback: false,
+		DomainSuffix: ".modal.run", SupportsRollback: false, Experimental: true,
 		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
 			return modal.NewModalDeployment(spec, a.uiWriter), nil
 		},
