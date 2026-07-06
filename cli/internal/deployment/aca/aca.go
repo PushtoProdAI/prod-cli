@@ -7,6 +7,7 @@ package aca
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -21,6 +22,7 @@ const registrySecretName = "prod-registry-password"
 type Deployer struct {
 	apps          *armappcontainers.ContainerAppsClient
 	envs          *armappcontainers.ManagedEnvironmentsClient
+	revs          *armappcontainers.ContainerAppsRevisionsClient
 	groups        *armresources.ResourceGroupsClient
 	resourceGroup string
 	location      string
@@ -36,11 +38,15 @@ func New(cred azcore.TokenCredential, subscription, resourceGroup, location stri
 	if err != nil {
 		return nil, errors.Errorf("failed to build Container Apps environment client: %w", err)
 	}
+	revs, err := armappcontainers.NewContainerAppsRevisionsClient(subscription, cred, nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to build Container Apps revisions client: %w", err)
+	}
 	groups, err := armresources.NewResourceGroupsClient(subscription, cred, nil)
 	if err != nil {
 		return nil, errors.Errorf("failed to build resource group client: %w", err)
 	}
-	return &Deployer{apps: apps, envs: envs, groups: groups, resourceGroup: resourceGroup, location: location}, nil
+	return &Deployer{apps: apps, envs: envs, revs: revs, groups: groups, resourceGroup: resourceGroup, location: location}, nil
 }
 
 // EnsureResourceGroup creates the resource group if it doesn't exist (idempotent).
@@ -116,9 +122,16 @@ func (d *Deployer) Deploy(ctx context.Context, cfg AppConfig) (string, error) {
 		Properties: &armappcontainers.ContainerAppProperties{
 			ManagedEnvironmentID: to.Ptr(cfg.EnvironmentID),
 			Configuration: &armappcontainers.Configuration{
+				// Multiple-revision mode keeps prior revisions around so rollback can
+				// shift traffic back to one; each deploy routes 100% to the new revision.
+				ActiveRevisionsMode: to.Ptr(armappcontainers.ActiveRevisionsModeMultiple),
 				Ingress: &armappcontainers.Ingress{
 					External:   to.Ptr(true),
 					TargetPort: to.Ptr(cfg.Port),
+					Traffic: []*armappcontainers.TrafficWeight{{
+						LatestRevision: to.Ptr(true),
+						Weight:         to.Ptr(int32(100)),
+					}},
 				},
 				Registries: []*armappcontainers.RegistryCredentials{{
 					Server:            to.Ptr(cfg.RegistryServer),
@@ -155,6 +168,115 @@ func (d *Deployer) Deploy(ctx context.Context, cfg AppConfig) (string, error) {
 		return "", errors.Errorf("Container App %q has no ingress URL", cfg.Name)
 	}
 	return fmt.Sprintf("https://%s", fqdn), nil
+}
+
+// PreviousRevision returns the name of the revision to roll back to: the newest
+// active revision older than the one currently serving traffic. Returns "" if there's
+// nothing to roll back to.
+func (d *Deployer) PreviousRevision(ctx context.Context, appName string) (string, error) {
+	pager := d.revs.NewListRevisionsPager(d.resourceGroup, appName, nil)
+	var revs []*armappcontainers.Revision
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return "", errors.Errorf("failed to list Container App revisions: %w", err)
+		}
+		revs = append(revs, page.Value...)
+	}
+	return previousActiveRevision(revs, servingRevisionName(revs)), nil
+}
+
+// servingRevisionName returns the revision currently receiving traffic: the one with
+// the highest positive weight (an explicit pin), else the newest active revision (the
+// default "route to latest"). This mirrors the Cloud Run twin so previousActiveRevision
+// never mistakes the current revision for its own predecessor.
+func servingRevisionName(revs []*armappcontainers.Revision) string {
+	var best *armappcontainers.Revision
+	for _, r := range revs {
+		if r == nil || r.Properties == nil || r.Properties.TrafficWeight == nil {
+			continue
+		}
+		if best == nil || *r.Properties.TrafficWeight > *best.Properties.TrafficWeight {
+			best = r
+		}
+	}
+	if best != nil && best.Properties.TrafficWeight != nil && *best.Properties.TrafficWeight > 0 {
+		return revName(best)
+	}
+	return newestActiveRevision(revs, "")
+}
+
+// previousActiveRevision returns the newest active revision older than `current`.
+// Pure so it's unit-testable.
+func previousActiveRevision(revs []*armappcontainers.Revision, current string) string {
+	var currentCreate *time.Time
+	for _, r := range revs {
+		if r != nil && r.Properties != nil && revName(r) == current {
+			currentCreate = r.Properties.CreatedTime
+			break
+		}
+	}
+	return newestActiveRevision(revs, current, currentCreate)
+}
+
+// newestActiveRevision returns the newest active revision, excluding `exclude` and
+// (if olderThan is a non-nil time) any revision not strictly older than it.
+func newestActiveRevision(revs []*armappcontainers.Revision, exclude string, olderThan ...*time.Time) string {
+	var cutoff *time.Time
+	if len(olderThan) > 0 {
+		cutoff = olderThan[0]
+	}
+	var best *armappcontainers.Revision
+	for _, r := range revs {
+		if r == nil || r.Properties == nil || revName(r) == exclude {
+			continue
+		}
+		if r.Properties.Active == nil || !*r.Properties.Active || r.Properties.CreatedTime == nil {
+			continue
+		}
+		if cutoff != nil && !r.Properties.CreatedTime.Before(*cutoff) {
+			continue
+		}
+		if best == nil || r.Properties.CreatedTime.After(*best.Properties.CreatedTime) {
+			best = r
+		}
+	}
+	return revName(best)
+}
+
+// revName is the revision's short name (the ARM Name field is already the short
+// revision id for a revision sub-resource).
+func revName(r *armappcontainers.Revision) string {
+	if r == nil || r.Name == nil {
+		return ""
+	}
+	return *r.Name
+}
+
+// RollbackToRevision routes 100% of the app's traffic to a specific revision. It GETs
+// the app and updates only the ingress traffic, so the rest of the config is preserved.
+func (d *Deployer) RollbackToRevision(ctx context.Context, appName, revision string) error {
+	got, err := d.apps.Get(ctx, d.resourceGroup, appName, nil)
+	if err != nil {
+		return errors.Errorf("failed to load Container App for rollback: %w", err)
+	}
+	app := got.ContainerApp
+	if app.Properties == nil || app.Properties.Configuration == nil || app.Properties.Configuration.Ingress == nil {
+		return errors.Errorf("Container App %q has no ingress to roll back", appName)
+	}
+	app.Properties.Configuration.Ingress.Traffic = []*armappcontainers.TrafficWeight{{
+		RevisionName: to.Ptr(revision),
+		Weight:       to.Ptr(int32(100)),
+	}}
+
+	poller, err := d.apps.BeginCreateOrUpdate(ctx, d.resourceGroup, appName, app, nil)
+	if err != nil {
+		return errors.Errorf("failed to route Container App traffic to revision %q: %w", revision, err)
+	}
+	if _, err := poller.PollUntilDone(ctx, nil); err != nil {
+		return errors.Errorf("failed waiting for Container App rollback to %q: %w", revision, err)
+	}
+	return nil
 }
 
 // ingressFqdn extracts the app's public hostname from a ContainerApp result.

@@ -185,7 +185,7 @@ func registerPlatforms() {
 	RegisterPlatform(PlatformSpec{
 		Platform: Azure, Name: "Azure Container Apps",
 		Aliases:      []string{"azure container apps", "azure", "container apps", "aca", "azure aca"},
-		DomainSuffix: ".azurecontainerapps.io", SupportsRollback: false, ManagedContainer: true,
+		DomainSuffix: ".azurecontainerapps.io", SupportsRollback: true, ManagedContainer: true,
 		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
 			dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
 			return aca.NewContainerAppsDeployment(spec, dockerGen, a.uiWriter), nil
