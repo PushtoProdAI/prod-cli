@@ -171,6 +171,7 @@ func (a *pluginAuthProvider) CheckAuthentication(ctx context.Context) (bool, err
 }
 
 func (a *pluginAuthProvider) ValidateAPIKey(context.Context, string) (bool, error) { return false, nil }
+
 func (a *pluginAuthProvider) PerformOAuthLogin(context.Context) error {
 	return errors.Errorf("this platform is provided by a plugin — configure its credentials as the plugin documents")
 }
