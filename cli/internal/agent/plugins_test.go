@@ -1,0 +1,87 @@
+package agent
+
+import (
+	"testing"
+
+	"github.com/pushtoprodai/prod-cli/internal/pluginhost"
+)
+
+func TestPluginPlatformIdentity(t *testing.T) {
+	p := pluginPlatform("Acme Cloud")
+	if !IsPlugin(p) {
+		t.Errorf("a plugin platform must satisfy IsPlugin, got %d", p)
+	}
+	// Deterministic per name (so a persisted DeployPlan resumes to the same plugin).
+	if pluginPlatform("Acme Cloud") != p {
+		t.Error("pluginPlatform must be deterministic for a name")
+	}
+	if pluginPlatform("Other Cloud") == p {
+		t.Error("different plugin names should not share a Platform value")
+	}
+	// Built-ins are never plugins.
+	if IsPlugin(AWS) || IsPlugin(GoogleCloudRun) || IsPlugin(UnknownPlatform) {
+		t.Error("built-in platforms must not satisfy IsPlugin")
+	}
+	// DisplayName falls back to String() for an unregistered plugin value.
+	if got := pluginPlatform("nope").DisplayName(); got == "" {
+		t.Error("DisplayName should fall back to String(), not empty")
+	}
+}
+
+// snapshotCatalog restores the package-global catalog after a test that registers a
+// plugin, so tests don't depend on file ordering.
+func snapshotCatalog(t *testing.T) {
+	cat := append([]PlatformSpec(nil), platformCatalog...)
+	idx := make(map[Platform]PlatformSpec, len(platformByEnum))
+	for k, v := range platformByEnum {
+		idx[k] = v
+	}
+	t.Cleanup(func() { platformCatalog, platformByEnum = cat, idx })
+}
+
+func TestRegisterPluginAndDispatch(t *testing.T) {
+	snapshotCatalog(t)
+	e := pluginhost.Entry{
+		Name:             "L3 Test Cloud",
+		Aliases:          []string{"l3test", "l3-test-cloud"},
+		DomainSuffix:     ".l3test.dev",
+		SupportsRollback: false,
+		Path:             "/nonexistent/prod-provider-l3test",
+		Checksum:         "abc123", // required
+	}
+	if err := registerPlugin(e); err != nil {
+		t.Fatalf("registerPlugin: %v", err)
+	}
+
+	p := pluginPlatform(e.Name)
+	spec, ok := LookupPlatform(p)
+	if !ok {
+		t.Fatal("plugin not registered in the catalog")
+	}
+	if spec.Name != e.Name || !spec.ManagedContainer || spec.DomainSuffix != ".l3test.dev" {
+		t.Errorf("spec = %+v", spec)
+	}
+	if spec.NewDeployable == nil || spec.NewAuthProvider == nil {
+		t.Error("plugin spec must have deployable + auth factories")
+	}
+	// Resolves by name and alias through the catalog, so NL + menu selection work.
+	if got, ok := PlatformByString("l3test"); !ok || got != p {
+		t.Errorf("PlatformByString(alias) = %v, %v", got, ok)
+	}
+	if got, ok := PlatformByString("L3 Test Cloud"); !ok || got != p {
+		t.Errorf("PlatformByString(name) = %v, %v", got, ok)
+	}
+	// The catalog-driven rollback gate reflects the plugin's capability.
+	if _, gated := unsupportedLocalPlatform(p); !gated {
+		t.Error("a plugin with SupportsRollback=false should be gated")
+	}
+
+	// Re-registering the same name collides (deterministic Platform value).
+	if err := registerPlugin(e); err == nil {
+		t.Error("re-registering the same plugin should collide")
+	}
+	// An alias that shadows a built-in is rejected.
+	if err := registerPlugin(pluginhost.Entry{Name: "Bad Alias Cloud", Aliases: []string{"aws"}, Path: "/x"}); err == nil {
+		t.Error("a plugin aliasing a built-in must be rejected")
+	}
+}
