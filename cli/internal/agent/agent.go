@@ -311,8 +311,19 @@ func (a *Agent) waitForPlanApproval(ctx context.Context, input string, out io.Wr
 
 	switch input {
 	case PlanApprovalApproved:
-		fmt.Fprint(out, "Proceeding with deployment...\n")
-		a.nextStateAfterAuth = a.detectExisting
+		// Route to the action's executor — an approved rollback/destroy must NOT fall
+		// through to the deploy pipeline (which would redeploy instead of tearing down).
+		switch a.DeployPlan.Action {
+		case Destroy:
+			fmt.Fprint(out, "Proceeding with teardown...\n")
+			a.nextStateAfterAuth = a.executeDestroy
+		case Rollback:
+			fmt.Fprint(out, "Proceeding with rollback...\n")
+			a.nextStateAfterAuth = a.executeRollback
+		default:
+			fmt.Fprint(out, "Proceeding with deployment...\n")
+			a.nextStateAfterAuth = a.detectExisting
+		}
 		return a.checkAuthentication(ctx, input, out)
 	case PlanApprovalRejected:
 		fmt.Fprint(out, "Deployment cancelled\n")
@@ -700,7 +711,18 @@ func (a *Agent) processConfirmationResponse(ctx context.Context, input string, o
 }
 
 func (a *Agent) confirm(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	return a.deploy, nil
+	// Non-interactive (--yes) approval: route by action so an auto-approved
+	// rollback/destroy runs its own executor instead of the deploy pipeline.
+	switch a.DeployPlan.Action {
+	case Destroy:
+		a.nextStateAfterAuth = a.executeDestroy
+		return a.checkAuthentication(ctx, input, out)
+	case Rollback:
+		a.nextStateAfterAuth = a.executeRollback
+		return a.checkAuthentication(ctx, input, out)
+	default:
+		return a.deploy, nil
+	}
 }
 
 func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -1309,6 +1331,15 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 	return a.done(), nil
 }
 
+// selectionVerb is the user-facing verb for the multi-platform picker prompt,
+// matching the plan's action (rollback vs teardown).
+func (a *Agent) selectionVerb() string {
+	if a.DeployPlan != nil && a.DeployPlan.Action == Destroy {
+		return "tear down"
+	}
+	return "roll back"
+}
+
 func (a *Agent) selectPlatform(_ context.Context, _ string, out io.Writer) (stateFn, error) {
 	// Build platform options from detected platforms
 	platformOptions := make([]string, len(a.DeployPlan.ExistingProjectInfo.DetectedPlatforms))
@@ -1316,7 +1347,7 @@ func (a *Agent) selectPlatform(_ context.Context, _ string, out io.Writer) (stat
 		platformOptions[i] = p.String()
 	}
 
-	a.sendSelect(out, "Multiple deployments found. Which platform would you like to rollback?", platformOptions)
+	a.sendSelect(out, fmt.Sprintf("Multiple deployments found. Which platform would you like to %s?", a.selectionVerb()), platformOptions)
 	return a.waitForPlatformSelection, nil
 }
 
@@ -1332,7 +1363,7 @@ func (a *Agent) waitForPlatformSelection(ctx context.Context, input string, out 
 		for i, p := range a.DeployPlan.ExistingProjectInfo.DetectedPlatforms {
 			platformOptions[i] = p.String()
 		}
-		a.sendSelect(out, "Invalid selection. Which platform would you like to rollback?", platformOptions)
+		a.sendSelect(out, fmt.Sprintf("Invalid selection. Which platform would you like to %s?", a.selectionVerb()), platformOptions)
 		return a.waitForPlatformSelection, nil
 	}
 
@@ -1359,12 +1390,10 @@ func (a *Agent) waitForPlatformSelection(ctx context.Context, input string, out 
 func (a *Agent) executeDestroy(ctx context.Context, _ string, out io.Writer) (stateFn, error) {
 	a.nextStateAfterAuth = nil
 
-	// Multi-platform destroy reassigns the platform after the plan-time gate, so
-	// re-check here — executeDestroy is the single chokepoint for every teardown.
-	if a.refuseUnsupportedPlatform(out, a.DeployPlan.Platform) {
-		return a.done(), nil
-	}
-
+	// Teardown support is independent of rollback support (e.g. App Runner destroys but
+	// can't roll back), so we do NOT reuse the rollback gate here — the destroy activity
+	// type-asserts deployment.Destroyer and returns a clear error for a platform that
+	// doesn't support teardown, surfaced below as a failure.
 	wf, err := Workflows{}.Destroy(ctx, a.wfClient, *a.DeployPlan)
 	if err != nil {
 		slog.Error("Destroy workflow execution failed", "error", err)
