@@ -124,12 +124,16 @@ users at WSL2. The archive name shape `prod_<version>_<os>_<arch>.tar.gz` is a c
 
 The `homebrew` job in `release.yml` fills
 [`.github/homebrew-formula.rb.template`](../.github/homebrew-formula.rb.template) with the
-release's version + per-arch sha256s and commits `Formula/prod.rb` to the tap. To enable it:
+release's version + per-arch sha256s and commits `Formula/prod.rb` to the tap.
 
-1. Create a **public** repo `github.com/pushtoprodai/homebrew-tap` (empty is fine).
-2. Create a token that can push to it — a fine-grained PAT with **Contents: read/write** on
-   `homebrew-tap` (or a classic PAT with `repo`) — and add it to `prod-cli` as the repo
-   **secret `HOMEBREW_TAP_TOKEN`**.
+The tap repo already exists and is prepared:
+[`github.com/pushtoprodai/homebrew-tap`](https://github.com/pushtoprodai/homebrew-tap) (public;
+the old SaaS-era formula that pointed at Supabase storage has been removed — the formula is now
+published by this workflow, not by hand). **The one remaining step to enable brew installs:**
+
+- Create a token that can push to the tap — a fine-grained PAT with **Contents: read/write** on
+  `homebrew-tap` (or a classic PAT with `repo`) — and add it to `prod-cli` as the repo
+  **secret `HOMEBREW_TAP_TOKEN`**.
 
 Until the secret exists, the job **skips cleanly** (it logs a notice; the release still
 succeeds). Once set, every tagged release updates the formula and
