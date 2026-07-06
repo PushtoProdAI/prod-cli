@@ -6,8 +6,8 @@ FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# Copy go mod files
-COPY go.mod go.sum ./
+# Copy go mod files (go.sum is optional — a stdlib-only app has none)
+COPY go.mod go.sum* ./
 
 # Download dependencies
 RUN go mod download
