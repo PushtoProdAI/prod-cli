@@ -95,6 +95,10 @@ type DeployPlan struct {
 	Pricing             deployment.CostEstimate
 	ExistingProjectInfo ExistingProjectInfo
 	Shape               deployment.DeployShape // web (default) | mcp-server | worker | cron
+	// PluginName is set when Platform is an external plugin (IsPlugin). It pins the
+	// plan to a specific plugin by name so a resumed workflow can't deploy to the wrong
+	// cloud if the plugin set changed (a plugin's Platform value is a hash of its name).
+	PluginName string
 }
 
 // Plan approval response constants
@@ -264,7 +268,7 @@ func (a *Agent) sendPlan(out io.Writer, plan DeployPlan) {
 	}
 	// Console fallback: include shape and estimated cost so a decision to spend
 	// money is made with the numbers in view (the TUI renders these in its card).
-	fmt.Fprintf(out, "\nPlan: %s to %s — %s\n", plan.Action.String(), plan.Platform.String(), plan.Summary)
+	fmt.Fprintf(out, "\nPlan: %s to %s — %s\n", plan.Action.String(), plan.Platform.DisplayName(), plan.Summary)
 	// Only surface a non-default shape — "web" is the norm and would just be noise.
 	if plan.Shape != "" && plan.Shape != deployment.ShapeWeb {
 		fmt.Fprintf(out, "  Shape: %s\n", plan.Shape)
@@ -616,7 +620,7 @@ func (a *Agent) confirmMessage() string {
 	if name == "" {
 		name = "this project"
 	}
-	msg := fmt.Sprintf("%s %s to %s", verb, name, p.Platform.String())
+	msg := fmt.Sprintf("%s %s to %s", verb, name, p.Platform.DisplayName())
 	if p.Action == Deploy && p.Pricing.Total > 0 {
 		msg += fmt.Sprintf(" (~$%.2f/mo)", p.Pricing.Total)
 	}
@@ -1263,7 +1267,7 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 	// deployment_complete event is emitted from planning.go workflow layer
 	// Here we just handle UI rendering based on mode
 	if tuiWriter, ok := out.(TUIWriter); ok {
-		tuiWriter.SendSuccess(a.DeployPlan.Platform.String(), a.DeployPlan.Spec.Name, result.Url)
+		tuiWriter.SendSuccess(a.DeployPlan.Platform.DisplayName(), a.DeployPlan.Spec.Name, result.Url)
 		if result.Url != "" {
 			openInBrowser(result.Url)
 		}
@@ -1319,7 +1323,7 @@ func (a *Agent) waitForPlatformSelection(ctx context.Context, input string, out 
 	a.DeployPlan.Platform = selectedPlatform
 
 	slog.Info("User selected platform for rollback", "platform", selectedPlatform)
-	fmt.Fprintf(out, "Selected %s for rollback\n", selectedPlatform.String())
+	fmt.Fprintf(out, "Selected %s for rollback\n", selectedPlatform.DisplayName())
 
 	// Now proceed to auth check
 	a.nextStateAfterAuth = a.executeRollback
@@ -1381,7 +1385,7 @@ func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (s
 
 	// Success
 	if tuiWriter, ok := out.(TUIWriter); ok {
-		tuiWriter.SendSuccess(a.DeployPlan.Platform.String(), a.DeployPlan.Spec.Name, result.Url)
+		tuiWriter.SendSuccess(a.DeployPlan.Platform.DisplayName(), a.DeployPlan.Spec.Name, result.Url)
 		if result.Url != "" {
 			openInBrowser(result.Url)
 		}

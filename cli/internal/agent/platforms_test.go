@@ -83,6 +83,9 @@ func TestRollbackGateDerivesFromCatalog(t *testing.T) {
 func TestManagedContainerPlatforms(t *testing.T) {
 	want := map[Platform]bool{AWS: true, GoogleCloudRun: true, Azure: true}
 	for _, s := range RegisteredPlatforms() {
+		if IsPlugin(s.Platform) {
+			continue // plugins are ManagedContainer by construction; assert built-ins only
+		}
 		if s.ManagedContainer != want[s.Platform] {
 			t.Errorf("%q: ManagedContainer=%v, want %v", s.Name, s.ManagedContainer, want[s.Platform])
 		}

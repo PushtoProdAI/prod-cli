@@ -40,6 +40,12 @@ func main() {
 	slog.SetDefault(logger)
 	os.Setenv("BAML_LOG", "error")
 
+	// Register any installed provider plugins (~/.prod/plugins.json) into the catalog
+	// so they're deploy targets like the built-in platforms.
+	if home, err := os.UserHomeDir(); err == nil {
+		agent.RegisterDiscoveredPlugins(home)
+	}
+
 	mux := http.NewServeMux()
 
 	cfg := workflowext.WorkflowsConfig{

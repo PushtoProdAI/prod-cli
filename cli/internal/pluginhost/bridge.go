@@ -77,10 +77,17 @@ func (p *pluginProvider) Prepare(ctx context.Context, spec *deployment.Deploymen
 	return reg, deploy, nil
 }
 
-// pluginDeployable adapts a plugin.Provider to deployment.Deployable (the interface
-// createDeployable returns), deploying via the managed-container base.
+// LaunchFunc starts a plugin subprocess and returns a live Provider plus a close
+// func. Each deploy activity launches its own subprocess (its lifetime fits inside one
+// go-workflows activity — a client can't survive a persistence boundary) and closes it
+// on return.
+type LaunchFunc func() (plugin.Provider, func(), error)
+
+// pluginDeployable adapts a provider plugin to deployment.Deployable (the interface
+// createDeployable returns), deploying via the managed-container base. It launches a
+// fresh subprocess per method call.
 type pluginDeployable struct {
-	prov      plugin.Provider
+	launch    LaunchFunc
 	meta      plugin.Meta
 	spec      *deployment.DeploymentSpec
 	dockerGen *deployment.DockerGenerator
@@ -89,20 +96,31 @@ type pluginDeployable struct {
 
 var _ deployment.Deployable = (*pluginDeployable)(nil)
 
-// NewDeployable builds a Deployable that deploys a project through a provider plugin.
-func NewDeployable(prov plugin.Provider, meta plugin.Meta, spec *deployment.DeploymentSpec, dockerGen *deployment.DockerGenerator, writer io.Writer) deployment.Deployable {
-	return &pluginDeployable{prov: prov, meta: meta, spec: spec, dockerGen: dockerGen, writer: writer}
+// NewDeployable builds a Deployable that deploys a project through a provider plugin,
+// launching the plugin subprocess lazily per call.
+func NewDeployable(launch LaunchFunc, meta plugin.Meta, spec *deployment.DeploymentSpec, dockerGen *deployment.DockerGenerator, writer io.Writer) deployment.Deployable {
+	return &pluginDeployable{launch: launch, meta: meta, spec: spec, dockerGen: dockerGen, writer: writer}
 }
 
 func (d *pluginDeployable) Deploy(ctx context.Context) ([]deployment.CreatedResource, error) {
-	return managedcontainer.Run(ctx, &pluginProvider{prov: d.prov, meta: d.meta}, d.spec, d.dockerGen)
+	prov, closeFn, err := d.launch()
+	if err != nil {
+		return nil, err
+	}
+	defer closeFn()
+	return managedcontainer.Run(ctx, &pluginProvider{prov: prov, meta: d.meta}, d.spec, d.dockerGen)
 }
 
 func (d *pluginDeployable) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
 	if !d.meta.SupportsRollback {
 		return nil, nil
 	}
-	info, err := d.prov.PreviousDeployment(ctx, prodreg.Sanitize(d.spec.Name))
+	prov, closeFn, err := d.launch()
+	if err != nil {
+		return nil, err
+	}
+	defer closeFn()
+	info, err := prov.PreviousDeployment(ctx, prodreg.Sanitize(d.spec.Name))
 	if err != nil {
 		return nil, err
 	}
@@ -116,8 +134,47 @@ func (d *pluginDeployable) Rollback(ctx context.Context, targetID string) error 
 	if targetID == "" {
 		return errors.Errorf("no previous deployment to roll back to")
 	}
-	return d.prov.Rollback(ctx, prodreg.Sanitize(d.spec.Name), targetID)
+	prov, closeFn, err := d.launch()
+	if err != nil {
+		return err
+	}
+	defer closeFn()
+	return prov.Rollback(ctx, prodreg.Sanitize(d.spec.Name), targetID)
 }
+
+// AuthProvider adapts a plugin's CheckAuth to auth.AuthProvider so prod's pre-deploy
+// credential check works for plugins.
+type pluginAuthProvider struct {
+	launch LaunchFunc
+	out    io.Writer
+}
+
+// NewAuthProvider builds an auth.AuthProvider backed by a plugin's CheckAuth.
+func NewAuthProvider(launch LaunchFunc, out io.Writer) *pluginAuthProvider {
+	return &pluginAuthProvider{launch: launch, out: out}
+}
+
+func (a *pluginAuthProvider) CheckAuthentication(ctx context.Context) (bool, error) {
+	prov, closeFn, err := a.launch()
+	if err != nil {
+		return false, err
+	}
+	defer closeFn()
+	st, err := prov.CheckAuth(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !st.OK && st.Detail != "" {
+		return false, errors.Errorf("%s", st.Detail)
+	}
+	return st.OK, nil
+}
+
+func (a *pluginAuthProvider) ValidateAPIKey(context.Context, string) (bool, error) { return false, nil }
+func (a *pluginAuthProvider) PerformOAuthLogin(context.Context) error {
+	return errors.Errorf("this platform is provided by a plugin — configure its credentials as the plugin documents")
+}
+func (a *pluginAuthProvider) APIKeyPrompt() string { return "" }
 
 // partitionEnv splits env vars into non-sensitive and sensitive, forcing PORT so the
 // app listens where the plugin's ingress routes.
