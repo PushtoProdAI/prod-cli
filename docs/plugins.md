@@ -134,3 +134,17 @@ trust you extend to a Terraform provider or a VS Code extension. prod's guardrai
   as any deploy tool must.
 
 Only install plugins you trust.
+
+## Compatibility & versioning
+
+The contract is the exported package `github.com/pushtoprodai/prod-cli/pkg/plugin` — it
+imports nothing from prod's internals, so you compile against a stable interface.
+
+Compatibility is enforced by `plugin.ProtocolVersion`, negotiated in the go-plugin
+handshake. A plugin built against one protocol version won't launch under a prod that
+expects a different one — prod rejects it with a clear "rebuild against protocol vN"
+message rather than misbehaving. The protocol is bumped only on a breaking change to the
+`Provider` interface or its request/response types; additive, backward-compatible changes
+don't bump it. Pin the `pkg/plugin` version your plugin builds against, and rebuild when
+the protocol version changes.
+

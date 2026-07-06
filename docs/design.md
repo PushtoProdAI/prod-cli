@@ -1,5 +1,12 @@
 # Prod CLI Design Document
 
+> **⚠️ Legacy — describes the retired SaaS-backend architecture.** prod is now a single
+> self-contained binary: local state, direct LLM, no backend, no account. This document is
+> kept for the AWS CloudFormation/template logic and the historical DB schema (useful for
+> the AWS port), but where it describes a backend/auth/LLM-proxy, that is gone. For the
+> current architecture read [CLAUDE.md](../CLAUDE.md); for the framework read
+> [cloud-framework-plan.md](./cloud-framework-plan.md).
+
 ## Overview
 
 Prod is a CLI tool that deploys applications to cloud platforms (AWS, Render, Fly.io, etc.). The system consists of three main parts:
