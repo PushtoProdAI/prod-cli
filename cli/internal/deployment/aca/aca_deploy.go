@@ -10,6 +10,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/pushtoprodai/prod-cli/internal/auth"
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/managedcontainer"
 	prodreg "github.com/pushtoprodai/prod-cli/internal/registry"
 )
 
@@ -34,78 +35,74 @@ func NewContainerAppsDeployment(spec *deployment.DeploymentSpec, dockerGen *depl
 	return &Deployment{spec: spec, dockerGen: dockerGen, writer: writer}
 }
 
-// Deploy resolves the user's Azure credentials, ensures the resource group + ACR +
-// managed environment, builds+pushes the image, and creates/updates the container app.
+// Deploy runs the shared managed-container flow with Container Apps as the provider.
 func (d *Deployment) Deploy(ctx context.Context) ([]deployment.CreatedResource, error) {
+	return managedcontainer.Run(ctx, d, d.spec, d.dockerGen)
+}
+
+// ResourceType is the primary CreatedResource type for Container Apps.
+func (d *Deployment) ResourceType() string { return "containerapp" }
+
+// Prepare resolves Azure credentials, ensures the resource group + ACR, and returns a
+// deploy step that ensures the managed environment and creates/updates the app.
+func (d *Deployment) Prepare(ctx context.Context, spec *deployment.DeploymentSpec) (prodreg.Registry, managedcontainer.DeployFunc, error) {
 	cred, subscription, resourceGroup, location, err := auth.NewAzureAuth(d.writer).Config(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
 	dep, err := New(cred, subscription, resourceGroup, location)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	// The ACR lives in the resource group, so ensure the group before the registry.
 	if err := dep.EnsureResourceGroup(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
-	// Build locally and push to the user's Azure Container Registry.
 	acrName := os.Getenv("PROD_AZURE_ACR")
 	if acrName == "" {
 		acrName = deriveACRName(resourceGroup)
 	}
 	reg, err := prodreg.NewACR(cred, subscription, resourceGroup, location, acrName)
 	if err != nil {
-		return nil, err
-	}
-	buildContext, _ := d.spec.Metadata["buildContext"].(string)
-	_, pushResult, err := d.dockerGen.BuildAndPushToRegistry(ctx, d.spec, buildContext, reg)
-	if err != nil {
-		return nil, errors.Errorf("failed to build and push image to Azure Container Registry: %w", err)
+		return nil, nil, err
 	}
 
-	// The app needs pull credentials for the registry.
-	acrCreds, err := reg.Credentials(ctx, d.spec.Name)
-	if err != nil {
-		return nil, err
-	}
+	deploy := func(ctx context.Context, imageRef string) (managedcontainer.DeployResult, error) {
+		// Pull credentials for the app to fetch the image from the user's ACR.
+		acrCreds, err := reg.Credentials(ctx, spec.Name)
+		if err != nil {
+			return managedcontainer.DeployResult{}, err
+		}
+		envName := os.Getenv("PROD_AZURE_ACA_ENV")
+		if envName == "" {
+			envName = defaultEnv
+		}
+		envID, err := dep.EnsureEnvironment(ctx, envName)
+		if err != nil {
+			return managedcontainer.DeployResult{}, err
+		}
 
-	envName := os.Getenv("PROD_AZURE_ACA_ENV")
-	if envName == "" {
-		envName = defaultEnv
+		name := containerAppName(spec.Name)
+		plainEnv, secretEnv := partitionEnv(spec.EnvVars)
+		url, err := dep.Deploy(ctx, AppConfig{
+			Name:             name,
+			EnvironmentID:    envID,
+			Image:            imageRef,
+			Port:             defaultPort,
+			CPU:              defaultCPU,
+			Memory:           defaultMemory,
+			PlainEnv:         plainEnv,
+			SecretEnv:        secretEnv,
+			RegistryServer:   acrCreds.URL,
+			RegistryUsername: acrCreds.Username,
+			RegistryPassword: acrCreds.Token,
+		})
+		if err != nil {
+			return managedcontainer.DeployResult{}, err
+		}
+		return managedcontainer.DeployResult{ID: name, Name: name, URL: url}, nil
 	}
-	envID, err := dep.EnsureEnvironment(ctx, envName)
-	if err != nil {
-		return nil, err
-	}
-
-	name := containerAppName(d.spec.Name)
-	plainEnv, secretEnv := partitionEnv(d.spec.EnvVars)
-	url, err := dep.Deploy(ctx, AppConfig{
-		Name:             name,
-		EnvironmentID:    envID,
-		Image:            pushResult.PushedImageURL,
-		Port:             defaultPort,
-		CPU:              defaultCPU,
-		Memory:           defaultMemory,
-		PlainEnv:         plainEnv,
-		SecretEnv:        secretEnv,
-		RegistryServer:   acrCreds.URL,
-		RegistryUsername: acrCreds.Username,
-		RegistryPassword: acrCreds.Token,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return []deployment.CreatedResource{{
-		ID:       name,
-		Type:     "containerapp",
-		Name:     name,
-		Primary:  true,
-		Metadata: map[string]any{"url": url},
-	}}, nil
+	return reg, deploy, nil
 }
 
 // GetPreviousDeployment returns the revision to roll back to (the active revision
