@@ -14,7 +14,7 @@ import (
 func (a *Activities) summarizeError(ctx context.Context, error string, input DeployPlan) (deployError, error) {
 	intent := types.Intent{
 		Action:   input.Action.String(),
-		Platform: input.Platform.String(),
+		Platform: input.Platform.DisplayName(),
 		Source:   input.Source,
 	}
 
@@ -36,7 +36,7 @@ func (a *Activities) summarizeError(ctx context.Context, error string, input Dep
 			return deployError{}, errors.Errorf("failed to summarize error: %w", err)
 		}
 
-		violations = findErrorViolations(s, error, input.Platform.String())
+		violations = findErrorViolations(s, error, input.Platform.DisplayName())
 		if len(violations) == 0 {
 			summary = s
 			break

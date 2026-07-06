@@ -101,14 +101,18 @@ func TestPluginRegistry(t *testing.T) {
 	}
 }
 
+func launchOf(fp *fakeProvider) LaunchFunc {
+	return func() (plugin.Provider, func(), error) { return fp, func() {}, nil }
+}
+
 func TestPluginRollbackGate(t *testing.T) {
 	// SupportsRollback=false → no rollback target surfaced.
-	noRB := &pluginDeployable{prov: &fakeProvider{prev: plugin.DeployInfo{ID: "old"}}, meta: plugin.Meta{SupportsRollback: false}, spec: &deployment.DeploymentSpec{Name: "x"}}
+	noRB := &pluginDeployable{launch: launchOf(&fakeProvider{prev: plugin.DeployInfo{ID: "old"}}), meta: plugin.Meta{SupportsRollback: false}, spec: &deployment.DeploymentSpec{Name: "x"}}
 	if info, _ := noRB.GetPreviousDeployment(context.Background()); info != nil {
 		t.Errorf("SupportsRollback=false should yield no previous, got %+v", info)
 	}
 	// SupportsRollback=true → surfaces the prior deployment.
-	rb := &pluginDeployable{prov: &fakeProvider{prev: plugin.DeployInfo{ID: "old", Status: "s"}}, meta: plugin.Meta{SupportsRollback: true}, spec: &deployment.DeploymentSpec{Name: "x"}}
+	rb := &pluginDeployable{launch: launchOf(&fakeProvider{prev: plugin.DeployInfo{ID: "old", Status: "s"}}), meta: plugin.Meta{SupportsRollback: true}, spec: &deployment.DeploymentSpec{Name: "x"}}
 	info, err := rb.GetPreviousDeployment(context.Background())
 	if err != nil || info == nil || info.ID != "old" {
 		t.Errorf("GetPreviousDeployment = %+v, %v", info, err)
