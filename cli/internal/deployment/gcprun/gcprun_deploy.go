@@ -88,15 +88,48 @@ func (d *Deployment) Deploy(ctx context.Context) ([]deployment.CreatedResource, 
 	}}, nil
 }
 
-// GetPreviousDeployment is not yet implemented for Cloud Run.
-func (d *Deployment) GetPreviousDeployment(_ context.Context) (*deployment.DeploymentInfo, error) {
-	return nil, nil
+// GetPreviousDeployment returns the revision to roll back to (the one before the
+// current deploy), or nil if there's nothing to roll back to.
+func (d *Deployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	dep, name, err := d.deployer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rev, err := dep.PreviousRevision(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if rev == "" {
+		return nil, nil
+	}
+	return &deployment.DeploymentInfo{ID: rev, Status: "previous revision"}, nil
 }
 
-// Rollback is not yet implemented for Cloud Run. (Cloud Run keeps revisions, so
-// real "route traffic to revision N" rollback is a planned fast-follow.)
-func (d *Deployment) Rollback(_ context.Context, _ string) error {
-	return errors.Errorf("Cloud Run rollback isn't supported yet")
+// Rollback routes all traffic back to targetRevision (Cloud Run keeps every
+// revision, so rollback is instant — no rebuild).
+func (d *Deployment) Rollback(ctx context.Context, targetRevision string) error {
+	if targetRevision == "" {
+		return errors.Errorf("no previous Cloud Run revision to roll back to")
+	}
+	dep, name, err := d.deployer(ctx)
+	if err != nil {
+		return err
+	}
+	return dep.RouteAllTraffic(ctx, name, targetRevision)
+}
+
+// deployer resolves the user's GCP credentials and builds a Deployer + the service
+// name, shared by the rollback methods.
+func (d *Deployment) deployer(ctx context.Context) (*Deployer, string, error) {
+	ts, project, region, err := auth.NewGCPAuth(d.writer).Config(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	dep, err := New(ctx, ts, project, region)
+	if err != nil {
+		return nil, "", err
+	}
+	return dep, prodreg.Sanitize(d.spec.Name), nil
 }
 
 // envMap flattens env vars and forces PORT to the container port so the app
