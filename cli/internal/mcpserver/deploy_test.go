@@ -153,12 +153,16 @@ func TestSummarizePlan(t *testing.T) {
 	ev := map[string]any{
 		"action":   "deploy",
 		"platform": "fly.io",
+		"shape":    "mcp-server",
 		"summary":  "deploy to fly with a postgres",
 		"pricing":  map[string]any{"total": 12.5},
 	}
 	ps := summarizePlan(ev)
 	if ps == nil || ps.Action != "deploy" || ps.Platform != "fly.io" || ps.EstimatedMonthlyCostUSD != 12.5 {
 		t.Errorf("summarizePlan = %+v", ps)
+	}
+	if ps.Shape != "mcp-server" {
+		t.Errorf("shape should surface in the preview, got %q", ps.Shape)
 	}
 	if summarizePlan(nil) != nil {
 		t.Error("a nil plan should summarize to nil")
