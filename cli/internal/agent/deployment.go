@@ -10,9 +10,7 @@ import (
 	"github.com/pushtoprodai/prod-cli/baml_client/types"
 	"github.com/pushtoprodai/prod-cli/internal/analyzer"
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
-	"github.com/pushtoprodai/prod-cli/internal/deployment/aws"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/flyio"
-	"github.com/pushtoprodai/prod-cli/internal/deployment/gcprun"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/heroku"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/netlify"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
@@ -21,47 +19,15 @@ import (
 )
 
 func (a *Activities) createDeployable(spec *deployment.DeploymentSpec, platform Platform) (deployment.Deployable, error) {
-	switch platform {
-	case Render:
-		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
-		return render.NewQueuedDeployment(a.renderClient, spec, dockerGen, true, a.uiWriter), nil
-	case FlyIO:
-		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
-		return flyio.NewFlyioQueuedDeployment(a.flyClient, spec, dockerGen, a.uiWriter), nil
-	case Netlify:
-		netlifyAdapter := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter, a.llmClient)
-		deployable, err := netlifyAdapter.GenerateArtifacts(spec, deployment.StrategyNetlify)
-		if err != nil {
-			return nil, errors.Errorf("failed to create Netlify deployment: %w", err)
-		}
-		return deployable, nil
-	case Vercel:
-		vercelAdapter := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter, a.llmClient)
-		deployable, err := vercelAdapter.GenerateArtifacts(spec, deployment.StrategyVercel)
-		if err != nil {
-			return nil, errors.Errorf("failed to create Vercel deployment: %w", err)
-		}
-		return deployable, nil
-	case Heroku:
-		herokuAdapter := heroku.NewDefaultHerokuDeploymentAdapter(a.uiWriter, a.llmClient)
-		deployable, err := herokuAdapter.GenerateArtifacts(spec, deployment.StrategyHeroku)
-		if err != nil {
-			return nil, errors.Errorf("failed to create Heroku deployment: %w", err)
-		}
-		return deployable, nil
-	case AWS:
-		// App Runner deploy: build locally, push to the user's ECR, create/redeploy.
-		// Uses the user's own AWS credentials (no backend, no CloudFormation).
-		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
-		return aws.NewAppRunnerDeployment(spec, dockerGen, a.uiWriter), nil
-	case GoogleCloudRun:
-		// Cloud Run deploy: build locally, push to the user's Artifact Registry,
-		// create/update the service. Uses the user's own GCP credentials (ADC).
-		dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
-		return gcprun.NewCloudRunDeployment(spec, dockerGen, a.uiWriter), nil
-	default:
+	p, ok := LookupPlatform(platform)
+	if !ok {
 		return nil, errors.Errorf("unsupported platform: %s", platform)
 	}
+	deployable, err := p.NewDeployable(a, spec)
+	if err != nil {
+		return nil, errors.Errorf("failed to create %s deployment: %w", p.Name, err)
+	}
+	return deployable, nil
 }
 
 func (a *Activities) deploySteps(ctx context.Context, spec deployment.DeploymentSpec, platform Platform) ([]deployment.CreatedResource, error) {
