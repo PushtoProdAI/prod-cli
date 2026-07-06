@@ -13,6 +13,18 @@
 
 ---
 
+> **Status update (this plan is partly shipped; §0 below is now historical).** The
+> `deployShape` **foundation landed**: `deployment.DeployShape` + `ParseShape`
+> (`internal/deployment/shape.go`), `DeployPlan.Shape`, and shape-aware liveness
+> (`Activities.verifyLiveness` in `internal/agent/monitoring.go` skips the HTTP probe for
+> worker/cron). The dispatch in §0 was also rebuilt: the per-`workflow_<platform>.go` clones
+> and the `Platform` string-switch are **gone** — platforms register in the L1
+> `PlatformCatalog` (`internal/agent/platforms.go`) and the managed-container clouds share
+> one generic workflow (L2, `internal/deployment/managedcontainer`). **What remains of this
+> plan:** the per-shape `LivenessChecker` interface, `SupportedShapes()` validation, the
+> MCP-server handshake, and the **Modal** adapter — tracked in
+> [fast-follows.md §5](./fast-follows.md).
+
 ## 0. Where the code is today (the three seams this plan threads through)
 
 1. **Intent → plan.** `llm.ExtractIntent` returns `types.Intent` (`baml_src/intent.baml`, class

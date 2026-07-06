@@ -87,7 +87,10 @@ breadth matters. This is the conversion funnel; treat it as P0 alongside Part 1.
 ## 3. FAST-FOLLOW — what maximizes "why choose us" (prioritized, not blockers)
 
 None of this blocks going public. All of it makes prod win. Ranked by *reasons-to-choose
-× reach ÷ effort*.
+× reach ÷ effort*. **Validated, detailed plans (with acceptance criteria + real-cloud
+validation notes) live in [fast-follows.md](./fast-follows.md)** — including the ones added
+after a review pass: `prod destroy`/teardown and `prod logs` (both missing today), and the
+Go language (nearly free — its Dockerfile template already exists).
 
 ### A. Cloud breadth + the adapter framework — reach *and* the extensibility play  *(highest reach)*
 The registry-adapter + managed-container pattern generalizes cleanly (proven: App
@@ -145,12 +148,17 @@ Node + Python today. Order: **Go** (self-serving, single static binary, trivial)
 (LangGraph/CrewAI/Mastra) matter more than raw languages for the agent story. *(S–M each.)*
 
 ### D. Polish  *(trust + craft)*
-- **Cost-confidence flag** (`estimated | stale | fallback`) — needs the pricing-cache
-  work; the display already says "Estimated cost." *(M.)*
-- **Windows** — cover via WSL2 (the Linux binary works today); defer native (CGO/mingw
-  pain) until demand. *(Defer.)*
-- **Console-vs-TUI**: the deferred typed-event bus — only if drift becomes a real cost
-  (it's blocked by a `deployment→output` import cycle; gold-plating for now). *(Defer.)*
+- **`prod destroy` + `prod logs`** — teardown and log access don't exist yet; table-stakes
+  once an app is live. The per-adapter delete/logs logic is largely internal already. *(M
+  each; details in [fast-follows.md §6](./fast-follows.md).)*
+- **Cost-confidence flag** (`estimated | stale | fallback`) — needs the pricing-cache work;
+  the display already says "Estimated cost." *(M.)*
+- **Windows** — ✅ **WSL2 documented** ([docs/windows.md](./windows.md)) + the installer
+  now points there; the Linux binary runs unchanged. Native deferred (CGO/mingw). *(Done.)*
+- **Console-vs-TUI parity** — ✅ **resolved**: the confirm-path panic is gone (all
+  `out.(TUIWriter)` assertions are the guarded `, ok` form with console fallbacks), and
+  `TestWriterParityNoPanic` guards every writer against the full event surface. A fuller
+  typed-event bus stays deferred (gold-plating). *(Done.)*
 
 ---
 
