@@ -84,16 +84,21 @@ prod "rollback"                       # roll back the last deploy (auto-detects 
 | `prod [prompt]` | Start an interactive session, or run a one-shot deploy from the prompt |
 | `prod run <prompt>` | Execute a single command and exit — for automation / scripting (set `PROD_JSON_MODE=true` for structured JSON output) |
 | `prod doctor` | Check prerequisites (LLM provider reachable? Docker available?) — run this if a deploy won't start |
+| `prod plugin` | Install / list / remove provider plugins — add your own cloud without a fork (see [docs/plugins.md](docs/plugins.md)) |
 | `prod mcp` | Start the MCP server (stdio) so AI agents can call prod as a tool |
+
+Deploy, roll back, and tear down are natural language: `prod "deploy this to fly"`,
+`prod "rollback"`, `prod "destroy this on fly"` (destroy asks for confirmation — it's permanent).
 
 ### Use prod from an AI agent (MCP)
 
 `prod mcp` exposes prod over the [Model Context Protocol](https://modelcontextprotocol.io) so
 agents like Claude Code, Cursor, and Cline can use it. Tools: `list_deploys` (recent
-deployments), `analyze_project` (detect a project's stack), and **`deploy`** — a
-natural-language deploy with a **human-approval gate**: `confirm=false` (the default) returns
-the plan + estimated cost and deploys *nothing*; the agent must pass `confirm=true` to actually
-deploy. Add to your MCP client config:
+deployments), `analyze_project` (detect a project's stack), `doctor` (environment check),
+and the three action tools — **`deploy`**, **`rollback`**, and **`destroy`** — each behind a
+**human-approval gate**: `confirm=false` (the default) returns the plan + estimated cost and
+changes *nothing*; the agent must pass `confirm=true` to actually run it. Add to your MCP
+client config:
 
 ```jsonc
 { "mcpServers": { "prod": { "command": "prod", "args": ["mcp"] } } }
@@ -127,6 +132,8 @@ deploy. Add to your MCP client config:
 - **Fly.io**, **Render**, **Vercel**, **Netlify**, **Heroku** (PaaS)
 - **AWS App Runner**, **Google Cloud Run**, **Azure Container Apps** (managed container —
   build locally, push to a registry in your account, deploy)
+- **Modal** (experimental) — serverless, Python-native, GPU-capable agents, deployed via the
+  `modal` CLI
 
 …and **anything else via a plugin**: add your own cloud or internal PaaS as a separate
 binary with `prod plugin install`, no fork required — see [docs/plugins.md](docs/plugins.md).
@@ -189,7 +196,7 @@ version. (Rollback and managed RDS provisioning are planned — see the [ROADMAP
 
 ## Scope & status
 
-- **Project analysis covers Node and Python today.** More languages and agent-framework
+- **Project analysis covers Node, Python, and Go today.** More languages and agent-framework
   detectors are on the roadmap.
 - "Agent" means two things here — the internal deploy orchestrator, and AI agents as a deploy
   target. Both are first-class; see [CLAUDE.md](./CLAUDE.md) for the distinction.
@@ -200,16 +207,19 @@ version. (Rollback and managed RDS provisioning are planned — see the [ROADMAP
 
 ## Documentation
 
+- [docs/clouds.md](./docs/clouds.md) — per-cloud credential setup (all 8 clouds + Modal + plugins)
+- [docs/plugins.md](./docs/plugins.md) — write a provider plugin to add your own cloud
+- [docs/windows.md](./docs/windows.md) — running prod on Windows (via WSL2)
 - [ROADMAP.md](./ROADMAP.md) — the plan, phases, and the open-core boundary
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — build, the local `make check` gate, the CGO note
-- [docs/DISTRIBUTION.md](./docs/DISTRIBUTION.md) — how releases are cut (GoReleaser + the Linux build)
-- [docs/aws-app-runner.md](./docs/aws-app-runner.md) — the AWS App Runner deploy design
+- [docs/DISTRIBUTION.md](./docs/DISTRIBUTION.md) — how releases are cut (tag → automated GitHub Actions)
 - [CLAUDE.md](./CLAUDE.md) — architecture, conventions, and extension points (for contributors and AI agents)
 
 ## Contributing
 
-Build from source, run the local checks, open a PR — see
-[CONTRIBUTING.md](./CONTRIBUTING.md). We test locally, not in CI.
+Build from source, run the local checks (`make check`), open a PR — see
+[CONTRIBUTING.md](./CONTRIBUTING.md). CI (GitHub Actions) also builds and tests on Linux and
+macOS for every PR.
 
 ## License
 

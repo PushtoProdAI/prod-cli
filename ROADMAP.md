@@ -265,8 +265,9 @@ The optional backend — the business. Everything a solo user does stays free an
 
 The substrate is real: `PROD_JSON_MODE` already emits structured deploy events and `prod run`
 reads stdin back into the agent. But the server is a **session-managing adapter**, not a thin
-passthrough — the event stream is emit-only and untyped, approval is a single event + a stdin
-line, and four of the seven tools have no flow yet. Ships as `prod mcp` in the same binary.
+passthrough — the event stream is emit-only and untyped, and approval is a single event + a
+stdin line. All six tools (deploy, rollback, destroy, doctor, list_deploys, analyze_project)
+have flows. Ships as `prod mcp` in the same binary.
 
 | Tool | Purpose | Status |
 |---|---|---|

@@ -28,10 +28,11 @@ A **single Go binary** (`prod`, built from `cli/`). It:
 4. Executes a **durable workflow** (resumable across retries) against the platform, using the
    **user's own credentials**, and records history to a **local store**.
 
-Deploy targets: **Fly.io, Render, Vercel, Netlify, Heroku** (direct-API, in the binary today)
-and **AWS** (App Runner + ECS/Fargate + RDS via CloudFormation — currently backend-orchestrated,
-being ported into the binary in ROADMAP Phase 2 using the user's own AWS creds + embedded
-templates).
+Deploy targets (all in-binary, user's own creds): **Fly.io, Render, Vercel, Netlify, Heroku**
+(direct-API) and **AWS App Runner, Google Cloud Run, Azure Container Apps** (managed container —
+build locally → push to a registry in your account → create the service). Plus **Modal**
+(experimental, via the `modal` CLI) and **out-of-tree provider plugins** (`prod plugin install`).
+Deploy, rollback, and **destroy** are all natural-language actions.
 
 **No server is required to deploy.** LLM calls go direct to OpenAI/Anthropic/Ollama with the
 user's key; history lives in local SQLite; platform tokens live in `~/.prod`. A hosted backend
@@ -67,7 +68,7 @@ You: "deploy this to fly with a postgres"
 └───────────────────────────────────────────────────────────────────────┘
       │ direct API calls with the user's own tokens/creds
       ▼
-   Fly · Render · Vercel · Netlify · Heroku · AWS (your account)
+   Fly · Render · Vercel · Netlify · Heroku · AWS · Cloud Run · Azure · Modal (your account)
 ```
 
 Deploys run as **durable workflows** (`go-workflows`) so slow, failure-prone cloud provisioning
@@ -93,8 +94,9 @@ cli/
     auth/                `prod auth ...` (managed-mode sign-in; not needed for local mode)
   internal/
     agent/               Orchestrator FSM, per-platform workflows, detectors
-    analyzer/            Static project analysis (node.go, python.go — Node/Python only today)
-    deployment/          Platform adapters: flyio/ render/ vercel/ netlify/ heroku/ aws/
+    analyzer/            Static project analysis (node.go, python.go, go.go — Node/Python/Go)
+    deployment/          Platform adapters: flyio/ render/ vercel/ netlify/ heroku/ aws(apprunner)/
+                         gcprun/ aca(azure)/ modal/ + managedcontainer/ (shared container base)
     llm/                 BAML client wrapper (Client interface, mock, ClientRegistry selection)
     output/              StatusWriter: Console | JSON | Tea | Proxy writers
     backend/             HTTP client — used only in managed mode (optional)
@@ -185,8 +187,8 @@ Edit `baml_src/*.baml`, then `make generate`. Never hand-edit `baml_client/`. Th
 
 ### Add a language/framework detector
 Implement `analyzer.Analyzer` (`CanHandle`/`Analyze`) in `internal/analyzer/`, plus framework
-heuristics in `internal/agent/`. Node/Python only today; more languages and agent-framework
-detectors (LangGraph, CrewAI, Agents SDK, Mastra) are ROADMAP goals and go here.
+heuristics in `internal/agent/`. Node, Python, and Go today (`go.go`); more languages and
+agent-framework detectors (LangGraph, CrewAI, Agents SDK, Mastra) are ROADMAP goals and go here.
 
 ### Output modes
 Everything user-visible goes through a `StatusWriter` (`internal/output/`). Do **not** call
