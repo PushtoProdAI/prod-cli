@@ -36,6 +36,9 @@ func New(version string) *mcp.Server {
 	addDeploy(s)
 	addRollback(s)
 	addDestroy(s)
+	addStatus(s)
+	addDeepLink(s)
+	addLogs(s)
 	addDoctor(s)
 	return s
 }
