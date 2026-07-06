@@ -7,6 +7,7 @@ package aca
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -99,9 +100,10 @@ type AppConfig struct {
 	EnvironmentID string
 	Image         string
 	Port          int32
-	CPU           float64 // cores, e.g. 0.5
-	Memory        string  // e.g. "1Gi"
-	EnvVars       map[string]string
+	CPU           float64           // cores, e.g. 0.5
+	Memory        string            // e.g. "1Gi"
+	PlainEnv      map[string]string // non-sensitive env vars, set inline
+	SecretEnv     map[string]string // sensitive env vars, stored as Container Apps secrets
 
 	// Pull credentials for the app to fetch the image from the user's ACR.
 	RegistryServer   string
@@ -112,9 +114,20 @@ type AppConfig struct {
 // Deploy creates or updates the container app (external ingress on Port, pulling
 // from the user's registry) and returns its public https URL once provisioned.
 func (d *Deployer) Deploy(ctx context.Context, cfg AppConfig) (string, error) {
-	env := make([]*armappcontainers.EnvironmentVar, 0, len(cfg.EnvVars))
-	for k, v := range cfg.EnvVars {
+	// Non-sensitive vars are set inline; sensitive vars are stored as Container Apps
+	// secrets and referenced by name, so they never appear in the app's plain config.
+	env := make([]*armappcontainers.EnvironmentVar, 0, len(cfg.PlainEnv)+len(cfg.SecretEnv))
+	for k, v := range cfg.PlainEnv {
 		env = append(env, &armappcontainers.EnvironmentVar{Name: to.Ptr(k), Value: to.Ptr(v)})
+	}
+	secrets := []*armappcontainers.Secret{{
+		Name:  to.Ptr(registrySecretName),
+		Value: to.Ptr(cfg.RegistryPassword),
+	}}
+	for k, v := range cfg.SecretEnv {
+		sn := secretName(k)
+		secrets = append(secrets, &armappcontainers.Secret{Name: to.Ptr(sn), Value: to.Ptr(v)})
+		env = append(env, &armappcontainers.EnvironmentVar{Name: to.Ptr(k), SecretRef: to.Ptr(sn)})
 	}
 
 	app := armappcontainers.ContainerApp{
@@ -138,10 +151,7 @@ func (d *Deployer) Deploy(ctx context.Context, cfg AppConfig) (string, error) {
 					Username:          to.Ptr(cfg.RegistryUsername),
 					PasswordSecretRef: to.Ptr(registrySecretName),
 				}},
-				Secrets: []*armappcontainers.Secret{{
-					Name:  to.Ptr(registrySecretName),
-					Value: to.Ptr(cfg.RegistryPassword),
-				}},
+				Secrets: secrets,
 			},
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{{
@@ -277,6 +287,25 @@ func (d *Deployer) RollbackToRevision(ctx context.Context, appName, revision str
 		return errors.Errorf("failed waiting for Container App rollback to %q: %w", revision, err)
 	}
 	return nil
+}
+
+// secretName maps an env-var name to a valid Container Apps secret name: lowercase
+// alphanumeric and '-', starting and ending alphanumeric (e.g. "DATABASE_URL" →
+// "database-url").
+func secretName(envVar string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(envVar) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	name := strings.Trim(b.String(), "-")
+	if name == "" {
+		name = "secret"
+	}
+	return name
 }
 
 // ingressFqdn extracts the app's public hostname from a ContainerApp result.
