@@ -36,18 +36,19 @@ func TestParseDeployPlatform(t *testing.T) {
 
 func TestDeployPlatformNamesMatchList(t *testing.T) {
 	names := deployPlatformNames()
-	if len(names) != len(deployPlatforms) {
-		t.Fatalf("names %d != platforms %d", len(names), len(deployPlatforms))
+	platforms := deployPlatforms()
+	if len(names) != len(platforms) {
+		t.Fatalf("names %d != platforms %d", len(names), len(platforms))
 	}
 	// Every menu entry must round-trip back to its platform, so the numbered
 	// choice a user picks maps to what we deploy.
 	for i, name := range names {
-		if got := parseDeployPlatform(name); got != deployPlatforms[i] {
-			t.Errorf("menu entry %q (index %d) parses to %v, want %v", name, i, got, deployPlatforms[i])
+		if got := parseDeployPlatform(name); got != platforms[i] {
+			t.Errorf("menu entry %q (index %d) parses to %v, want %v", name, i, got, platforms[i])
 		}
 	}
 	// None of the deploy choices is UnknownPlatform.
-	for _, p := range deployPlatforms {
+	for _, p := range platforms {
 		if p == UnknownPlatform {
 			t.Error("deployPlatforms must not contain UnknownPlatform")
 		}

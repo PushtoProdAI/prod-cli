@@ -21,9 +21,6 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/backend"
 	"github.com/pushtoprodai/prod-cli/internal/config"
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
-	"github.com/pushtoprodai/prod-cli/internal/deployment/heroku"
-	"github.com/pushtoprodai/prod-cli/internal/deployment/netlify"
-	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
 	prod_error "github.com/pushtoprodai/prod-cli/internal/error"
 	"github.com/pushtoprodai/prod-cli/internal/llm"
 	"github.com/pushtoprodai/prod-cli/internal/output"
@@ -502,40 +499,38 @@ func (a *Agent) plan(ctx context.Context, input string, out io.Writer) (stateFn,
 	return a.proceedWithPlan(ctx, plan, input, out)
 }
 
-// deployPlatforms are the platforms prod can deploy to, in menu order.
-var deployPlatforms = []Platform{FlyIO, Render, Vercel, Netlify, Heroku, AWS, GoogleCloudRun}
+// deployPlatforms is the menu's platform order, derived from the catalog.
+func deployPlatforms() []Platform {
+	specs := RegisteredPlatforms()
+	ps := make([]Platform, len(specs))
+	for i, s := range specs {
+		ps[i] = s.Platform
+	}
+	return ps
+}
 
+// deployPlatformNames is the menu's labels — the catalog's display names (e.g.
+// "Google Cloud Run", not the enum's "GoogleCloudRun").
 func deployPlatformNames() []string {
-	names := make([]string, len(deployPlatforms))
-	for i, p := range deployPlatforms {
-		names[i] = p.String()
+	specs := RegisteredPlatforms()
+	names := make([]string, len(specs))
+	for i, s := range specs {
+		names[i] = s.Name
 	}
 	return names
 }
 
-// parseDeployPlatform accepts a menu index (the TUI select convention) or a
-// platform name (so a user can just type "fly").
+// parseDeployPlatform accepts a menu index (0-based, the TUI select convention) or
+// a platform name/alias (so a user can type "fly" or "cloud run").
 func parseDeployPlatform(input string) Platform {
-	s := strings.ToLower(strings.TrimSpace(input))
+	s := strings.TrimSpace(input)
+	specs := RegisteredPlatforms()
 	var idx int
-	if _, err := fmt.Sscanf(s, "%d", &idx); err == nil && idx >= 0 && idx < len(deployPlatforms) {
-		return deployPlatforms[idx]
+	if _, err := fmt.Sscanf(s, "%d", &idx); err == nil && idx >= 0 && idx < len(specs) {
+		return specs[idx].Platform
 	}
-	switch s {
-	case "fly", "fly.io", "flyio":
-		return FlyIO
-	case "render":
-		return Render
-	case "vercel":
-		return Vercel
-	case "netlify":
-		return Netlify
-	case "heroku":
-		return Heroku
-	case "aws":
-		return AWS
-	case "google cloud run", "cloud run", "gcp", "gcp run", "gcprun", "googlecloudrun":
-		return GoogleCloudRun
+	if p, ok := PlatformByString(s); ok {
+		return p
 	}
 	return UnknownPlatform
 }
@@ -1522,32 +1517,11 @@ func (a *Agent) checkAuthentication(ctx context.Context, input string, out io.Wr
 }
 
 func (a *Agent) getAuthProvider(out io.Writer) (auth.AuthProvider, error) {
-	switch a.DeployPlan.Platform {
-	case Render:
-		apiKey := os.Getenv("RENDER_API_KEY")
-		renderClient := render.NewHTTPRenderClient(apiKey, output.NewNoOpWriter())
-		renderAuth := auth.NewRenderAuth(renderClient, out)
-		return renderAuth, nil
-	case FlyIO:
-		return auth.NewFlyAuth(out), nil
-	case Netlify:
-		netlifyClient := netlify.NewCLINetlifyClient()
-		netlifyAuth := auth.NewNetlifyAuth(netlifyClient, out)
-		return netlifyAuth, nil
-	case Vercel:
-		vercelAuth := auth.NewVercelAuth(out)
-		return vercelAuth, nil
-	case Heroku:
-		herokuClient := heroku.NewHerokuClient("", output.NewNoOpWriter())
-		herokuAuth := auth.NewHerokuAuth(herokuClient, out)
-		return herokuAuth, nil
-	case AWS:
-		return auth.NewAWSAuth(out), nil
-	case GoogleCloudRun:
-		return auth.NewGCPAuth(out), nil
-	default:
+	p, ok := LookupPlatform(a.DeployPlan.Platform)
+	if !ok {
 		return nil, errors.Errorf("unsupported platform: %s", a.DeployPlan.Platform)
 	}
+	return p.NewAuthProvider(out), nil
 }
 
 func (a *Agent) waitForAuthSelection(ctx context.Context, input string, out io.Writer) (stateFn, error) {
