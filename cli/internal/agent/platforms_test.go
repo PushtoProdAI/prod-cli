@@ -43,6 +43,39 @@ func TestPlatformCatalogCompleteness(t *testing.T) {
 	}
 }
 
+// TestDjangoDomainsDeriveFromCatalog asserts the Django host/CSRF allow-lists are
+// derived from each platform's DomainSuffix (the L1b fold).
+func TestDjangoDomainsDeriveFromCatalog(t *testing.T) {
+	h := &DjangoHandler{}
+	for _, s := range RegisteredPlatforms() {
+		if s.DomainSuffix == "" {
+			t.Errorf("%q: no DomainSuffix (Django hosts would be empty)", s.Name)
+			continue
+		}
+		if got := h.getDomainPatterns(s.Platform); len(got) != 1 || got[0] != s.DomainSuffix {
+			t.Errorf("%q: getDomainPatterns = %v, want [%q]", s.Name, got, s.DomainSuffix)
+		}
+		want := "https://*" + s.DomainSuffix
+		if got := h.getCsrfOrigins(s.Platform); len(got) != 1 || got[0] != want {
+			t.Errorf("%q: getCsrfOrigins = %v, want [%q]", s.Name, got, want)
+		}
+	}
+}
+
+// TestRollbackGateDerivesFromCatalog asserts the friendly rollback-unsupported gate
+// tracks the SupportsRollback flag (the L1b fold): AWS/Cloud Run gated, others not.
+func TestRollbackGateDerivesFromCatalog(t *testing.T) {
+	for _, s := range RegisteredPlatforms() {
+		msg, gated := unsupportedLocalPlatform(s.Platform)
+		if gated == s.SupportsRollback {
+			t.Errorf("%q: gated=%v but SupportsRollback=%v (should be opposite)", s.Name, gated, s.SupportsRollback)
+		}
+		if gated && msg == "" {
+			t.Errorf("%q: gated but empty message", s.Name)
+		}
+	}
+}
+
 // TestEveryEnumPlatformRegistered asserts no real platform is left out of the
 // catalog (which would make it undispatchable).
 func TestEveryEnumPlatformRegistered(t *testing.T) {

@@ -83,50 +83,23 @@ func (h *DjangoHandler) findDjangoSettings(projectPath string) (string, string, 
 	return "", "", errors.New("Django settings.py not found")
 }
 
-// getDomainPatterns returns platform-specific domain wildcard patterns for ALLOWED_HOSTS
+// getDomainPatterns returns platform-specific domain wildcard patterns for
+// ALLOWED_HOSTS, derived from the platform's DomainSuffix in the catalog (Django's
+// leading-dot wildcard matches the domain and all subdomains).
 func (h *DjangoHandler) getDomainPatterns(platform Platform) []string {
-	// Use Django's wildcard syntax: leading dot matches domain and all subdomains
-	switch platform {
-	case FlyIO:
-		return []string{".fly.dev"}
-	case Heroku:
-		return []string{".herokuapp.com"}
-	case Netlify:
-		return []string{".netlify.app"}
-	case Vercel:
-		return []string{".vercel.app"}
-	case Render:
-		return []string{".onrender.com"}
-	case AWS:
-		return []string{".awsapprunner.com"}
-	case GoogleCloudRun:
-		return []string{".run.app"}
-	default:
-		return []string{}
+	if s, ok := LookupPlatform(platform); ok && s.DomainSuffix != "" {
+		return []string{s.DomainSuffix}
 	}
+	return []string{}
 }
 
-// getCsrfOrigins returns CSRF_TRUSTED_ORIGINS wildcard values
+// getCsrfOrigins returns CSRF_TRUSTED_ORIGINS wildcard values (Django 4.0+
+// https://*.domain syntax), derived from the platform's DomainSuffix.
 func (h *DjangoHandler) getCsrfOrigins(platform Platform) []string {
-	// Use Django 4.0+ wildcard syntax: https://*.domain.com
-	switch platform {
-	case FlyIO:
-		return []string{"https://*.fly.dev"}
-	case Heroku:
-		return []string{"https://*.herokuapp.com"}
-	case Netlify:
-		return []string{"https://*.netlify.app"}
-	case Vercel:
-		return []string{"https://*.vercel.app"}
-	case Render:
-		return []string{"https://*.onrender.com"}
-	case AWS:
-		return []string{"https://*.awsapprunner.com"}
-	case GoogleCloudRun:
-		return []string{"https://*.run.app"}
-	default:
-		return []string{}
+	if s, ok := LookupPlatform(platform); ok && s.DomainSuffix != "" {
+		return []string{"https://*" + s.DomainSuffix}
 	}
+	return []string{}
 }
 
 // updateSettingsFile modifies the Django settings file
