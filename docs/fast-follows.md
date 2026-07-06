@@ -55,11 +55,21 @@ Ubuntu on a real Windows machine (the one cross-platform path prod hasn't been r
 
 ---
 
-## 3. Cloud Run Secret Manager — encrypt Cloud Run secrets
+## 3. Cloud Run Secret Manager — ✅ IMPLEMENTED (pending real-GCP validation)
 
-**Validation of the gap:** App Runner splits secrets (Secrets Manager) and Azure Container
-Apps uses built-in secrets, but **Cloud Run still sets sensitive env as plain values**
-(`gcprun/gcprun_deploy.go` `envMap` puts every var inline). The APIs to fix it exist:
+**Shipped:** `gcprun/secrets.go` + the wiring in `gcprun_deploy.go`. Sensitive env now goes
+to Secret Manager (create secret + version), the runtime service account is granted
+`secretAccessor` via a **read-modify-write** IAM policy update (not a blind replace), and the
+container references it via `SecretKeyRef` — bringing Cloud Run to secret parity with App
+Runner and Azure. Edge cases handled: Secret-Manager-not-enabled (clear error), 409-on-create
+(treated as exists → new version), missing default compute SA (grant fails with a pointed
+error), IAM propagation (grant precedes the reference; readiness polling absorbs lag). Pure
+logic is unit-tested (secret id, the IAM binding merge, env partition, the SecretKeyRef,
+409 detection). **Still MANUAL-VERIFY against a real GCP project** — the live IAM behavior is
+the failure mode and can't be exercised without one (same posture as the other cloud adapters).
+
+**Original gap (now closed):** App Runner split secrets and Azure used built-in secrets, but
+Cloud Run set sensitive env as plain values. The APIs to fix it exist:
 `run/v2` `EnvVar.ValueSource.SecretKeyRef{Secret, Version}` and the Secret Manager REST
 client (`google.golang.org/api/secretmanager/v1`).
 
