@@ -68,8 +68,8 @@ func (a *acrRegistry) Credentials(ctx context.Context, project string) (Credenti
 	if err != nil {
 		return Credentials{}, errors.Errorf("failed to get ACR admin credentials: %w", err)
 	}
-	if creds.Username == nil || len(creds.Passwords) == 0 || creds.Passwords[0].Value == nil {
-		return Credentials{}, errors.Errorf("ACR %q returned no admin credentials", a.registryName)
+	if creds.Username == nil || len(creds.Passwords) == 0 || creds.Passwords[0] == nil || creds.Passwords[0].Value == nil {
+		return Credentials{}, errors.Errorf("ACR %q returned no admin credentials (is the admin user enabled?)", a.registryName)
 	}
 
 	return Credentials{
