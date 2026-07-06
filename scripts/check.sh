@@ -23,7 +23,7 @@ warn() { printf '\033[1;33m! %s\033[0m\n' "$1"; }
 # 1. Formatting (exclude generated BAML client)
 step "format check"
 fmt_tool="gofmt"; command -v gofumpt >/dev/null && fmt_tool="gofumpt"
-unformatted="$("$fmt_tool" -l . | grep -v '^baml_client/' || true)"
+unformatted="$("$fmt_tool" -l . | grep -vE '^baml_client/|_string\.go$' || true)"
 if [ -n "$unformatted" ]; then
   warn "these files need formatting (run: $fmt_tool -w cli):"
   echo "$unformatted"
