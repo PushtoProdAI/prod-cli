@@ -46,6 +46,9 @@ type ServiceConfig struct {
 	CPU      string // e.g. "1000m"
 	Memory   string // e.g. "512Mi"
 	EnvVars  map[string]string
+	// SecretEnv maps an env var name to a Secret Manager secret resource path
+	// (projects/<p>/secrets/<id>); referenced via SecretKeyRef instead of inline.
+	SecretEnv map[string]string
 }
 
 func (d *Deployer) parent() string {
@@ -59,9 +62,17 @@ func (d *Deployer) ServicePath(name string) string {
 
 // buildService maps a ServiceConfig to a Cloud Run v2 service resource.
 func buildService(cfg ServiceConfig) *run.GoogleCloudRunV2Service {
-	env := make([]*run.GoogleCloudRunV2EnvVar, 0, len(cfg.EnvVars))
+	env := make([]*run.GoogleCloudRunV2EnvVar, 0, len(cfg.EnvVars)+len(cfg.SecretEnv))
 	for k, v := range cfg.EnvVars {
 		env = append(env, &run.GoogleCloudRunV2EnvVar{Name: k, Value: v})
+	}
+	for k, secretName := range cfg.SecretEnv {
+		env = append(env, &run.GoogleCloudRunV2EnvVar{
+			Name: k,
+			ValueSource: &run.GoogleCloudRunV2EnvVarSource{
+				SecretKeyRef: &run.GoogleCloudRunV2SecretKeySelector{Secret: secretName, Version: "latest"},
+			},
+		})
 	}
 	return &run.GoogleCloudRunV2Service{
 		Template: &run.GoogleCloudRunV2RevisionTemplate{
