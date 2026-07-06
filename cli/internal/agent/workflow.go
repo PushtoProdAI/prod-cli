@@ -34,6 +34,7 @@ const (
 	DeployVercelWorkflowName           = "agent.deploy.vercel"
 	DeployHerokuWorkflowName           = "agent.deploy.heroku"
 	DeployAWSWorkflowName              = "agent.deploy.aws"
+	DeployGCPRunWorkflowName           = "agent.deploy.gcprun"
 	RollbackDeploymentWorkflowName     = "agent.rollbackDeployment"
 )
 
@@ -151,6 +152,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: DeployVercelWorkflowName, WorkflowFunc: w.deployVercel},
 		{Name: DeployHerokuWorkflowName, WorkflowFunc: w.deployHeroku},
 		{Name: DeployAWSWorkflowName, WorkflowFunc: w.deployAWS},
+		{Name: DeployGCPRunWorkflowName, WorkflowFunc: w.deployGCPRun},
 		{Name: RollbackDeploymentWorkflowName, WorkflowFunc: w.rollbackDeployment},
 	}
 }
@@ -174,6 +176,8 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input DeployPlan)
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployHerokuWorkflowName, time.Now().Unix())}, DeployHerokuWorkflowName, input)
 	case AWS:
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployAWSWorkflowName, time.Now().Unix())}, DeployAWSWorkflowName, input)
+	case GoogleCloudRun:
+		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployGCPRunWorkflowName, time.Now().Unix())}, DeployGCPRunWorkflowName, input)
 	default:
 		return nil, errors.New("unsupported platform for deployment")
 	}

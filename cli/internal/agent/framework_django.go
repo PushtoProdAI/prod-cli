@@ -99,6 +99,8 @@ func (h *DjangoHandler) getDomainPatterns(platform Platform) []string {
 		return []string{".onrender.com"}
 	case AWS:
 		return []string{".awsapprunner.com"}
+	case GoogleCloudRun:
+		return []string{".run.app"}
 	default:
 		return []string{}
 	}
@@ -120,6 +122,8 @@ func (h *DjangoHandler) getCsrfOrigins(platform Platform) []string {
 		return []string{"https://*.onrender.com"}
 	case AWS:
 		return []string{"https://*.awsapprunner.com"}
+	case GoogleCloudRun:
+		return []string{"https://*.run.app"}
 	default:
 		return []string{}
 	}

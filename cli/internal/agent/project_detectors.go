@@ -48,9 +48,22 @@ func (a *Activities) getProjectDetector(platform Platform) (ProjectDetector, err
 		return NewHerokuProjectDetector(a.uiWriter), nil
 	case AWS:
 		return NewAWSProjectDetector(a.beClient, a.uiWriter), nil
+	case GoogleCloudRun:
+		// Cloud Run deploys are idempotent (create-or-update), so we don't need to
+		// pre-detect an existing service. A real "already exists" detector (to set
+		// IsUpdate) is a follow-up.
+		return noopProjectDetector{}, nil
 	default:
 		return nil, errors.Errorf("unsupported platform: %s", platform)
 	}
+}
+
+// noopProjectDetector reports no existing project — used for platforms whose
+// deploy is idempotent and doesn't need pre-detection.
+type noopProjectDetector struct{}
+
+func (noopProjectDetector) DetectExistingProject(_ context.Context, _, _ string) (ExistingProjectInfo, error) {
+	return ExistingProjectInfo{Exists: false}, nil
 }
 
 // checkExistingProject checks if a project already exists on the given platform

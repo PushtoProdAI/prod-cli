@@ -78,6 +78,8 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		platform = Heroku
 	case "aws":
 		platform = AWS
+	case "google cloud run", "cloud run", "gcp", "gcp run", "gcprun":
+		platform = GoogleCloudRun
 	default:
 		platform = UnknownPlatform
 	}

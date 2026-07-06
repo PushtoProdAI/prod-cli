@@ -14,18 +14,20 @@ func _() {
 	_ = x[Vercel-3]
 	_ = x[Heroku-4]
 	_ = x[AWS-5]
-	_ = x[UnknownPlatform-6]
+	_ = x[GoogleCloudRun-6]
+	_ = x[UnknownPlatform-7]
 }
 
-const _Platform_name = "RenderFlyIONetlifyVercelHerokuAWSUnknownPlatform"
+const _Platform_name = "RenderFlyIONetlifyVercelHerokuAWSGoogleCloudRunUnknownPlatform"
 
-var _Platform_index = [...]uint8{0, 6, 11, 18, 24, 30, 33, 48}
+var _Platform_index = [...]uint8{0, 6, 11, 18, 24, 30, 33, 47, 62}
 
 func (i Platform) String() string {
-	if i < 0 || i >= Platform(len(_Platform_index)-1) {
+	idx := int(i) - 0
+	if i < 0 || idx >= len(_Platform_index)-1 {
 		return "Platform(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _Platform_name[_Platform_index[i]:_Platform_index[i+1]]
+	return _Platform_name[_Platform_index[idx]:_Platform_index[idx+1]]
 }
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
@@ -41,8 +43,9 @@ const _Action_name = "DeployRollbackUnknownAction"
 var _Action_index = [...]uint8{0, 6, 14, 27}
 
 func (i Action) String() string {
-	if i < 0 || i >= Action(len(_Action_index)-1) {
+	idx := int(i) - 0
+	if i < 0 || idx >= len(_Action_index)-1 {
 		return "Action(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _Action_name[_Action_index[i]:_Action_index[i+1]]
+	return _Action_name[_Action_index[idx]:_Action_index[idx+1]]
 }
