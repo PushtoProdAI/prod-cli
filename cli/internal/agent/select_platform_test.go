@@ -16,12 +16,15 @@ func TestParseDeployPlatform(t *testing.T) {
 		{"netlify", Netlify},
 		{"heroku", Heroku},
 		{"aws", AWS},
+		{"gcp", GoogleCloudRun},
+		{"cloud run", GoogleCloudRun},
+		{"GoogleCloudRun", GoogleCloudRun},
 		// by menu index (0-based, the TUI select convention)
 		{"0", FlyIO},
 		{"5", AWS},
 		// invalid
 		{"", UnknownPlatform},
-		{"gcp", UnknownPlatform},
+		{"digitalocean", UnknownPlatform},
 		{"99", UnknownPlatform},
 	}
 	for _, c := range cases {
