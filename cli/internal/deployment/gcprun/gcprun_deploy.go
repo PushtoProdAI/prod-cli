@@ -94,7 +94,10 @@ func (d *Deployment) Prepare(ctx context.Context, spec *deployment.DeploymentSpe
 		if err != nil {
 			return managedcontainer.DeployResult{}, err
 		}
-		return managedcontainer.DeployResult{ID: dep.ServicePath(name), Name: name, URL: url}, nil
+		return managedcontainer.DeployResult{
+			ID: dep.ServicePath(name), Name: name, URL: url,
+			Identifiers: map[string]string{"project": project, "region": region},
+		}, nil
 	}
 	return reg, deploy, nil
 }

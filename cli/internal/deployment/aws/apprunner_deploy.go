@@ -88,7 +88,10 @@ func (d *Deployment) Prepare(ctx context.Context, spec *deployment.DeploymentSpe
 		if err != nil {
 			return managedcontainer.DeployResult{}, err
 		}
-		return managedcontainer.DeployResult{ID: serviceArn, Name: name, URL: "https://" + serviceURL}, nil
+		return managedcontainer.DeployResult{
+			ID: serviceArn, Name: name, URL: "https://" + serviceURL,
+			Identifiers: map[string]string{"region": cfg.Region, "account": accountID},
+		}, nil
 	}
 	return reg, deploy, nil
 }

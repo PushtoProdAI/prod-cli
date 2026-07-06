@@ -127,9 +127,18 @@ func (w *Workflows) deployContainer(ctx workflow.Context, input DeployPlan) (dep
 	}
 
 	if operationId != "" {
-		workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", map[string]any{
-			"url": fullUrl, "platform": plat,
-		}).Get(ctx)
+		// Persist the service identifier + the adapter's per-cloud identifiers (region,
+		// project, resourceGroup, …) so the console URL and logs command can be rebuilt
+		// later. Cloud Run/App Runner encode project/region/account in resourceId; Azure
+		// carries them as identifier keys.
+		successMeta := map[string]any{"url": fullUrl, "platform": plat, "resourceId": svc.ID}
+		for k, v := range svc.Metadata {
+			if k == "url" {
+				continue
+			}
+			successMeta[k] = v
+		}
+		workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", successMeta).Get(ctx)
 	}
 
 	return deployResult{Url: fullUrl}, nil

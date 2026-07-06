@@ -8,11 +8,20 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-errors/errors"
 )
+
+// CanonicalPlatform normalizes a platform string to the single lowercase token used as
+// the stable history key. Deploy, rollback, and destroy previously wrote different
+// casing ("flyio" vs "FlyIO"); canonicalizing on write (and on read for legacy records)
+// makes grouping and lookup reliable.
+func CanonicalPlatform(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
 
 // Record is one deployment operation (a deploy or rollback).
 type Record struct {
