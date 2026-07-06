@@ -172,7 +172,7 @@ func registerPlatforms() {
 		NewDetector:     func(a *Activities) ProjectDetector { return NewAWSProjectDetector(a.beClient, a.uiWriter) },
 	})
 	RegisterPlatform(PlatformSpec{
-		Platform: GoogleCloudRun, Name: "Google Cloud Run", DomainSuffix: ".run.app", SupportsRollback: false, ManagedContainer: true,
+		Platform: GoogleCloudRun, Name: "Google Cloud Run", DomainSuffix: ".run.app", SupportsRollback: true, ManagedContainer: true,
 		Aliases: []string{"google cloud run", "cloud run", "gcp", "gcp run", "gcprun", "googlecloudrun", "google cloud"},
 		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
 			dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
