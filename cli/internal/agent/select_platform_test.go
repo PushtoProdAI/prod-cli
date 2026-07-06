@@ -19,6 +19,9 @@ func TestParseDeployPlatform(t *testing.T) {
 		{"gcp", GoogleCloudRun},
 		{"cloud run", GoogleCloudRun},
 		{"GoogleCloudRun", GoogleCloudRun},
+		{"azure", Azure},
+		{"azure container apps", Azure},
+		{"aca", Azure},
 		// by menu index (0-based, the TUI select convention)
 		{"0", FlyIO},
 		{"5", AWS},

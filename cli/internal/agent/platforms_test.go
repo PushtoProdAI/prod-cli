@@ -81,7 +81,7 @@ func TestRollbackGateDerivesFromCatalog(t *testing.T) {
 // Primary (deployContainer finds the URL via CreatedResource.Primary) — so adding
 // ManagedContainer here without setting Primary would break its deploy.
 func TestManagedContainerPlatforms(t *testing.T) {
-	want := map[Platform]bool{AWS: true, GoogleCloudRun: true}
+	want := map[Platform]bool{AWS: true, GoogleCloudRun: true, Azure: true}
 	for _, s := range RegisteredPlatforms() {
 		if s.ManagedContainer != want[s.Platform] {
 			t.Errorf("%q: ManagedContainer=%v, want %v", s.Name, s.ManagedContainer, want[s.Platform])
