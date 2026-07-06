@@ -17,6 +17,7 @@ const (
 	Heroku
 	AWS
 	GoogleCloudRun
+	Azure
 	UnknownPlatform
 )
 

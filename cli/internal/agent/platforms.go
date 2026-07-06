@@ -7,6 +7,7 @@ import (
 
 	"github.com/pushtoprodai/prod-cli/internal/auth"
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/aca"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/aws"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/flyio"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/gcprun"
@@ -179,6 +180,18 @@ func registerPlatforms() {
 		},
 		NewAuthProvider: func(out io.Writer) auth.AuthProvider { return auth.NewGCPAuth(out) },
 		// Cloud Run deploys are idempotent (create-or-update); no pre-detection needed.
+		NewDetector: nil,
+	})
+	RegisterPlatform(PlatformSpec{
+		Platform: Azure, Name: "Azure Container Apps",
+		Aliases:      []string{"azure container apps", "azure", "container apps", "aca", "azure aca"},
+		DomainSuffix: ".azurecontainerapps.io", SupportsRollback: false, ManagedContainer: true,
+		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
+			dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
+			return aca.NewContainerAppsDeployment(spec, dockerGen, a.uiWriter), nil
+		},
+		NewAuthProvider: func(out io.Writer) auth.AuthProvider { return auth.NewAzureAuth(out) },
+		// Container Apps deploys are idempotent (create-or-update); no pre-detection.
 		NewDetector: nil,
 	})
 }
