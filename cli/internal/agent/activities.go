@@ -23,6 +23,7 @@ const (
 	AgentEstimateNetlifyCosts       = "agent.estimateNetlifyCosts"
 	AgentEstimateVercelCosts        = "agent.estimateVercelCosts"
 	AgentEstimateHerokuCosts        = "agent.estimateHerokuCosts"
+	AgentEstimateContainerCosts     = "agent.estimateContainerCosts"
 	AgentGetRenderServiceURL        = "agent.getRenderServiceURL"
 	AgentWaitForRenderDeploy        = "agent.waitForRenderDeploy"
 	AgentIsURLLive                  = "agent.isURLLive"
@@ -77,6 +78,7 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentEstimateNetlifyCosts, ActFunc: a.estimateNetlifyCosts},
 		{Name: AgentEstimateVercelCosts, ActFunc: a.estimateVercelCosts},
 		{Name: AgentEstimateHerokuCosts, ActFunc: a.estimateHerokuCosts},
+		{Name: AgentEstimateContainerCosts, ActFunc: a.estimateContainerCosts},
 		{Name: AgentGetRenderServiceURL, ActFunc: a.getRenderServiceURL},
 		{Name: AgentWaitForRenderDeploy, ActFunc: a.waitForRenderDeploy},
 		{Name: AgentIsURLLive, ActFunc: a.isURLLive},
