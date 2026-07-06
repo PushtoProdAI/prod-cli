@@ -121,14 +121,15 @@ deploy. Add to your MCP client config:
 
 ## Supported platforms
 
-Today, `prod` deploys directly to:
+`prod` deploys directly to eight clouds with **your own credentials** — see
+[docs/clouds.md](docs/clouds.md) for per-cloud setup:
 
-- **Fly.io**
-- **Render** — needs a container registry (see below)
-- **Vercel**
-- **Netlify**
-- **Heroku**
-- **AWS** — App Runner, with your own AWS credentials (see below)
+- **Fly.io**, **Render**, **Vercel**, **Netlify**, **Heroku** (PaaS)
+- **AWS App Runner**, **Google Cloud Run**, **Azure Container Apps** (managed container —
+  build locally, push to a registry in your account, deploy)
+
+…and **anything else via a plugin**: add your own cloud or internal PaaS as a separate
+binary with `prod plugin install`, no fork required — see [docs/plugins.md](docs/plugins.md).
 
 ### Deploying to Render — bring your own registry
 

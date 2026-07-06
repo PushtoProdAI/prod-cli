@@ -47,10 +47,12 @@ detect_platform() {
         *) log_error "Unsupported architecture: $(uname -m)"; exit 1 ;;
     esac
 
-    # Windows binaries aren't published yet.
+    # Native Windows isn't supported (BAML's CGO/mingw toolchain); use WSL2, where the
+    # Linux binary runs unchanged.
     if [[ "$os" == "windows" ]]; then
-        log_error "No published binary for windows/${arch} yet. Build from source:"
-        log_error "  git clone https://github.com/${REPO} && cd prod-cli/cli && make build"
+        log_error "Native Windows isn't supported yet. Use WSL2:"
+        log_error "  1. Install WSL2 (a Linux distro) from the Microsoft Store"
+        log_error "  2. Open your WSL2 shell and re-run this one-liner there — it installs the Linux build."
         exit 1
     fi
 
