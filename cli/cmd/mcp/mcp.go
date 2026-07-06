@@ -37,6 +37,9 @@ func (c *MCPCommand) Docs() ecdysis.Docs {
                      (confirm=false previews the plan + cost; confirm=true deploys)
   - rollback         revert the last deploy on a platform (confirm-gated)
   - destroy          permanently delete a deployment (irreversible; confirm-gated)
+  - status           an app's platform, last status, and whether it's live
+  - deep_link        the app's live URL + platform-console (dashboard) URL
+  - logs             the platform CLI command + console URL to view an app's logs
   - doctor           read-only environment self-check
 
 Add to an MCP client config:

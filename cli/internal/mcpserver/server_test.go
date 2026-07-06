@@ -36,7 +36,7 @@ func TestServerToolsOverInMemoryTransport(t *testing.T) {
 	for _, tool := range tools.Tools {
 		got[tool.Name] = true
 	}
-	for _, want := range []string{"list_deploys", "analyze_project", "deploy", "rollback", "destroy", "doctor"} {
+	for _, want := range []string{"list_deploys", "analyze_project", "deploy", "rollback", "destroy", "status", "deep_link", "logs", "doctor"} {
 		if !got[want] {
 			t.Errorf("tool %q not advertised; got %v", want, got)
 		}
