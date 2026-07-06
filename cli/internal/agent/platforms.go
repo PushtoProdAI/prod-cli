@@ -37,6 +37,14 @@ type PlatformSpec struct {
 	// NewDetector builds the existing-project detector. Nil ⇒ noopProjectDetector
 	// (for platforms whose deploy is idempotent and needs no pre-detection).
 	NewDetector func(a *Activities) ProjectDetector
+
+	// DomainSuffix is the platform's default hostname suffix (e.g. ".run.app").
+	// Drives framework host allow-lists (Django ALLOWED_HOSTS / CSRF_TRUSTED_ORIGINS).
+	DomainSuffix string
+	// SupportsRollback is false for platforms whose Rollback isn't implemented yet;
+	// the deploy path then shows a friendly "not supported" message instead of failing
+	// mid-workflow.
+	SupportsRollback bool
 }
 
 // platformCatalog is the registered set, in menu order. Seeded once by
@@ -93,6 +101,7 @@ func registerPlatforms() {
 	}
 	RegisterPlatform(PlatformSpec{
 		Platform: FlyIO, Name: "Fly.io", Aliases: []string{"fly", "fly.io", "flyio"},
+		DomainSuffix: ".fly.dev", SupportsRollback: true,
 		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
 			dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
 			return flyio.NewFlyioQueuedDeployment(a.flyClient, spec, dockerGen, a.uiWriter), nil
@@ -102,6 +111,7 @@ func registerPlatforms() {
 	})
 	RegisterPlatform(PlatformSpec{
 		Platform: Render, Name: "Render", Aliases: []string{"render"},
+		DomainSuffix: ".onrender.com", SupportsRollback: true,
 		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
 			dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
 			return render.NewQueuedDeployment(a.renderClient, spec, dockerGen, true, a.uiWriter), nil
@@ -114,6 +124,7 @@ func registerPlatforms() {
 	})
 	RegisterPlatform(PlatformSpec{
 		Platform: Vercel, Name: "Vercel", Aliases: []string{"vercel"},
+		DomainSuffix: ".vercel.app", SupportsRollback: true,
 		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
 			adapter := vercel.NewDefaultVercelDeploymentAdapter(a.uiWriter, a.llmClient)
 			return adapter.GenerateArtifacts(spec, deployment.StrategyVercel)
@@ -123,6 +134,7 @@ func registerPlatforms() {
 	})
 	RegisterPlatform(PlatformSpec{
 		Platform: Netlify, Name: "Netlify", Aliases: []string{"netlify"},
+		DomainSuffix: ".netlify.app", SupportsRollback: true,
 		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
 			adapter := netlify.NewDefaultNetlifyDeploymentAdapter(a.uiWriter, a.llmClient)
 			return adapter.GenerateArtifacts(spec, deployment.StrategyNetlify)
@@ -134,6 +146,7 @@ func registerPlatforms() {
 	})
 	RegisterPlatform(PlatformSpec{
 		Platform: Heroku, Name: "Heroku", Aliases: []string{"heroku"},
+		DomainSuffix: ".herokuapp.com", SupportsRollback: true,
 		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
 			adapter := heroku.NewDefaultHerokuDeploymentAdapter(a.uiWriter, a.llmClient)
 			return adapter.GenerateArtifacts(spec, deployment.StrategyHeroku)
@@ -145,6 +158,7 @@ func registerPlatforms() {
 	})
 	RegisterPlatform(PlatformSpec{
 		Platform: AWS, Name: "AWS", Aliases: []string{"aws", "amazon"},
+		DomainSuffix: ".awsapprunner.com", SupportsRollback: false,
 		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
 			dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
 			return aws.NewAppRunnerDeployment(spec, dockerGen, a.uiWriter), nil
@@ -153,7 +167,7 @@ func registerPlatforms() {
 		NewDetector:     func(a *Activities) ProjectDetector { return NewAWSProjectDetector(a.beClient, a.uiWriter) },
 	})
 	RegisterPlatform(PlatformSpec{
-		Platform: GoogleCloudRun, Name: "Google Cloud Run",
+		Platform: GoogleCloudRun, Name: "Google Cloud Run", DomainSuffix: ".run.app", SupportsRollback: false,
 		Aliases: []string{"google cloud run", "cloud run", "gcp", "gcp run", "gcprun", "googlecloudrun", "google cloud"},
 		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
 			dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
