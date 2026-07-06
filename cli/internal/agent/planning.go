@@ -352,10 +352,12 @@ func (a *Activities) logDeploymentStart(ctx context.Context, platform string, sp
 				ID:            id,
 				OperationType: operationType,
 				ResourceName:  spec.Name,
-				Platform:      platform,
-				Language:      spec.Language,
-				Status:        "started",
-				StartedAt:     time.Now(),
+				// Canonicalize so deploy/rollback/destroy all key the same app the same
+				// way (they used to write different casing).
+				Platform:  history.CanonicalPlatform(platform),
+				Language:  spec.Language,
+				Status:    "started",
+				StartedAt: time.Now(),
 			}); err != nil {
 				slog.Warn("failed to record local deployment start", "error", err)
 			}

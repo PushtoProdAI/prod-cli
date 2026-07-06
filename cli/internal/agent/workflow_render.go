@@ -321,8 +321,9 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 	// Log deployment success
 	if operationId != "" {
 		workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", map[string]any{
-			"url":      fullUrl,
-			"platform": "render",
+			"url":        fullUrl,
+			"platform":   "render",
+			"resourceId": ws.ID, // srv-… — needed to build Render's console URL + logs
 		}).Get(ctx)
 	}
 

@@ -20,6 +20,11 @@ type DeployResult struct {
 	ID   string
 	Name string
 	URL  string
+	// Identifiers carries per-cloud identity that isn't encoded in ID and is needed
+	// later to build the platform's console URL and logs command (e.g. Azure's
+	// resourceGroup/subscription/location). Persisted into deploy history. Cloud Run
+	// and App Runner encode project/region/account in ID, so they may leave it empty.
+	Identifiers map[string]string
 }
 
 // DeployFunc creates or updates the service from a pushed image and returns it once
@@ -68,11 +73,17 @@ func Run(ctx context.Context, p Provider, spec *deployment.DeploymentSpec, build
 // primaryResource shapes the standard CreatedResource for a container service, always
 // marked Primary with the URL in Metadata.
 func primaryResource(res DeployResult, resourceType string) []deployment.CreatedResource {
+	md := map[string]any{"url": res.URL}
+	// Carry per-cloud identifiers alongside the URL so the deploy workflow can persist
+	// them to history (the console URL / logs command need them).
+	for k, v := range res.Identifiers {
+		md[k] = v
+	}
 	return []deployment.CreatedResource{{
 		ID:       res.ID,
 		Type:     resourceType,
 		Name:     res.Name,
 		Primary:  true,
-		Metadata: map[string]any{"url": res.URL},
+		Metadata: md,
 	}}
 }
