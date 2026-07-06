@@ -76,6 +76,19 @@ func TestRollbackGateDerivesFromCatalog(t *testing.T) {
 	}
 }
 
+// TestManagedContainerPlatforms pins which platforms use the shared container
+// workflow. A ManagedContainer platform's Deployable MUST mark its service resource
+// Primary (deployContainer finds the URL via CreatedResource.Primary) — so adding
+// ManagedContainer here without setting Primary would break its deploy.
+func TestManagedContainerPlatforms(t *testing.T) {
+	want := map[Platform]bool{AWS: true, GoogleCloudRun: true}
+	for _, s := range RegisteredPlatforms() {
+		if s.ManagedContainer != want[s.Platform] {
+			t.Errorf("%q: ManagedContainer=%v, want %v", s.Name, s.ManagedContainer, want[s.Platform])
+		}
+	}
+}
+
 // TestEveryEnumPlatformRegistered asserts no real platform is left out of the
 // catalog (which would make it undispatchable).
 func TestEveryEnumPlatformRegistered(t *testing.T) {
