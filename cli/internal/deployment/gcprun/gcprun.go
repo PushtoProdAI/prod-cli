@@ -7,6 +7,7 @@ package gcprun
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -16,6 +17,10 @@ import (
 )
 
 const readyTimeout = 15 * time.Minute
+
+// trafficToRevision is the Cloud Run v2 traffic-allocation type that pins traffic
+// to a named revision (vs the latest).
+const trafficToRevision = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
 
 // Deployer creates/updates Cloud Run services via the run.googleapis.com v2 API.
 type Deployer struct {
@@ -109,6 +114,112 @@ func (d *Deployer) allowUnauthenticated(ctx context.Context, name string) error 
 		return errors.Errorf("failed to make Cloud Run service publicly reachable: %w", err)
 	}
 	return nil
+}
+
+// PreviousRevision returns the short name of the revision to roll back to: the
+// newest READY revision older than the one currently serving traffic. Returns "" if
+// there's nothing to roll back to. Keying off the serving revision (not a blind
+// "second-newest") makes repeated rollbacks walk back correctly and skips a failed
+// latest deploy that never took traffic.
+func (d *Deployer) PreviousRevision(ctx context.Context, serviceName string) (string, error) {
+	name := d.ServicePath(serviceName)
+	svc, err := d.svc.Projects.Locations.Services.Get(name).Context(ctx).Do()
+	if err != nil {
+		return "", errors.Errorf("failed to load Cloud Run service for rollback: %w", err)
+	}
+	resp, err := d.svc.Projects.Locations.Services.Revisions.List(name).Context(ctx).Do()
+	if err != nil {
+		return "", errors.Errorf("failed to list Cloud Run revisions: %w", err)
+	}
+	return previousReadyRevision(resp.Revisions, servingRevision(svc.Traffic, resp.Revisions)), nil
+}
+
+// servingRevision resolves the revision currently receiving traffic: an explicit
+// 100% pin (set by a prior rollback), else the newest READY revision (the default
+// "route to latest").
+func servingRevision(traffic []*run.GoogleCloudRunV2TrafficTarget, revs []*run.GoogleCloudRunV2Revision) string {
+	for _, t := range traffic {
+		if t.Revision != "" && t.Percent >= 100 {
+			return t.Revision
+		}
+	}
+	return newestReadyRevision(revs, "")
+}
+
+// previousReadyRevision returns the newest READY revision older than `current`.
+// Pure so it's unit-testable.
+func previousReadyRevision(revs []*run.GoogleCloudRunV2Revision, current string) string {
+	var currentCreate string
+	for _, r := range revs {
+		if shortRevisionName(r.Name) == current {
+			currentCreate = r.CreateTime
+			break
+		}
+	}
+	return newestReadyRevision(revs, current, currentCreate)
+}
+
+// newestReadyRevision returns the short name of the newest READY revision, excluding
+// `exclude` and (if olderThan is non-empty) any revision not strictly older than it.
+func newestReadyRevision(revs []*run.GoogleCloudRunV2Revision, exclude string, olderThan ...string) string {
+	var cutoff string
+	if len(olderThan) > 0 {
+		cutoff = olderThan[0]
+	}
+	var best *run.GoogleCloudRunV2Revision
+	for _, r := range revs {
+		if shortRevisionName(r.Name) == exclude || !revisionReady(r) {
+			continue
+		}
+		if cutoff != "" && r.CreateTime >= cutoff {
+			continue
+		}
+		if best == nil || r.CreateTime > best.CreateTime {
+			best = r
+		}
+	}
+	if best == nil {
+		return ""
+	}
+	return shortRevisionName(best.Name)
+}
+
+// revisionReady reports whether a revision's Ready condition has succeeded.
+func revisionReady(r *run.GoogleCloudRunV2Revision) bool {
+	for _, c := range r.Conditions {
+		if c.Type == "Ready" {
+			return c.State == "CONDITION_SUCCEEDED"
+		}
+	}
+	return false
+}
+
+// RouteAllTraffic points 100% of the service's traffic at a specific revision. It
+// GETs the service and patches only Traffic, so the container template is preserved.
+func (d *Deployer) RouteAllTraffic(ctx context.Context, serviceName, revision string) error {
+	name := d.ServicePath(serviceName)
+	svc, err := d.svc.Projects.Locations.Services.Get(name).Context(ctx).Do()
+	if err != nil {
+		return errors.Errorf("failed to load Cloud Run service for rollback: %w", err)
+	}
+	svc.Traffic = []*run.GoogleCloudRunV2TrafficTarget{{
+		Type:     trafficToRevision,
+		Revision: revision,
+		Percent:  100,
+	}}
+	if _, err := d.svc.Projects.Locations.Services.Patch(name, svc).Context(ctx).Do(); err != nil {
+		return errors.Errorf("failed to route Cloud Run traffic to revision %q: %w", revision, err)
+	}
+	return nil
+}
+
+// shortRevisionName strips the full resource path to the bare revision id that the
+// traffic target expects.
+func shortRevisionName(full string) string {
+	if i := strings.LastIndex(full, "/"); i >= 0 {
+		return full[i+1:]
+	}
+	return full
 }
 
 // WaitForReady polls until the service's Ready condition succeeds, then returns

@@ -36,8 +36,7 @@ func addRollback(s *mcp.Server) {
 			"DESTRUCTIVE. With confirm=false (the default) it only PREVIEWS and changes nothing; " +
 			"pass confirm=true to actually roll back, and only after explicit human approval. " +
 			"`platform` is REQUIRED (e.g. \"fly\", \"render\", \"heroku\") so it's unambiguous which deployment to revert. " +
-			"Note: rollback isn't supported on every platform yet (App Runner, Cloud Run, and Azure Container Apps do not); " +
-			"the preview says so if not.",
+			"Note: not every platform supports rollback yet — the preview tells you if the chosen one doesn't.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in rollbackInput) (*mcp.CallToolResult, rollbackOutput, error) {
 		if in.Platform == "" {
 			return nil, rollbackOutput{}, errors.Errorf("platform is required for rollback (e.g. \"fly\")")
