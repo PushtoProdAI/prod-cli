@@ -233,7 +233,13 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 			case Heroku:
 				estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateHerokuCosts, *deploymentSpec, deployment.StrategyHeroku).Get(ctx)
 				activity = AgentEstimateHerokuCosts
-				// AWS (App Runner) has no upfront cost estimate yet.
+			default:
+				// Managed-container clouds (App Runner, Cloud Run, Azure Container
+				// Apps) share one rough estimate.
+				if spec, ok := LookupPlatform(platform); ok && spec.ManagedContainer {
+					estimatedCosts, err = workflow.ExecuteActivity[deployment.CostEstimate](ctx, ActivityOpts, AgentEstimateContainerCosts, *deploymentSpec, platform).Get(ctx)
+					activity = AgentEstimateContainerCosts
+				}
 			}
 
 			if err != nil {
