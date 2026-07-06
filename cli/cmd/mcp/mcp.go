@@ -35,6 +35,9 @@ func (c *MCPCommand) Docs() ecdysis.Docs {
   - analyze_project  detect a project's stack and required services
   - deploy           natural-language deploy with a human-approval gate
                      (confirm=false previews the plan + cost; confirm=true deploys)
+  - rollback         revert the last deploy on a platform (confirm-gated)
+  - destroy          permanently delete a deployment (irreversible; confirm-gated)
+  - doctor           read-only environment self-check
 
 Add to an MCP client config:
 

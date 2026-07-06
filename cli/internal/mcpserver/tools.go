@@ -81,6 +81,57 @@ type doctorOutput struct {
 	Ready           bool      `json:"ready"`           // true when prod can parse intent (an LLM is configured)
 }
 
+// --- destroy ----------------------------------------------------------------
+
+type destroyInput struct {
+	Platform string `json:"platform" jsonschema:"the platform to tear down on (required), e.g. 'fly', 'cloud run', 'azure', 'heroku'"`
+	Confirm  bool   `json:"confirm,omitempty" jsonschema:"set true to ACTUALLY destroy (IRREVERSIBLE); false or omitted only PREVIEWS and changes nothing"`
+	Path     string `json:"path,omitempty" jsonschema:"the project directory (defaults to the current directory)"`
+}
+
+type destroyOutput struct {
+	Destroyed bool         `json:"destroyed"`       // true only if confirm=true and the teardown succeeded
+	Status    string       `json:"status"`          // "preview" | "success" | "failed"
+	Error     string       `json:"error,omitempty"` // failure reason, if any
+	Plan      *planSummary `json:"plan,omitempty"`  // what would be / was destroyed
+}
+
+// addDestroy registers the destroy tool — teardown behind the same human-approval
+// gate as deploy/rollback. Destroy is IRREVERSIBLE, so confirm=false only previews.
+func addDestroy(s *mcp.Server) {
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "destroy",
+		Description: "Permanently delete the deployment on `platform` — the service and its provisioned resources. " +
+			"IRREVERSIBLE. With confirm=false (the default) it only PREVIEWS and changes nothing; " +
+			"pass confirm=true to actually destroy, and only after explicit human approval. " +
+			"`platform` is REQUIRED (e.g. \"fly\", \"cloud run\", \"azure\", \"heroku\") so it's unambiguous which deployment to tear down. " +
+			"Note: not every platform supports teardown yet — the preview tells you if the chosen one doesn't.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in destroyInput) (*mcp.CallToolResult, destroyOutput, error) {
+		if in.Platform == "" {
+			return nil, destroyOutput{}, errors.Errorf("platform is required for destroy (e.g. \"fly\")")
+		}
+		path := in.Path
+		if path == "" {
+			path = "."
+		}
+		// Same tested path as deploy/rollback: destroy goes through the plan-approval
+		// gate, so confirm=false previews and confirm=true executes.
+		res, err := runProd(ctx, "destroy "+in.Platform, in.Confirm, path)
+		if err != nil {
+			return nil, destroyOutput{}, err
+		}
+		out := destroyOutput{Plan: summarizePlan(res.Plan)}
+		if in.Confirm {
+			out.Status = res.Status
+			out.Error = res.Error
+			out.Destroyed = res.Status == "success"
+		} else {
+			out.Status = "preview"
+		}
+		return nil, out, nil
+	})
+}
+
 // addDoctor registers the doctor tool — read-only self-diagnosis so an agent can
 // check prod is ready to deploy before trying, and surface setup problems clearly.
 func addDoctor(s *mcp.Server) {

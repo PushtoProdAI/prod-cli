@@ -19,6 +19,8 @@ type QueuedDeployment struct {
 	buildContext string
 }
 
+var _ deployment.Destroyer = (*QueuedDeployment)(nil)
+
 // NewQueuedDeployment creates a new queued deployment for Heroku
 func NewQueuedDeployment(client *HerokuClient, spec *deployment.DeploymentSpec, writer io.Writer) *QueuedDeployment {
 	if writer == nil {

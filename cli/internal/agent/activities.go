@@ -51,6 +51,7 @@ const (
 	AgentLogDeploymentStart         = "agent.logDeploymentStart"
 	AgentUpdateDeploymentStatus     = "agent.updateDeploymentStatus"
 	AgentRollbackDeployment         = "agent.rollbackDeployment"
+	AgentDestroyDeployment          = "agent.destroyDeployment"
 	AgentGetPreviousDeployment      = "agent.getPreviousDeployment"
 )
 
@@ -105,5 +106,6 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentUpdateDeploymentStatus, ActFunc: a.updateDeploymentStatus},
 		{Name: AgentGetPreviousDeployment, ActFunc: a.getPreviousDeployment},
 		{Name: AgentRollbackDeployment, ActFunc: a.rollbackDeployment},
+		{Name: AgentDestroyDeployment, ActFunc: a.destroyDeployment},
 	}
 }

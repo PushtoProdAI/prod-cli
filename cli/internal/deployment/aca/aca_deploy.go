@@ -28,7 +28,10 @@ type Deployment struct {
 	writer    io.Writer
 }
 
-var _ deployment.Deployable = (*Deployment)(nil)
+var (
+	_ deployment.Deployable = (*Deployment)(nil)
+	_ deployment.Destroyer  = (*Deployment)(nil)
+)
 
 // NewContainerAppsDeployment builds a Container Apps deployable for a project spec.
 func NewContainerAppsDeployment(spec *deployment.DeploymentSpec, dockerGen *deployment.DockerGenerator, writer io.Writer) *Deployment {

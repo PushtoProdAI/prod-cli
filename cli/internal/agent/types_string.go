@@ -8,6 +8,7 @@ func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
+	_ = x[pluginPlatformBase-1048576]
 	_ = x[Render-0]
 	_ = x[FlyIO-1]
 	_ = x[Netlify-2]
@@ -19,17 +20,24 @@ func _() {
 	_ = x[UnknownPlatform-8]
 }
 
-const _Platform_name = "RenderFlyIONetlifyVercelHerokuAWSGoogleCloudRunAzureUnknownPlatform"
+const (
+	_Platform_name_0 = "RenderFlyIONetlifyVercelHerokuAWSGoogleCloudRunAzureUnknownPlatform"
+	_Platform_name_1 = "pluginPlatformBase"
+)
 
-var _Platform_index = [...]uint8{0, 6, 11, 18, 24, 30, 33, 47, 52, 67}
+var _Platform_index_0 = [...]uint8{0, 6, 11, 18, 24, 30, 33, 47, 52, 67}
 
 func (i Platform) String() string {
-	idx := int(i) - 0
-	if i < 0 || idx >= len(_Platform_index)-1 {
+	switch {
+	case 0 <= i && i <= 8:
+		return _Platform_name_0[_Platform_index_0[i]:_Platform_index_0[i+1]]
+	case i == 1048576:
+		return _Platform_name_1
+	default:
 		return "Platform(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _Platform_name[_Platform_index[idx]:_Platform_index[idx+1]]
 }
+
 func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
 	// Re-run the stringer command to generate them again.
@@ -37,11 +45,12 @@ func _() {
 	_ = x[Deploy-0]
 	_ = x[Rollback-1]
 	_ = x[UnknownAction-2]
+	_ = x[Destroy-3]
 }
 
-const _Action_name = "DeployRollbackUnknownAction"
+const _Action_name = "DeployRollbackUnknownActionDestroy"
 
-var _Action_index = [...]uint8{0, 6, 14, 27}
+var _Action_index = [...]uint8{0, 6, 14, 27, 34}
 
 func (i Action) String() string {
 	idx := int(i) - 0
