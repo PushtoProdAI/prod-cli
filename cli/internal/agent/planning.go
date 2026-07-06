@@ -91,8 +91,8 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 				w.uiWriter.SendStatusComplete("detecting", "❌ No deployments found on any platform")
 			} else if len(existingProject.DetectedPlatforms) == 1 {
 				platform = existingProject.DetectedPlatforms[0]
-				intent.Platform = platform.String()
-				w.uiWriter.SendStatusComplete("detecting", fmt.Sprintf("✅ Found deployment on %s", platform.String()))
+				intent.Platform = platform.DisplayName()
+				w.uiWriter.SendStatusComplete("detecting", fmt.Sprintf("✅ Found deployment on %s", platform.DisplayName()))
 			} else {
 				platformNames := make([]string, len(existingProject.DetectedPlatforms))
 				for i, p := range existingProject.DetectedPlatforms {
@@ -124,7 +124,7 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 	var detectedPlatformNames []string
 	if action == Rollback && platform != UnknownPlatform && len(existingProjectInfo.DetectedPlatforms) == 0 {
 		// Platform was specified in prompt, not auto-detected
-		detectedPlatformNames = []string{platform.String()}
+		detectedPlatformNames = []string{platform.DisplayName()}
 	} else {
 		// Use auto-detected platforms
 		detectedPlatformNames = make([]string, len(existingProjectInfo.DetectedPlatforms))
@@ -158,6 +158,11 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		// shape-aware liveness dispatch is the next increment (see
 		// docs/agent-native-plan.md §1e).
 		Shape: deployment.ParseShape(intent.DeployShape),
+	}
+	// Pin a plugin plan to its plugin by name, so a resumed workflow validates it
+	// resolves to the same plugin (a plugin's Platform value is a hash of its name).
+	if IsPlugin(platform) {
+		plan.PluginName = platform.DisplayName()
 	}
 
 	// Estimate costs during planning phase

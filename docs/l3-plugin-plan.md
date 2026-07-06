@@ -274,9 +274,38 @@ Host-side proxies:
    sample `prod-provider-example` binary. Unit-test the RPC round-trip via an in-memory
    plugin. *No host integration yet.*
 2. **Host runtime + catalog integration** — discovery + `~/.prod/plugins.json` manifest,
-   the `pluginRegistry`/`pluginProvider` proxies, dynamic-`Platform` registration into the
-   L1 catalog, and the L1c `Platform.String()`→`Name` logging fix. `prod "deploy to
-   example"` now works end-to-end (AC1/AC5/AC6/AC7/AC8).
+   dynamic-`Platform` registration into the L1 catalog, `Platform.DisplayName()`, and
+   `PluginName` in `DeployPlan`. `prod "deploy to example"` works end-to-end
+   (AC1/AC5/AC6/AC7/AC8). **Concrete design (grounded in the code):**
+   - **Manifest** `~/.prod/plugins.json`: `[]Entry{Name, Aliases, DomainSuffix,
+     SupportsRollback, Path, Checksum}` — a plugin's `Metadata` + its binary path +
+     sha256. Written by `prod plugin install` (PR3-next); read at startup. `plugins.go`
+     owns `LoadManifest`/`SaveManifest` + `DefaultManifestPath`.
+   - **Dynamic `Platform`** `IsPlugin(p)` ⇔ `p >= pluginPlatformBase` (a large reserved
+     constant, far above the built-in iota range). A plugin's value is
+     `pluginPlatformBase + crc32(Name)` — deterministic per name (so a persisted
+     `DeployPlan.Platform` resumes to the same plugin) and un-collidable with built-ins.
+     Registration rejects a value/alias that collides with a built-in or another plugin.
+   - **Registration** `RegisterDiscoveredPlugins(getenv, homeDir)` — an EXPLICIT startup
+     call (not `init()`, so tests don't read the user's real `~/.prod`), invoked from the
+     composition root after `registerPlatforms()`. Each entry → a `PlatformSpec`:
+     `ManagedContainer:true` (shares the generic container workflow), `DomainSuffix`,
+     `SupportsRollback` from the manifest; `NewDeployable`/`NewAuthProvider`/`NewDetector`
+     proxy the plugin. Idempotent.
+   - **Lazy launch, per activity.** The plugin `Deployable`'s methods each `Launch()` the
+     subprocess, use it, and `Kill()` on return (the subprocess lifetime fits inside one
+     go-workflows activity — it must, since a client can't survive a persistence
+     boundary). `NewDeployable` takes a `launch func() (Provider, func(), error)` closure.
+   - **`Platform.DisplayName()`** (catalog `Name`, fallback `String()`): swept across the
+     user- and LLM-facing sites (`agent.go` plan/success/rollback, `planning.go` detected-
+     platform — incl. the round-trip at `:94` that must resolve via `PlatformByString`,
+     `errors.go` → `SummarizeDeployError`). Pure `slog`/Sentry telemetry keeps `String()`.
+   - **`DeployPlan.PluginName`** set in planning when the resolved platform is a plugin;
+     the workflow deploy dispatch asserts `LookupPlatform(Platform).Name == PluginName`
+     for a plugin platform before deploying, so a resumed workflow can never deploy an app
+     (and its secrets) to the wrong cloud after a manifest change.
+   - **`pluginAuthProvider`** bridges `Provider.CheckAuth` to `auth.AuthProvider` so the
+     pre-deploy auth check works for plugins.
 3. **`prod plugin` CLI** — install/list/remove + `SecureConfig` checksum trust + the trust
    notice (AC2/AC3/AC4).
 4. **Follow-up** — go-plugin **gRPC** transport for cross-language plugins.

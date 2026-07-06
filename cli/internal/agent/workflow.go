@@ -162,6 +162,17 @@ func (Workflows) PlanDeploy(ctx context.Context, c *client.Client, input string)
 func (Workflows) Deploy(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
 	slog.Info("Deploy", "platform", input.Platform, "action", input.Action)
 
+	// For a plugin platform, verify the plan still resolves to the same plugin by name.
+	// A plugin's Platform value is a hash of its name, so a changed plugin set (or an
+	// uninstalled plugin) must not silently deploy the app + its secrets to the wrong
+	// cloud on resume.
+	if IsPlugin(input.Platform) {
+		spec, ok := LookupPlatform(input.Platform)
+		if !ok || spec.Name != input.PluginName {
+			return nil, errors.Errorf("the plugin that planned this deploy (%q) is no longer installed or has changed — re-run the deploy", input.PluginName)
+		}
+	}
+
 	// Managed-container clouds (App Runner, Cloud Run, Azure …) share one generic
 	// workflow instead of a per-platform clone.
 	if spec, ok := LookupPlatform(input.Platform); ok && spec.ManagedContainer {

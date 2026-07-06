@@ -40,7 +40,7 @@ func TestConfirmMessage(t *testing.T) {
 		{
 			"deploy with cost",
 			&DeployPlan{Action: Deploy, Platform: FlyIO, Spec: analyzer.ProjectSpec{Name: "myapp"}, Pricing: deployment.CostEstimate{Total: 7}},
-			"Deploy myapp to FlyIO (~$7.00/mo)?",
+			"Deploy myapp to Fly.io (~$7.00/mo)?",
 		},
 		{
 			"deploy without cost",
@@ -50,7 +50,7 @@ func TestConfirmMessage(t *testing.T) {
 		{
 			"rollback (no cost even if set)",
 			&DeployPlan{Action: Rollback, Platform: FlyIO, Spec: analyzer.ProjectSpec{Name: "myapp"}},
-			"Roll back myapp to FlyIO?",
+			"Roll back myapp to Fly.io?",
 		},
 		{
 			"missing name",

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"hash/crc32"
 	"io"
 	"os"
 	"strings"
@@ -74,6 +75,31 @@ func LookupPlatform(p Platform) (PlatformSpec, bool) {
 
 // RegisteredPlatforms returns the catalog in menu order.
 func RegisteredPlatforms() []PlatformSpec { return platformCatalog }
+
+// pluginPlatformBase starts the reserved Platform-value range for external provider
+// plugins — far above the built-in iota range, so a plugin value never collides with
+// a built-in.
+const pluginPlatformBase Platform = 1 << 20
+
+// IsPlugin reports whether a Platform value belongs to an external provider plugin.
+func IsPlugin(p Platform) bool { return p >= pluginPlatformBase }
+
+// pluginPlatform derives a plugin's Platform value deterministically from its name, so
+// a persisted DeployPlan.Platform resumes to the same plugin across restarts.
+func pluginPlatform(name string) Platform {
+	return pluginPlatformBase + Platform(crc32.ChecksumIEEE([]byte(name)))
+}
+
+// DisplayName is the human-readable platform name from the catalog (e.g. "Google
+// Cloud Run", or a plugin's name), falling back to the generated enum string. Use it
+// wherever a platform is shown to a user or handed to the LLM; a plugin's raw
+// String() is only "Platform(1048xxx)".
+func (p Platform) DisplayName() string {
+	if s, ok := LookupPlatform(p); ok && s.Name != "" {
+		return s.Name
+	}
+	return p.String()
+}
 
 // PlatformByString matches a natural-language / menu string (case-insensitive)
 // against each spec's Name and Aliases.
