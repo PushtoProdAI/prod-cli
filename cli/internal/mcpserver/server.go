@@ -34,6 +34,7 @@ func New(version string) *mcp.Server {
 	addAnalyzeProject(s)
 	addDeploy(s)
 	addRollback(s)
+	addDestroy(s)
 	addDoctor(s)
 	return s
 }
