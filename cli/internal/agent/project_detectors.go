@@ -33,29 +33,17 @@ type ProjectDetector interface {
 	DetectExistingProject(ctx context.Context, projectName string, sourcePath string) (ExistingProjectInfo, error)
 }
 
-// getProjectDetector returns the appropriate detector for the given platform
+// getProjectDetector returns the appropriate detector for the given platform. A
+// platform with no registered detector (idempotent deploy) gets the no-op.
 func (a *Activities) getProjectDetector(platform Platform) (ProjectDetector, error) {
-	switch platform {
-	case Render:
-		return NewRenderProjectDetector(a.renderClient, a.uiWriter), nil
-	case FlyIO:
-		return NewFlyIOProjectDetector(a.flyClient, a.uiWriter), nil
-	case Netlify:
-		return NewNetlifyProjectDetector(a.uiWriter), nil
-	case Vercel:
-		return NewVercelProjectDetector(a.uiWriter), nil
-	case Heroku:
-		return NewHerokuProjectDetector(a.uiWriter), nil
-	case AWS:
-		return NewAWSProjectDetector(a.beClient, a.uiWriter), nil
-	case GoogleCloudRun:
-		// Cloud Run deploys are idempotent (create-or-update), so we don't need to
-		// pre-detect an existing service. A real "already exists" detector (to set
-		// IsUpdate) is a follow-up.
-		return noopProjectDetector{}, nil
-	default:
+	p, ok := LookupPlatform(platform)
+	if !ok {
 		return nil, errors.Errorf("unsupported platform: %s", platform)
 	}
+	if p.NewDetector == nil {
+		return noopProjectDetector{}, nil
+	}
+	return p.NewDetector(a), nil
 }
 
 // noopProjectDetector reports no existing project — used for platforms whose
