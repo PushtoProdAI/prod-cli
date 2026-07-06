@@ -2,12 +2,13 @@
 // agents (Claude, Cursor, Cline, ...) can call prod as a tool. It runs in the
 // same single binary via `prod mcp` and speaks MCP over stdio.
 //
-// Tools: list_deploys (local history), analyze_project (stack detection), and
-// deploy — a natural-language deploy with a required human-approval gate
-// (confirm=false previews the plan + cost and deploys nothing; confirm=true
-// deploys). deploy drives prod's own `prod run` over the JSON event substrate, so
-// it reuses the exact, tested deploy path and enforces the confirm gate by
-// replying to the plan-approval event.
+// Tools: list_deploys (local history), analyze_project (stack detection), doctor
+// (read-only readiness self-check — LLM provider + Docker), deploy, and rollback.
+// deploy and rollback are natural-language actions behind a required human-approval
+// gate (confirm=false previews the plan + cost and changes nothing; confirm=true
+// executes). They drive prod's own `prod run` over the JSON event substrate, so they
+// reuse the exact, tested path and enforce the confirm gate by replying to the
+// plan-approval event.
 package mcpserver
 
 import (
@@ -32,6 +33,8 @@ func New(version string) *mcp.Server {
 	addListDeploys(s)
 	addAnalyzeProject(s)
 	addDeploy(s)
+	addRollback(s)
+	addDoctor(s)
 	return s
 }
 

@@ -27,7 +27,7 @@ func TestServerToolsOverInMemoryTransport(t *testing.T) {
 	}
 	defer session.Close()
 
-	// Tool discovery: both tools present.
+	// Tool discovery: all tools present.
 	tools, err := session.ListTools(ctx, nil)
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
@@ -36,7 +36,7 @@ func TestServerToolsOverInMemoryTransport(t *testing.T) {
 	for _, tool := range tools.Tools {
 		got[tool.Name] = true
 	}
-	for _, want := range []string{"list_deploys", "analyze_project", "deploy"} {
+	for _, want := range []string{"list_deploys", "analyze_project", "deploy", "rollback", "doctor"} {
 		if !got[want] {
 			t.Errorf("tool %q not advertised; got %v", want, got)
 		}
