@@ -53,6 +53,11 @@ func TestConfirmMessage(t *testing.T) {
 			"Roll back myapp to Fly.io?",
 		},
 		{
+			"destroy warns it's permanent",
+			&DeployPlan{Action: Destroy, Platform: FlyIO, Spec: analyzer.ProjectSpec{Name: "myapp"}},
+			"Destroy myapp on Fly.io — this permanently deletes the app and its resources?",
+		},
+		{
 			"missing name",
 			&DeployPlan{Action: Deploy, Platform: Heroku},
 			"Deploy this project to Heroku?",

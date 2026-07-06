@@ -60,6 +60,8 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		action = Deploy
 	case "rollback":
 		action = Rollback
+	case "delete", "destroy":
+		action = Destroy
 	default:
 		action = UnknownAction
 	}
@@ -71,8 +73,9 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 
 	var existingProjectInfo ExistingProjectInfo
 
-	if action == Rollback && platform == UnknownPlatform {
-		// Only auto-detect platforms if the user didn't specify one in the prompt
+	if (action == Rollback || action == Destroy) && platform == UnknownPlatform {
+		// Rollback and destroy both target an existing deployment: auto-detect where
+		// it's deployed if the user didn't name a platform.
 		w.uiWriter.SendStatus("detecting", "Detecting deployment platforms...")
 
 		existingProject, err := workflow.ExecuteActivity[ExistingProjectInfo](ctx, ActivityOpts, AgentDetectPlatformsForRollback, spec.Name, intent.Source).Get(ctx)
@@ -101,9 +104,9 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 				w.uiWriter.SendStatusComplete("detecting", fmt.Sprintf("⚠️ Found deployments on multiple platforms: %s", strings.Join(platformNames, ", ")))
 			}
 		}
-	} else if action == Rollback && platform != UnknownPlatform {
+	} else if (action == Rollback || action == Destroy) && platform != UnknownPlatform {
 		// Platform was specified in the prompt, use it directly
-		slog.Info("Using platform from prompt for rollback", "platform", platform)
+		slog.Info("Using platform from prompt", "action", action, "platform", platform)
 	}
 
 	opts := ActivityOpts
@@ -122,7 +125,7 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 	// Prepare detected platforms list for summary
 	// If platform came from prompt (not auto-detected), use that; otherwise use detected platforms
 	var detectedPlatformNames []string
-	if action == Rollback && platform != UnknownPlatform && len(existingProjectInfo.DetectedPlatforms) == 0 {
+	if (action == Rollback || action == Destroy) && platform != UnknownPlatform && len(existingProjectInfo.DetectedPlatforms) == 0 {
 		// Platform was specified in prompt, not auto-detected
 		detectedPlatformNames = []string{platform.DisplayName()}
 	} else {
@@ -333,8 +336,11 @@ func (a *Activities) sendProjectStats(ctx context.Context, platform string, spec
 func (a *Activities) logDeploymentStart(ctx context.Context, platform string, spec analyzer.ProjectSpec, source string, action Action) (string, error) {
 	// Map Action to operation_type string
 	operationType := "deploy"
-	if action == Rollback {
+	switch action {
+	case Rollback:
 		operationType = "rollback"
+	case Destroy:
+		operationType = "destroy"
 	}
 
 	// Local mode: record to the local history store instead of the backend. No

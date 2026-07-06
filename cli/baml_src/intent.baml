@@ -205,6 +205,15 @@ function SummarizeIntent(intent: Intent, name: string, language: string, detecte
     - Include the project name, language, and source path
     - End with: "If everything looks good, we'll take care of rolling it back for you."
 
+  If intent.action is "DELETE" or "DESTROY":
+    - Use teardown terminology. Warn clearly that this PERMANENTLY DELETES the app and its resources.
+    - Platform handling mirrors ROLLBACK:
+      1. If detectedPlatforms has exactly 1 platform: "We found your application deployed on [Platform]. We'll tear it down there."
+      2. If detectedPlatforms has multiple platforms: "We found your application on multiple platforms: [Platform1, Platform2]. We'll ask you to choose which one to destroy before proceeding."
+      3. If detectedPlatforms is empty or intent.platform is UNKNOWN: "We couldn't find your application deployed on any platform. Specify the platform explicitly (e.g., 'destroy this on Fly')."
+    - Include the project name and source path.
+    - End with: "If you're sure, we'll tear it down for you."
+
   ## STEP 3: SUMMARY RULES FOR DEPLOY
 
   If intent.action is "DEPLOY":

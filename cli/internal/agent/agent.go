@@ -311,8 +311,19 @@ func (a *Agent) waitForPlanApproval(ctx context.Context, input string, out io.Wr
 
 	switch input {
 	case PlanApprovalApproved:
-		fmt.Fprint(out, "Proceeding with deployment...\n")
-		a.nextStateAfterAuth = a.detectExisting
+		// Route to the action's executor — an approved rollback/destroy must NOT fall
+		// through to the deploy pipeline (which would redeploy instead of tearing down).
+		switch a.DeployPlan.Action {
+		case Destroy:
+			fmt.Fprint(out, "Proceeding with teardown...\n")
+			a.nextStateAfterAuth = a.executeDestroy
+		case Rollback:
+			fmt.Fprint(out, "Proceeding with rollback...\n")
+			a.nextStateAfterAuth = a.executeRollback
+		default:
+			fmt.Fprint(out, "Proceeding with deployment...\n")
+			a.nextStateAfterAuth = a.detectExisting
+		}
 		return a.checkAuthentication(ctx, input, out)
 	case PlanApprovalRejected:
 		fmt.Fprint(out, "Deployment cancelled\n")
@@ -572,8 +583,9 @@ func (a *Agent) proceedWithPlan(ctx context.Context, plan DeployPlan, input stri
 
 	// Gate the deploy: AWS needs the backend (local-refused), Render needs the
 	// user's registry. Rollback is gated separately (executeRollback) since a
-	// Render rollback needs neither.
-	if a.refuseDeployPlatform(out, plan.Platform) {
+	// Render rollback needs neither; destroy likewise needs no registry, so skip
+	// this deploy-only gate for it.
+	if plan.Action != Destroy && a.refuseDeployPlatform(out, plan.Platform) {
 		return a.done(), nil
 	}
 	a.DeployPlan = &plan
@@ -612,17 +624,23 @@ func (a *Agent) confirmMessage() string {
 	if p == nil {
 		return "Do you want to proceed?"
 	}
-	verb := "Deploy"
-	if p.Action == Rollback {
+	verb, prep := "Deploy", "to"
+	switch p.Action {
+	case Rollback:
 		verb = "Roll back"
+	case Destroy:
+		verb, prep = "Destroy", "on"
 	}
 	name := p.Spec.Name
 	if name == "" {
 		name = "this project"
 	}
-	msg := fmt.Sprintf("%s %s to %s", verb, name, p.Platform.DisplayName())
+	msg := fmt.Sprintf("%s %s %s %s", verb, name, prep, p.Platform.DisplayName())
 	if p.Action == Deploy && p.Pricing.Total > 0 {
 		msg += fmt.Sprintf(" (~$%.2f/mo)", p.Pricing.Total)
+	}
+	if p.Action == Destroy {
+		msg += " — this permanently deletes the app and its resources"
 	}
 	return msg + "?"
 }
@@ -647,16 +665,24 @@ func (a *Agent) processConfirmationResponse(ctx context.Context, input string, o
 	input = strings.ToLower(strings.TrimSpace(input))
 
 	if input == "y" || input == "yes" {
-		// Check if this is a rollback or deploy
-		if a.DeployPlan.Action == Rollback {
-			// For rollback, check if we need platform selection
+		// Rollback and destroy both target an existing deployment and share the
+		// platform-selection path; only the terminal state differs.
+		if a.DeployPlan.Action == Rollback || a.DeployPlan.Action == Destroy {
+			word := "rollback"
+			if a.DeployPlan.Action == Destroy {
+				word = "teardown"
+			}
 			if len(a.DeployPlan.ExistingProjectInfo.DetectedPlatforms) > 1 {
-				fmt.Fprintf(out, "Proceeding with rollback...\n")
+				fmt.Fprintf(out, "Proceeding with %s...\n", word)
 				return a.selectPlatform(ctx, input, out)
 			}
 			// Single platform or platform from prompt - proceed to auth check
-			fmt.Fprintf(out, "Proceeding with rollback...\n")
-			a.nextStateAfterAuth = a.executeRollback
+			fmt.Fprintf(out, "Proceeding with %s...\n", word)
+			if a.DeployPlan.Action == Destroy {
+				a.nextStateAfterAuth = a.executeDestroy
+			} else {
+				a.nextStateAfterAuth = a.executeRollback
+			}
 			return a.checkAuthentication(ctx, input, out)
 		}
 
@@ -667,9 +693,12 @@ func (a *Agent) processConfirmationResponse(ctx context.Context, input string, o
 	}
 
 	if input == "n" || input == "no" {
-		if a.DeployPlan.Action == Rollback {
+		switch a.DeployPlan.Action {
+		case Rollback:
 			fmt.Fprintf(out, "Rollback cancelled\n")
-		} else {
+		case Destroy:
+			fmt.Fprintf(out, "Teardown cancelled\n")
+		default:
 			fmt.Fprintf(out, "Deployment cancelled\n")
 		}
 		return a.done(), nil
@@ -682,7 +711,18 @@ func (a *Agent) processConfirmationResponse(ctx context.Context, input string, o
 }
 
 func (a *Agent) confirm(ctx context.Context, input string, out io.Writer) (stateFn, error) {
-	return a.deploy, nil
+	// Non-interactive (--yes) approval: route by action so an auto-approved
+	// rollback/destroy runs its own executor instead of the deploy pipeline.
+	switch a.DeployPlan.Action {
+	case Destroy:
+		a.nextStateAfterAuth = a.executeDestroy
+		return a.checkAuthentication(ctx, input, out)
+	case Rollback:
+		a.nextStateAfterAuth = a.executeRollback
+		return a.checkAuthentication(ctx, input, out)
+	default:
+		return a.deploy, nil
+	}
 }
 
 func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer) (stateFn, error) {
@@ -1291,6 +1331,15 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 	return a.done(), nil
 }
 
+// selectionVerb is the user-facing verb for the multi-platform picker prompt,
+// matching the plan's action (rollback vs teardown).
+func (a *Agent) selectionVerb() string {
+	if a.DeployPlan != nil && a.DeployPlan.Action == Destroy {
+		return "tear down"
+	}
+	return "roll back"
+}
+
 func (a *Agent) selectPlatform(_ context.Context, _ string, out io.Writer) (stateFn, error) {
 	// Build platform options from detected platforms
 	platformOptions := make([]string, len(a.DeployPlan.ExistingProjectInfo.DetectedPlatforms))
@@ -1298,7 +1347,7 @@ func (a *Agent) selectPlatform(_ context.Context, _ string, out io.Writer) (stat
 		platformOptions[i] = p.String()
 	}
 
-	a.sendSelect(out, "Multiple deployments found. Which platform would you like to rollback?", platformOptions)
+	a.sendSelect(out, fmt.Sprintf("Multiple deployments found. Which platform would you like to %s?", a.selectionVerb()), platformOptions)
 	return a.waitForPlatformSelection, nil
 }
 
@@ -1314,7 +1363,7 @@ func (a *Agent) waitForPlatformSelection(ctx context.Context, input string, out 
 		for i, p := range a.DeployPlan.ExistingProjectInfo.DetectedPlatforms {
 			platformOptions[i] = p.String()
 		}
-		a.sendSelect(out, "Invalid selection. Which platform would you like to rollback?", platformOptions)
+		a.sendSelect(out, fmt.Sprintf("Invalid selection. Which platform would you like to %s?", a.selectionVerb()), platformOptions)
 		return a.waitForPlatformSelection, nil
 	}
 
@@ -1322,12 +1371,78 @@ func (a *Agent) waitForPlatformSelection(ctx context.Context, input string, out 
 	selectedPlatform := a.DeployPlan.ExistingProjectInfo.DetectedPlatforms[selectionIndex]
 	a.DeployPlan.Platform = selectedPlatform
 
-	slog.Info("User selected platform for rollback", "platform", selectedPlatform)
-	fmt.Fprintf(out, "Selected %s for rollback\n", selectedPlatform.DisplayName())
+	word := "rollback"
+	if a.DeployPlan.Action == Destroy {
+		word = "teardown"
+	}
+	slog.Info("User selected platform", "platform", selectedPlatform, "action", a.DeployPlan.Action)
+	fmt.Fprintf(out, "Selected %s for %s\n", selectedPlatform.DisplayName(), word)
 
 	// Now proceed to auth check
-	a.nextStateAfterAuth = a.executeRollback
+	if a.DeployPlan.Action == Destroy {
+		a.nextStateAfterAuth = a.executeDestroy
+	} else {
+		a.nextStateAfterAuth = a.executeRollback
+	}
 	return a.checkAuthentication(ctx, input, out)
+}
+
+func (a *Agent) executeDestroy(ctx context.Context, _ string, out io.Writer) (stateFn, error) {
+	a.nextStateAfterAuth = nil
+
+	// Teardown support is independent of rollback support (e.g. App Runner destroys but
+	// can't roll back), so we do NOT reuse the rollback gate here — the destroy activity
+	// type-asserts deployment.Destroyer and returns a clear error for a platform that
+	// doesn't support teardown, surfaced below as a failure.
+	wf, err := Workflows{}.Destroy(ctx, a.wfClient, *a.DeployPlan)
+	if err != nil {
+		slog.Error("Destroy workflow execution failed", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     "destroy",
+			"component":    "agent",
+			"operation":    "workflow_execution",
+			"platform":     a.DeployPlan.Platform,
+			"project_name": a.DeployPlan.Spec.Name,
+		})
+		fmt.Fprint(out, "Sorry, couldn't execute the teardown\n")
+		return a.done(), nil
+	}
+
+	result, err := client.GetWorkflowResult[deployResult](ctx, a.wfClient, wf, 10*time.Minute)
+	a.stopSpinner(out)
+	if err != nil {
+		slog.Error("Destroy workflow result error", "error", err)
+		prod_error.CaptureErrorWithContext(err, map[string]any{
+			"workflow":     "destroy",
+			"component":    "agent",
+			"operation":    "get_workflow_result",
+			"platform":     a.DeployPlan.Platform,
+			"project_name": a.DeployPlan.Spec.Name,
+		})
+		a.wfClient.CancelWorkflowInstance(ctx, wf)
+		fmt.Fprint(out, "Sorry, we had trouble tearing down your deployment\n")
+		return a.done(), nil
+	}
+
+	if result.Error.Summary != "" {
+		if tuiWriter, ok := out.(TUIWriter); ok {
+			tuiWriter.SendError(result.Error.Summary, result.Error.Remediations)
+		} else {
+			fmt.Fprint(out, "Sorry, we had trouble tearing down your deployment\n")
+			fmt.Fprintf(out, "%s\n", result.Error.Summary)
+		}
+		if !a.interactive {
+			return nil, nil
+		}
+		return a.done(), nil
+	}
+
+	name := a.DeployPlan.Spec.Name
+	if name == "" {
+		name = "the app"
+	}
+	fmt.Fprintf(out, "✅ Destroyed %s on %s\n", name, a.DeployPlan.Platform.DisplayName())
+	return a.done(), nil
 }
 
 func (a *Agent) executeRollback(ctx context.Context, _ string, out io.Writer) (stateFn, error) {
@@ -1454,8 +1569,8 @@ func shouldProceed(plan DeployPlan) bool {
 	}
 
 	if plan.Platform == UnknownPlatform {
-		if plan.Action == Rollback && len(plan.ExistingProjectInfo.DetectedPlatforms) > 0 {
-			slog.Info("Validation passed for rollback with multiple platforms", "platforms", plan.ExistingProjectInfo.DetectedPlatforms)
+		if (plan.Action == Rollback || plan.Action == Destroy) && len(plan.ExistingProjectInfo.DetectedPlatforms) > 0 {
+			slog.Info("Validation passed for rollback/destroy with detected platforms", "platforms", plan.ExistingProjectInfo.DetectedPlatforms)
 		} else {
 			slog.Info("Validation failed", "reason", "unknown platform", "platform", plan.Platform)
 			return false
