@@ -35,6 +35,7 @@ const (
 	DeployHerokuWorkflowName           = "agent.deploy.heroku"
 	DeployContainerWorkflowName        = "agent.deploy.container"
 	RollbackDeploymentWorkflowName     = "agent.rollbackDeployment"
+	DestroyDeploymentWorkflowName      = "agent.destroyDeployment"
 )
 
 var ActivityOpts = workflow.ActivityOptions{
@@ -152,6 +153,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: DeployHerokuWorkflowName, WorkflowFunc: w.deployHeroku},
 		{Name: DeployContainerWorkflowName, WorkflowFunc: w.deployContainer},
 		{Name: RollbackDeploymentWorkflowName, WorkflowFunc: w.rollbackDeployment},
+		{Name: DestroyDeploymentWorkflowName, WorkflowFunc: w.destroyDeployment},
 	}
 }
 
@@ -193,6 +195,11 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input DeployPlan)
 	default:
 		return nil, errors.New("unsupported platform for deployment")
 	}
+}
+
+func (Workflows) Destroy(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
+	slog.Info("Destroy", "platform", input.Platform, "project", input.Spec.Name)
+	return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DestroyDeploymentWorkflowName, time.Now().Unix())}, DestroyDeploymentWorkflowName, input)
 }
 
 func (Workflows) Rollback(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {

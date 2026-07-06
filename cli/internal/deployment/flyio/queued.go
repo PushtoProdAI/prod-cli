@@ -20,6 +20,8 @@ type FlyioQueuedDeployment struct {
 	writer          io.Writer
 }
 
+var _ deployment.Destroyer = (*FlyioQueuedDeployment)(nil)
+
 // NewFlyioQueuedDeployment creates a new queued deployment for Fly.io
 func NewFlyioQueuedDeployment(client FlyioClient, spec *deployment.DeploymentSpec, dockerGenerator *deployment.DockerGenerator, writer io.Writer) *FlyioQueuedDeployment {
 	return &FlyioQueuedDeployment{

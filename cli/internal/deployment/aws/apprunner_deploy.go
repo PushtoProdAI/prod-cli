@@ -31,7 +31,10 @@ type Deployment struct {
 	writer    io.Writer
 }
 
-var _ deployment.Deployable = (*Deployment)(nil)
+var (
+	_ deployment.Deployable = (*Deployment)(nil)
+	_ deployment.Destroyer  = (*Deployment)(nil)
+)
 
 // NewAppRunnerDeployment builds an App Runner deployable for a project spec.
 func NewAppRunnerDeployment(spec *deployment.DeploymentSpec, dockerGen *deployment.DockerGenerator, writer io.Writer) *Deployment {

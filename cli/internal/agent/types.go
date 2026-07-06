@@ -28,6 +28,9 @@ const (
 	Deploy Action = iota
 	Rollback
 	UnknownAction
+	// Destroy is appended last so the serialized (int) values of the existing
+	// actions stay stable for durable workflows in flight across an upgrade.
+	Destroy
 )
 
 // DiffLine represents a single line in a diff

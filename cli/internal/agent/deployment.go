@@ -232,6 +232,27 @@ func (a *Activities) rollbackDeployment(ctx context.Context, spec deployment.Dep
 	return nil
 }
 
+func (a *Activities) destroyDeployment(ctx context.Context, spec deployment.DeploymentSpec, platform Platform) error {
+	a.uiWriter.SendStatus("destroying", fmt.Sprintf("Tearing down %s on %s", spec.Name, platform.DisplayName()))
+
+	deployable, err := a.createDeployable(&spec, platform)
+	if err != nil {
+		return err
+	}
+	destroyer, ok := deployable.(deployment.Destroyer)
+	if !ok {
+		msg := fmt.Sprintf("Teardown isn't supported for %s yet — remove it from the platform's console.", platform.DisplayName())
+		a.uiWriter.SendStatusComplete("destroying", "❌ "+msg)
+		return errors.Errorf("%s", msg)
+	}
+	if err := destroyer.Destroy(ctx); err != nil {
+		a.uiWriter.SendStatusComplete("destroying", fmt.Sprintf("❌ Teardown failed: %v", err))
+		return errors.Errorf("failed to destroy %s deployment: %w", platform.DisplayName(), err)
+	}
+	a.uiWriter.SendStatusComplete("destroying", "✅ Deployment destroyed")
+	return nil
+}
+
 func (a *Activities) getPreviousDeployment(ctx context.Context, spec deployment.DeploymentSpec, platform Platform) (*deployment.DeploymentInfo, error) {
 	deployable, err := a.createDeployable(&spec, platform)
 	if err != nil {
