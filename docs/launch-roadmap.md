@@ -108,9 +108,10 @@ Fix the framework, then breadth is cheap. Full design + acceptance criteria:
    The registration itself is one PlatformSpec (ManagedContainer + DomainSuffix); the work
    is the acr kind + the aca Deployable + the resource-group/environment provisioning.
    Completes AWS/GCP/Azure managed-container parity + the PaaS five. *(M.)*
-4. **Framework Level 2 — a shared managed-container base** (extract the common
-   build→push→create→poll→URL from App Runner/Cloud Run so a new container cloud is
-   ~100 lines). Do a *light* extraction before Azure so Azure lands on the base. *(M.)*
+4. **Framework Level 2 — DONE** (`internal/deployment/managedcontainer`, #264). App
+   Runner, Cloud Run, and Azure Container Apps share one `Run(Provider, …)` flow; a cloud
+   implements only its API calls (Prepare → registry + deploy closure). The base
+   guarantees the Primary CreatedResource the generic workflow needs.
 5. **Framework Level 3 — out-of-tree gRPC provider plugins** (`hashicorp/go-plugin`): a
    third party ships `prod-provider-x` and `prod "deploy to x"` works *without forking
    prod*. Registers *through* Level 1. The platform/ecosystem play for the devops
