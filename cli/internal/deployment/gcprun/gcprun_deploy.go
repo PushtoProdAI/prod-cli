@@ -185,8 +185,17 @@ func provisionSecrets(ctx context.Context, ts oauth2.TokenSource, project, appNa
 	if err != nil {
 		return nil, err
 	}
+	usedIDs := map[string]string{} // secret id → the env var that claimed it
 	for name, value := range sensitive {
-		secretName, err := sm.EnsureSecret(ctx, secretID(appName, name), value)
+		id := secretID(appName, name)
+		// Two env names that differ only in punctuation sanitize to the same id; refuse
+		// rather than silently store one value under both (map order is nondeterministic).
+		if other, dup := usedIDs[id]; dup {
+			return nil, errors.Errorf("env vars %q and %q map to the same secret id %q — rename one", other, name, id)
+		}
+		usedIDs[id] = name
+
+		secretName, err := sm.EnsureSecret(ctx, id, value)
 		if err != nil {
 			return nil, err
 		}
