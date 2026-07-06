@@ -106,15 +106,48 @@ func (d *Deployment) Deploy(ctx context.Context) ([]deployment.CreatedResource, 
 	}}, nil
 }
 
-// GetPreviousDeployment is not yet implemented for Container Apps.
-func (d *Deployment) GetPreviousDeployment(_ context.Context) (*deployment.DeploymentInfo, error) {
-	return nil, nil
+// GetPreviousDeployment returns the revision to roll back to (the active revision
+// before the current one), or nil if there's nothing to roll back to.
+func (d *Deployment) GetPreviousDeployment(ctx context.Context) (*deployment.DeploymentInfo, error) {
+	dep, name, err := d.deployer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rev, err := dep.PreviousRevision(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if rev == "" {
+		return nil, nil
+	}
+	return &deployment.DeploymentInfo{ID: rev, Status: "previous revision"}, nil
 }
 
-// Rollback is not yet implemented for Container Apps. (Container Apps keeps
-// revisions, so real traffic-to-revision rollback is a planned fast-follow.)
-func (d *Deployment) Rollback(_ context.Context, _ string) error {
-	return errors.Errorf("Azure Container Apps rollback isn't supported yet")
+// Rollback routes all traffic back to targetRevision (Container Apps keeps revisions,
+// so rollback is instant — no rebuild).
+func (d *Deployment) Rollback(ctx context.Context, targetRevision string) error {
+	if targetRevision == "" {
+		return errors.Errorf("no previous Container App revision to roll back to")
+	}
+	dep, name, err := d.deployer(ctx)
+	if err != nil {
+		return err
+	}
+	return dep.RollbackToRevision(ctx, name, targetRevision)
+}
+
+// deployer resolves the user's Azure credentials and builds a Deployer + the app
+// name, shared by the rollback methods.
+func (d *Deployment) deployer(ctx context.Context) (*Deployer, string, error) {
+	cred, subscription, resourceGroup, location, err := auth.NewAzureAuth(d.writer).Config(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	dep, err := New(cred, subscription, resourceGroup, location)
+	if err != nil {
+		return nil, "", err
+	}
+	return dep, containerAppName(d.spec.Name), nil
 }
 
 // envMap flattens env vars and forces PORT to the container port so the app listens

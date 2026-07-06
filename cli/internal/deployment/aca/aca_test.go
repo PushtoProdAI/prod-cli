@@ -2,6 +2,7 @@ package aca
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
@@ -74,5 +75,58 @@ func TestIngressFqdn(t *testing.T) {
 	// Nil-safe when ingress isn't populated.
 	if got := ingressFqdn(armappcontainers.ContainerApp{}); got != "" {
 		t.Errorf("ingressFqdn on empty app = %q, want empty", got)
+	}
+}
+
+func acaRevision(name string, created time.Time, active bool, weight int32) *armappcontainers.Revision {
+	return &armappcontainers.Revision{
+		Name: to.Ptr(name),
+		Properties: &armappcontainers.RevisionProperties{
+			Active:        to.Ptr(active),
+			CreatedTime:   to.Ptr(created),
+			TrafficWeight: to.Ptr(weight),
+		},
+	}
+}
+
+func TestACAServingAndPreviousRevision(t *testing.T) {
+	t1 := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 7, 2, 10, 0, 0, 0, time.UTC)
+	t3 := time.Date(2026, 7, 3, 10, 0, 0, 0, time.UTC)
+
+	revs := []*armappcontainers.Revision{
+		acaRevision("app--r3", t3, true, 100), // serving
+		acaRevision("app--r2", t2, true, 0),
+		acaRevision("app--r1", t1, true, 0),
+	}
+
+	if s := servingRevisionName(revs); s != "app--r3" {
+		t.Errorf("servingRevisionName = %q, want app--r3", s)
+	}
+	if got := previousActiveRevision(revs, "app--r3"); got != "app--r2" {
+		t.Errorf("previousActiveRevision = %q, want app--r2", got)
+	}
+	// Walk back: after a rollback pins r2, a further rollback goes to r1.
+	if got := previousActiveRevision(revs, "app--r2"); got != "app--r1" {
+		t.Errorf("walk-back = %q, want app--r1", got)
+	}
+
+	// An inactive previous revision is skipped.
+	withInactive := []*armappcontainers.Revision{
+		acaRevision("app--r3", t3, true, 100),
+		acaRevision("app--r2", t2, false, 0),
+		acaRevision("app--r1", t1, true, 0),
+	}
+	if got := previousActiveRevision(withInactive, "app--r3"); got != "app--r1" {
+		t.Errorf("previousActiveRevision(inactive r2) = %q, want app--r1", got)
+	}
+
+	// Nothing older to roll back to.
+	if got := previousActiveRevision(revs[2:], "app--r1"); got != "" {
+		t.Errorf("previousActiveRevision(only one) = %q, want empty", got)
+	}
+	// No explicit traffic weight → the newest active revision serves (route-to-latest).
+	if s := servingRevisionName([]*armappcontainers.Revision{acaRevision("x", t1, true, 0)}); s != "x" {
+		t.Errorf("servingRevisionName(no weight) = %q, want x (newest active)", s)
 	}
 }
