@@ -155,6 +155,17 @@ follow-up or manually.
 
 ## 5. Agent-native headline — Modal + finish the shape model  `[the differentiator]`
 
+> **Modal adapter: ✅ SHIPPED (experimental, unvalidated).** `internal/deployment/modal`
+> + `internal/auth/modal.go` + catalog registration + `workflow_modal.go`. `prod "deploy
+> this to Modal"` finds the Modal app entrypoint (a `.py` defining `modal.App(...)`, or
+> `MODAL_ENTRYPOINT`), shells out to `modal deploy`, parses the `*.modal.run` URL, and
+> runs shape-aware liveness (a web endpoint is probed; a function/cron/worker with no URL
+> is a valid success). No rollback (Modal has none) → a failed health check is reported,
+> not auto-reverted. **Not yet run against a live Modal account** — command shape + URL
+> parsing follow Modal's documented CLI; validate end-to-end with a real account before
+> calling it supported. The rest of §5 below (LivenessChecker, SupportedShapes, the
+> MCP-server handshake) still stands.
+
 **Validation:** [`agent-native-plan.md`](./agent-native-plan.md) exists (443 lines) but its
 "where the code is today" is **stale** — it treats the `deployShape` model as unbuilt. In
 fact the foundation shipped: `deployment.DeployShape` + `ParseShape` (`shape.go`),

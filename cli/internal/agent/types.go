@@ -19,6 +19,9 @@ const (
 	GoogleCloudRun
 	Azure
 	UnknownPlatform
+	// Modal is appended after UnknownPlatform so the serialized (int) values of the
+	// existing platforms stay stable for durable workflows in flight across an upgrade.
+	Modal
 )
 
 // Action represents the type of deployment action
