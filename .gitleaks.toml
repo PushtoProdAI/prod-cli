@@ -1,0 +1,31 @@
+# gitleaks configuration for prod-cli.
+#
+# Extends gitleaks' default rules and allowlists a small set of KNOWN-SAFE values that
+# are false positives. The REAL leaked secrets — a Render API key and two Sentry DSNs —
+# were rotated AND purged from git history; see docs/security-sweep.md. Nothing below is
+# a secret:
+#
+#   1. Supabase's public local-dev demo JWTs (iss=supabase-demo). These are the
+#      well-known keys every `supabase start` prints, documented publicly by Supabase.
+#      They appear in env.example and in old backend files that survive only in history.
+#   2. Documentation placeholders — YOUR_..._TOKEN and <your-key>.
+#
+# Keep this list tight: allowlist specific known-safe *values*, never whole paths, so a
+# real secret can't hide behind the ignore.
+
+title = "prod-cli"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Supabase public demo JWTs + documentation placeholders (not secrets)"
+regexTarget = "line"
+regexes = [
+  # Supabase's public demo keys: JWT payload base64 for {"iss":"supabase-demo — matches
+  # both the anon and service_role demo keys, and nothing else.
+  '''eyJpc3MiOiJzdXBhYmFzZS1kZW1v''',
+  # documentation placeholders
+  '''YOUR_[A-Z0-9_]*TOKEN''',
+  '''<your-[a-z0-9-]+>''',
+]

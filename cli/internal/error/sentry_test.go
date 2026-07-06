@@ -44,7 +44,8 @@ func TestGlobalInitializeDisabledByDefault(t *testing.T) {
 
 // A user's OWN Sentry DSN opts in.
 func TestGlobalInitializeOptIn(t *testing.T) {
-	t.Setenv("PROD_SENTRY_DSN", "SENTRY_DSN_REDACTED")
+	// A syntactically valid but obviously-fake DSN (sequential hex) so Initialize opts in.
+	t.Setenv("PROD_SENTRY_DSN", "https://0123456789abcdef0123456789abcdef@o1.ingest.sentry.io/1")
 	sentryClient = nil
 	once = sync.Once{}
 
