@@ -116,6 +116,15 @@ func (d *Deployer) allowUnauthenticated(ctx context.Context, name string) error 
 	return nil
 }
 
+// Delete removes the Cloud Run service (best-effort teardown — the delete is an LRO
+// we initiate but don't wait on).
+func (d *Deployer) Delete(ctx context.Context, serviceName string) error {
+	if _, err := d.svc.Projects.Locations.Services.Delete(d.ServicePath(serviceName)).Context(ctx).Do(); err != nil {
+		return errors.Errorf("failed to delete Cloud Run service %q: %w", serviceName, err)
+	}
+	return nil
+}
+
 // PreviousRevision returns the short name of the revision to roll back to: the
 // newest READY revision older than the one currently serving traffic. Returns "" if
 // there's nothing to roll back to. Keying off the serving revision (not a blind

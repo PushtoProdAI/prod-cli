@@ -114,6 +114,15 @@ func (d *Deployment) Rollback(ctx context.Context, targetRevision string) error 
 	return dep.RouteAllTraffic(ctx, name, targetRevision)
 }
 
+// Destroy deletes the Cloud Run service.
+func (d *Deployment) Destroy(ctx context.Context) error {
+	dep, name, err := d.deployer(ctx)
+	if err != nil {
+		return err
+	}
+	return dep.Delete(ctx, name)
+}
+
 // deployer resolves the user's GCP credentials and builds a Deployer + the service
 // name, shared by the rollback methods.
 func (d *Deployment) deployer(ctx context.Context) (*Deployer, string, error) {

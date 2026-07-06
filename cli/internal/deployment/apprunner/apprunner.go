@@ -40,6 +40,7 @@ type appRunnerAPI interface {
 	CreateService(context.Context, *arsdk.CreateServiceInput, ...func(*arsdk.Options)) (*arsdk.CreateServiceOutput, error)
 	UpdateService(context.Context, *arsdk.UpdateServiceInput, ...func(*arsdk.Options)) (*arsdk.UpdateServiceOutput, error)
 	DescribeService(context.Context, *arsdk.DescribeServiceInput, ...func(*arsdk.Options)) (*arsdk.DescribeServiceOutput, error)
+	DeleteService(context.Context, *arsdk.DeleteServiceInput, ...func(*arsdk.Options)) (*arsdk.DeleteServiceOutput, error)
 }
 
 type secretsAPI interface {
@@ -221,6 +222,22 @@ func (d *Deployer) findService(ctx context.Context, name string) (string, error)
 		}
 		next = out.NextToken
 	}
+}
+
+// Delete tears down the App Runner service by name. It's a no-op (nil) if the service
+// is already gone, so destroy is idempotent.
+func (d *Deployer) Delete(ctx context.Context, name string) error {
+	arn, err := d.findService(ctx, name)
+	if err != nil {
+		return err
+	}
+	if arn == "" {
+		return nil // already deleted
+	}
+	if _, err := d.ar.DeleteService(ctx, &arsdk.DeleteServiceInput{ServiceArn: aws.String(arn)}); err != nil {
+		return errors.Errorf("failed to delete App Runner service %q: %w", name, err)
+	}
+	return nil
 }
 
 // CreateInput builds the App Runner CreateService input from a ServiceConfig.

@@ -44,6 +44,14 @@ type Deployable interface {
 	Rollback(ctx context.Context, targetDeploymentID string) error
 }
 
+// Destroyer is an optional capability: a Deployable that can tear down its
+// deployment (the service and its provisioned resources). Not every platform
+// supports it yet; the destroy path checks for this interface and reports clearly
+// when a platform doesn't implement it.
+type Destroyer interface {
+	Destroy(ctx context.Context) error
+}
+
 type DeploymentInfo struct {
 	ID        string
 	Status    string
