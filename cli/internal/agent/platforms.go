@@ -13,6 +13,7 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/deployment/flyio"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/gcprun"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/heroku"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/modal"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/netlify"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/vercel"
@@ -218,6 +219,19 @@ func registerPlatforms() {
 		},
 		NewAuthProvider: func(out io.Writer) auth.AuthProvider { return auth.NewAzureAuth(out) },
 		// Container Apps deploys are idempotent (create-or-update); no pre-detection.
+		NewDetector: nil,
+	})
+	// Modal — serverless, Python-native, GPU-capable. Deploys via the `modal` CLI
+	// (no container registry), so it's not a ManagedContainer. EXPERIMENTAL: not yet
+	// validated against a live Modal account.
+	RegisterPlatform(PlatformSpec{
+		Platform: Modal, Name: "Modal", Aliases: []string{"modal"},
+		DomainSuffix: ".modal.run", SupportsRollback: false,
+		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
+			return modal.NewModalDeployment(spec, a.uiWriter), nil
+		},
+		NewAuthProvider: func(out io.Writer) auth.AuthProvider { return auth.NewModalAuth(out) },
+		// modal deploy is idempotent (create-or-update the app); no pre-detection.
 		NewDetector: nil,
 	})
 }
