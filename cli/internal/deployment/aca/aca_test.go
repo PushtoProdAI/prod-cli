@@ -45,22 +45,6 @@ func TestContainerAppName(t *testing.T) {
 	}
 }
 
-func TestEnvMapForcesPort(t *testing.T) {
-	m := envMap([]deployment.EnvVar{
-		{Name: "FOO", Value: "bar"},
-		{Name: "SECRET", Value: "s", Sensitive: true},
-	})
-	if m["FOO"] != "bar" {
-		t.Errorf("FOO = %q", m["FOO"])
-	}
-	if m["PORT"] != "8080" {
-		t.Errorf("PORT should be forced to the container port, got %q", m["PORT"])
-	}
-	if m["SECRET"] != "s" {
-		t.Errorf("SECRET should be present (plain env for v1), got %q", m["SECRET"])
-	}
-}
-
 func TestIngressFqdn(t *testing.T) {
 	app := armappcontainers.ContainerApp{
 		Properties: &armappcontainers.ContainerAppProperties{
@@ -128,5 +112,37 @@ func TestACAServingAndPreviousRevision(t *testing.T) {
 	// No explicit traffic weight → the newest active revision serves (route-to-latest).
 	if s := servingRevisionName([]*armappcontainers.Revision{acaRevision("x", t1, true, 0)}); s != "x" {
 		t.Errorf("servingRevisionName(no weight) = %q, want x (newest active)", s)
+	}
+}
+
+func TestPartitionEnv(t *testing.T) {
+	plain, secret := partitionEnv([]deployment.EnvVar{
+		{Name: "PUBLIC_URL", Value: "https://x"},
+		{Name: "DATABASE_URL", Value: "postgres://secret", Sensitive: true},
+	})
+	if plain["PUBLIC_URL"] != "https://x" {
+		t.Errorf("PUBLIC_URL should be plain, got %q", plain["PUBLIC_URL"])
+	}
+	if plain["PORT"] != "8080" {
+		t.Errorf("PORT should be forced into plain env, got %q", plain["PORT"])
+	}
+	if _, ok := plain["DATABASE_URL"]; ok {
+		t.Error("a sensitive var must NOT appear in plain env")
+	}
+	if secret["DATABASE_URL"] != "postgres://secret" {
+		t.Errorf("sensitive var should be in the secret set, got %q", secret["DATABASE_URL"])
+	}
+}
+
+func TestSecretName(t *testing.T) {
+	cases := map[string]string{
+		"DATABASE_URL": "database-url",
+		"API.KEY":      "api-key",
+		"_weird_":      "weird", // leading/trailing separators trimmed
+	}
+	for in, want := range cases {
+		if got := secretName(in); got != want {
+			t.Errorf("secretName(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
