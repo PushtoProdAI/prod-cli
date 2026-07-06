@@ -83,6 +83,7 @@ func (d *Deployment) Deploy(ctx context.Context) ([]deployment.CreatedResource, 
 		ID:       dep.ServicePath(name),
 		Type:     "cloudrun_service",
 		Name:     name,
+		Primary:  true,
 		Metadata: map[string]any{"url": url},
 	}}, nil
 }

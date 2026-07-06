@@ -34,6 +34,7 @@ type CreatedResource struct {
 	ID       string
 	Type     string
 	Name     string
+	Primary  bool           // the service that carries the deploy's public URL (Metadata["url"])
 	Metadata map[string]any // Additional metadata about the resource
 }
 

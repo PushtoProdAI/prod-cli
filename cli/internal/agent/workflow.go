@@ -33,8 +33,7 @@ const (
 	SetupPythonProjectWorkflowName     = "agent.setupPythonProject"
 	DeployVercelWorkflowName           = "agent.deploy.vercel"
 	DeployHerokuWorkflowName           = "agent.deploy.heroku"
-	DeployAWSWorkflowName              = "agent.deploy.aws"
-	DeployGCPRunWorkflowName           = "agent.deploy.gcprun"
+	DeployContainerWorkflowName        = "agent.deploy.container"
 	RollbackDeploymentWorkflowName     = "agent.rollbackDeployment"
 )
 
@@ -151,8 +150,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: SetupPythonProjectWorkflowName, WorkflowFunc: w.setupPythonProject},
 		{Name: DeployVercelWorkflowName, WorkflowFunc: w.deployVercel},
 		{Name: DeployHerokuWorkflowName, WorkflowFunc: w.deployHeroku},
-		{Name: DeployAWSWorkflowName, WorkflowFunc: w.deployAWS},
-		{Name: DeployGCPRunWorkflowName, WorkflowFunc: w.deployGCPRun},
+		{Name: DeployContainerWorkflowName, WorkflowFunc: w.deployContainer},
 		{Name: RollbackDeploymentWorkflowName, WorkflowFunc: w.rollbackDeployment},
 	}
 }
@@ -163,6 +161,13 @@ func (Workflows) PlanDeploy(ctx context.Context, c *client.Client, input string)
 
 func (Workflows) Deploy(ctx context.Context, c *client.Client, input DeployPlan) (*workflow.Instance, error) {
 	slog.Info("Deploy", "platform", input.Platform, "action", input.Action)
+
+	// Managed-container clouds (App Runner, Cloud Run, Azure …) share one generic
+	// workflow instead of a per-platform clone.
+	if spec, ok := LookupPlatform(input.Platform); ok && spec.ManagedContainer {
+		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployContainerWorkflowName, time.Now().Unix())}, DeployContainerWorkflowName, input)
+	}
+
 	switch input.Platform {
 	case Render:
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployRenderWorkflowName, time.Now().Unix())}, DeployRenderWorkflowName, input)
@@ -174,10 +179,6 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input DeployPlan)
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployVercelWorkflowName, time.Now().Unix())}, DeployVercelWorkflowName, input)
 	case Heroku:
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployHerokuWorkflowName, time.Now().Unix())}, DeployHerokuWorkflowName, input)
-	case AWS:
-		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployAWSWorkflowName, time.Now().Unix())}, DeployAWSWorkflowName, input)
-	case GoogleCloudRun:
-		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployGCPRunWorkflowName, time.Now().Unix())}, DeployGCPRunWorkflowName, input)
 	default:
 		return nil, errors.New("unsupported platform for deployment")
 	}
