@@ -16,6 +16,7 @@ const (
 	Vercel
 	Heroku
 	AWS
+	GoogleCloudRun
 	UnknownPlatform
 )
 
