@@ -7,7 +7,7 @@
 Report them privately through GitHub's [private vulnerability
 reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability)
 (the **Report a vulnerability** button under this repository's **Security** tab),
-or by email to `security@pushtoprod.ai`. <!-- TODO: confirm this address routes to the team -->
+or by email to `security@pushtoprod.ai`.
 
 Please include:
 

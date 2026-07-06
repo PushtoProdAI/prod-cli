@@ -40,8 +40,11 @@ this is almost certainly why.
 
 ## The local-first quality gate
 
-**We do not use CI** — the GitHub Actions workflows were removed on purpose. Verification
-runs on your machine, and the same gate runs automatically on every `git push`.
+The primary gate is **local**: `make check` runs the same build/vet/test/format checks on
+your machine before you push. **CI (GitHub Actions) also runs** — `.github/workflows/ci.yml`
+builds, vets, tests, and format-checks on both Linux and macOS for every push to `main` and
+every PR (with an advisory lint + govulncheck job). Keep `make check` green locally and CI
+will be green too.
 
 ```bash
 make check          # the gate: format → vet → lint → govulncheck → build → test
@@ -113,4 +116,4 @@ central account.
 3. Run `make check` — it must be **green locally**.
 4. Open a PR describing what changed and why.
 
-That's it. No CI will run — the green local gate is the contract.
+That's it. Keep the local gate green; CI runs the same checks on Linux + macOS for your PR.

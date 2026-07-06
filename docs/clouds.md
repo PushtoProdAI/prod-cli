@@ -50,6 +50,20 @@ account, and create a managed service. Docker must be running.
 - prod ensures the resource group + ACR + a Container Apps environment, pushes, and
   creates the app. `prod "deploy this to azure"`
 
+## Modal (experimental)
+
+Modal (modal.com) is serverless, Python-native, and GPU-capable — for deploying agents.
+Unlike the container clouds, there's no image build or registry: prod deploys your Python
+app directly via the `modal` CLI.
+
+- **Install the CLI:** `pip install modal`.
+- **Credentials:** `modal token new` (writes `~/.modal.toml`), or set `MODAL_TOKEN_ID` +
+  `MODAL_TOKEN_SECRET`.
+- **Entrypoint:** prod deploys the first `.py` at the project root that defines
+  `modal.App(...)`; set `MODAL_ENTRYPOINT` to point at a specific file.
+- `prod "deploy this to Modal"`. Rollback isn't supported yet (redeploy the previous
+  version). **Experimental — not yet validated end-to-end against a live account.**
+
 ## Container registry (Render, and custom setups)
 
 App Runner/Cloud Run/Azure push to a registry in your own cloud automatically (ECR/GAR/
