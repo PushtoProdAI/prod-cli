@@ -3,6 +3,7 @@ package agent
 import (
 	"testing"
 
+	"github.com/pushtoprodai/prod-cli/internal/analyzer"
 	"github.com/pushtoprodai/prod-cli/internal/pluginhost"
 )
 
@@ -83,5 +84,41 @@ func TestRegisterPluginAndDispatch(t *testing.T) {
 	// An alias that shadows a built-in is rejected.
 	if err := registerPlugin(pluginhost.Entry{Name: "Bad Alias Cloud", Aliases: []string{"aws"}, Path: "/x"}); err == nil {
 		t.Error("a plugin aliasing a built-in must be rejected")
+	}
+}
+
+func TestCanonicalFrameworkPlatform(t *testing.T) {
+	// A plugin maps to a node-container built-in, so the JS-framework switches treat it
+	// like App Runner/Cloud Run/Azure (AC10) instead of hitting "unsupported platform".
+	if got := canonicalFrameworkPlatform(pluginPlatform("Some Cloud")); got != AWS {
+		t.Errorf("plugin should map to AWS (a node-container built-in), got %v", got)
+	}
+	// Built-in platforms pass through unchanged (no behavior change for them).
+	for _, p := range []Platform{FlyIO, Render, Vercel, Netlify, Heroku, AWS, GoogleCloudRun, Azure} {
+		if got := canonicalFrameworkPlatform(p); got != p {
+			t.Errorf("built-in %v must pass through, got %v", p, got)
+		}
+	}
+	// Concretely: SvelteKit package.json patching for a plugin equals its AWS output
+	// (the node-server branch), not the default.
+	h := &SvelteKitHandler{}
+	pkg := []byte(`{"name":"app","dependencies":{}}`)
+	awsOut, _, _ := h.PatchPackageJSON(pkg, AWS)
+	plugOut, _, err := h.PatchPackageJSON(pkg, canonicalFrameworkPlatform(pluginPlatform("Some Cloud")))
+	if err != nil {
+		t.Fatalf("SvelteKit on a plugin errored: %v", err)
+	}
+	if string(plugOut) != string(awsOut) {
+		t.Errorf("plugin package.json should match the AWS (node-server) output")
+	}
+
+	// PrepareDeployment must set the framework start command for a plugin too — the
+	// gap where a plugin would otherwise fall through and lose "node build".
+	sv := &SvelteKitHandler{}
+	plugP := canonicalFrameworkPlatform(pluginPlatform("Some Cloud"))
+	awsPlan := sv.PrepareDeployment(DeployPlan{Platform: AWS, Spec: analyzer.ProjectSpec{Name: "app"}})
+	plugPlan := sv.PrepareDeployment(DeployPlan{Platform: plugP, Spec: analyzer.ProjectSpec{Name: "app"}})
+	if awsPlan.Spec.StartCommand == "" || plugPlan.Spec.StartCommand != awsPlan.Spec.StartCommand {
+		t.Errorf("plugin PrepareDeployment StartCommand = %q, want AWS's %q", plugPlan.Spec.StartCommand, awsPlan.Spec.StartCommand)
 	}
 }

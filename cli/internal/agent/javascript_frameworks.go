@@ -43,6 +43,19 @@ func (h *RemixHandler) GetConfigFilenames() []string {
 	return []string{"vite.config.ts", "vite.config.js"}
 }
 
+// canonicalFrameworkPlatform maps a provider-plugin platform to a representative
+// node-container built-in (AWS) for JS-framework artifact selection. A plugin is a
+// container/node-server target like App Runner/Cloud Run/Azure, so it needs the same
+// Node adapter + start command; the framework handlers key on the built-in enum, and
+// this keeps a plugin from falling through to the "unsupported platform" default.
+// Built-in platforms pass through unchanged.
+func canonicalFrameworkPlatform(p Platform) Platform {
+	if IsPlugin(p) {
+		return AWS
+	}
+	return p
+}
+
 func (h *RemixHandler) PatchPackageJSON(origPackageJson []byte, platform Platform) ([]byte, bool, error) {
 	switch platform {
 	case Render, FlyIO, Heroku, AWS, GoogleCloudRun, Azure:
