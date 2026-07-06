@@ -89,6 +89,7 @@ func (d *Deployment) Deploy(ctx context.Context) ([]deployment.CreatedResource, 
 		ID:       serviceArn,
 		Type:     "apprunner_service",
 		Name:     name,
+		Primary:  true,
 		Metadata: map[string]any{"url": "https://" + serviceURL},
 	}}, nil
 }
