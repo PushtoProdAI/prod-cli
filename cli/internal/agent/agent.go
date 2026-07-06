@@ -531,9 +531,16 @@ func deployPlatformNames() []string {
 	names := make([]string, len(specs))
 	for i, s := range specs {
 		names[i] = s.Name
+		if s.Experimental {
+			names[i] += experimentalSuffix
+		}
 	}
 	return names
 }
+
+// experimentalSuffix is appended to a menu label (and stripped on parse) so an
+// unvalidated target's status is visible at selection time.
+const experimentalSuffix = " (experimental)"
 
 // parseDeployPlatform accepts a menu index (0-based, the TUI select convention) or
 // a platform name/alias (so a user can type "fly" or "cloud run").
@@ -544,6 +551,9 @@ func parseDeployPlatform(input string) Platform {
 	if _, err := fmt.Sscanf(s, "%d", &idx); err == nil && idx >= 0 && idx < len(specs) {
 		return specs[idx].Platform
 	}
+	// A menu label for an experimental target carries the "(experimental)" marker;
+	// strip it so the label still resolves back to its platform.
+	s = strings.TrimSuffix(s, experimentalSuffix)
 	if p, ok := PlatformByString(s); ok {
 		return p
 	}
