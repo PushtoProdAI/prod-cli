@@ -140,6 +140,7 @@ func runProd(ctx context.Context, prompt string, confirm bool, dir string) (*dep
 type planSummary struct {
 	Action                  string  `json:"action,omitempty"`
 	Platform                string  `json:"platform,omitempty"`
+	Shape                   string  `json:"shape,omitempty"` // web | mcp-server | worker | cron
 	Summary                 string  `json:"summary,omitempty"`
 	EstimatedMonthlyCostUSD float64 `json:"estimatedMonthlyCostUsd,omitempty"`
 }
@@ -151,6 +152,7 @@ func summarizePlan(ev map[string]any) *planSummary {
 	ps := &planSummary{}
 	ps.Action, _ = ev["action"].(string)
 	ps.Platform, _ = ev["platform"].(string)
+	ps.Shape, _ = ev["shape"].(string)
 	ps.Summary, _ = ev["summary"].(string)
 	if p, ok := ev["pricing"].(map[string]any); ok {
 		ps.EstimatedMonthlyCostUSD, _ = p["total"].(float64)
