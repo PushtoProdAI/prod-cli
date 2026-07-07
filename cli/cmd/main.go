@@ -48,7 +48,19 @@ func main() {
 
 	mux := http.NewServeMux()
 
+	// Durable workflow state: persist to ~/.prod/workflows.db so a deploy interrupted
+	// mid-flight (crash, SIGKILL, ^C) resumes on re-run instead of losing everything and
+	// orphaning half-built cloud resources. Fall back to in-memory (with a warning) where
+	// $HOME is absent/unusable — e.g. CI — so those runs still work, just non-resumably.
+	workflowDBPath := ""
+	if home, err := os.UserHomeDir(); err == nil {
+		workflowDBPath = filepath.Join(home, ".prod", "workflows.db")
+	} else {
+		slog.Warn("no home directory — workflow state will be in-memory (a crash mid-deploy won't resume)", "error", err)
+	}
+
 	cfg := workflowext.WorkflowsConfig{
+		SQLitePath:     workflowDBPath,
 		Logger:         logger,
 		BackendOptions: []backend.BackendOption{backend.WithContextPropagator(agent.SessionPropagator)},
 	}

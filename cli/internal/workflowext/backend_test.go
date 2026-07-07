@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -53,5 +54,26 @@ func TestSqliteBackendTuning(t *testing.T) {
 	}
 	if tables == 0 {
 		t.Error("no tables created — go-workflows migrations did not run")
+	}
+}
+
+// Durable state: the workflow db is created at the configured path, and a second init on
+// the same path (a CLI re-run after a crash) reopens it cleanly — the basis for resuming
+// an interrupted deploy instead of orphaning half-built resources. The startup GC sweep
+// runs during each init and must not error.
+func TestDurableStatePersistsAndReopens(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "workflows.db")
+
+	for i := 0; i < 2; i++ { // first init creates; second reopens (+ runs GC)
+		ctx, cancel := context.WithCancel(context.Background())
+		provider, err := InitWorkflows(ctx, WorkflowsConfig{SQLitePath: dbPath}, http.NewServeMux())
+		if err != nil {
+			t.Fatalf("InitWorkflows run %d: %v", i, err)
+		}
+		cancel()
+		_ = provider.Shutdown(context.Background())
+		if _, err := os.Stat(dbPath); err != nil {
+			t.Fatalf("workflow db not created at %s: %v", dbPath, err)
+		}
 	}
 }
