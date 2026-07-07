@@ -10,8 +10,6 @@ import (
 
 	"github.com/conduitio/ecdysis"
 	"github.com/go-errors/errors"
-
-	"github.com/pushtoprodai/prod-cli/internal/config"
 )
 
 var pluginNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
@@ -78,19 +76,10 @@ placeholder URL so you can wire it up incrementally.
 	return nil
 }
 
-// prodModuleRequire returns a `require` version line for the prod SDK when the running CLI
-// reports a release version, else "" (the README tells the user to `go mod tidy`, which
-// resolves the latest tag).
-func prodModuleRequire() string {
-	v := strings.TrimSpace(config.Version)
-	if v == "" || !(v[0] >= '0' && v[0] <= '9') { // "dev"/"" → let go mod tidy resolve it
-		return ""
-	}
-	return "\nrequire github.com/pushtoprodai/prod-cli v" + v + "\n"
-}
-
+// scaffoldGoMod emits a minimal module file; `go mod tidy` resolves the SDK (a lean module
+// that only pulls in hashicorp/go-plugin) from the import.
 func scaffoldGoMod(name string) string {
-	return fmt.Sprintf("module prod-provider-%s\n\ngo 1.25\n%s", name, prodModuleRequire())
+	return fmt.Sprintf("module prod-provider-%s\n\ngo 1.25\n", name)
 }
 
 func title(s string) string {
@@ -114,7 +103,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/pushtoprodai/prod-cli/pkg/plugin"
+	plugin "github.com/pushtoprodai/prod-plugin-sdk"
 )
 
 type %[3]s struct{}

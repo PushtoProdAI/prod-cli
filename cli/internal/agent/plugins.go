@@ -10,7 +10,7 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/auth"
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
 	"github.com/pushtoprodai/prod-cli/internal/pluginhost"
-	"github.com/pushtoprodai/prod-cli/pkg/plugin"
+	plugin "github.com/pushtoprodai/prod-plugin-sdk"
 )
 
 // RegisterDiscoveredPlugins reads the plugin manifest under homeDir and registers each

@@ -15,7 +15,7 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/managedcontainer"
 	prodreg "github.com/pushtoprodai/prod-cli/internal/registry"
-	"github.com/pushtoprodai/prod-cli/pkg/plugin"
+	plugin "github.com/pushtoprodai/prod-plugin-sdk"
 )
 
 const defaultPort = 8080

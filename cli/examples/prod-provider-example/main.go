@@ -11,7 +11,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/pushtoprodai/prod-cli/pkg/plugin"
+	plugin "github.com/pushtoprodai/prod-plugin-sdk"
 )
 
 type exampleProvider struct{}
