@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cschleiden/go-workflows/workflow"
 	"github.com/go-errors/errors"
 	"github.com/pmezard/go-difflib/difflib"
 )
@@ -33,6 +34,30 @@ func (a *Activities) createPackageLockJSON(ctx context.Context, plan DeployPlan,
 	if _, err := os.Stat(packageJsonPath); err != nil {
 		a.uiWriter.SendStatusComplete("analyzing", "❌ No package.json found")
 		return errors.Errorf("package.json not found in %s", projectPath)
+	}
+
+	// If the project uses pnpm/yarn/bun, it already ships that manager's lockfile — running
+	// `npm install` here would choke on it (e.g. pnpm workspaces), and the platform detects
+	// the manager from the lockfile anyway. So don't force npm: update the lock with the real
+	// manager when we've changed package.json, otherwise leave the existing lockfile alone.
+	if mgr, lock := detectNodePackageManager(projectPath); mgr != "npm" {
+		if !forceRecreate {
+			a.uiWriter.SendStatusComplete("analyzing", fmt.Sprintf("✅ Detected %s (%s) — using its lockfile", mgr, lock))
+			return nil
+		}
+		if _, err := exec.LookPath(mgr); err != nil {
+			a.uiWriter.SendStatusComplete("installing", fmt.Sprintf("⚠️ %s not installed — leaving %s as-is (the platform will resolve it)", mgr, lock))
+			return nil
+		}
+		a.uiWriter.SendStatus("installing", fmt.Sprintf("Updating %s with %s install...", lock, mgr))
+		cmd := exec.CommandContext(ctx, mgr, "install")
+		cmd.Dir = projectPath
+		if out, err := cmd.CombinedOutput(); err != nil {
+			a.uiWriter.SendStatusComplete("installing", fmt.Sprintf("❌ %s install failed: %s", mgr, firstLines(out, 3)))
+			return workflow.NewPermanentError(errors.Errorf("%s install failed in %s:\n%s", mgr, projectPath, string(out)))
+		}
+		a.uiWriter.SendStatusComplete("installing", fmt.Sprintf("✅ Updated %s", lock))
+		return nil
 	}
 
 	// Check if package-lock.json already exists
@@ -115,8 +140,8 @@ func (a *Activities) createPackageLockJSON(ctx context.Context, plan DeployPlan,
 				forceOutput, forceErr := forceCmd.CombinedOutput()
 
 				if forceErr != nil {
-					a.uiWriter.SendStatusComplete("installing", "❌ Failed to create package-lock.json with all fallback options")
-					return errors.Errorf("failed to create package-lock.json: %w\nOriginal output: %s\nLegacy-peer-deps output: %s\nForce output: %s", forceErr, outputStr, string(retryOutput), string(forceOutput))
+					a.uiWriter.SendStatusComplete("installing", "❌ npm install failed (tried default, --legacy-peer-deps, --force): "+firstLines(forceOutput, 3))
+					return workflow.NewPermanentError(errors.Errorf("npm install failed in %s after all fallbacks:\nOriginal:\n%s\n--legacy-peer-deps:\n%s\n--force:\n%s", projectPath, outputStr, string(retryOutput), string(forceOutput)))
 				} else {
 					if needsIgnoreScripts {
 						a.uiWriter.SendStatusComplete("installing", "⚠️ Package-lock.json created with --force and --ignore-scripts (postinstall scripts skipped)")
@@ -128,8 +153,10 @@ func (a *Activities) createPackageLockJSON(ctx context.Context, plan DeployPlan,
 				a.uiWriter.SendStatusComplete("installing", "⚠️ Package-lock.json created with --legacy-peer-deps")
 			}
 		} else {
-			a.uiWriter.SendStatusComplete("installing", "❌ Failed to create package-lock.json")
-			return errors.Errorf("failed to create package-lock.json: %w\nOutput: %s", err, string(output))
+			// Not a peer-dependency conflict (e.g. a bad lockfile, a registry/auth error, or
+			// an npm bug) — retrying won't help, so fail fast WITH the real npm output.
+			a.uiWriter.SendStatusComplete("installing", "❌ npm install failed: "+firstLines(output, 3))
+			return workflow.NewPermanentError(errors.Errorf("npm install failed in %s:\n%s", projectPath, string(output)))
 		}
 	}
 
@@ -141,6 +168,38 @@ func (a *Activities) createPackageLockJSON(ctx context.Context, plan DeployPlan,
 
 	a.uiWriter.SendStatusComplete("installing", "✅ Package-lock.json created successfully")
 	return nil
+}
+
+// detectNodePackageManager infers the package manager from the project's lockfile, returning
+// the manager and the lockfile found. Defaults to npm when only package-lock.json or no
+// lockfile is present.
+func detectNodePackageManager(projectPath string) (manager, lockfile string) {
+	for _, c := range []struct{ mgr, file string }{
+		{"pnpm", "pnpm-lock.yaml"},
+		{"yarn", "yarn.lock"},
+		{"bun", "bun.lockb"},
+		{"bun", "bun.lock"},
+	} {
+		if _, err := os.Stat(filepath.Join(projectPath, c.file)); err == nil {
+			return c.mgr, c.file
+		}
+	}
+	return "npm", "package-lock.json"
+}
+
+// firstLines returns the first n non-empty lines of command output, for a readable one-line
+// status when a build tool fails (the full output goes to the returned error).
+func firstLines(out []byte, n int) string {
+	var kept []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if s := strings.TrimSpace(line); s != "" {
+			kept = append(kept, s)
+			if len(kept) >= n {
+				break
+			}
+		}
+	}
+	return strings.Join(kept, " | ")
 }
 
 // patchPackageJSONForPlatform applies platform-specific package.json changes and returns updated content, changed flag, and error
