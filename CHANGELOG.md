@@ -3,7 +3,7 @@
 Notable changes to prod. Format based on [Keep a Changelog](https://keepachangelog.com/).
 prod is pre-1.0 — the surface may still change.
 
-## [Unreleased]
+## [0.1.0] - 2026-07-06
 
 ### Added
 - Deploy to **eight clouds** from a natural-language request, with your own credentials:

@@ -40,7 +40,7 @@ metering), where multi-tenancy genuinely needs one.
 | Concern | Today (SaaS) | OSS core (single binary) |
 |---|---|---|
 | LLM calls | proxied through an Edge Function (metering) | **direct** to OpenAI / Anthropic / Ollama with the user's key |
-| Deploy history | Postgres table | **local SQLite** in `~/.prod` |
+| Deploy history | Postgres table | a **local JSON file** in `~/.prod` |
 | Fly / Render / Vercel / Netlify / Heroku | CLI → Edge Function → platform | **CLI → platform** directly with the user's token |
 | **AWS** | Edge Functions `AssumeRole` into a central prod account | **CLI → AWS directly with the user's own creds** (Go AWS SDK already vendored) |
 | CFN templates / Lambda | hosted in an S3 bucket | **embedded in the binary** (`go:embed`) |
@@ -76,7 +76,7 @@ Clean and simple, because the architecture makes it clean:
 Everything needed to deploy from your own machine:
 - The entire CLI + TUI: intent parsing, planning, the FSM, every platform adapter.
 - **Direct LLM** — OpenAI, Anthropic, or local Ollama with your key. No proxy.
-- **Local state** — deploy history + resumable workflows in a local SQLite file.
+- **Local state** — deploy history in a local JSON file (`~/.prod/history.json`); resumable workflows.
 - **Direct-to-platform deploys**, including **AWS with your own credentials** (embedded templates).
 - The **MCP server** (same binary, `prod mcp`) and the platform-adapter SDK.
 - Agent-native deploy shapes and scaffolds.
@@ -92,7 +92,7 @@ Two run modes, and the default needs no account:
 
 | Mode | Needs an account? | State | For |
 |---|---|---|---|
-| **local** (default) | no | local SQLite, BYO keys | everyone; the product |
+| **local** (default) | no | local JSON, BYO keys | everyone; the product |
 | **managed** (opt-in) | yes | synced to the hosted backend | teams wanting shared history/SSO/metering |
 
 There is **no "self-hosted backend" tier to operate** — that entire category of complexity is
@@ -266,7 +266,7 @@ The optional backend — the business. Everything a solo user does stays free an
 The substrate is real: `PROD_JSON_MODE` already emits structured deploy events and `prod run`
 reads stdin back into the agent. But the server is a **session-managing adapter**, not a thin
 passthrough — the event stream is emit-only and untyped, and approval is a single event + a
-stdin line. All six tools (deploy, rollback, destroy, doctor, list_deploys, analyze_project)
+stdin line. All nine tools (deploy, rollback, destroy, status, deep_link, logs, doctor, list_deploys, analyze_project)
 have flows. Ships as `prod mcp` in the same binary.
 
 | Tool | Purpose | Status |

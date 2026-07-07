@@ -121,6 +121,9 @@ container cloud not at secret parity.
 
 ## 4. More languages — Go, Ruby/Rails, Bun
 
+> **Go: ✅ SHIPPED** (`internal/analyzer/go.go` — detects go.mod, module/services/routes; the
+> Dockerfile template already existed). Ruby/Rails and Bun/Deno remain.
+
 **Validation:** analyzers today are **Node + Python only** (`internal/analyzer/node.go`,
 `python*.go`); the extension point is the `analyzer.Analyzer` interface
 (`CanHandle`/`Analyze`) plus framework heuristics in `internal/agent`. No Go/Ruby/Bun
@@ -202,6 +205,10 @@ Cron` — use the existing `HTTPShaped()` helper when the `LivenessChecker` land
 ---
 
 ## 6. Missing operator commands — `destroy` and logs
+
+> **✅ SHIPPED:** `prod destroy` (natural-language + a confirm-gated MCP tool) and the deploy
+> launcher `prod ls` / `open` / `logs` (`prod logs` shells out to the platform's own CLI; the
+> MCP `logs` tool returns the command). The **cost-confidence flag** below is the remaining item.
 
 **Validation:** `cmd/` has only `doctor`, `mcp`, `plugin`, `root`, `run`. prod can deploy
 and roll back, but there is **no teardown and no log access** — the `Delete`/log methods

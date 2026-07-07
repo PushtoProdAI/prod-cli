@@ -71,10 +71,10 @@ docs are stale on these points.
 5. **There is no auto-rollback on liveness failure.** `ui-modernization-plan.md` implies
    one; the code marks the deploy `failed` and leaves the unhealthy service running
    (`workflow_render.go:299`, `workflow_container.go:118`).
-6. **The MCP surface is already 6 tools, and `destroy` is undocumented.** `deploy`,
-   `rollback`, `destroy`, `doctor`, `list_deploys`, `analyze_project`
-   (`mcpserver/server.go`, `mcpserver/tools.go`). Neither `mcp.go`'s tool list nor the
-   docs mention `destroy`.
+6. **The MCP surface is now 9 tools** (updated since this was written): `deploy`,
+   `rollback`, `destroy`, `status`, `deep_link`, `logs`, `doctor`, `list_deploys`,
+   `analyze_project` (`mcpserver/server.go`, `tools.go`, `status.go`). `destroy` and the
+   read-only `status`/`deep_link`/`logs` tools are documented in `mcp.go` and the README.
 7. **Plugins are net/rpc + AutoMTLS, not gRPC.** `hashicorp/go-plugin` over net/rpc + gob
    (`pkg/plugin/rpc.go`, `pluginhost/client.go:28`). `l3-plugin-plan.md`'s `Meta.ProtocolVersion`
    field does **not** exist in the shipped `pkg/plugin`. Context is not propagated to
