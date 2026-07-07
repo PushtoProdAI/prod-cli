@@ -3,6 +3,7 @@
 package plugincmd
 
 import (
+	"bufio"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -69,7 +70,8 @@ var (
 )
 
 type installFlags struct {
-	Checksum string `long:"checksum" usage:"expected hex sha256 of the binary (verified before it runs)"`
+	Checksum string `long:"checksum" usage:"expected hex sha256 of the binary (verified before it runs; required for a github.com install)"`
+	Yes      bool   `long:"yes" short:"y" usage:"skip the confirmation prompt when installing from github.com"`
 }
 
 type PluginInstallCommand struct {
@@ -98,10 +100,20 @@ func (c *PluginInstallCommand) Args(args []string) error {
 	return nil
 }
 
-func (c *PluginInstallCommand) Execute(context.Context) error {
+func (c *PluginInstallCommand) Execute(ctx context.Context) error {
 	out := os.Stdout
-	if strings.HasPrefix(c.path, "http://") || strings.HasPrefix(c.path, "https://") {
-		return errors.New("URL install isn't supported yet — download the binary yourself, verify it, then install the local path")
+
+	// Remote install from a GitHub release: resolve the asset, verify a required checksum
+	// BEFORE the binary is runnable, confirm with the user, then install the verified file
+	// via the same local path below.
+	if pluginhost.IsGitHubRef(c.path) {
+		dest, err := c.installFromGitHub(ctx, out)
+		if err != nil {
+			return err
+		}
+		c.path = dest
+	} else if strings.HasPrefix(c.path, "http://") || strings.HasPrefix(c.path, "https://") {
+		return errors.New("only github.com/owner/repo references are supported for remote install — for any other URL, download the binary yourself, verify it, then install the local path")
 	}
 
 	path, err := filepath.Abs(c.path)
@@ -149,6 +161,53 @@ func (c *PluginInstallCommand) Execute(context.Context) error {
 	fmt.Fprintf(out, "   path:     %s\n   checksum: %s\n", path, sum)
 	fmt.Fprintln(out, "\n⚠️  Plugins run as a subprocess with your permissions. Only install ones you trust.")
 	return nil
+}
+
+// installFromGitHub resolves a github.com/owner/repo[@version] reference to a release
+// asset, requires a checksum (the security gate), shows the publisher + checksum, confirms
+// with the user, and downloads the asset to ~/.prod/plugins verifying the checksum BEFORE
+// the binary is ever runnable. Returns the verified local path for the normal install flow.
+func (c *PluginInstallCommand) installFromGitHub(ctx context.Context, out *os.File) (string, error) {
+	ref, err := pluginhost.ParseGitHubRef(c.path)
+	if err != nil {
+		return "", err
+	}
+	if c.flags.Checksum == "" {
+		return "", errors.New("installing from github.com requires --checksum <sha256> (the plugin's published binary checksum for your OS/arch) so the download is verified before it runs")
+	}
+	assetURL, tag, err := pluginhost.ResolveGitHubAsset(ctx, ref)
+	if err != nil {
+		return "", err
+	}
+
+	fmt.Fprintf(out, "Plugin:    %s/%s\n", ref.Owner, ref.Repo)
+	fmt.Fprintf(out, "Publisher: %s (github.com)\n", ref.Owner)
+	fmt.Fprintf(out, "Release:   %s\n", tag)
+	fmt.Fprintf(out, "Asset:     %s\n", assetURL)
+	fmt.Fprintf(out, "Checksum:  %s (sha256, verified before the binary runs)\n", strings.ToLower(c.flags.Checksum))
+	fmt.Fprintln(out, "\n⚠️  Plugins run as a subprocess with your permissions. Only install ones you trust.")
+	if !c.flags.Yes && !confirm(out, "Download and install this plugin?") {
+		return "", errors.New("aborted")
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	name := strings.TrimPrefix(ref.Repo, "prod-provider-")
+	dest := filepath.Join(home, ".prod", "plugins", "prod-provider-"+name)
+	if err := pluginhost.DownloadVerified(ctx, assetURL, c.flags.Checksum, dest); err != nil {
+		return "", err
+	}
+	fmt.Fprintf(out, "✅ Downloaded and verified → %s\n", dest)
+	return dest, nil
+}
+
+func confirm(out *os.File, prompt string) bool {
+	fmt.Fprintf(out, "%s [y/N]: ", prompt)
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	line = strings.ToLower(strings.TrimSpace(line))
+	return line == "y" || line == "yes"
 }
 
 // --- list ------------------------------------------------------------------
