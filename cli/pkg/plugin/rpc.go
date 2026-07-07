@@ -97,49 +97,65 @@ type providerRPCClient struct{ client *rpc.Client }
 
 var _ Provider = (*providerRPCClient)(nil)
 
-func (c *providerRPCClient) Metadata(context.Context) (Meta, error) {
+// callCtx runs a net/rpc call but honors ctx. net/rpc carries no context, so a plain
+// blocking Call lets a hung or runaway plugin block a deploy forever. We fire the call
+// async and race it against ctx cancellation/deadline, so the host stops waiting when the
+// deploy context expires. (The subprocess itself is reaped by the host's Kill on shutdown;
+// here we just bound the wait — which also caps the time a plugin streaming an oversized
+// gob reply can consume, the practical bound since go-plugin builds the rpc codec for us.)
+func callCtx(ctx context.Context, client *rpc.Client, method string, args, reply any) error {
+	call := client.Go(method, args, reply, make(chan *rpc.Call, 1))
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case done := <-call.Done:
+		return done.Error
+	}
+}
+
+func (c *providerRPCClient) Metadata(ctx context.Context) (Meta, error) {
 	var r MetaReply
-	if err := c.client.Call("Plugin.Metadata", NoArgs{}, &r); err != nil {
+	if err := callCtx(ctx, c.client, "Plugin.Metadata", NoArgs{}, &r); err != nil {
 		return Meta{}, err
 	}
 	return r.Meta, decodeErr(r.Err)
 }
 
-func (c *providerRPCClient) RegistryInfo(_ context.Context, project string) (RegistryInfo, error) {
+func (c *providerRPCClient) RegistryInfo(ctx context.Context, project string) (RegistryInfo, error) {
 	var r RegistryReply
-	if err := c.client.Call("Plugin.RegistryInfo", RegistryArgs{Project: project}, &r); err != nil {
+	if err := callCtx(ctx, c.client, "Plugin.RegistryInfo", RegistryArgs{Project: project}, &r); err != nil {
 		return RegistryInfo{}, err
 	}
 	return r.Info, decodeErr(r.Err)
 }
 
-func (c *providerRPCClient) CheckAuth(context.Context) (AuthStatus, error) {
+func (c *providerRPCClient) CheckAuth(ctx context.Context) (AuthStatus, error) {
 	var r AuthReply
-	if err := c.client.Call("Plugin.CheckAuth", NoArgs{}, &r); err != nil {
+	if err := callCtx(ctx, c.client, "Plugin.CheckAuth", NoArgs{}, &r); err != nil {
 		return AuthStatus{}, err
 	}
 	return r.Status, decodeErr(r.Err)
 }
 
-func (c *providerRPCClient) Deploy(_ context.Context, req DeployRequest) (DeployResult, error) {
+func (c *providerRPCClient) Deploy(ctx context.Context, req DeployRequest) (DeployResult, error) {
 	var r DeployReply
-	if err := c.client.Call("Plugin.Deploy", req, &r); err != nil {
+	if err := callCtx(ctx, c.client, "Plugin.Deploy", req, &r); err != nil {
 		return DeployResult{}, err
 	}
 	return r.Result, decodeErr(r.Err)
 }
 
-func (c *providerRPCClient) PreviousDeployment(_ context.Context, appName string) (DeployInfo, error) {
+func (c *providerRPCClient) PreviousDeployment(ctx context.Context, appName string) (DeployInfo, error) {
 	var r PrevReply
-	if err := c.client.Call("Plugin.PreviousDeployment", PrevArgs{AppName: appName}, &r); err != nil {
+	if err := callCtx(ctx, c.client, "Plugin.PreviousDeployment", PrevArgs{AppName: appName}, &r); err != nil {
 		return DeployInfo{}, err
 	}
 	return r.Info, decodeErr(r.Err)
 }
 
-func (c *providerRPCClient) Rollback(_ context.Context, appName, targetID string) error {
+func (c *providerRPCClient) Rollback(ctx context.Context, appName, targetID string) error {
 	var r ErrReply
-	if err := c.client.Call("Plugin.Rollback", RollbackArgs{AppName: appName, TargetID: targetID}, &r); err != nil {
+	if err := callCtx(ctx, c.client, "Plugin.Rollback", RollbackArgs{AppName: appName, TargetID: targetID}, &r); err != nil {
 		return err
 	}
 	return decodeErr(r.Err)

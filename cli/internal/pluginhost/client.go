@@ -52,14 +52,25 @@ func Launch(path string, checksum []byte) (plugin.Provider, func(), error) {
 // prod's own platform tokens, registry credential, and LLM keys.
 var (
 	prodSensitiveExact = map[string]bool{
+		// prod's own platform tokens + registry/LLM credentials.
 		"FLY_API_TOKEN": true, "FLY_ACCESS_TOKEN": true,
 		"RENDER_API_KEY": true, "VERCEL_TOKEN": true, "NETLIFY_AUTH_TOKEN": true,
 		"HEROKU_API_KEY": true, "HEROKU_AUTH_TOKEN": true,
 		"OPENAI_API_KEY": true, "ANTHROPIC_API_KEY": true,
 		"GOOGLE_APPLICATION_CREDENTIALS": true,
 		"AZURE_CLIENT_SECRET":            true, "AZURE_TENANT_ID": true, "AZURE_CLIENT_ID": true,
+		// Third-party developer secrets commonly present in a shell that a provider plugin
+		// has no business inheriting from prod's session.
+		"GITHUB_TOKEN": true, "GH_TOKEN": true, "GITLAB_TOKEN": true,
+		"DIGITALOCEAN_TOKEN": true, "DIGITALOCEAN_ACCESS_TOKEN": true, "DO_API_TOKEN": true,
+		"NPM_TOKEN": true, "DOCKERHUB_TOKEN": true, "DOCKER_PASSWORD": true, "CLOUDFLARE_API_TOKEN": true,
+		// Database / cache connection strings (carry credentials in the URL).
+		"DATABASE_URL": true, "DATABASE_URI": true, "POSTGRES_URL": true, "POSTGRESQL_URL": true,
+		"MYSQL_URL": true, "REDIS_URL": true, "MONGODB_URI": true, "MONGO_URL": true,
 	}
-	prodSensitivePrefix = []string{"AWS_", "PROD_"}
+	// Prefix families: prod's own vars (PROD_), the whole AWS_ credential family, and
+	// GITHUB_/DIGITALOCEAN_/AZURE_ token variants beyond the exact names above.
+	prodSensitivePrefix = []string{"AWS_", "PROD_", "GITHUB_", "DIGITALOCEAN_"}
 )
 
 // curateEnv filters a parent environment down to what a plugin may see: everything
