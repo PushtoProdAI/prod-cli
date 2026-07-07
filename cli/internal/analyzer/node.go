@@ -182,6 +182,17 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 	// Collect migration context
 	migrationContext := n.collectMigrationContext(pkgJson, serviceRequirements)
 
+	// Infer an agent/MCP shape from dependencies (e.g. @modelcontextprotocol/sdk ⇒
+	// mcp-server) so the deploy is planned with the right liveness even when unstated.
+	depNames := make([]string, 0, len(pkgJson.Dependencies)+len(pkgJson.DevDependencies))
+	for d := range pkgJson.Dependencies {
+		depNames = append(depNames, d)
+	}
+	for d := range pkgJson.DevDependencies {
+		depNames = append(depNames, d)
+	}
+	detectedShape := DetectAgentShape(depNames, runtimeFramework != "")
+
 	return &ProjectSpec{
 		Name:                name,
 		Language:            "node",
@@ -192,6 +203,7 @@ func (n *NodeAnalyzer) Analyze() (*ProjectSpec, error) {
 		BuildOutput:         buildOutputCandidate,
 		LaunchContext:       launchCtx,
 		MigrationContext:    migrationContext,
+		DetectedShape:       detectedShape,
 	}, nil
 }
 
