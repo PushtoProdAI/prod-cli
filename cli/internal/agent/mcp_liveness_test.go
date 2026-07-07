@@ -62,4 +62,15 @@ func TestMCPServerLiveness(t *testing.T) {
 	if err := a.verifyLiveness(ctx, deployment.ShapeMCPServer, broken.URL); err == nil {
 		t.Error("a 502 MCP endpoint must be not-live")
 	}
+
+	// An auth-walled MCP server (401/403) is reachable → live. We must NOT fail (and, for
+	// an update, auto-roll-back) a healthy OAuth-protected MCP server just because we can't
+	// complete the handshake unauthenticated.
+	for _, code := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound} {
+		walled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(code) }))
+		if err := a.verifyLiveness(ctx, deployment.ShapeMCPServer, walled.URL); err != nil {
+			t.Errorf("MCP server returning %d is reachable and should be live, got %v", code, err)
+		}
+		walled.Close()
+	}
 }

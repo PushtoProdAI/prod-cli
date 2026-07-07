@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -160,15 +161,54 @@ func (a *Activities) isMCPServerLive(ctx context.Context, url string) error {
 		return errors.Errorf("failed to reach MCP server %s: %w", url, err)
 	}
 	defer resp.Body.Close()
+
+	// A 5xx means the app itself is broken → not-live.
 	if resp.StatusCode >= 500 {
 		return errors.Errorf("MCP server %s returned server error %d", url, resp.StatusCode)
 	}
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // bound the read
-	if !mcpInitializeOK(body) {
-		return errors.Errorf("%s responded but did not complete the MCP initialize handshake (not an MCP server?)", url)
+	// Only a 2xx can carry a handshake we can check. A non-2xx that still responds — an auth
+	// wall (401/403) or the MCP endpoint mounted at another path (404/405) — is reachable, and
+	// like isURLLive we call that live rather than failing (and possibly rolling back) a
+	// healthy but auth-protected server. (Only the current streamable-HTTP transport is
+	// probed; an older SSE-first transport — GET /sse then POST — lands here as "reachable".)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		a.uiWriter.SendStatusComplete("deploying", fmt.Sprintf("✅ MCP server reachable (HTTP %d)", resp.StatusCode))
+		return nil
+	}
+	// 2xx: require a real MCP initialize handshake, so a misdeployed web app that merely
+	// returns 200 is caught (ACD.4).
+	if !readMCPInitialize(resp.Body) {
+		return errors.Errorf("%s returned 200 but did not complete the MCP initialize handshake (not an MCP server?)", url)
 	}
 	a.uiWriter.SendStatusComplete("deploying", "✅ MCP server answered initialize")
 	return nil
+}
+
+// readMCPInitialize scans a 2xx body incrementally and returns true as soon as a frame
+// parses as a live MCP initialize result — so a streamable-HTTP server that keeps its SSE
+// connection open after replying doesn't stall the probe to the full client timeout.
+// Bounded to 1 MB. Handles a raw-JSON body and an SSE stream (`data:` lines, which the spec
+// joins with "\n" within an event; a blank line ends the event).
+func readMCPInitialize(r io.Reader) bool {
+	scanner := bufio.NewScanner(io.LimitReader(r, 1<<20))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	var raw []byte     // a non-SSE (possibly pretty-printed multi-line) JSON body
+	var event [][]byte // data: segments of the current SSE event
+	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
+		switch {
+		case bytes.HasPrefix(line, []byte("data:")):
+			event = append(event, bytes.TrimSpace(line[len("data:"):]))
+			if mcpInitializeOK(bytes.Join(event, []byte("\n"))) {
+				return true // valid handshake — stop before blocking on further stream
+			}
+		case len(line) == 0:
+			event = event[:0] // event boundary — reset
+		default:
+			raw = append(raw, line...)
+		}
+	}
+	return mcpInitializeOK(raw)
 }
 
 // mcpInitializeOK reports whether an initialize response advertises an MCP server. It

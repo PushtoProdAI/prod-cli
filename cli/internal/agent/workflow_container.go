@@ -115,11 +115,14 @@ func (w *Workflows) deployContainer(ctx workflow.Context, input DeployPlan) (dep
 			"project_name": input.Spec.Name, "language": input.Spec.Language,
 		})
 
-		// Conditional auto-rollback (ACD.2): a container update that fails its health check
+		// Conditional auto-rollback (ACD.2): a container deploy that fails its health check
 		// on a rollback-capable cloud (Cloud Run, Azure — not App Runner) is reverted to the
-		// previous working revision. A first deploy or a no-rollback cloud falls through to
-		// failed + remediation. Never hang, never silently leave a broken deploy.
-		if p, ok := LookupPlatform(input.Platform); ok && shouldAutoRollback(p.SupportsRollback, spec.IsUpdate) {
+		// previous working revision. GetPreviousDeployment returns (nil, nil) for a first-ever
+		// deploy, so a nil previous means "nothing to roll back to" and we fall through to
+		// failed + remediation. (We deliberately gate on SupportsRollback and the presence of
+		// a previous revision, not spec.IsUpdate: the container clouds have no existing-project
+		// detector, so IsUpdate is never set — the previous-revision lookup is the real signal.)
+		if p, ok := LookupPlatform(input.Platform); ok && p.SupportsRollback {
 			previous, prevErr := workflow.ExecuteActivity[*deployment.DeploymentInfo](ctx, ActivityOpts, AgentGetPreviousDeployment, *spec, input.Platform).Get(ctx)
 			if prevErr == nil && previous != nil {
 				if _, rbErr := workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentRollbackDeployment, *spec, input.Platform, previous.ID).Get(ctx); rbErr == nil {
