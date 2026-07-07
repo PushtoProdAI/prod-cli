@@ -48,19 +48,13 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Durable workflow state: persist to ~/.prod/workflows.db so a deploy interrupted
-	// mid-flight (crash, SIGKILL, ^C) resumes on re-run instead of losing everything and
-	// orphaning half-built cloud resources. Fall back to in-memory (with a warning) where
-	// $HOME is absent/unusable — e.g. CI — so those runs still work, just non-resumably.
-	workflowDBPath := ""
-	if home, err := os.UserHomeDir(); err == nil {
-		workflowDBPath = filepath.Join(home, ".prod", "workflows.db")
-	} else {
-		slog.Warn("no home directory — workflow state will be in-memory (a crash mid-deploy won't resume)", "error", err)
-	}
-
+	// Workflow state is IN-MEMORY: each `prod` run is independent. We deliberately do NOT
+	// persist workflow state to disk. A durable backend made an interrupted/failed deploy
+	// silently RESUME and re-execute on the next, unrelated `prod` invocation — a surprise
+	// double-deploy running concurrently with the new command. For a one-shot CLI, "resume a
+	// crashed deploy" isn't worth re-running an old deploy behind the user's back; if we bring
+	// it back it must be an explicit opt-in (`--resume`), never automatic.
 	cfg := workflowext.WorkflowsConfig{
-		SQLitePath:     workflowDBPath,
 		Logger:         logger,
 		BackendOptions: []backend.BackendOption{backend.WithContextPropagator(agent.SessionPropagator)},
 	}
