@@ -1015,6 +1015,21 @@ func (a *Agent) promptForEnvVarValue(ctx context.Context, input string, out io.W
 	return a.waitForEnvVarValue, nil
 }
 
+// displayEnvValue renders an env value for the console confirmation. A sensitive value is
+// NEVER printed — echoing it leaks the secret into terminal scrollback, shell history, and
+// any captured logs (prod stores it as an encrypted platform secret, so it never needs to
+// be shown back).
+func displayEnvValue(sensitive bool, value string) string {
+	switch {
+	case value == "":
+		return "(empty)"
+	case sensitive:
+		return "(set, hidden)"
+	default:
+		return value
+	}
+}
+
 func (a *Agent) waitForEnvVarValue(ctx context.Context, input string, out io.Writer) (stateFn, error) {
 	userInput := strings.TrimSpace(input)
 
@@ -1024,11 +1039,11 @@ func (a *Agent) waitForEnvVarValue(ctx context.Context, input string, out io.Wri
 			if userInput == "" && a.envVars[i].Value != "" {
 				// User pressed Enter without input - use default from .env file
 				finalValue = a.envVars[i].Value
-				fmt.Fprintf(out, "✅ Using default value: %s = %s\n", a.envVars[i].Name, finalValue)
+				fmt.Fprintf(out, "✅ Using default value: %s = %s\n", a.envVars[i].Name, displayEnvValue(a.envVars[i].Sensitive, finalValue))
 			} else if userInput != "" {
 				// User provided a value - use it
 				finalValue = userInput
-				fmt.Fprintf(out, "✅ Set %s = %s\n", a.envVars[i].Name, finalValue)
+				fmt.Fprintf(out, "✅ Set %s = %s\n", a.envVars[i].Name, displayEnvValue(a.envVars[i].Sensitive, finalValue))
 			} else {
 				// No user input and no default - keep empty (shouldn't happen for not_db_related)
 				finalValue = ""
