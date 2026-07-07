@@ -18,6 +18,8 @@ func TestCurateEnv(t *testing.T) {
 		"PATH=/usr/bin", "HOME=/home/u",
 		"FLY_API_TOKEN=secret", "OPENAI_API_KEY=sk-xxx", "PROD_REGISTRY_TOKEN=rt",
 		"AWS_SECRET_ACCESS_KEY=aws", "ANTHROPIC_API_KEY=ak", "AZURE_CLIENT_SECRET=z",
+		"GITHUB_TOKEN=ghp_x", "DIGITALOCEAN_TOKEN=dop", "DATABASE_URL=postgres://u:p@h/db",
+		"REDIS_URL=redis://h", "NPM_TOKEN=npm",
 		"ACME_TOKEN=acme", // the plugin's OWN cloud cred — must survive
 	}
 	got := curateEnv(parent)
@@ -33,6 +35,7 @@ func TestCurateEnv(t *testing.T) {
 	for _, blocked := range []string{
 		"FLY_API_TOKEN", "OPENAI_API_KEY", "PROD_REGISTRY_TOKEN",
 		"AWS_SECRET_ACCESS_KEY", "ANTHROPIC_API_KEY", "AZURE_CLIENT_SECRET",
+		"GITHUB_TOKEN", "DIGITALOCEAN_TOKEN", "DATABASE_URL", "REDIS_URL", "NPM_TOKEN",
 	} {
 		if has(blocked) {
 			t.Errorf("%s must be filtered from the plugin environment", blocked)
