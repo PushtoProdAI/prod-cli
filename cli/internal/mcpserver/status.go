@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"context"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -17,8 +16,8 @@ type appInput struct {
 	App string `json:"app" jsonschema:"the app / resource name, as shown by list_deploys"`
 }
 
-// latestDeploy returns the most-recent history record for an app name
-// (case-insensitive), preferring the latest successful deploy, else the latest record.
+// latestDeploy returns the most-recent history record for an app name from local
+// history, preferring the latest successful deploy.
 func latestDeploy(app string) (history.Record, bool, error) {
 	store, err := history.NewStore()
 	if err != nil {
@@ -28,21 +27,8 @@ func latestDeploy(app string) (history.Record, bool, error) {
 	if err != nil {
 		return history.Record{}, false, err
 	}
-	app = strings.ToLower(strings.TrimSpace(app))
-	var fallback history.Record
-	var haveFallback bool
-	for _, r := range records {
-		if strings.ToLower(r.ResourceName) != app {
-			continue
-		}
-		if r.OperationType == "deploy" && r.Status == "success" {
-			return r, true, nil // best match: latest successful deploy
-		}
-		if !haveFallback {
-			fallback, haveFallback = r, true
-		}
-	}
-	return fallback, haveFallback, nil
+	r, ok := history.LatestForApp(records, app)
+	return r, ok, nil
 }
 
 // probeLive does a short GET and classifies liveness the same way the deploy path does:
