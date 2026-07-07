@@ -1,0 +1,12 @@
+{
+  "_comment": "The prod plugin index — a plain JSON file, no backend. To list a provider plugin, open a pull request adding an entry below: name (the alias users type), repo (github.com/org/repo), maintainer, description, and the exact install command. `prod plugin search` reads this file. A hosted, signed registry is a commercial-tier decision, not this.",
+  "plugins": [
+    {
+      "name": "example",
+      "repo": "github.com/PushtoProdAI/prod-cli",
+      "maintainer": "PushtoProdAI",
+      "description": "Reference provider plugin. Copy it (or run `prod plugin new`) to add your own cloud.",
+      "install": "prod plugin new my-cloud"
+    }
+  ]
+}
