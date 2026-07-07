@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/go-errors/errors"
@@ -380,6 +381,18 @@ func (s *BuildProjectStep) Execute(ctx context.Context, client VercelClient, ste
 }
 
 func (s *BuildProjectStep) runMigration(ctx context.Context, env []string) error {
+	// A migration needs a real database URL. On Vercel the Postgres/Neon URL is provisioned
+	// by the platform's own integration and isn't available at local build time — running the
+	// migration here would fail with an empty url (drizzle: "url: ''") and roll back the whole
+	// deploy. Detect that and defer the migration with instructions instead of failing.
+	if !hasDatabaseURL(env) {
+		fmt.Fprintf(s.writer, "  ⏭️  Skipping migrations — no DATABASE_URL is available at deploy time.\n")
+		fmt.Fprintf(s.writer, "     Connect a database (Vercel → Storage → Postgres/Neon), then run your\n")
+		fmt.Fprintf(s.writer, "     migration against it:  %s\n", s.migrationCommand)
+		fmt.Fprintf(s.writer, "     (with DATABASE_URL set to the connected database). Continuing the deploy.\n")
+		return nil
+	}
+
 	fmt.Fprintf(s.writer, "  🔄 Running database migrations...\n")
 	fmt.Fprintf(s.writer, "     Command: %s\n", s.migrationCommand)
 
@@ -396,6 +409,23 @@ func (s *BuildProjectStep) runMigration(ctx context.Context, env []string) error
 
 	fmt.Fprintf(s.writer, "  ✅ Migrations completed successfully\n")
 	return nil
+}
+
+// hasDatabaseURL reports whether the build environment carries a non-empty database
+// connection string — the value a migration needs. Migration tools read one of these from
+// the process environment (drizzle/Prisma → DATABASE_URL, etc.).
+func hasDatabaseURL(env []string) bool {
+	for _, kv := range env {
+		name, val, ok := strings.Cut(kv, "=")
+		if !ok || strings.TrimSpace(val) == "" {
+			continue
+		}
+		switch strings.ToUpper(name) {
+		case "DATABASE_URL", "DATABASE_URI", "POSTGRES_URL", "POSTGRES_PRISMA_URL", "POSTGRESQL_URL":
+			return true
+		}
+	}
+	return false
 }
 
 func (s *BuildProjectStep) Rollback(ctx context.Context, client VercelClient, stepResults map[string]any) error {
