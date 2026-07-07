@@ -114,6 +114,32 @@ func (w *Workflows) deployContainer(ctx workflow.Context, input DeployPlan) (dep
 			"component": "deployment", "platform": plat,
 			"project_name": input.Spec.Name, "language": input.Spec.Language,
 		})
+
+		// Conditional auto-rollback (ACD.2): a container update that fails its health check
+		// on a rollback-capable cloud (Cloud Run, Azure — not App Runner) is reverted to the
+		// previous working revision. A first deploy or a no-rollback cloud falls through to
+		// failed + remediation. Never hang, never silently leave a broken deploy.
+		if p, ok := LookupPlatform(input.Platform); ok && shouldAutoRollback(p.SupportsRollback, spec.IsUpdate) {
+			previous, prevErr := workflow.ExecuteActivity[*deployment.DeploymentInfo](ctx, ActivityOpts, AgentGetPreviousDeployment, *spec, input.Platform).Get(ctx)
+			if prevErr == nil && previous != nil {
+				if _, rbErr := workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentRollbackDeployment, *spec, input.Platform, previous.ID).Get(ctx); rbErr == nil {
+					if operationId != "" {
+						workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "rolled_back", map[string]any{
+							"error": err.Error(), "platform": plat, "stage": "url_check", "url": fullUrl, "rolled_back_to": previous.ID,
+						}).Get(ctx)
+					}
+					return deployResult{Error: deployError{
+						Summary:   "Deployment failed its health check — automatically rolled back to your previous working version.",
+						IsWarning: true,
+					}}, nil
+				} else {
+					slog.Error("Auto-rollback failed after health-check failure", "error", rbErr, "target", previous.ID)
+				}
+			} else {
+				slog.Warn("No previous deployment to roll back to", "error", prevErr)
+			}
+		}
+
 		summary, e1 := workflow.ExecuteActivity[deployError](ctx, ActivityOpts, AgentSummarizeError, err.Error(), input).Get(ctx)
 		if operationId != "" {
 			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "failed", map[string]any{

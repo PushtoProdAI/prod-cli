@@ -78,8 +78,10 @@ func TestVerifyLivenessProbesHTTPShapes(t *testing.T) {
 	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) }))
 	defer down.Close()
 
+	// web (and an unset shape) treat a plain 200 as live. mcp-server does NOT — it needs the
+	// JSON-RPC initialize handshake (see TestMCPServerLiveness), so it's excluded here.
 	a := &Activities{uiWriter: output.NewNoOpWriter()}
-	for _, shape := range []deployment.DeployShape{deployment.ShapeWeb, deployment.ShapeMCPServer, ""} {
+	for _, shape := range []deployment.DeployShape{deployment.ShapeWeb, ""} {
 		if err := a.verifyLiveness(context.Background(), shape, up.URL); err != nil {
 			t.Errorf("%q against a live URL should pass, got %v", shape, err)
 		}
