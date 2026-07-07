@@ -22,6 +22,11 @@ import (
 	_ "modernc.org/sqlite" // registers the "sqlite" driver (same one go-workflows uses)
 )
 
+// workflowRetention is how long a finished workflow instance is kept in the durable db
+// before startup GC removes it — long enough to resume/inspect a very recent deploy,
+// short enough that the single-user db stays tiny.
+const workflowRetention = 24 * time.Hour
+
 // DefaultActivityOptions sets our own default values which flexes the ones by go-workflows.
 var DefaultActivityOptions = workflow.ActivityOptions{
 	RetryOptions: workflow.RetryOptions{
@@ -81,6 +86,14 @@ func InitWorkflows(ctx context.Context, cfg WorkflowsConfig, mux *http.ServeMux,
 			sqlite.WithBackendOptions(cfg.backendOptions()...),
 			sqlite.WithApplyMigrations(true),
 		)
+
+		// GC on startup: drop workflow instances that finished more than the retention
+		// window ago, so the durable db doesn't grow without bound across CLI runs.
+		// Best-effort — a GC failure must never block a deploy. (Instances finished more
+		// recently are kept as a resume/debug buffer.)
+		if err := sqliteBackend.RemoveWorkflowInstances(ctx, backend.RemoveFinishedBefore(time.Now().Add(-workflowRetention))); err != nil {
+			cfg.logger().Warn("failed to GC old workflow instances", "error", err)
+		}
 	} else {
 		sqliteBackend = sqlite.NewInMemoryBackend(sqlite.WithBackendOptions(cfg.backendOptions()...))
 	}
