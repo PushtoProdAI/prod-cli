@@ -11,12 +11,23 @@ plugin becomes a first-class target you can deploy to in plain English.
 > names); your plugin only **creates/updates the service and reports its URL**. Your
 > plugin never sees the user's source — it receives a built image reference.
 
+**Fast path:** `prod plugin new <name>` scaffolds a buildable plugin against the SDK
+(`github.com/pushtoprodai/prod-plugin-sdk` — a lean module that only pulls in
+`hashicorp/go-plugin`). Implement the six methods, `go build`, and
+`prod plugin install ./prod-provider-<name>`.
+
+**Find & install existing plugins:** `prod plugin search` reads a git-native index
+([`PushtoProdAI/prod-plugins`](https://github.com/PushtoProdAI/prod-plugins)) — no backend.
+`prod plugin install github.com/org/repo --checksum <sha256>` downloads a plugin's release
+binary and verifies the checksum before it ever runs. First-party plugins today:
+**DigitalOcean App Platform**, **Koyeb**, and **Railway** (in the `prod-plugins` repo).
+
 ## 1. Implement the `Provider` interface
 
 Add prod's plugin SDK to your module and implement six methods:
 
 ```go
-import "github.com/pushtoprodai/prod-cli/pkg/plugin"
+import plugin "github.com/pushtoprodai/prod-plugin-sdk"
 
 type acme struct{}
 
@@ -137,7 +148,7 @@ Only install plugins you trust.
 
 ## Compatibility & versioning
 
-The contract is the exported package `github.com/pushtoprodai/prod-cli/pkg/plugin` — it
+The contract is the exported package `github.com/pushtoprodai/prod-plugin-sdk` — it
 imports nothing from prod's internals, so you compile against a stable interface.
 
 Compatibility is enforced by `plugin.ProtocolVersion`, negotiated in the go-plugin
@@ -145,6 +156,6 @@ handshake. A plugin built against one protocol version won't launch under a prod
 expects a different one — prod rejects it with a clear "rebuild against protocol vN"
 message rather than misbehaving. The protocol is bumped only on a breaking change to the
 `Provider` interface or its request/response types; additive, backward-compatible changes
-don't bump it. Pin the `pkg/plugin` version your plugin builds against, and rebuild when
+don't bump it. Pin the `prod-plugin-sdk` version your plugin builds against, and rebuild when
 the protocol version changes.
 
