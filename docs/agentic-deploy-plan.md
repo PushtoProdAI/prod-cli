@@ -14,15 +14,21 @@ state/adapters, MCP server, plugin host). All file:line references below were ve
 against the current tree. Where this contradicts an older plan, the contradiction is
 called out explicitly under "Ground-truth corrections."
 
-> **Status (shipped): Phase 0 + Items A–C are DONE.** Phase 0 — `list_deploys` returns
-> the live URL (ACB.1), preview-first `planDigest` gate (ACB.2), `destroy` documented
-> (ACB.6), and 401/403-are-live liveness (ACD.1). Item A — deploy identifiers persisted
-> (`resourceId` + per-cloud region/project/RG) and canonical platform casing, plus the
-> `internal/deploytarget` resolver ({LiveURL, ConsoleURL, LogsCmd, CanRollback}). Item B —
-> the `status` / `deep_link` / `logs` MCP tools. Item C — the `prod ls` / `open` / `logs`
-> CLI. **Remaining: Item D (reliability — conditional auto-rollback, durable state,
-> mcp-server liveness handshake) and Item E (coverage + ecosystem — agent detection, Modal
-> GA, `prod plugin new`, git-native plugin index, RPC hardening).**
+> **Status (shipped): Phase 0 + Items A–E are DONE** (one live-gated exception, below).
+> Phase 0 — `list_deploys` URL (ACB.1), preview-first `planDigest` gate (ACB.2), `destroy`
+> documented (ACB.6), 401/403-are-live liveness (ACD.1). Item A — deploy identifiers
+> persisted + canonical platform casing + the `internal/deploytarget` resolver. Item B —
+> `status`/`deep_link`/`logs` MCP tools. Item C — `prod ls`/`open`/`logs` CLI. Item D —
+> conditional auto-rollback (ACD.2), mcp-server JSON-RPC `initialize` liveness (ACD.4) +
+> unified liveness client (ACD.3), durable workflow state at `~/.prod/workflows.db` with
+> startup GC (ACD.5). Item E — analyzer agent/MCP shape detection (ACE.1), `prod plugin new`
+> scaffolding (ACE.3), git-native plugin index + `prod plugin search` and checksum-gated
+> `prod plugin install github.com/org/repo` (ACE.4/ACE.5), and RPC/env hardening (ACE.6).
+>
+> **The one exception: Modal GA (ACE.2).** The code side is improved (token-format
+> validation instead of accept-any-non-empty), but dropping the `Experimental` flag +
+> the site/docs badge is deliberately deferred until a live-account end-to-end deploy
+> passes — which needs a real Modal account, not something this workstream can self-verify.
 
 ---
 
