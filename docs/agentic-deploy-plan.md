@@ -14,6 +14,16 @@ state/adapters, MCP server, plugin host). All file:line references below were ve
 against the current tree. Where this contradicts an older plan, the contradiction is
 called out explicitly under "Ground-truth corrections."
 
+> **Status (shipped): Phase 0 + Items A–C are DONE.** Phase 0 — `list_deploys` returns
+> the live URL (ACB.1), preview-first `planDigest` gate (ACB.2), `destroy` documented
+> (ACB.6), and 401/403-are-live liveness (ACD.1). Item A — deploy identifiers persisted
+> (`resourceId` + per-cloud region/project/RG) and canonical platform casing, plus the
+> `internal/deploytarget` resolver ({LiveURL, ConsoleURL, LogsCmd, CanRollback}). Item B —
+> the `status` / `deep_link` / `logs` MCP tools. Item C — the `prod ls` / `open` / `logs`
+> CLI. **Remaining: Item D (reliability — conditional auto-rollback, durable state,
+> mcp-server liveness handshake) and Item E (coverage + ecosystem — agent detection, Modal
+> GA, `prod plugin new`, git-native plugin index, RPC hardening).**
+
 ---
 
 ## 0. The ICP and the wedge

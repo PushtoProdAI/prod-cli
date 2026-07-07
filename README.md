@@ -83,6 +83,9 @@ prod "rollback"                       # roll back the last deploy (auto-detects 
 |---|---|
 | `prod [prompt]` | Start an interactive session, or run a one-shot deploy from the prompt |
 | `prod run <prompt>` | Execute a single command and exit — for automation / scripting (set `PROD_JSON_MODE=true` for structured JSON output) |
+| `prod ls` | List recent deployments — name, platform, status, live URL (`--json`, `--platform`, `--all`) |
+| `prod open <app>` | Open a deployed app's live URL, or `--console` for its platform dashboard |
+| `prod logs <app>` | Tail a deployed app's logs via the platform's own CLI |
 | `prod doctor` | Check prerequisites (LLM provider reachable? Docker available?) — run this if a deploy won't start |
 | `prod plugin` | Install / list / remove provider plugins — add your own cloud without a fork (see [docs/plugins.md](docs/plugins.md)) |
 | `prod mcp` | Start the MCP server (stdio) so AI agents can call prod as a tool |
@@ -93,12 +96,14 @@ Deploy, roll back, and tear down are natural language: `prod "deploy this to fly
 ### Use prod from an AI agent (MCP)
 
 `prod mcp` exposes prod over the [Model Context Protocol](https://modelcontextprotocol.io) so
-agents like Claude Code, Cursor, and Cline can use it. Tools: `list_deploys` (recent
-deployments), `analyze_project` (detect a project's stack), `doctor` (environment check),
-and the three action tools — **`deploy`**, **`rollback`**, and **`destroy`** — each behind a
-**human-approval gate**: `confirm=false` (the default) returns the plan + estimated cost and
-changes *nothing*; the agent must pass `confirm=true` to actually run it. Add to your MCP
-client config:
+agents like Claude Code, Cursor, and Cline can use it. The three action tools —
+**`deploy`**, **`rollback`**, and **`destroy`** — are each behind a **human-approval gate**:
+`confirm=false` (the default) returns the plan + estimated cost and changes *nothing*; the
+agent must pass `confirm=true` to actually run it. The read-only tools let an agent answer
+"what's running / where / show me the logs" in-session: **`status`** (platform, last status,
+live/not-live), **`deep_link`** (live + console URLs), **`logs`** (the platform CLI command +
+console URL), plus `list_deploys` and `analyze_project`/`doctor`. Add to your MCP client
+config:
 
 ```jsonc
 { "mcpServers": { "prod": { "command": "prod", "args": ["mcp"] } } }
