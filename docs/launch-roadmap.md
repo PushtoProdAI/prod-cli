@@ -15,7 +15,7 @@ it's what makes people **choose** prod once they arrive. Don't conflate the two.
 > `rollback`/`destroy`/`doctor` MCP tools, Cloud Run Secret Manager, WSL2 Windows, and the
 > **automated CI + release pipeline** (with Homebrew) are all done. What genuinely remains:
 > the owner-gated launch gate below (secrets purge, first release, real-account validation of
-> the manual-verify clouds + Modal, the demo GIF), plus `prod logs` (still unbuilt). Treat the
+> the manual-verify clouds + Modal, the demo GIF). Treat the
 > per-item "TODO" framing in Part 3 as historical where it conflicts with this.
 
 ---
@@ -100,7 +100,7 @@ breadth matters. This is the conversion funnel; treat it as P0 alongside Part 1.
 None of this blocks going public. All of it makes prod win. Ranked by *reasons-to-choose
 × reach ÷ effort*. **Validated, detailed plans (with acceptance criteria + real-cloud
 validation notes) live in [fast-follows.md](./fast-follows.md)** — including the ones added
-after a review pass: `prod destroy`/teardown and `prod logs` (both missing today), and the
+after a review pass: `prod ls`/`open`/`logs` + the agent status/deep_link/logs tools (shipped), and the
 Go language (nearly free — its Dockerfile template already exists).
 
 ### A. Cloud breadth + the adapter framework — reach *and* the extensibility play  *(highest reach)*

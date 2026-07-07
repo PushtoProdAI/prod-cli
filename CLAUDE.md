@@ -12,7 +12,7 @@ like `terraform`, `pulumi`, or `flyctl`. See [ROADMAP.md](./ROADMAP.md) for the 
 rationale behind collapsing the old SaaS backend out of the core.
 
 > **Current state vs. target.** The code today still routes through a Supabase backend for auth,
-> LLM, and deploy logging. ROADMAP Phase 0 severs that: local SQLite state, direct LLM, no auth
+> LLM, and deploy logging. ROADMAP Phase 0 severs that: local state, direct LLM, no auth
 > gate. Where this file describes the single-binary target and the code differs, the code is the
 > thing being changed — follow the target and check the ROADMAP.
 
@@ -35,7 +35,7 @@ build locally → push to a registry in your account → create the service). Pl
 Deploy, rollback, and **destroy** are all natural-language actions.
 
 **No server is required to deploy.** LLM calls go direct to OpenAI/Anthropic/Ollama with the
-user's key; history lives in local SQLite; platform tokens live in `~/.prod`. A hosted backend
+user's key; history lives in a local JSON file; platform tokens live in `~/.prod`. A hosted backend
 exists only as the optional **commercial** tier (teams, shared history, metering) and lives in a
 **separate repo** — it is not part of `prod-cli`.
 
@@ -64,7 +64,7 @@ You: "deploy this to fly with a postgres"
 │    → internal/analyzer detect language, routes, env, migrations       │
 │    → internal/deployment/<platform>   adapter pattern, user's creds   │
 │    → internal/output   Console | JSON | TUI writers                   │
-│    → local state       SQLite in ~/.prod (history + workflow state)   │
+│    → local state       ~/.prod/history.json (deploy history)          │
 └───────────────────────────────────────────────────────────────────────┘
       │ direct API calls with the user's own tokens/creds
       ▼
@@ -72,12 +72,13 @@ You: "deploy this to fly with a postgres"
 ```
 
 Deploys run as **durable workflows** (`go-workflows`) so slow, failure-prone cloud provisioning
-can retry and resume. State is local (SQLite) — no server.
+can retry and resume. Deploy **history** is a local JSON file (`~/.prod/history.json`); the
+go-workflows durable backend is dormant today (in-memory), so workflow state is in-process. No
+server either way.
 
-> ⚠️ `go-workflows` is currently a `replace` to a **personal-account fork pinned to an untagged
-> commit** — a supply-chain/trust risk. ROADMAP Phase 0 re-homes it under our org with a tagged
-> release (or upstreams it). It's also the single biggest remaining piece of complexity; keep the
-> dependency shallow.
+> `go-workflows` is now a plain upstream dependency (`github.com/cschleiden/go-workflows`, tagged
+> release, no `replace`) — the old personal-fork/supply-chain risk is gone. It's still the biggest
+> single piece of complexity; keep the dependency shallow.
 
 ---
 
@@ -87,23 +88,30 @@ The public repo is **the binary only**. Backend/`infra`/`lambda` live in the sep
 
 ```
 cli/
-  cmd/                   Entry points; cobra commands
+  cmd/                   Entry points; cobra commands (via ecdysis)
     main.go              Dependency wiring / bootstrap
     root/                `prod [prompt]` — TUI or one-shot
     run/                 `prod run <prompt>` — automation / JSON mode / MCP substrate
-    auth/                `prod auth ...` (managed-mode sign-in; not needed for local mode)
+    deploys/             `prod ls` / `open` / `logs` — the deploy launcher over local history
+    doctor/ plugin/ mcp/ `prod doctor` / `prod plugin ...` / `prod mcp`
   internal/
     agent/               Orchestrator FSM, per-platform workflows, detectors
     analyzer/            Static project analysis (node.go, python.go, go.go — Node/Python/Go)
     deployment/          Platform adapters: flyio/ render/ vercel/ netlify/ heroku/ aws(apprunner)/
                          gcprun/ aca(azure)/ modal/ + managedcontainer/ (shared container base)
+    deploytarget/        Resolve a history record → {LiveURL, ConsoleURL, LogsCmd, CanRollback}
+                         (per-cloud knowledge; used by the MCP tools + prod ls/open/logs)
+    mcpserver/           The `prod mcp` server + its 9 tools (deploy/rollback/destroy/status/…)
+    pluginhost/          Out-of-tree provider-plugin host (go-plugin over net/rpc)
     llm/                 BAML client wrapper (Client interface, mock, ClientRegistry selection)
     output/              StatusWriter: Console | JSON | Tea | Proxy writers
+    history/             Local deploy history (~/.prod/history.json) + the deploytarget records
+    registry/            Container-registry adapters (ECR / GAR / ACR / generic)
     backend/             HTTP client — used only in managed mode (optional)
     config/              Config resolution (flags → env → file → default)
     tui/                 Bubble Tea v2 UI
     workflowext/         go-workflows wiring
-    tokens/ cache/ error/ log/ settings/ scratchpad/
+    tokens/ cache/ error/ log/ scratchpad/
   baml_src/              BAML sources (intent.baml, clients.baml, pricing.baml)
   baml_client/           GENERATED Go from BAML — never edit by hand
   Makefile               Build/dev/generate targets
@@ -138,7 +146,7 @@ with native per-OS CI runners. A contributor on Linux hits this on `make build`;
 
 | Mode | Account? | State | LLM | Notes |
 |------|----------|-------|-----|-------|
-| **local** (default) | none | local SQLite in `~/.prod` | direct: OpenAI/Anthropic/**Ollama** | the product; no backend |
+| **local** (default) | none | local JSON in `~/.prod` | direct: OpenAI/Anthropic/**Ollama** | the product; no backend |
 | **managed** (opt-in) | yes | synced to hosted backend | proxied + metered | commercial tier; teams/SSO/history |
 
 Configuration precedence: **flags → env → config file → built-in default**. Nothing

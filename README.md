@@ -19,23 +19,20 @@ state in a local file, and talks straight to each platform — like `terraform`,
 
 ## Install
 
-**Build from source** — works today on macOS and Linux:
+**Homebrew or the install script** — macOS and Linux (on Windows, use WSL2):
 
 ```bash
-git clone https://github.com/PushtoProdAI/prod && cd prod/cli
-go build -o prod ./cmd/main.go        # → ./prod   (or `make build` for a versioned binary in ../bin)
+brew install pushtoprodai/tap/prod
+# or:
+curl -fsSL https://raw.githubusercontent.com/PushtoProdAI/prod-cli/main/scripts/install.sh | sh
 ```
 
-Requires **Go 1.25+** and a C toolchain (`prod` links a native dependency — see the CGO note
-in [CONTRIBUTING.md](./CONTRIBUTING.md)).
-
-**One-line and Homebrew** land with the first tagged release — the release tooling is ready
-(see [docs/DISTRIBUTION.md](./docs/DISTRIBUTION.md)):
+**Build from source** — requires **Go 1.25+** and a C toolchain (`prod` links a native
+dependency — see the CGO note in [CONTRIBUTING.md](./CONTRIBUTING.md)):
 
 ```bash
-# available once the first release is cut:
-curl -fsSL https://raw.githubusercontent.com/PushtoProdAI/prod/main/scripts/install.sh | sh
-brew install pushtoprodai/tap/prod
+git clone https://github.com/PushtoProdAI/prod-cli && cd prod-cli/cli
+go build -o prod ./cmd/main.go        # → ./prod   (or `make build` for a versioned binary in ../bin)
 ```
 
 On first run, `prod` downloads the BAML engine library (~56 MB, needs network + CA
