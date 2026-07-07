@@ -138,7 +138,7 @@ func (p *PythonAnalyzer) Analyze() (*ProjectSpec, error) {
 		slog.Info("Could not determine build command", "error", err)
 	}
 
-	_, err = p.detectFramework(dependencies)
+	framework, err := p.detectFramework(dependencies)
 	if err != nil {
 		return nil, errors.Errorf("failed to detect framework: %w", err)
 	}
@@ -221,6 +221,11 @@ func (p *PythonAnalyzer) Analyze() (*ProjectSpec, error) {
 	}
 	migrationContext := p.collectMigrationContext(depNames, serviceRequirements)
 
+	// Infer an agent/MCP shape from the dependency set (e.g. `mcp` ⇒ mcp-server, `crewai`
+	// with no web server ⇒ worker) so the deploy is planned with the right liveness even
+	// when the user never says so.
+	detectedShape := DetectAgentShape(depNames, framework != nil && framework.Detected)
+
 	return &ProjectSpec{
 		Name:                projectName,
 		Language:            "python",
@@ -231,6 +236,7 @@ func (p *PythonAnalyzer) Analyze() (*ProjectSpec, error) {
 		StartCommand:        runCmd,
 		LaunchContext:       launchCtx,
 		MigrationContext:    migrationContext,
+		DetectedShape:       detectedShape,
 	}, nil
 }
 

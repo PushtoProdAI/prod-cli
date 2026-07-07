@@ -23,6 +23,10 @@ type ProjectSpec struct {
 	BuildOutput         BuildOutputCandidate
 	LaunchContext       LaunchContext
 	MigrationContext    MigrationContext
+	// DetectedShape is the deploy shape inferred from code ("mcp-server" | "worker"), or ""
+	// when the code isn't conclusive. When set it's a strong prior the planner lets win over
+	// the LLM's guess. See DetectAgentShape.
+	DetectedShape string
 }
 
 type ServiceRequirement struct {

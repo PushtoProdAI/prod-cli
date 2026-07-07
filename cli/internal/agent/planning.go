@@ -149,6 +149,19 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		})
 	}
 
+	// Deploy shape: the LLM classifies it from the request ("deploy this mcp server", "my
+	// worker", "every night"), but a conclusive code signal from the analyzer (an MCP SDK,
+	// an agent framework with no web server) WINS — so a project mislabeled "web" doesn't
+	// get HTTP liveness applied to a worker, and an MCP server gets the initialize handshake.
+	// (ACD.4 / DetectAgentShape.) Platform/intent still come from the LLM.
+	shape := deployment.ParseShape(intent.DeployShape)
+	if spec.DetectedShape != "" {
+		if detected := deployment.ParseShape(spec.DetectedShape); detected != shape {
+			slog.Info("analyzer overrode deploy shape from code", "llm_shape", shape, "detected_shape", detected)
+			shape = detected
+		}
+	}
+
 	plan := DeployPlan{
 		Action:              action,
 		Platform:            platform,
@@ -156,11 +169,7 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		Spec:                spec,
 		Summary:             summary,
 		ExistingProjectInfo: existingProjectInfo,
-		// Classified by the LLM from the request ("deploy this mcp server", "my
-		// worker", "every night"); defaults to web. Nothing acts on it yet — the
-		// shape-aware liveness dispatch is the next increment (see
-		// docs/agent-native-plan.md §1e).
-		Shape: deployment.ParseShape(intent.DeployShape),
+		Shape:               shape,
 	}
 	// Pin a plugin plan to its plugin by name, so a resumed workflow validates it
 	// resolves to the same plugin (a plugin's Platform value is a hash of its name).
