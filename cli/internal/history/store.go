@@ -23,6 +23,27 @@ func CanonicalPlatform(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
+// LatestForApp finds the record for an app (by resource name, case-insensitive) in a
+// most-recent-first slice, preferring the latest successful deploy, else the latest
+// record of any kind. Shared by the MCP tools and the CLI launcher.
+func LatestForApp(records []Record, app string) (Record, bool) {
+	app = strings.ToLower(strings.TrimSpace(app))
+	var fallback Record
+	var haveFallback bool
+	for _, r := range records {
+		if strings.ToLower(r.ResourceName) != app {
+			continue
+		}
+		if r.OperationType == "deploy" && r.Status == "success" {
+			return r, true
+		}
+		if !haveFallback {
+			fallback, haveFallback = r, true
+		}
+	}
+	return fallback, haveFallback
+}
+
 // Record is one deployment operation (a deploy or rollback).
 type Record struct {
 	ID            string         `json:"id"`

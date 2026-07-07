@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/conduitio/ecdysis"
 	"github.com/go-errors/errors"
+	deployscmd "github.com/pushtoprodai/prod-cli/cmd/deploys"
 	doctorcmd "github.com/pushtoprodai/prod-cli/cmd/doctor"
 	mcpcmd "github.com/pushtoprodai/prod-cli/cmd/mcp"
 	plugincmd "github.com/pushtoprodai/prod-cli/cmd/plugin"
@@ -52,6 +53,9 @@ type RootCommand struct {
 	MCP    mcpcmd.MCPCommand       `cmd:"" help:"Start the prod MCP server (stdio)"`
 	Doctor doctorcmd.DoctorCommand `cmd:"" help:"Check prerequisites (LLM, Docker)"`
 	Plugin plugincmd.PluginCommand `cmd:"" help:"Manage provider plugins (add deploy targets)"`
+	Ls     deployscmd.LsCommand    `cmd:"" help:"List recent deployments"`
+	Open   deployscmd.OpenCommand  `cmd:"" help:"Open a deployed app's URL or console"`
+	Logs   deployscmd.LogsCommand  `cmd:"" help:"Tail a deployed app's logs"`
 }
 
 func (c *RootCommand) SubCommands() []ecdysis.Command {
@@ -60,6 +64,9 @@ func (c *RootCommand) SubCommands() []ecdysis.Command {
 		&c.MCP,
 		&c.Doctor,
 		&c.Plugin,
+		&c.Ls,
+		&c.Open,
+		&c.Logs,
 	}
 }
 
