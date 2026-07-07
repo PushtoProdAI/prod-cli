@@ -15,7 +15,7 @@ import (
 // read over HTTPS. No backend and no database — listing a plugin is a pull request against
 // that file. (A hosted, signed registry is a commercial-tier decision, deliberately not
 // this.)
-const DefaultIndexURL = "https://raw.githubusercontent.com/PushtoProdAI/prod-cli/main/plugins.json"
+const DefaultIndexURL = "https://raw.githubusercontent.com/PushtoProdAI/prod-plugins/main/plugins.json"
 
 // IndexEntry is one curated plugin in the index.
 type IndexEntry struct {
