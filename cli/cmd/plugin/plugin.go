@@ -25,6 +25,7 @@ var (
 )
 
 type PluginCommand struct {
+	New     PluginNewCommand     `cmd:"" help:"Scaffold a new provider plugin"`
 	Install PluginInstallCommand `cmd:"" help:"Install a provider plugin binary"`
 	List    PluginListCommand    `cmd:"" help:"List installed provider plugins"`
 	Remove  PluginRemoveCommand  `cmd:"" help:"Remove an installed provider plugin"`
@@ -42,7 +43,7 @@ func (c *PluginCommand) Docs() ecdysis.Docs {
 }
 
 func (c *PluginCommand) SubCommands() []ecdysis.Command {
-	return []ecdysis.Command{&c.Install, &c.List, &c.Remove}
+	return []ecdysis.Command{&c.New, &c.Install, &c.List, &c.Remove}
 }
 
 func (c *PluginCommand) Execute(context.Context) error {
