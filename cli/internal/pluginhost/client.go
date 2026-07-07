@@ -9,7 +9,7 @@ import (
 	"github.com/go-errors/errors"
 	hclog "github.com/hashicorp/go-hclog"
 	goplugin "github.com/hashicorp/go-plugin"
-	"github.com/pushtoprodai/prod-cli/pkg/plugin"
+	plugin "github.com/pushtoprodai/prod-plugin-sdk"
 )
 
 // Launch starts a provider plugin subprocess and returns a live Provider plus a close

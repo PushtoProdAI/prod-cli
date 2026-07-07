@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pushtoprodai/prod-cli/pkg/plugin"
+	plugin "github.com/pushtoprodai/prod-plugin-sdk"
 )
 
 // TestCurateEnv is the AC9 guard: a plugin's environment must exclude prod's own

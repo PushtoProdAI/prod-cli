@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/go-errors/errors"
-	"github.com/pushtoprodai/prod-cli/pkg/plugin"
+	plugin "github.com/pushtoprodai/prod-plugin-sdk"
 )
 
 // ChecksumFile returns the hex-encoded sha256 of a file — recorded at install so the
