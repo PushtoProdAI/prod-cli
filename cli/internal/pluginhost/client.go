@@ -48,29 +48,32 @@ func Launch(path string, checksum []byte) (plugin.Provider, func(), error) {
 	return prov, client.Kill, nil
 }
 
-// prodSensitiveEnv is the set of variable names/prefixes a plugin must never see —
-// prod's own platform tokens, registry credential, and LLM keys.
+// prodSensitiveEnv is the set of variable names/prefixes a plugin must never see. The rule
+// is deliberately narrow: strip PROD's OWN operational credentials — the platform tokens
+// prod deploys with, its registry/LLM keys — plus bare database URLs (which a container
+// plugin never needs and which leak app secrets). It does NOT strip third-party cloud
+// tokens like DIGITALOCEAN_TOKEN, KOYEB_TOKEN, or a registry credential: those are exactly
+// what a *provider plugin for that cloud* needs to function, and a plugin (which runs with
+// the user's own permissions) could read them from disk regardless — so denying them buys
+// no real security and breaks the plugin. See docs/plugins.md.
 var (
 	prodSensitiveExact = map[string]bool{
-		// prod's own platform tokens + registry/LLM credentials.
+		// prod's own built-in platform tokens + registry/LLM credentials.
 		"FLY_API_TOKEN": true, "FLY_ACCESS_TOKEN": true,
 		"RENDER_API_KEY": true, "VERCEL_TOKEN": true, "NETLIFY_AUTH_TOKEN": true,
 		"HEROKU_API_KEY": true, "HEROKU_AUTH_TOKEN": true,
 		"OPENAI_API_KEY": true, "ANTHROPIC_API_KEY": true,
 		"GOOGLE_APPLICATION_CREDENTIALS": true,
 		"AZURE_CLIENT_SECRET":            true, "AZURE_TENANT_ID": true, "AZURE_CLIENT_ID": true,
-		// Third-party developer secrets commonly present in a shell that a provider plugin
-		// has no business inheriting from prod's session.
-		"GITHUB_TOKEN": true, "GH_TOKEN": true, "GITLAB_TOKEN": true,
-		"DIGITALOCEAN_TOKEN": true, "DIGITALOCEAN_ACCESS_TOKEN": true, "DO_API_TOKEN": true,
-		"NPM_TOKEN": true, "DOCKERHUB_TOKEN": true, "DOCKER_PASSWORD": true, "CLOUDFLARE_API_TOKEN": true,
-		// Database / cache connection strings (carry credentials in the URL).
+		// Bare database / cache connection strings — a deploy-target plugin has no use for
+		// prod's own DB URLs, and they carry credentials.
 		"DATABASE_URL": true, "DATABASE_URI": true, "POSTGRES_URL": true, "POSTGRESQL_URL": true,
 		"MYSQL_URL": true, "REDIS_URL": true, "MONGODB_URI": true, "MONGO_URL": true,
 	}
-	// Prefix families: prod's own vars (PROD_), the whole AWS_ credential family, and
-	// GITHUB_/DIGITALOCEAN_/AZURE_ token variants beyond the exact names above.
-	prodSensitivePrefix = []string{"AWS_", "PROD_", "GITHUB_", "DIGITALOCEAN_"}
+	// Prefix families: prod's own vars (PROD_) and the whole AWS_ credential family (prod
+	// uses AWS for App Runner + ECR). NOTE: do not add third-party cloud prefixes here — a
+	// plugin for that cloud needs its token.
+	prodSensitivePrefix = []string{"AWS_", "PROD_"}
 )
 
 // curateEnv filters a parent environment down to what a plugin may see: everything
