@@ -245,12 +245,23 @@ func (s *SetEnvironmentVariablesStep) Execute(ctx context.Context, client Vercel
 		defer os.Chdir(originalDir)
 	}
 
-	if err := client.SetEnvironmentVariables(resource.ID, s.envVars); err != nil {
-		return nil, errors.Errorf("failed to set environment variables: %w", err)
-	}
+	// Only set variables that actually have a value. Creating an EMPTY var on the platform
+	// is harmful: an empty DATABASE_URL collides with a database integration (Vercel
+	// Postgres / Neon) that wants to inject the real value, forcing the user to delete
+	// prod's empty one first. Skip empties and tell the user to set them (or let an
+	// integration provide them).
+	nonEmpty, skipped := nonEmptyEnvVars(s.envVars)
 
-	fmt.Fprintf(s.writer, "  ✅ Environment variables set\n")
-	return map[string]int{"count": len(s.envVars)}, nil
+	if len(nonEmpty) > 0 {
+		if err := client.SetEnvironmentVariables(resource.ID, nonEmpty); err != nil {
+			return nil, errors.Errorf("failed to set environment variables: %w", err)
+		}
+	}
+	fmt.Fprintf(s.writer, "  ✅ Set %d environment variable(s)\n", len(nonEmpty))
+	if len(skipped) > 0 {
+		fmt.Fprintf(s.writer, "  ⏭️  Left %d empty variable(s) unset so an integration/dashboard can own them: %s\n", len(skipped), strings.Join(skipped, ", "))
+	}
+	return map[string]int{"count": len(nonEmpty)}, nil
 }
 
 func (s *SetEnvironmentVariablesStep) Rollback(ctx context.Context, client VercelClient, stepResults map[string]any) error {
@@ -409,6 +420,20 @@ func (s *BuildProjectStep) runMigration(ctx context.Context, env []string) error
 
 	fmt.Fprintf(s.writer, "  ✅ Migrations completed successfully\n")
 	return nil
+}
+
+// nonEmptyEnvVars splits env vars into those with a value (to set on the platform) and the
+// names of the empty ones (to leave unset — so an integration or the dashboard can own them,
+// and so an empty DATABASE_URL doesn't collide with a database integration).
+func nonEmptyEnvVars(vars []deployment.EnvVar) (kept []deployment.EnvVar, skipped []string) {
+	for _, ev := range vars {
+		if strings.TrimSpace(ev.Value) == "" {
+			skipped = append(skipped, ev.Name)
+			continue
+		}
+		kept = append(kept, ev)
+	}
+	return kept, skipped
 }
 
 // hasDatabaseURL reports whether the build environment carries a non-empty database
