@@ -831,6 +831,60 @@ func (a *Agent) detectExisting(ctx context.Context, input string, out io.Writer)
 
 // isFrameworkManagedVar checks if a variable is managed by a framework handler
 // Framework handlers will set these values in PrepareDeployment, so don't prompt user
+// platformManagedVars are injected by the runtime/build platform (Node, Next.js, Vercel).
+// prod must never prompt for or set them — a hand-set value breaks the app (e.g. forcing
+// NODE_ENV, or overriding Next's per-function NEXT_RUNTIME).
+var platformManagedVars = map[string]bool{
+	"NODE_ENV": true, "NEXT_RUNTIME": true, "NEXT_PHASE": true,
+	"NEXT_TELEMETRY_DISABLED": true, "CI": true, "VERCEL": true,
+}
+
+// isPlatformManagedVar reports whether a variable is set by the platform itself and should
+// be dropped from the deploy's env entirely (not prompted, not populated).
+func isPlatformManagedVar(name string) bool {
+	up := strings.ToUpper(strings.TrimSpace(name))
+	return platformManagedVars[up] || strings.HasPrefix(up, "VERCEL_")
+}
+
+// isSelfURLVar reports whether a variable holds the app's own public URL (auth origin, base
+// URL, …) — a value that can only be known after the deploy produces a URL.
+func isSelfURLVar(name string) bool {
+	up := strings.ToUpper(name)
+	if strings.Contains(up, "DATABASE") || strings.HasPrefix(up, "DB_") {
+		return false // DATABASE_URL contains "BASE_URL" — it's a connection string, not the app origin
+	}
+	for _, s := range []string{"AUTH_URL", "APP_URL", "BASE_URL", "SITE_URL", "PUBLIC_URL", "ORIGIN", "NEXTAUTH_URL"} {
+		if strings.Contains(up, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// printUnsetEnvGuidance turns "you left these blank" into an actionable post-deploy
+// checklist: the vars whose values are only knowable after the app is live (its own URL) or
+// come from a provider dashboard (an API key). Self-URL vars are pre-filled with the live URL.
+func (a *Agent) printUnsetEnvGuidance(out io.Writer, url string) {
+	var unset []string
+	for _, e := range a.envVars {
+		if e.Status == "collected" && strings.TrimSpace(e.Value) == "" {
+			unset = append(unset, e.Name)
+		}
+	}
+	if len(unset) == 0 {
+		return
+	}
+	fmt.Fprintf(out, "\n⚠️  %d variable(s) were left unset. Set them in your platform's dashboard now that the app is live:\n", len(unset))
+	for _, name := range unset {
+		if isSelfURLVar(name) && url != "" {
+			fmt.Fprintf(out, "  • %s = %s\n", name, url)
+		} else {
+			fmt.Fprintf(out, "  • %s\n", name)
+		}
+	}
+	fmt.Fprintf(out, "Then redeploy (prod \"push this to %s\") to pick them up.\n", strings.ToLower(a.DeployPlan.Platform.DisplayName()))
+}
+
 func isFrameworkManagedVar(varName string, spec analyzer.ProjectSpec) bool {
 	// Check if this is a Django project
 	for _, sr := range spec.ServiceRequirements {
@@ -888,8 +942,14 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 	var sensitivePending []string
 	var sensitiveAutoPopulated []string
 	var nonSensitiveAutoPopulated []string
+	var platformManaged []string
 
 	for _, envVar := range envVars {
+		// The platform sets these itself — never prompt for or set them.
+		if isPlatformManagedVar(envVar.Name) {
+			platformManaged = append(platformManaged, envVar.Name)
+			continue
+		}
 		if envVar.IsNotDBRelated() {
 			// Check if this is a framework-managed var (Django, Rails, etc.)
 			// These will be set by PrepareDeployment, so don't prompt the user
@@ -941,6 +1001,12 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 			fmt.Fprintf(out, "  • %s 🔒 (sensitive)\n", name)
 		}
 		fmt.Fprint(out, "\n")
+	}
+
+	// Note the platform-managed vars we deliberately skipped, so the user knows they
+	// weren't forgotten (the platform/framework sets them).
+	if len(platformManaged) > 0 {
+		fmt.Fprintf(out, "ℹ️  Managed by the platform — prod won't set these: %s\n\n", strings.Join(platformManaged, ", "))
 	}
 
 	// Display variables that need input (including sensitive ones)
@@ -1342,6 +1408,8 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 			fmt.Fprintf(out, "You can access your deployment at: %s\n", result.Url)
 			openInBrowser(result.Url)
 		}
+		// Post-deploy checklist for anything the user couldn't fill in before a URL existed.
+		a.printUnsetEnvGuidance(out, result.Url)
 		// Make rollback discoverable. (App Runner rollback isn't supported yet.)
 		if a.DeployPlan.Platform != AWS {
 			io.WriteString(out, "Need to undo this? Run:  prod \"rollback\"\n")
