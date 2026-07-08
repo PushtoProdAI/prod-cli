@@ -220,6 +220,7 @@ version. (Rollback and managed RDS provisioning are planned — see the [ROADMAP
 ## Documentation
 
 - [docs/agent-deploy.md](./docs/agent-deploy.md) — drive prod from your coding agent (MCP), with transcripts
+- [docs/pr-previews.md](./docs/pr-previews.md) — per-PR preview deploys with a GitHub Action
 - [docs/clouds.md](./docs/clouds.md) — per-cloud credential setup (all 8 clouds + Modal + plugins)
 - [docs/plugins.md](./docs/plugins.md) — write a provider plugin to add your own cloud
 - [docs/dx-roadmap.md](./docs/dx-roadmap.md) — the developer-experience roadmap (Tier 1, previews, languages)
