@@ -167,6 +167,21 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 		return deployResult{}, nil
 	}
 
+	// A worker/cron shape has no HTTP URL to probe. Skip the whole liveness/rollback block:
+	// the URL fetch below would hard-error on a serviceless app, the LLM health-route call is
+	// wasted, and an HTTP probe would fail a portless process. Record success with no URL
+	// (F7 makes ls/open/status render a no-URL record cleanly).
+	if !input.Shape.HTTPShaped() {
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", map[string]any{
+				"platform":          "flyio",
+				"resources_created": createdResources,
+				"app_id":            ws.ID,
+			}).Get(ctx)
+		}
+		return deployResult{Url: ""}, nil
+	}
+
 	// Get app URL and verify it's live
 	u, err := workflow.ExecuteActivity[string](ctx, ActivityOpts, AgentGetFlyIOAppURL, ws.ID).Get(ctx)
 	if err != nil {

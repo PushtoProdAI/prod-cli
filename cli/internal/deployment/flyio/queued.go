@@ -361,10 +361,6 @@ func (fqd *FlyioQueuedDeployment) generateFlyConfig() *FlyioConfig {
 	// Determine the internal port
 	internalPort := fqd.determineInternalPort()
 
-	// Always set PORT environment variable to match internal_port
-	// This ensures the app knows which port to listen on
-	envVars["PORT"] = fmt.Sprintf("%d", internalPort)
-
 	config := &FlyioConfig{
 		AppName:        NormalizeFlyAppName(fqd.spec.Name),
 		ReleaseCommand: fqd.spec.MigrationCommand,
@@ -383,16 +379,24 @@ func (fqd *FlyioQueuedDeployment) generateFlyConfig() *FlyioConfig {
 		StartCmd:   fqd.spec.StartCommand,
 	}
 
-	// Add service configuration
-	config.Services = []ServiceConfig{
-		{
-			Protocol:     "tcp",
-			InternalPort: internalPort,
-			Ports: []Port{
-				{Port: 80, Handlers: []string{"http"}},
-				{Port: 443, Handlers: []string{"tls", "http"}},
+	// HTTP-shaped deploys (web, mcp-server) get a public service + a PORT the app binds.
+	// A worker/cron shape is a portless process: emit NO [[services]] block, so Fly runs
+	// the container's CMD with no HTTP health check that a non-listening worker would fail
+	// (which would otherwise fail the whole deploy). Liveness already skips the probe for
+	// these shapes; this stops the *platform's own* health check from firing.
+	if fqd.spec.Shape.HTTPShaped() {
+		// Set PORT to match internal_port so the app knows which port to listen on.
+		envVars["PORT"] = fmt.Sprintf("%d", internalPort)
+		config.Services = []ServiceConfig{
+			{
+				Protocol:     "tcp",
+				InternalPort: internalPort,
+				Ports: []Port{
+					{Port: 80, Handlers: []string{"http"}},
+					{Port: 443, Handlers: []string{"tls", "http"}},
+				},
 			},
-		},
+		}
 	}
 	return config
 }
