@@ -195,6 +195,29 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		return deployResult{Error: summary}, nil
 	}
 
+	// A worker/cron shape has no HTTP URL to probe. Skip the whole URL/liveness
+	// block below: GetRenderServiceURL returns empty for a portless
+	// background_worker, and an HTTP liveness probe would fail a non-listening
+	// process (auto-failing an otherwise healthy deploy). Record success with no
+	// URL. (Mirror of the Fly worker path.)
+	if !input.Shape.HTTPShaped() {
+		var svc deployment.CreatedResource
+		for _, cr := range createdResources {
+			if cr.ID != "" {
+				svc = cr
+				break
+			}
+		}
+		if operationId != "" {
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", map[string]any{
+				"platform":          "render",
+				"resources_created": createdResources,
+				"resourceId":        svc.ID,
+			}).Get(ctx)
+		}
+		return deployResult{Url: ""}, nil
+	}
+
 	// Find web service resource
 	var ws deployment.CreatedResource
 	for _, cr := range createdResources {

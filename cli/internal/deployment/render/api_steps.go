@@ -749,9 +749,17 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		metadata["url"] = fullWebService.ServiceDetails.URL
 	}
 
+	// Report the resource under its actual Render service type (web_service or
+	// background_worker) so the workflow can tell an HTTP service from a portless
+	// worker when deciding whether to probe a URL.
+	resourceType := s.Type
+	if resourceType == "" {
+		resourceType = "web_service"
+	}
+
 	return deployment.CreatedResource{
 		ID:       webService.ID,
-		Type:     "web_service",
+		Type:     resourceType,
 		Name:     webService.Name,
 		Metadata: metadata,
 	}, nil
