@@ -218,6 +218,7 @@ func FilterConfiguredMigrationTools(detectedTools []string, migrationFiles []str
 	hasDjangoManage := false
 	hasFlaskMigrate := false
 	hasMigrationsDir := false
+	hasRailsMigrations := false // Rails/ActiveRecord keeps migrations under db/migrate
 
 	for _, mf := range migrationFiles {
 		mfLower := strings.ToLower(mf)
@@ -226,6 +227,9 @@ func FilterConfiguredMigrationTools(detectedTools []string, migrationFiles []str
 		}
 		if strings.Contains(mfLower, "alembic/versions") {
 			hasAlembicVersions = true
+		}
+		if strings.Contains(mfLower, "db/migrate") {
+			hasRailsMigrations = true
 		}
 		if strings.Contains(mfLower, "migrations") {
 			hasMigrationsDir = true
@@ -307,6 +311,18 @@ func FilterConfiguredMigrationTools(detectedTools []string, migrationFiles []str
 		case strings.Contains(toolLower, "django"):
 			// Only include Django if it has manage.py AND migrations directories
 			if hasDjangoManage && hasMigrationsDir {
+				shouldInclude = true
+			}
+
+		// Ruby tools
+		case strings.Contains(toolLower, "rails") || strings.Contains(toolLower, "activerecord"):
+			// Rails/ActiveRecord run migrations only when db/migrate exists
+			if hasRailsMigrations {
+				shouldInclude = true
+			}
+		case strings.Contains(toolLower, "sequel") || strings.Contains(toolLower, "rom-sql") ||
+			strings.Contains(toolLower, "hanami-model") || strings.Contains(toolLower, "data_mapper"):
+			if hasRailsMigrations || hasMigrationsDir {
 				shouldInclude = true
 			}
 

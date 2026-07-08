@@ -1,0 +1,55 @@
+# Bundler / gems
+.bundle
+vendor/bundle
+
+# Rails runtime artifacts
+tmp/
+log/
+storage/
+public/assets
+public/packs
+
+# Test / coverage
+coverage/
+spec/tmp
+
+# Node assets (jsbundling / cssbundling)
+node_modules/
+
+# IDEs
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+README.md
+*.md
+
+# Version control
+.git
+.gitignore
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+.circleci
+
+# Secrets / local env
+.env
+config/master.key
+config/credentials/*.key
+
+# Platform-specific build outputs
+.vercel
+.netlify
+.render
+.fly
+.railway
+.heroku

@@ -18,6 +18,7 @@ var (
 	webServerDeps = []string{
 		"fastapi", "flask", "django", "starlette", "uvicorn", "gunicorn", "aiohttp", "sanic",
 		"tornado", "quart", "express", "fastify", "koa", "next", "@nestjs/core", "hono", "hapi",
+		"rails", "puma", "sinatra", "rack",
 	}
 )
 
