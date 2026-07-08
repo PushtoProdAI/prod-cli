@@ -2,6 +2,8 @@ package deployment
 
 import (
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -171,5 +173,58 @@ func TestGenerateDockerfile_DjangoCollectStatic(t *testing.T) {
 				t.Errorf("Did not expect collectstatic command in Dockerfile for %s, but it was found:\n%s", tt.name, dockerfile)
 			}
 		})
+	}
+}
+
+func TestHasUserDockerfile(t *testing.T) {
+	dir := t.TempDir()
+	if hasUserDockerfile(dir) {
+		t.Error("no Dockerfile → false")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM alpine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !hasUserDockerfile(dir) {
+		t.Error("a user-committed Dockerfile → true")
+	}
+	// A prod-generated one (carries the marker) is NOT the user's.
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(generatedDockerfileMarker+"\nFROM golang\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if hasUserDockerfile(dir) {
+		t.Error("a prod-generated Dockerfile must not count as the user's")
+	}
+}
+
+func TestGenerateDockerfileReusesUserDockerfile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM alpine\nCMD [\"true\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dg := NewDockerGenerator(nil, nil)
+	defer dg.Close()
+	spec := &DeploymentSpec{Name: "app", Language: "go", Metadata: map[string]any{"buildContext": dir}}
+
+	art, err := dg.GenerateDockerfile(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !art.UseExisting {
+		t.Error("a user Dockerfile should be reused (UseExisting)")
+	}
+
+	// With a prod-generated Dockerfile present, prod regenerates (and re-marks) rather than reusing.
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(generatedDockerfileMarker+"\nstale\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	art2, err := dg.GenerateDockerfile(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if art2.UseExisting {
+		t.Error("a prod-generated Dockerfile must be regenerated, not reused")
+	}
+	if !strings.HasPrefix(art2.Dockerfile, generatedDockerfileMarker) {
+		t.Error("a generated Dockerfile must carry the marker")
 	}
 }
