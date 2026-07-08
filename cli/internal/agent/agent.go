@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -71,6 +72,11 @@ type Agent struct {
 	// for CI and per-PR previews (e.g. myapp-pr-7) — winning over the analyzer's default
 	// and the LLM's inferred name.
 	nameOverride string
+	// envOverrides holds values supplied via --env / --env-file (headless CI). They win
+	// over .env files and mark the variable collected so it never prompts. A value on a
+	// sensitive-categorized (or secret-looking) var routes to the platform's secret store,
+	// never plaintext config.
+	envOverrides map[string]string
 }
 
 type agentContextKey string
@@ -271,6 +277,56 @@ func (a *Agent) applyNameOverride(plan *DeployPlan) {
 	if a.DeployPlan != nil {
 		a.DeployPlan.Spec.Name = a.nameOverride
 	}
+}
+
+// SetEnvOverrides records env var values supplied via --env / --env-file (headless CI).
+func (a *Agent) SetEnvOverrides(m map[string]string) {
+	a.envOverrides = m
+}
+
+// applyEnvOverrides sets values from --env/--env-file onto the categorized vars (winning over
+// .env), and appends any override var the analyzer didn't detect. It returns the augmented list
+// plus the set of names an override provided, so the caller marks them "collected" — a provided
+// value never prompts, which is what makes --yes deploys headless.
+//
+// Security: for a var prod DID detect, the LLM's Sensitive categorization is preserved (a value
+// on a sensitive var routes to the platform secret store; a non-sensitive one to plaintext env).
+// For a var prod did NOT detect, we can't know its sensitivity, so we default it to Sensitive: a
+// CLI-supplied env value in headless CI is overwhelmingly a credential, and over-flagging is a
+// functional no-op (it's still a runtime env var), whereas under-flagging would leak a secret
+// with a non-obvious name (DATABASE_URL, SENTRY_DSN, REDIS_URL) into committed-looking config
+// (fly.toml [env]).
+func (a *Agent) applyEnvOverrides(envVars []deployment.EnvVar) ([]deployment.EnvVar, map[string]bool) {
+	if len(a.envOverrides) == 0 {
+		return envVars, nil
+	}
+	applied := make(map[string]bool)
+	seen := make(map[string]bool, len(envVars))
+	for i := range envVars {
+		seen[envVars[i].Name] = true
+		if v, ok := a.envOverrides[envVars[i].Name]; ok {
+			envVars[i].Value = v
+			applied[envVars[i].Name] = true
+		}
+	}
+	// Append override vars the analyzer never detected, in a stable order, as secrets (fail safe).
+	var undetected []string
+	for name := range a.envOverrides {
+		if !seen[name] {
+			undetected = append(undetected, name)
+		}
+	}
+	sort.Strings(undetected)
+	for _, name := range undetected {
+		envVars = append(envVars, deployment.EnvVar{
+			Name:      name,
+			Value:     a.envOverrides[name],
+			Role:      deployment.EnvRoleNotDBRelated,
+			Sensitive: true,
+		})
+		applied[name] = true
+	}
+	return envVars, applied
 }
 
 // IsComplete returns true if the state machine has finished (no current state)
@@ -970,6 +1026,11 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 
 	fmt.Fprintf(out, "✅ Environment variables categorized\n")
 
+	// Apply --env / --env-file values (headless CI): they win over .env and are marked
+	// "collected" below so a provided value never prompts. Undetected secret-looking vars
+	// are flagged sensitive so they route to the platform secret store, not plaintext config.
+	envVars, envProvided := a.applyEnvOverrides(envVars)
+
 	// always initialize envVars slice to reset between deploys
 	a.envVars = make([]EnvVarWithStatus, 0)
 
@@ -984,6 +1045,17 @@ func (a *Agent) categorizeEnvironmentVariables(ctx context.Context, input string
 		// The platform sets these itself — never prompt for or set them.
 		if isPlatformManagedVar(envVar.Name) {
 			platformManaged = append(platformManaged, envVar.Name)
+			continue
+		}
+		// A value supplied via --env is authoritative: collect it (never prompt), and let its
+		// sensitivity route it to secrets vs plaintext. This is what makes --yes CI headless.
+		if envProvided[envVar.Name] {
+			a.envVars = append(a.envVars, EnvVarWithStatus{EnvVar: envVar, Status: "collected"})
+			if envVar.Sensitive {
+				sensitiveAutoPopulated = append(sensitiveAutoPopulated, envVar.Name)
+			} else {
+				nonSensitiveAutoPopulated = append(nonSensitiveAutoPopulated, envVar.Name)
+			}
 			continue
 		}
 		if envVar.IsNotDBRelated() {

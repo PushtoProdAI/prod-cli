@@ -382,7 +382,8 @@ func (w *Workflows) categorizeEnvVars(ctx workflow.Context, deployPlan DeployPla
 			if !ok {
 				continue
 			}
-			slog.Info("env var found in env file", "name", envVars[i].Name, "value", fromEnvFile.Value)
+			// Log the name only — the value may be a secret (and --env-file encourages putting them here).
+			slog.Info("env var found in env file", "name", envVars[i].Name)
 			envVars[i].Value = fromEnvFile.Value
 			mergedCount++
 		}
