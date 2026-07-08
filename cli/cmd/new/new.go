@@ -46,6 +46,24 @@ var templates = []tmpl{
 		shape:       "mcp-server",
 		prompt:      `prod "deploy this mcp server to fly"`,
 	},
+	{
+		name:        "nextjs",
+		description: "A Next.js app (App Router, TypeScript).",
+		shape:       "web",
+		prompt:      `prod "deploy this to vercel"`,
+	},
+	{
+		name:        "fastapi",
+		description: "A FastAPI service (Python).",
+		shape:       "web",
+		prompt:      `prod "deploy this to fly"`,
+	},
+	{
+		name:        "go-api",
+		description: "A dependency-free Go HTTP API (net/http).",
+		shape:       "web",
+		prompt:      `prod "deploy this to fly"`,
+	},
 }
 
 func lookupTemplate(name string) (tmpl, bool) {
@@ -159,6 +177,11 @@ func scaffold(templateName, projectName string) error {
 		if err != nil {
 			return err
 		}
+		// Strip a `.tmpl` suffix on write. Go source templates (go.mod, main.go) MUST be
+		// stored suffixed: a literal go.mod makes go:embed exclude the whole template subtree,
+		// and a literal .go file gets compiled + gofumpt-linted by CI. The suffix keeps them
+		// inert to prod's own toolchain; the scaffolded project gets the real filenames.
+		dest = strings.TrimSuffix(dest, ".tmpl")
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			return err
 		}

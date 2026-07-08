@@ -1,0 +1,6 @@
+# How prod deploys this project.
+shape: web               # serves HTTP; liveness is a URL probe
+runtime: node
+build: npm run build
+start: npm start
+suggestedPlatforms: [vercel, netlify, fly]

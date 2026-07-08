@@ -1,0 +1,5 @@
+# How prod deploys this project.
+shape: web               # serves HTTP; liveness is a URL probe
+runtime: python
+start: uvicorn main:app --host 0.0.0.0 --port $PORT
+suggestedPlatforms: [fly, render, cloudrun]
