@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"os"
+	"strings"
 
 	"github.com/conduitio/ecdysis"
 	"github.com/go-errors/errors"
@@ -19,9 +20,11 @@ var (
 )
 
 type RunFlags struct {
-	DryRun bool   `long:"dry-run" usage:"show the plan and estimated cost without deploying"`
-	Yes    bool   `long:"yes" short:"y" usage:"skip the approval prompt and deploy (for automation)"`
-	Name   string `long:"name" usage:"override the deployed app name (for CI / per-PR previews, e.g. myapp-pr-7)"`
+	DryRun  bool     `long:"dry-run" usage:"show the plan and estimated cost without deploying"`
+	Yes     bool     `long:"yes" short:"y" usage:"skip the approval prompt and deploy (for automation)"`
+	Name    string   `long:"name" usage:"override the deployed app name (for CI / per-PR previews, e.g. myapp-pr-7)"`
+	Env     []string `long:"env" usage:"set an env var value (KEY=VALUE), repeatable — for headless CI; a secret-looking value routes to platform secrets"`
+	EnvFile string   `long:"env-file" usage:"read env var values from a KEY=VALUE file (e.g. .env.ci) for headless CI"`
 }
 
 type RunArgs struct {
@@ -47,6 +50,12 @@ func (c *RunCommand) Args(args []string) error {
 func (c *RunCommand) Execute(ctx context.Context) error {
 	c.Agent.SetDryRun(c.flags.DryRun)
 	c.Agent.SetNameOverride(c.flags.Name)
+
+	overrides, err := buildEnvOverrides(c.flags.EnvFile, c.flags.Env)
+	if err != nil {
+		return err
+	}
+	c.Agent.SetEnvOverrides(overrides)
 
 	// JSON mode is the MCP/automation substrate. With --yes it's fully headless (CI): the
 	// same auto-approve driver as the console path runs the deploy to completion emitting
@@ -78,6 +87,41 @@ func (c *RunCommand) Execute(ctx context.Context) error {
 	// confirmation prompt.
 	c.Agent.DriveOneShot(ctx, c.args.prompt, c.StatusWriter, os.Stdin, c.flags.Yes)
 	return nil
+}
+
+// buildEnvOverrides merges --env-file then --env into a single map (--env wins over the file,
+// and both win over the project's .env). Values may be quoted in the file.
+func buildEnvOverrides(envFile string, envs []string) (map[string]string, error) {
+	m := map[string]string{}
+	if envFile != "" {
+		data, err := os.ReadFile(envFile)
+		if err != nil {
+			return nil, errors.Errorf("failed to read --env-file %q: %w", envFile, err)
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			k, v, ok := strings.Cut(line, "=")
+			if !ok {
+				continue
+			}
+			m[strings.TrimSpace(k)] = strings.Trim(strings.TrimSpace(v), `"'`)
+		}
+	}
+	for _, kv := range envs {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok {
+			return nil, errors.Errorf("invalid --env %q: expected KEY=VALUE", kv)
+		}
+		k = strings.TrimSpace(k)
+		if k == "" {
+			return nil, errors.Errorf("invalid --env %q: empty key", kv)
+		}
+		m[k] = v
+	}
+	return m, nil
 }
 
 func (c *RunCommand) Usage() string { return "run" }
