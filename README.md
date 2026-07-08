@@ -84,6 +84,7 @@ prod "rollback"                       # roll back the last deploy (auto-detects 
 | Command | What it does |
 |---|---|
 | `prod [prompt]` | Start an interactive session, or run a one-shot deploy from the prompt |
+| `prod new <template>` | Scaffold a deployable starter (e.g. `prod new agent-worker my-agent`) |
 | `prod run <prompt>` | Execute a single command and exit — for automation / scripting (set `PROD_JSON_MODE=true` for structured JSON output) |
 | `prod ls` | List recent deployments — name, platform, status, live URL (`--json`, `--platform`, `--all`) |
 | `prod open <app>` | Open a deployed app's live URL, or `--console` for its platform dashboard |
@@ -110,6 +111,10 @@ config:
 ```jsonc
 { "mcpServers": { "prod": { "command": "prod", "args": ["mcp"] } } }
 ```
+
+**→ Full walkthrough, with worked transcripts: [docs/agent-deploy.md](./docs/agent-deploy.md)** —
+wire prod into Claude Code / Cursor and deploy, check status, tail logs, and roll back, all
+in-session.
 
 ---
 
@@ -214,8 +219,10 @@ version. (Rollback and managed RDS provisioning are planned — see the [ROADMAP
 
 ## Documentation
 
+- [docs/agent-deploy.md](./docs/agent-deploy.md) — drive prod from your coding agent (MCP), with transcripts
 - [docs/clouds.md](./docs/clouds.md) — per-cloud credential setup (all 8 clouds + Modal + plugins)
 - [docs/plugins.md](./docs/plugins.md) — write a provider plugin to add your own cloud
+- [docs/dx-roadmap.md](./docs/dx-roadmap.md) — the developer-experience roadmap (Tier 1, previews, languages)
 - [docs/windows.md](./docs/windows.md) — running prod on Windows (via WSL2)
 - [ROADMAP.md](./ROADMAP.md) — the plan, phases, and the open-core boundary
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — build, the local `make check` gate, the CGO note
