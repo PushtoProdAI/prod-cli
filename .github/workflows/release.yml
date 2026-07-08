@@ -1,8 +1,9 @@
 name: Release
 
 # Publishes cross-platform archives so the install one-liner works everywhere — not
-# just macOS. Runs on a version tag. CGO is on (BAML shim); Linux builds natively on
-# an Ubuntu runner (amd64 native, arm64 via the cross toolchain), darwin on a mac.
+# just macOS. Runs on a version tag. CGO is on (BAML shim). darwin builds natively on
+# a mac; linux is cross-compiled inside the pinned cli/Dockerfile.build image (its
+# glibc floor tracks go.mod's Go), driven by `make -C cli dist-linux`.
 on:
   push:
     tags: ["v*"]
@@ -11,31 +12,24 @@ permissions:
   contents: write # create the GitHub Release
 
 jobs:
-  build:
-    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
-    runs-on: ${{ matrix.os }}
+  build-darwin:
+    name: build darwin/${{ matrix.goarch }}
+    runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-latest, goos: linux, goarch: amd64, cc: gcc, apt: "" }
-          - { os: ubuntu-latest, goos: linux, goarch: arm64, cc: aarch64-linux-gnu-gcc, apt: gcc-aarch64-linux-gnu }
-          - { os: macos-latest, goos: darwin, goarch: amd64, cc: clang, apt: "" }
-          - { os: macos-latest, goos: darwin, goarch: arm64, cc: clang, apt: "" }
+        goarch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
-      - name: Install cross toolchain
-        if: matrix.apt != ''
-        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.apt }}
       - name: Build + package
         env:
-          GOOS: ${{ matrix.goos }}
+          GOOS: darwin
           GOARCH: ${{ matrix.goarch }}
-          CC: ${{ matrix.cc }}
+          CC: clang # Apple clang cross-compiles across both darwin arches
           CGO_ENABLED: "1"
           REF_NAME: ${{ github.ref_name }}
         working-directory: cli
@@ -55,13 +49,41 @@ jobs:
           echo "ARCHIVE=cli/$archive" >>"$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:
-          name: archive-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: archive-darwin-${{ matrix.goarch }}
           path: ${{ env.ARCHIVE }}
+          if-no-files-found: error
+
+  build-linux:
+    name: build linux (docker)
+    # Standard ubuntu-latest is enough: Docker is preinstalled, and
+    # cli/Dockerfile.build cross-compiles BOTH linux arches inside one amd64
+    # container via gcc-x86-64/aarch64-linux-gnu — no QEMU, buildx, or multi-arch
+    # emulation required. This is the DISTRIBUTION.md-verified linux path; GoReleaser
+    # OSS can't do a CGO cross-compile, so linux is deliberately not routed through it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build linux archives via Docker
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Strip the leading "v" so linux archive names match darwin + install.sh
+          # (prod_<version>_linux_<arch>.tar.gz) and the stamped Version is identical.
+          VERSION="${REF_NAME#v}"
+          make -C cli dist-linux VERSION="$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: archive-linux
+          # Only the two tar.gz archives; the combined checksums file is generated in
+          # `release` from all four archives, so dist-linux's separate linux checksums
+          # file is intentionally not uploaded.
+          path: cli/dist/prod_*_linux_*.tar.gz
           if-no-files-found: error
 
   release:
     name: publish release
-    needs: build
+    needs: [build-darwin, build-linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
