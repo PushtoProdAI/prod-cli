@@ -1,0 +1,7 @@
+# How prod deploys this project.
+shape: worker            # a continuous, non-HTTP process — no health check, no URL
+runtime: python
+env:
+  - name: OPENAI_API_KEY
+    required: true
+suggestedPlatforms: [fly, render, modal]

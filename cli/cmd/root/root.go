@@ -11,6 +11,7 @@ import (
 	deployscmd "github.com/pushtoprodai/prod-cli/cmd/deploys"
 	doctorcmd "github.com/pushtoprodai/prod-cli/cmd/doctor"
 	mcpcmd "github.com/pushtoprodai/prod-cli/cmd/mcp"
+	newcmd "github.com/pushtoprodai/prod-cli/cmd/new"
 	plugincmd "github.com/pushtoprodai/prod-cli/cmd/plugin"
 	"github.com/pushtoprodai/prod-cli/cmd/run"
 	"github.com/pushtoprodai/prod-cli/internal/agent"
@@ -49,6 +50,7 @@ type RootCommand struct {
 	WriterType   output.WriterType
 
 	// Subcommands
+	New    newcmd.NewCommand       `cmd:"" help:"Scaffold a starter project you can deploy"`
 	Run    run.RunCommand          `cmd:"" help:"Run a deployment command"`
 	MCP    mcpcmd.MCPCommand       `cmd:"" help:"Start the prod MCP server (stdio)"`
 	Doctor doctorcmd.DoctorCommand `cmd:"" help:"Check prerequisites (LLM, Docker)"`
@@ -60,6 +62,7 @@ type RootCommand struct {
 
 func (c *RootCommand) SubCommands() []ecdysis.Command {
 	return []ecdysis.Command{
+		&c.New,
 		&c.Run,
 		&c.MCP,
 		&c.Doctor,
