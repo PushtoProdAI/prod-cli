@@ -1,0 +1,69 @@
+name: Bug report
+description: Something prod did wrong — a failed deploy, a crash, a confusing result.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping make prod more reliable. The more of the deploy you can paste, the faster we can fix it.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you run, what did you expect, and what did prod do instead?
+      placeholder: |
+        I ran `prod "deploy this to fly"` on a Next.js app. It looped on `npm install` and never stopped.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact command(s), and anything about the project (framework, package manager, has a Dockerfile, etc.).
+      placeholder: |
+        1. cd my-app  (pnpm + Next.js 15)
+        2. prod "deploy this to fly"
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: prod version
+      description: Output of `prod --version`.
+      placeholder: "0.2.8"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Target platform
+      description: Which deploy target?
+      options:
+        - Fly.io
+        - Render
+        - Vercel
+        - Netlify
+        - Heroku
+        - AWS App Runner
+        - Google Cloud Run
+        - Azure Container Apps
+        - Modal
+        - A provider plugin
+        - Not sure / N/A
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      description: e.g. macOS 15.5 (arm64), Ubuntu 24.04, WSL2.
+      placeholder: "macOS 15.5 (arm64)"
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output / logs
+      description: Paste the failing output. Redact any secrets first — prod never needs them in an issue.
+      render: shell

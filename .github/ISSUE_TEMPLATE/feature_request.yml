@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest a platform, language, framework, or capability for prod.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The deploy or workflow you want that prod can't do today.
+      placeholder: |
+        I want to deploy a Rails 8 app with a Postgres to Fly, but prod doesn't detect Ruby yet.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of request is this?
+      options:
+        - A new deploy platform
+        - A new language / framework
+        - A new deploy shape (worker, cron, agent, ...)
+        - A CLI / UX improvement
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would the ideal experience look like?
+      description: The command you'd run and what you'd expect to happen. Links to the platform's API/SDK docs help a lot.
+  - type: markdown
+    attributes:
+      value: |
+        prod has a public roadmap in [`docs/dx-roadmap.md`](../blob/main/docs/dx-roadmap.md) and [`ROADMAP.md`](../blob/main/ROADMAP.md) — your request may already be planned.
