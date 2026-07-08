@@ -1,5 +1,7 @@
-# Multi-stage Dockerfile for cross-compilation with CGO
-FROM golang:1.25.0 AS base
+# Multi-stage Dockerfile for cross-compilation with CGO.
+# Keep this base >= the `go` directive in go.mod (currently 1.25.8): an older image makes
+# `go mod download` try to auto-fetch the newer toolchain, which fails in the build.
+FROM golang:1.25.8 AS base
 
 # Install cross-compilation tools
 RUN apt-get update && apt-get install -y \
