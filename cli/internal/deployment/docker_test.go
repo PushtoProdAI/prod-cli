@@ -176,6 +176,66 @@ func TestGenerateDockerfile_DjangoCollectStatic(t *testing.T) {
 	}
 }
 
+func TestGenerateDockerfile_Ruby(t *testing.T) {
+	// Build context is a fresh empty dir so F4's user-Dockerfile reuse path can't interfere.
+	buildCtx := t.TempDir()
+
+	t.Run("Rails app precompiles assets", func(t *testing.T) {
+		dg := NewDockerGeneratorWithBackend(io.Discard, []EnvVar{}, nil)
+		spec := &DeploymentSpec{
+			Name:         "widget",
+			Language:     "ruby",
+			BuildCommand: "bundle install",
+			StartCommand: "bundle exec rails server -b 0.0.0.0",
+			Services:     []Service{{Type: "framework", Provider: "rails"}},
+			Metadata:     map[string]any{"buildContext": buildCtx},
+		}
+		artifacts, err := dg.GenerateDockerfile(spec)
+		if err != nil {
+			t.Fatalf("GenerateDockerfile: %v", err)
+		}
+		df := artifacts.Dockerfile
+		if !strings.Contains(df, "ruby:3.3-slim") {
+			t.Errorf("expected the ruby base image; got:\n%s", df)
+		}
+		if !strings.Contains(df, "RUN bundle install") {
+			t.Errorf("expected the bundle install build step; got:\n%s", df)
+		}
+		if !strings.Contains(df, "assets:precompile") {
+			t.Errorf("a Rails app should precompile assets; got:\n%s", df)
+		}
+		if !strings.Contains(df, "bundle exec rails server") {
+			t.Errorf("expected the Rails start command; got:\n%s", df)
+		}
+	})
+
+	t.Run("Sinatra app skips asset precompile", func(t *testing.T) {
+		dg := NewDockerGeneratorWithBackend(io.Discard, []EnvVar{}, nil)
+		spec := &DeploymentSpec{
+			Name:         "tiny",
+			Language:     "ruby",
+			BuildCommand: "bundle install",
+			StartCommand: "bundle exec ruby app.rb",
+			Services:     []Service{{Type: "framework", Provider: "sinatra"}},
+			Metadata:     map[string]any{"buildContext": buildCtx},
+		}
+		artifacts, err := dg.GenerateDockerfile(spec)
+		if err != nil {
+			t.Fatalf("GenerateDockerfile: %v", err)
+		}
+		df := artifacts.Dockerfile
+		if strings.Contains(df, "assets:precompile") {
+			t.Errorf("a non-Rails Ruby app must not precompile assets; got:\n%s", df)
+		}
+		if !strings.Contains(df, "bundle exec ruby app.rb") {
+			t.Errorf("expected the Sinatra start command; got:\n%s", df)
+		}
+		if artifacts.DockerIgnore == "" {
+			t.Error("expected a ruby .dockerignore to be generated")
+		}
+	})
+}
+
 func TestHasUserDockerfile(t *testing.T) {
 	dir := t.TempDir()
 	if hasUserDockerfile(dir) {

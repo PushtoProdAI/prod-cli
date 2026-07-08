@@ -146,6 +146,11 @@ func (dg *DockerGenerator) initTemplates() {
 		panic(fmt.Sprintf("failed to read go template: %v", err))
 	}
 
+	rubyTemplate, err := templateFS.ReadFile("templates/ruby.dockerfile")
+	if err != nil {
+		panic(fmt.Sprintf("failed to read ruby template: %v", err))
+	}
+
 	// Get base images from backend if client is available
 	if dg.beClient != nil {
 		images, err := dg.beClient.GetBaseDockerImages(context.Background())
@@ -168,6 +173,7 @@ func (dg *DockerGenerator) initTemplates() {
 	dg.templates["python"] = template.Must(template.New("python").Funcs(funcMap).Parse(string(pythonTemplate)))
 	dg.templates["go"] = template.Must(template.New("go").Parse(string(goTemplate)))
 	dg.templates["golang"] = dg.templates["go"]
+	dg.templates["ruby"] = template.Must(template.New("ruby").Parse(string(rubyTemplate)))
 
 	nodeDockerignore, err := templateFS.ReadFile("templates/node.dockerignore")
 	if err != nil {
@@ -189,6 +195,12 @@ func (dg *DockerGenerator) initTemplates() {
 	}
 	dg.dockerignoreTemplates["go"] = string(goDockerignore)
 	dg.dockerignoreTemplates["golang"] = string(goDockerignore)
+
+	rubyDockerignore, err := templateFS.ReadFile("templates/ruby.dockerignore")
+	if err != nil {
+		panic(fmt.Sprintf("failed to read ruby dockerignore: %v", err))
+	}
+	dg.dockerignoreTemplates["ruby"] = string(rubyDockerignore)
 }
 
 func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArtifacts, error) {
@@ -220,12 +232,18 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 	// Determine port from env vars or use default
 	port := dg.determinePort()
 
-	// Check if this is a Django project by looking for django framework in ServiceRequirements
+	// Check for framework markers (Django → collectstatic, Rails → assets:precompile) carried
+	// on the deployment spec's Services.
 	isDjango := false
+	isRails := false
 	for _, service := range spec.Services {
-		if service.Type == "framework" && service.Provider == "django" {
-			isDjango = true
-			break
+		if service.Type == "framework" {
+			switch service.Provider {
+			case "django":
+				isDjango = true
+			case "rails":
+				isRails = true
+			}
 		}
 	}
 
@@ -241,6 +259,7 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 		OutputDir        string
 		IsStatic         bool
 		IsDjango         bool
+		IsRails          bool
 		EnvVars          []EnvVar
 	}{
 		Name:             spec.Name,
@@ -253,6 +272,7 @@ func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArti
 		OutputDir:        spec.OutputDir,
 		IsStatic:         spec.IsStatic,
 		IsDjango:         isDjango,
+		IsRails:          isRails,
 		EnvVars:          dg.envVars,
 	}
 	// Execute template
