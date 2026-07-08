@@ -43,7 +43,7 @@ func (w *Workflows) deployContainer(ctx workflow.Context, input DeployPlan) (dep
 	}
 
 	// Build the deployment spec.
-	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars)
+	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars, input.Shape)
 	spec, err := db.Build()
 	if err != nil {
 		if operationId != "" {

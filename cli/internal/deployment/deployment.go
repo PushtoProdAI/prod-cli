@@ -87,6 +87,10 @@ type DeploymentSpec struct {
 	IsRollback        bool
 	ExistingProjectID string
 	ExistingDatabases []string
+	// Shape selects the artifact an adapter generates (a web service vs a portless
+	// worker vs a scheduled job) — not just the liveness strategy. Empty means ShapeWeb
+	// (via HTTPShaped), so existing web deploys are unchanged.
+	Shape DeployShape
 }
 
 type CostService struct {
@@ -170,12 +174,18 @@ func (ds *DeploymentSpec) ServiceCounts() map[string]int {
 type DeploymentBuilder struct {
 	projectSpec    *analyzer.ProjectSpec
 	serviceEnvVars []EnvVar
+	shape          DeployShape
 }
 
-func NewDeploymentBuilder(projectSpec *analyzer.ProjectSpec, serviceEnvVars []EnvVar) *DeploymentBuilder {
+// NewDeploymentBuilder builds a DeploymentSpec from an analyzed project. shape is the
+// resolved deploy shape (from DeployPlan.Shape — the LLM's classification with the
+// analyzer's code-signal override already applied); pass ShapeWeb (or "") for the
+// default web behavior.
+func NewDeploymentBuilder(projectSpec *analyzer.ProjectSpec, serviceEnvVars []EnvVar, shape DeployShape) *DeploymentBuilder {
 	return &DeploymentBuilder{
 		projectSpec:    projectSpec,
 		serviceEnvVars: serviceEnvVars,
+		shape:          shape,
 	}
 }
 
@@ -202,6 +212,13 @@ func (db *DeploymentBuilder) Build() (*DeploymentSpec, error) {
 	// Determine if it's a static app (has build command, no start command, and has output directory)
 	isStatic := db.projectSpec.BuildCommand != "" && db.projectSpec.StartCommand == "" && db.projectSpec.BuildOutput.Path != ""
 
+	// Default an unset shape to web so an adapter's `!spec.Shape.HTTPShaped()` worker
+	// branch never misfires on a zero value and drops the HTTP service on a web app.
+	shape := db.shape
+	if shape == "" {
+		shape = ShapeWeb
+	}
+
 	return &DeploymentSpec{
 		Name:     db.projectSpec.Name,
 		Language: db.projectSpec.Language,
@@ -215,6 +232,7 @@ func (db *DeploymentBuilder) Build() (*DeploymentSpec, error) {
 		EnvVars:          db.serviceEnvVars,
 		OutputDir:        db.projectSpec.BuildOutput.Path,
 		IsStatic:         isStatic,
+		Shape:            shape,
 	}, nil
 }
 

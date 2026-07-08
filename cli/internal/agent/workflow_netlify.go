@@ -31,7 +31,7 @@ func (w *Workflows) deployNetlify(ctx workflow.Context, input DeployPlan) (deplo
 
 	// Build deployment spec from the plan
 	slog.Info("Building deployment spec")
-	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars)
+	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars, input.Shape)
 	spec, err := db.Build()
 	if err != nil {
 		slog.Info("Failed to build deployment spec", "error", err)

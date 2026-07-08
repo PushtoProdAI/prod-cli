@@ -18,7 +18,7 @@ func (w *Workflows) deployModal(ctx workflow.Context, input DeployPlan) (deployR
 		workflow.Logger(ctx).Warn("failed to log modal deploy start", "error", err)
 	}
 
-	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars)
+	db := deployment.NewDeploymentBuilder(&input.Spec, input.CollectedEnvVars, input.Shape)
 	spec, err := db.Build()
 	if err != nil {
 		return deployResult{Error: deployError{Summary: fmt.Sprintf("Failed to build deployment spec: %v", err)}}, nil

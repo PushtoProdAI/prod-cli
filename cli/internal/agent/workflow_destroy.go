@@ -31,7 +31,7 @@ func (w *Workflows) destroyDeployment(ctx workflow.Context, plan DeployPlan) (de
 		}
 	}
 
-	db := deployment.NewDeploymentBuilder(&plan.Spec, plan.CollectedEnvVars)
+	db := deployment.NewDeploymentBuilder(&plan.Spec, plan.CollectedEnvVars, plan.Shape)
 	spec, err := db.Build()
 	if err != nil {
 		failDestroy(ctx, operationId, plan.Platform.String(), "spec_build", err)
