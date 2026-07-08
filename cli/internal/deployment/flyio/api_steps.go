@@ -21,6 +21,10 @@ type CreateFlyioAppStep struct {
 	BaseStep
 	appName string
 	region  string
+	// explicitName is true when the user pinned the name (--name). A global collision then
+	// fails loudly instead of auto-suffixing — the suffix would fork an unmanaged, orphaned
+	// app that CI's later destroy-by-name would never find.
+	explicitName bool
 }
 
 func (c *CreateFlyioAppStep) Execute(ctx context.Context, client FlyioClient, stepResults map[string]any) (any, error) {
@@ -59,6 +63,15 @@ func (c *CreateFlyioAppStep) Execute(ctx context.Context, client FlyioClient, st
 					Type: "app",
 					Name: existingApp.Name,
 				}, nil
+			}
+
+			// The name is taken outside your org. When the user PINNED the name (--name, for
+			// CI/per-PR), never auto-suffix: a renamed app is unmanaged and orphaned (the
+			// matching destroy-by-name would never find it). Fail loudly so the caller picks a
+			// unique name instead.
+			if c.explicitName {
+				return nil, errors.Errorf("Fly.io app name %q is already taken (by another org), and you pinned it with --name, so prod won't silently rename it.\n\n"+
+					"Pick a different --name (e.g. add your repo/owner to the prefix) — a name that's globally unique on Fly.io.", appName)
 			}
 
 			// Try with a random suffix

@@ -34,6 +34,10 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 	// Build deployment spec
 	db := deployment.NewDeploymentBuilder(&input.Spec, envVars, input.Shape)
 	spec, err := db.Build()
+	if spec != nil {
+		// A --name deploy must not be silently auto-renamed on a global collision.
+		spec.ExplicitName = input.ExplicitName
+	}
 	if err != nil {
 		// Log deployment failure
 		if operationId != "" {
