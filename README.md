@@ -1,5 +1,10 @@
 # prod
 
+[![CI](https://github.com/PushtoProdAI/prod-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/PushtoProdAI/prod-cli/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/PushtoProdAI/prod-cli)](https://github.com/PushtoProdAI/prod-cli/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/github/go-mod/go-version/PushtoProdAI/prod-cli?filename=cli%2Fgo.mod)](cli/go.mod)
+
 **Deploy apps and agents to the cloud from a sentence — one binary, no backend, no account.**
 
 ```bash
