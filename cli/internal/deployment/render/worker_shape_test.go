@@ -16,13 +16,18 @@ import (
 // inventing one would be wrong.
 func TestRenderServiceTypeByShape(t *testing.T) {
 	cases := []struct {
+		name     string
 		shape    deployment.DeployShape
+		schedule string
 		wantType string
 	}{
-		{deployment.ShapeWeb, "web_service"},
-		{deployment.ShapeMCPServer, "web_service"},
-		{deployment.ShapeWorker, "background_worker"},
-		{deployment.ShapeCron, "background_worker"},
+		{"web", deployment.ShapeWeb, "", "web_service"},
+		{"mcp-server", deployment.ShapeMCPServer, "", "web_service"},
+		{"worker", deployment.ShapeWorker, "", "background_worker"},
+		// A cron WITH a schedule is a real cron_job; without one it falls back to a worker
+		// (planning degrades a scheduleless cron before it reaches here, but defend anyway).
+		{"cron with schedule", deployment.ShapeCron, "0 2 * * *", "cron_job"},
+		{"cron without schedule", deployment.ShapeCron, "", "background_worker"},
 	}
 	for _, tc := range cases {
 		qd := &QueuedDeployment{
@@ -31,22 +36,26 @@ func TestRenderServiceTypeByShape(t *testing.T) {
 				Language:     "python",
 				StartCommand: "python worker.py",
 				Shape:        tc.shape,
+				Schedule:     tc.schedule,
 			},
 		}
 
 		if got := qd.renderServiceType(); got != tc.wantType {
-			t.Errorf("shape %q: renderServiceType() = %q, want %q", tc.shape, got, tc.wantType)
+			t.Errorf("%s: renderServiceType() = %q, want %q", tc.name, got, tc.wantType)
 		}
 
-		// The live deploy path threads the type through createWebServiceStep, so
-		// assert the actual step carries it (not just the helper).
+		// The live deploy path threads the type + schedule through createWebServiceStep, so
+		// assert the actual step carries them (not just the helper).
 		step := qd.createWebServiceStep("owner-1", nil, nil, &deploymentConfig{}, 1)
 		ws, ok := step.(*CreateWebServiceStep)
 		if !ok {
-			t.Fatalf("shape %q: expected *CreateWebServiceStep, got %T", tc.shape, step)
+			t.Fatalf("%s: expected *CreateWebServiceStep, got %T", tc.name, step)
 		}
 		if ws.Type != tc.wantType {
-			t.Errorf("shape %q: web service step Type = %q, want %q", tc.shape, ws.Type, tc.wantType)
+			t.Errorf("%s: step Type = %q, want %q", tc.name, ws.Type, tc.wantType)
+		}
+		if ws.Schedule != tc.schedule {
+			t.Errorf("%s: step Schedule = %q, want %q", tc.name, ws.Schedule, tc.schedule)
 		}
 	}
 }

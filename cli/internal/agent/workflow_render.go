@@ -60,6 +60,9 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 		}
 		return deployResult{}, errors.Errorf("failed to build deployment spec: %w", err)
 	}
+	// The cron schedule rides on the plan (input), not the analyzer's ProjectSpec, so carry it
+	// onto the built spec for the adapter (renderServiceType → cron_job).
+	spec.Schedule = input.Schedule
 	spec.Metadata["buildContext"] = input.Source
 
 	// Set update mode if existing project detected
@@ -215,7 +218,8 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 				"resourceId":        svc.ID,
 				// Persist the shape so ls/open/status know this Render record is a URL-less
 				// worker/cron by design (mirrors the Fly worker path).
-				"shape": input.Shape.String(),
+				"shape":    input.Shape.String(),
+				"schedule": input.Schedule, // "" unless this is a cron_job
 			}).Get(ctx)
 		}
 		return deployResult{Url: ""}, nil

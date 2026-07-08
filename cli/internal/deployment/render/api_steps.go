@@ -522,6 +522,8 @@ type CreateWebServiceStepConfig struct {
 	StartCommand string
 	// PreDeployCommand is the command to run before deployment (e.g., database migrations)
 	PreDeployCommand string
+	// Schedule is the cron expression for a cron_job service (empty for other types)
+	Schedule string
 	// Environment is the runtime environment (e.g., "node", "python3", "docker")
 	Environment string
 	// Dockerfile is the path to the Dockerfile for Docker deployments
@@ -548,6 +550,7 @@ type CreateWebServiceStep struct {
 	BuildCommand       string              `json:"buildCommand"`
 	StartCommand       string              `json:"startCommand"`
 	PreDeployCommand   string              `json:"preDeployCommand"`
+	Schedule           string              `json:"schedule,omitempty"` // cron expression for a cron_job
 	Environment        string              `json:"environment"`
 	Dockerfile         string              `json:"dockerfile,omitempty"`
 	DockerImageStepID  string              `json:"dockerImageStepId,omitempty"`  // ID of build & push step
@@ -570,6 +573,7 @@ func NewCreateWebServiceStep(config CreateWebServiceStepConfig) *CreateWebServic
 		BuildCommand:       config.BuildCommand,
 		StartCommand:       config.StartCommand,
 		PreDeployCommand:   config.PreDeployCommand,
+		Schedule:           config.Schedule,
 		Environment:        config.Environment,
 		Dockerfile:         config.Dockerfile,
 		DockerImageStepID:  config.DockerImageStepID,
@@ -724,6 +728,10 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		if s.PreDeployCommand != "" {
 			serviceDetails.PreDeployCommand = s.PreDeployCommand
 		}
+		// A cron_job carries its schedule inside serviceDetails.
+		if s.Type == "cron_job" && s.Schedule != "" {
+			serviceDetails.Schedule = s.Schedule
+		}
 		req.ServiceDetails = serviceDetails
 
 		// Don't set build/start/pre-deploy commands for Docker deployments
@@ -731,6 +739,15 @@ func (s *CreateWebServiceStep) Execute(ctx context.Context, client RenderClient,
 		// Native deployment - set build, start, and pre-deploy commands
 		req.BuildCommand = s.BuildCommand
 		req.StartCommand = s.StartCommand
+		// A cron_job still needs its schedule in serviceDetails, even on the native runtime.
+		if s.Type == "cron_job" && s.Schedule != "" {
+			req.ServiceDetails = &WebServiceDetails{
+				Runtime:  s.Environment,
+				Plan:     webServicePlan,
+				Region:   webServiceRegion,
+				Schedule: s.Schedule,
+			}
+		}
 	}
 	webService, err := client.CreateWebService(ctx, req)
 	if err != nil {

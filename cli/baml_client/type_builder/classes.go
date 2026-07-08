@@ -287,6 +287,10 @@ func (t *IntentClassView) PropertyDeployShape() (ClassPropertyView, error) {
 	return t.inner.Property("deployShape")
 }
 
+func (t *IntentClassView) PropertySchedule() (ClassPropertyView, error) {
+	return t.inner.Property("schedule")
+}
+
 func (t *TypeBuilder) Intent() (*IntentClassView, error) {
 	bld, err := t.inner.Class("Intent")
 	if err != nil {

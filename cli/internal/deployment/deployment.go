@@ -91,6 +91,9 @@ type DeploymentSpec struct {
 	// worker vs a scheduled job) — not just the liveness strategy. Empty means ShapeWeb
 	// (via HTTPShaped), so existing web deploys are unchanged.
 	Shape DeployShape
+	// Schedule is a 5-field cron expression, set only for ShapeCron on platforms that
+	// support scheduled jobs (e.g. a Render cron_job). Empty otherwise.
+	Schedule string
 }
 
 type CostService struct {

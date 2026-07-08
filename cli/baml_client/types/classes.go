@@ -391,6 +391,7 @@ type Intent struct {
 	Platform    string `json:"platform"`
 	Source      string `json:"source"`
 	DeployShape string `json:"deployShape"`
+	Schedule    string `json:"schedule"`
 }
 
 func (c *Intent) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -419,6 +420,9 @@ func (c *Intent) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		case "deployShape":
 			c.DeployShape = baml.Decode(valueHolder).Interface().(string)
 
+		case "schedule":
+			c.Schedule = baml.Decode(valueHolder).Interface().(string)
+
 		default:
 
 			panic(fmt.Sprintf("unexpected field: %s in class Intent", key))
@@ -438,6 +442,8 @@ func (c Intent) Encode() (*cffi.CFFIValueHolder, error) {
 	fields["source"] = c.Source
 
 	fields["deployShape"] = c.DeployShape
+
+	fields["schedule"] = c.Schedule
 
 	return baml.EncodeClass(c.BamlEncodeName, fields, nil)
 }
