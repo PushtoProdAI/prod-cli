@@ -302,10 +302,10 @@ func (qd *QueuedDeployment) createDockerDeploymentSteps(ownerID string, startCou
 // portless background_worker: Render runs its start command with no ports and
 // no health check, so a non-listening process isn't failed for not serving HTTP.
 //
-// A cron shape would ideally be a Render cron_job, but Render's cron_job requires
-// a schedule (a cron expression in serviceDetails.schedule) and DeploymentSpec
-// doesn't carry one yet. Inventing a schedule would be wrong, so a cron shape
-// runs as a continuous background_worker until a schedule is plumbed through.
+// A cron shape with a schedule becomes a Render cron_job (the schedule rides on
+// spec.Schedule → serviceDetails.schedule). A cron with no schedule falls back to a
+// continuous background_worker — though planning degrades a scheduleless cron to a
+// worker before it reaches here, so this is just defense in depth.
 func (qd *QueuedDeployment) renderServiceType() string {
 	switch qd.spec.Shape {
 	case deployment.ShapeWorker:
