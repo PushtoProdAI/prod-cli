@@ -1,0 +1,106 @@
+name: prod deploy
+description: Install prod and deploy (or destroy) an app from CI — for per-PR previews.
+
+inputs:
+  platform:
+    description: Deploy target (fly, render, vercel, ...).
+    required: true
+  name:
+    description: The app name. For a per-PR preview use e.g. myapp-pr-${{ github.event.number }}.
+    required: true
+  action:
+    description: "deploy (default) or destroy."
+    required: false
+    default: deploy
+  prompt:
+    description: Override the natural-language command (default "deploy this to <platform>").
+    required: false
+    default: ""
+  env:
+    description: |
+      Env vars for the app, one KEY=VALUE per line. Reference secrets here
+      (e.g. OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}); prod routes sensitive
+      values to the platform's secret store.
+    required: false
+    default: ""
+  working-directory:
+    description: Directory to deploy from.
+    required: false
+    default: "."
+  version:
+    description: prod version to install (a release tag, or "latest").
+    required: false
+    default: latest
+
+outputs:
+  url:
+    description: The live URL (empty for a worker/cron or a destroy).
+    value: ${{ steps.run.outputs.url }}
+  id:
+    description: The deployment id.
+    value: ${{ steps.run.outputs.id }}
+  status:
+    description: success | failed | destroyed.
+    value: ${{ steps.run.outputs.status }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install prod
+      shell: bash
+      env:
+        PROD_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        curl -fsSL https://raw.githubusercontent.com/PushtoProdAI/prod-cli/main/scripts/install.sh -o "$RUNNER_TEMP/install.sh"
+        VERSION="$PROD_VERSION" INSTALL_DIR="$HOME/.local/bin" sh "$RUNNER_TEMP/install.sh"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+    - name: Deploy or destroy
+      id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      # All inputs are passed as env (never interpolated into the script) so a value like a
+      # prompt or name can't inject shell. Secrets stay masked by Actions.
+      env:
+        PROD_ACTION: ${{ inputs.action }}
+        PLATFORM: ${{ inputs.platform }}
+        NAME: ${{ inputs.name }}
+        PROMPT: ${{ inputs.prompt }}
+        ENV_LINES: ${{ inputs.env }}
+      run: |
+        set -euo pipefail
+        events="$RUNNER_TEMP/prod-events.jsonl"
+
+        if [ "$PROD_ACTION" = "destroy" ]; then
+          # Teardown is best-effort: a missing/already-gone app must not fail the close workflow.
+          PROD_JSON_MODE=true prod run --yes --name "$NAME" -- "destroy this on $PLATFORM" | tee "$events" || true
+          echo "status=destroyed" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        args=(run --yes --name "$NAME")
+        while IFS= read -r line; do
+          [ -n "$line" ] && args+=(--env "$line")
+        done <<< "$ENV_LINES"
+        prompt="$PROMPT"
+        [ -n "$prompt" ] || prompt="deploy this to $PLATFORM"
+
+        PROD_JSON_MODE=true prod "${args[@]}" -- "$prompt" | tee "$events"
+
+        # Parse the terminal event; fromjson? skips any non-JSON stdout lines.
+        complete=$(jq -Rc 'fromjson? | select(.type=="deployment_complete")' "$events" | tail -1)
+        url=$(printf '%s' "$complete" | jq -r '.url // ""')
+        id=$(printf '%s' "$complete" | jq -r '.id // ""')
+        status=$(printf '%s' "$complete" | jq -r '.status // "unknown"')
+        status="${status:-unknown}" # jq on empty input yields "" — normalize for the message below
+        {
+          echo "url=$url"
+          echo "id=$id"
+          echo "status=$status"
+        } >> "$GITHUB_OUTPUT"
+
+        if [ "$status" != "success" ]; then
+          echo "::error::prod deploy did not succeed (status=$status)"
+          exit 1
+        fi
