@@ -667,6 +667,11 @@ func (g *GenerateDockerfileStep) Execute(ctx context.Context, client FlyioClient
 		return nil, errors.Errorf("failed to generate Dockerfile: %w", err)
 	}
 
+	// The project ships its own Dockerfile — leave it untouched and build with it.
+	if artifacts.UseExisting {
+		return map[string]string{"dockerfile": "existing"}, nil
+	}
+
 	// Write Dockerfile to build context
 	dockerfilePath := filepath.Join(buildContext, "Dockerfile")
 	if err := os.WriteFile(dockerfilePath, []byte(artifacts.Dockerfile), 0o644); err != nil {
