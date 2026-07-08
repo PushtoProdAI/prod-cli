@@ -30,6 +30,9 @@ var migrationToolPatterns = map[string][]string{
 		"rails", "activerecord", "sequel", "rom-sql",
 		"hanami-model", "data_mapper",
 	},
+	"rust": {
+		"sqlx", "sea-orm", "diesel",
+	},
 }
 
 // Common migration directory patterns

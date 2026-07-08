@@ -236,6 +236,41 @@ func TestGenerateDockerfile_Ruby(t *testing.T) {
 	})
 }
 
+func TestGenerateDockerfile_Rust(t *testing.T) {
+	// Build context is a fresh empty dir so the user-Dockerfile reuse path can't interfere.
+	buildCtx := t.TempDir()
+
+	dg := NewDockerGeneratorWithBackend(io.Discard, []EnvVar{}, nil)
+	spec := &DeploymentSpec{
+		Name:         "server",
+		Language:     "rust",
+		BuildCommand: "cargo build --release",
+		StartCommand: "./target/release/server",
+		Metadata:     map[string]any{"buildContext": buildCtx},
+	}
+	artifacts, err := dg.GenerateDockerfile(spec)
+	if err != nil {
+		t.Fatalf("GenerateDockerfile: %v", err)
+	}
+	df := artifacts.Dockerfile
+	if !strings.Contains(df, "cargo build --release") {
+		t.Errorf("expected the cargo release build step; got:\n%s", df)
+	}
+	if !strings.Contains(df, "gcr.io/distroless/cc-debian12") {
+		t.Errorf("expected the distroless runtime image; got:\n%s", df)
+	}
+	// The binary name (spec.Name) must flow into the COPY-out of target/release.
+	if !strings.Contains(df, "target/release/server") {
+		t.Errorf("expected the binary name to reach the target/release copy; got:\n%s", df)
+	}
+	if !strings.Contains(df, `CMD ["/app/server"]`) {
+		t.Errorf("expected the runtime CMD to run the copied binary; got:\n%s", df)
+	}
+	if artifacts.DockerIgnore == "" {
+		t.Error("expected a rust .dockerignore to be generated")
+	}
+}
+
 func TestHasUserDockerfile(t *testing.T) {
 	dir := t.TempDir()
 	if hasUserDockerfile(dir) {
