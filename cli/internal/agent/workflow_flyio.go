@@ -177,6 +177,9 @@ func (w *Workflows) deployFly(ctx workflow.Context, input DeployPlan) (deployRes
 				"platform":          "flyio",
 				"resources_created": createdResources,
 				"app_id":            ws.ID,
+				// Persist the shape so ls/open/status/logs know this record is a URL-less
+				// worker/cron by design (not a web deploy whose URL failed to record).
+				"shape": input.Shape.String(),
 			}).Get(ctx)
 		}
 		return deployResult{Url: ""}, nil

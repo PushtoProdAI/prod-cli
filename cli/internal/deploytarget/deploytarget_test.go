@@ -89,3 +89,51 @@ func TestResolveDegradesWhenIdentifierMissing(t *testing.T) {
 		t.Errorf("live URL should still resolve: %q", got.LiveURL)
 	}
 }
+
+// A Fly worker/cron records no live URL by design. It must still resolve its console + logs
+// from the persisted app_id (logs don't depend on a URL) and carry the shape through.
+func TestResolveWorkerHasNoURLButKeepsLogs(t *testing.T) {
+	got := Resolve(rec("flyio", "cronjob", map[string]any{"app_id": "cronjob", "shape": "worker"}))
+	if got.LiveURL != "" {
+		t.Errorf("worker should have no live URL, got %q", got.LiveURL)
+	}
+	if got.Shape != "worker" {
+		t.Errorf("shape = %q, want worker", got.Shape)
+	}
+	if got.LogsCmd != "fly logs -a cronjob" {
+		t.Errorf("logs cmd should resolve without a URL: %q", got.LogsCmd)
+	}
+	if !strings.Contains(got.ConsoleURL, "fly.io/apps/cronjob") {
+		t.Errorf("console URL should resolve: %q", got.ConsoleURL)
+	}
+	if got.Note != "" {
+		t.Errorf("a worker with console+logs should not degrade: %q", got.Note)
+	}
+}
+
+// IsWorker trusts the persisted shape, and for legacy shapeless records falls back to
+// "no live URL" — while HTTP shapes are never workers even before their URL resolves.
+func TestIsWorker(t *testing.T) {
+	cases := []struct {
+		name  string
+		shape string
+		url   string
+		want  bool
+	}{
+		{"explicit worker", "worker", "", true},
+		{"explicit cron", "cron", "", true},
+		{"web with url", "web", "https://x", false},
+		{"web without url yet", "web", "", false},
+		{"mcp-server", "mcp-server", "", false},
+		{"legacy no-url record", "", "", true},
+		{"legacy record with url", "", "https://x", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := Target{Shape: c.shape, LiveURL: c.url}.IsWorker()
+			if got != c.want {
+				t.Errorf("IsWorker(shape=%q,url=%q) = %v, want %v", c.shape, c.url, got, c.want)
+			}
+		})
+	}
+}

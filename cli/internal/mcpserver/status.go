@@ -55,6 +55,7 @@ func probeLive(ctx context.Context, url string) string {
 type statusOutput struct {
 	Found       bool   `json:"found"`
 	Platform    string `json:"platform,omitempty"`
+	Shape       string `json:"shape,omitempty"`  // web | mcp-server | worker | cron (empty for legacy records)
 	Status      string `json:"status,omitempty"` // last recorded status: success | failed | started
 	LiveURL     string `json:"liveUrl,omitempty"`
 	Live        string `json:"live,omitempty"` // "live" | "not-live" | "unknown"
@@ -65,7 +66,7 @@ type statusOutput struct {
 func addStatus(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "status",
-		Description: "Report the status of a previously deployed app from local history: platform, last recorded status, live URL, whether it can be rolled back, and — when the URL is reachable — whether it's currently responding. Read-only; it does not deploy or spin up the deploy pipeline.",
+		Description: "Report the status of a previously deployed app from local history: platform, deploy shape, last recorded status, live URL, whether it can be rolled back, and — when the URL is reachable — whether it's currently responding. A worker/cron has no URL to probe; a successful one reports live. Read-only; it does not deploy or spin up the deploy pipeline.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in appInput) (*mcp.CallToolResult, statusOutput, error) {
 		r, found, err := latestDeploy(in.App)
 		if err != nil {
@@ -76,11 +77,16 @@ func addStatus(s *mcp.Server) {
 		}
 		t := deploytarget.Resolve(r)
 		out := statusOutput{
-			Found: true, Platform: t.Platform, Status: r.Status, LiveURL: t.LiveURL,
+			Found: true, Platform: t.Platform, Shape: t.Shape, Status: r.Status, LiveURL: t.LiveURL,
 			CanRollback: t.CanRollback, Note: t.Note, Live: "unknown",
 		}
-		if t.LiveURL != "" {
+		switch {
+		case t.LiveURL != "":
 			out.Live = probeLive(ctx, t.LiveURL)
+		case t.IsWorker() && r.Status == "success":
+			// A worker/cron has no URL to probe. Don't report "not-live" just because the URL
+			// is empty — a successfully deployed background process is running.
+			out.Live = "live"
 		}
 		return nil, out, nil
 	})

@@ -86,3 +86,56 @@ func TestStatusDeepLinkLogsTools(t *testing.T) {
 		t.Error("status for an unknown app should report found=false")
 	}
 }
+
+// A Fly worker deploys with no live URL. status must report it live (a successful background
+// process is running, there's just no URL to probe), and logs must still resolve its command.
+func TestStatusWorkerNoURL(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	store, err := history.NewStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := store.Add(history.Record{
+		ID: "op1", OperationType: "deploy", ResourceName: "worker", Platform: "flyio",
+		Status: "success", StartedAt: now, CompletedAt: &now,
+		Metadata: map[string]any{"app_id": "worker", "shape": "worker"}, // no url, by design
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	clientT, serverT := mcp.NewInMemoryTransports()
+	go func() { _ = New("test").Run(ctx, serverT) }()
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "0"}, nil).Connect(ctx, clientT, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer session.Close()
+
+	call := func(tool string) map[string]any {
+		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: map[string]any{"app": "worker"}})
+		if err != nil || res.IsError {
+			t.Fatalf("%s: err=%v isError=%v content=%+v", tool, err, res.IsError, res.Content)
+		}
+		return res.StructuredContent.(map[string]any)
+	}
+
+	st := call("status")
+	if st["found"] != true || st["shape"] != "worker" {
+		t.Errorf("status = %+v, want found + shape worker", st)
+	}
+	if st["live"] != "live" {
+		t.Errorf("status.live = %v, want live (a running worker has no URL to probe)", st["live"])
+	}
+	if _, ok := st["liveUrl"]; ok {
+		t.Errorf("worker should report no live URL, got %v", st["liveUrl"])
+	}
+
+	lg := call("logs")
+	if lg["logsCmd"] != "fly logs -a worker" {
+		t.Errorf("logs cmd = %v, want fly logs -a worker (logs don't depend on a URL)", lg["logsCmd"])
+	}
+}
