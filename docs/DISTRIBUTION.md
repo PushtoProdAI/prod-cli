@@ -1,8 +1,9 @@
 # Distributing `prod`
 
 How we ship the `prod` single binary. Releases are **automated**: push a `vX.Y.Z` tag and
-[`.github/workflows/release.yml`](../.github/workflows/release.yml) builds every platform on
-native runners, publishes the GitHub Release, and updates the Homebrew tap.
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) builds darwin natively on a
+mac and linux via `cli/Dockerfile.build` on an Ubuntu runner, publishes the GitHub Release, and
+updates the Homebrew tap.
 
 - Module: `github.com/pushtoprodai/prod-cli`
 - Binary: `prod`
@@ -98,16 +99,20 @@ users and to build into any container image:
 
 ## Cutting a release (the automated path)
 
-Because BAML's native lib is fetched at runtime (above), each OS builds its own arch on a
-native runner — no cross-CGO. `release.yml` does this in one matrix:
+Because BAML's native lib is fetched at runtime (above), the CGO surface is just a `dlopen`
+shim, so linux cross-compiles cleanly inside the pinned build image — no per-arch native
+runner needed there. `release.yml` runs two build jobs:
 
 1. **Bump the version** and update [`CHANGELOG.md`](../CHANGELOG.md).
 2. **Tag and push:** `git tag -a v0.1.0 -m "v0.1.0" && git push origin v0.1.0`.
 3. The workflow then, automatically:
-   - builds **linux/amd64 + arm64** (ubuntu, arm64 via the cross toolchain) and
-     **darwin/amd64 + arm64** (macOS), each with `CGO_ENABLED=1`;
-   - packages `prod_<version>_<os>_<arch>.tar.gz` (binary + README + LICENSE);
-   - generates `prod_<version>_checksums.txt` (`sha256␣␣filename`, what `install.sh` verifies);
+   - builds **darwin/amd64 + arm64** natively on a macOS runner (`CGO_ENABLED=1`);
+   - builds **linux/amd64 + arm64** on an Ubuntu runner via `make -C cli dist-linux`, which
+     cross-compiles both arches inside [`cli/Dockerfile.build`](../cli/Dockerfile.build) — plain
+     Docker, no buildx/QEMU needed;
+   - packages `prod_<version>_<os>_<arch>.tar.gz` (binary + README + LICENSE, + NOTICE for linux);
+   - generates a combined `prod_<version>_checksums.txt` (`sha256␣␣filename`, what `install.sh`
+     verifies) covering all four archives;
    - publishes the GitHub Release with all four archives + the checksums;
    - **updates the Homebrew tap** (see below).
 4. **Verify** on a clean mac and a glibc Linux box:
