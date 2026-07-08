@@ -19,8 +19,9 @@ var (
 )
 
 type RunFlags struct {
-	DryRun bool `long:"dry-run" usage:"show the plan and estimated cost without deploying"`
-	Yes    bool `long:"yes" short:"y" usage:"skip the approval prompt and deploy (for automation)"`
+	DryRun bool   `long:"dry-run" usage:"show the plan and estimated cost without deploying"`
+	Yes    bool   `long:"yes" short:"y" usage:"skip the approval prompt and deploy (for automation)"`
+	Name   string `long:"name" usage:"override the deployed app name (for CI / per-PR previews, e.g. myapp-pr-7)"`
 }
 
 type RunArgs struct {
@@ -45,6 +46,7 @@ func (c *RunCommand) Args(args []string) error {
 
 func (c *RunCommand) Execute(ctx context.Context) error {
 	c.Agent.SetDryRun(c.flags.DryRun)
+	c.Agent.SetNameOverride(c.flags.Name)
 
 	// JSON mode is the MCP/automation substrate: the driving client feeds approval
 	// and env-var answers on stdin. Keep this path exactly as-is.

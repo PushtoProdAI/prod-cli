@@ -67,6 +67,10 @@ type Agent struct {
 	// awaitingSecret tells the console one-shot driver that the value it is about to
 	// read is sensitive, so it reads it masked (no echo) on a real terminal.
 	awaitingSecret bool
+	// nameOverride, when set (via --name), deterministically names the deployed app —
+	// for CI and per-PR previews (e.g. myapp-pr-7) — winning over the analyzer's default
+	// and the LLM's inferred name.
+	nameOverride string
 }
 
 type agentContextKey string
@@ -248,6 +252,25 @@ func readLine(r io.Reader) (string, error) {
 // nothing in the cloud.
 func (a *Agent) SetDryRun(dryRun bool) {
 	a.dryRun = dryRun
+}
+
+// SetNameOverride deterministically names the deployed app (via --name), for CI and
+// per-PR previews. Empty leaves the analyzer/LLM name in place.
+func (a *Agent) SetNameOverride(name string) {
+	a.nameOverride = strings.TrimSpace(name)
+}
+
+// applyNameOverride forces the plan's app name to the --name value when one is set, so a
+// CI/per-PR deploy and its matching destroy target the same deterministic name. A no-op
+// when --name wasn't given.
+func (a *Agent) applyNameOverride(plan *DeployPlan) {
+	if a.nameOverride == "" {
+		return
+	}
+	plan.Spec.Name = a.nameOverride
+	if a.DeployPlan != nil {
+		a.DeployPlan.Spec.Name = a.nameOverride
+	}
 }
 
 // IsComplete returns true if the state machine has finished (no current state)
@@ -597,6 +620,12 @@ func (a *Agent) proceedWithPlan(ctx context.Context, plan DeployPlan, input stri
 		fmt.Fprintf(out, "Cannot proceed with deployment plan\n")
 		return a.done(), nil
 	}
+
+	// --name wins over the analyzer default and the LLM-inferred name, so a CI/per-PR
+	// deploy (or its matching destroy) targets an exact, deterministic app name. Applied
+	// here — the shared gate every deploy/destroy/rollback passes through — so the built
+	// DeploymentSpec.Name and the destroy target both pick it up.
+	a.applyNameOverride(&plan)
 
 	// Gate the deploy: AWS needs the backend (local-refused), Render needs the
 	// user's registry. Rollback is gated separately (executeRollback) since a
