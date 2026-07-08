@@ -93,6 +93,7 @@ runs:
         url=$(printf '%s' "$complete" | jq -r '.url // ""')
         id=$(printf '%s' "$complete" | jq -r '.id // ""')
         status=$(printf '%s' "$complete" | jq -r '.status // "unknown"')
+        status="${status:-unknown}" # jq on empty input yields "" — normalize for the message below
         {
           echo "url=$url"
           echo "id=$id"

@@ -40,9 +40,19 @@ PROD_JSON_MODE=true prod run --yes \
 - **Fly / Render / container clouds** — prod creates a distinct `myapp-pr-<n>` app per PR (shown
   above). These bill per running app, so **N open PRs = N live apps in your own account** — close
   PRs (or cap concurrency) to control cost.
-- **Vercel / Netlify** — these already produce a preview URL per deploy natively; you generally
-  don't need a synthesized `-pr-<n>` name. Use the same action with `platform: vercel` and read
-  `outputs.url`; teardown is a no-op (the platform expires previews).
+- **Vercel / Netlify** — these already produce a unique preview URL per deploy natively, so the
+  `-pr-<n>` naming matters less (but `name` is still required — pass `${{ env.APP }}-pr-${{ github.event.number }}` anyway; it's harmless). Read `outputs.url`. Teardown is best-effort and
+  effectively a no-op — the platform expires previews on its own — so you can drop the `teardown`
+  job for these platforms if you prefer.
+
+## Forks & cancellation
+
+- **Fork PRs don't get previews.** On `pull_request`, GitHub withholds secrets from forks (a
+  safety default), so the example guards the deploy job with `head.repo.fork == false`. Without the
+  guard, every fork PR would show a failed check. Previews run for same-repo (branch) PRs.
+- **A new push cancels an in-flight deploy** (`cancel-in-progress`). If a deploy is interrupted,
+  the next push reconciles it — prod detects the existing app by name and updates in place, so a
+  half-finished deploy self-heals rather than duplicating.
 
 ## Using the action directly
 
@@ -60,4 +70,7 @@ PROD_JSON_MODE=true prod run --yes \
 # steps.deploy.outputs.url / .id / .status
 ```
 
-Pin `@main` to a release tag (e.g. `@v0.2.13`) once you want stability.
+For a reproducible pipeline, pin **both**: the action ref to a release tag or commit SHA
+(`@v0.2.13`) **and** the `version:` input to that same release tag — otherwise the action always
+installs the latest prod (and its bundled `install.sh` from `main`), so a green pipeline could
+change under you.
