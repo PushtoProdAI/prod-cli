@@ -69,7 +69,7 @@ func (w *Workflows) rollbackDeployment(ctx workflow.Context, plan DeployPlan) (d
 
 	// Build deployment spec from the plan
 	workflow.Logger(ctx).Info("Building deployment spec for rollback")
-	db := deployment.NewDeploymentBuilder(&plan.Spec, plan.CollectedEnvVars)
+	db := deployment.NewDeploymentBuilder(&plan.Spec, plan.CollectedEnvVars, plan.Shape)
 	spec, err := db.Build()
 	if err != nil {
 		workflow.Logger(ctx).Error("Failed to build deployment spec", "error", err)

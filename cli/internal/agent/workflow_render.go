@@ -47,7 +47,7 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 
 	envVars := input.CollectedEnvVars
 	// Build deployment spec
-	db := deployment.NewDeploymentBuilder(&input.Spec, envVars)
+	db := deployment.NewDeploymentBuilder(&input.Spec, envVars, input.Shape)
 	spec, err := db.Build()
 	if err != nil {
 		// Log deployment failure

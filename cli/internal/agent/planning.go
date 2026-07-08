@@ -220,7 +220,7 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		w.uiWriter.SendStatus("pricing", "Calculating estimated costs...")
 
 		// Build deployment spec for cost estimation
-		db := deployment.NewDeploymentBuilder(&spec, []deployment.EnvVar{})
+		db := deployment.NewDeploymentBuilder(&spec, []deployment.EnvVar{}, plan.Shape)
 		deploymentSpec, err := db.Build()
 		if err != nil {
 			slog.Info("Failed to build deployment spec for cost estimation", "error", err)
