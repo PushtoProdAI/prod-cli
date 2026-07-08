@@ -1,0 +1,38 @@
+# Rust build output (rebuilt inside the image; huge and host-arch-specific)
+target/
+
+# Dependency vendoring
+vendor/
+
+# IDEs
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+docs/
+README.md
+*.md
+
+# Version control
+.git
+.gitignore
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Platform-specific build outputs
+.vercel
+.netlify
+.render
+.fly
+.railway
+.heroku
