@@ -44,8 +44,11 @@ func walkProjectForCandidates(
 		}
 
 		if d.IsDir() {
+			// Match the directory NAME, not a path substring: the project may live under a
+			// path that contains an ignore token (e.g. /tmp/... on CI, or ~/code/tmp/app), and
+			// SkipDir at the entry already prevents descending into a genuinely-ignored dir.
 			for _, ignore := range ignoreDirs {
-				if strings.Contains(path, ignore) {
+				if d.Name() == ignore {
 					return filepath.SkipDir
 				}
 			}
