@@ -5,6 +5,7 @@ class Intent {
     platform string
     source string
     deployShape string
+    schedule string
   }
 
 class Summary {
@@ -154,6 +155,16 @@ You are a strict classifier. Your only job is to analyze deployment requests and
     - "deploy my worker" / "my bot"     -> worker
     - "run this every night"            -> cron
     - "deploy this" / "ship my app"     -> web
+
+  ## SCHEDULE (cron only)
+  When `deployShape` is `cron`, set `schedule` to a standard 5-field cron expression matching
+  the request; otherwise set `schedule` to "". Convert natural language to cron:
+    - "every night at 2am"        -> "0 2 * * *"
+    - "hourly" / "every hour"      -> "0 * * * *"
+    - "every 15 minutes"           -> "*/15 * * * *"
+    - "every monday at 9am"        -> "0 9 * * 1"
+  If the request says "cron"/"scheduled" but names no time, leave `schedule` as "" (prod will
+  fall back to a continuous worker and tell the user).
 
   ## OUTPUT FORMAT
   Respond ONLY with a JSON object in this format:

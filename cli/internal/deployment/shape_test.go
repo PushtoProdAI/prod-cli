@@ -38,3 +38,18 @@ func TestHTTPShaped(t *testing.T) {
 		}
 	}
 }
+
+func TestIsValidCron(t *testing.T) {
+	valid := []string{"0 2 * * *", "0 * * * *", "*/15 * * * *", "0 9 * * 1", "30 4 1,15 * 5"}
+	for _, s := range valid {
+		if !IsValidCron(s) {
+			t.Errorf("IsValidCron(%q) = false, want true", s)
+		}
+	}
+	invalid := []string{"", "every night", "0 2 * *", "0 2 * * * *", "abc 2 * * *", "0 2 * * ?"}
+	for _, s := range invalid {
+		if IsValidCron(s) {
+			t.Errorf("IsValidCron(%q) = true, want false", s)
+		}
+	}
+}

@@ -162,6 +162,25 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		}
 	}
 
+	// A cron deploy needs a schedule. Where prod supplies it (a Render cron_job), require a
+	// valid expression and fail safe to a continuous worker if the LLM couldn't extract one
+	// (so we never ship an unschedulable "cron" or a bad expression). Modal is different: it
+	// deploys the user's own app code, whose schedule lives in the function decorator, so prod
+	// neither supplies nor validates one — the cron shape only tells us to skip HTTP liveness.
+	schedule := ""
+	if shape == deployment.ShapeCron {
+		switch {
+		case platform == Modal:
+			w.uiWriter.SendStatus("planning", "ℹ️ On Modal, set the schedule in your function decorator, e.g. @app.function(schedule=modal.Cron(\"0 2 * * *\")).")
+		case deployment.IsValidCron(intent.Schedule):
+			schedule = intent.Schedule
+		default:
+			slog.Info("cron requested without a parseable schedule; deploying as a worker", "raw", intent.Schedule)
+			shape = deployment.ShapeWorker
+			w.uiWriter.SendStatus("planning", "ℹ️ No schedule detected — deploying as a continuous worker. To schedule it, say e.g. \"every night at 2am\".")
+		}
+	}
+
 	plan := DeployPlan{
 		Action:              action,
 		Platform:            platform,
@@ -170,6 +189,7 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		Summary:             summary,
 		ExistingProjectInfo: existingProjectInfo,
 		Shape:               shape,
+		Schedule:            schedule,
 	}
 	// Pin a plugin plan to its plugin by name, so a resumed workflow validates it
 	// resolves to the same plugin (a plugin's Platform value is a hash of its name).

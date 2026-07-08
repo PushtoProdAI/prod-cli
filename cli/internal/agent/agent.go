@@ -95,6 +95,7 @@ type DeployPlan struct {
 	Pricing             deployment.CostEstimate
 	ExistingProjectInfo ExistingProjectInfo
 	Shape               deployment.DeployShape // web (default) | mcp-server | worker | cron
+	Schedule            string                 // 5-field cron expression; set only for a cron shape
 	// PluginName is set when Platform is an external plugin (IsPlugin). It pins the
 	// plan to a specific plugin by name so a resumed workflow can't deploy to the wrong
 	// cloud if the plugin set changed (a plugin's Platform value is a hash of its name).
@@ -273,6 +274,11 @@ func (a *Agent) sendPlan(out io.Writer, plan DeployPlan) {
 	if plan.Shape != "" && plan.Shape != deployment.ShapeWeb {
 		fmt.Fprintf(out, "  Shape: %s\n", plan.Shape)
 	}
+	// Show the resolved cron schedule so the user confirms the natural-language→cron parse
+	// BEFORE deploying (an "every hour" mis-read as "0 2 * * *" is caught here, not in prod).
+	if plan.Schedule != "" {
+		fmt.Fprintf(out, "  Schedule: %s\n", plan.Schedule)
+	}
 	if plan.Pricing.Total > 0 {
 		fmt.Fprintf(out, "  Estimated cost: ~$%.2f/mo\n", plan.Pricing.Total)
 	}
@@ -285,6 +291,7 @@ func (a *Agent) sendPlanApprovalRequest(out io.Writer, plan DeployPlan) {
 		"platform": plan.Platform.String(),
 		"summary":  plan.Summary,
 		"shape":    plan.Shape.String(),
+		"schedule": plan.Schedule,
 		"project": map[string]interface{}{
 			"name":     plan.Spec.Name,
 			"language": plan.Spec.Language,

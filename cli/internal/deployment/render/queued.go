@@ -311,8 +311,12 @@ func (qd *QueuedDeployment) renderServiceType() string {
 	case deployment.ShapeWorker:
 		return "background_worker"
 	case deployment.ShapeCron:
-		// TODO(shapes): create a Render cron_job once DeploymentSpec carries a
-		// schedule (cron expression); fall back to background_worker for now.
+		// A Render cron_job needs a schedule. With one, it's a real scheduled job; without
+		// (shouldn't happen — planning degrades a scheduleless cron to worker first), fall
+		// back to a continuous background_worker rather than a broken cron_job.
+		if qd.spec.Schedule != "" {
+			return "cron_job"
+		}
 		return "background_worker"
 	default:
 		return "web_service"
@@ -332,6 +336,7 @@ func (qd *QueuedDeployment) createWebServiceStep(ownerID string, envVars []deplo
 		Description:        description,
 		Name:               fmt.Sprintf("%s-web", qd.spec.Name),
 		Type:               serviceType,
+		Schedule:           qd.spec.Schedule, // populated only for a cron_job
 		OwnerID:            ownerID,
 		BuildCommand:       config.buildCommand,
 		StartCommand:       config.startCommand,

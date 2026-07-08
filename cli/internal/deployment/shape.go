@@ -1,6 +1,9 @@
 package deployment
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // DeployShape is the kind of thing being deployed. It selects the liveness
 // strategy (and, later, artifact generation): a worker or cron job has no URL to
@@ -36,3 +39,24 @@ func (s DeployShape) HTTPShaped() bool {
 }
 
 func (s DeployShape) String() string { return string(s) }
+
+// cronFieldRE matches a single cron field's allowed characters (digits and * , - /).
+var cronFieldRE = regexp.MustCompile(`^[0-9*,\-/]+$`)
+
+// IsValidCron reports whether s looks like a standard 5-field cron expression
+// (minute hour day-of-month month day-of-week). It's a shape check, not a full semantic
+// validator — enough to reject an LLM hallucination or a natural-language string that slipped
+// through, so a cron deploy can fail safe (fall back to a worker) rather than sending garbage
+// to the platform.
+func IsValidCron(s string) bool {
+	fields := strings.Fields(strings.TrimSpace(s))
+	if len(fields) != 5 {
+		return false
+	}
+	for _, f := range fields {
+		if !cronFieldRE.MatchString(f) {
+			return false
+		}
+	}
+	return true
+}

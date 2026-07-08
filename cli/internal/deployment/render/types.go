@@ -73,6 +73,7 @@ type WebServiceDetails struct {
 	PullRequestPreviewsEnabled *bool                         `json:"pullRequestPreviewsEnabled,omitempty"`
 	Region                     string                        `json:"region,omitempty"` // Optional, if not provided, defaults to oregon
 	PreDeployCommand           string                        `json:"preDeployCommand,omitempty"`
+	Schedule                   string                        `json:"schedule,omitempty"` // cron expression; required for a cron_job service
 }
 
 type WebServiceEnvSpecificDetails struct {
