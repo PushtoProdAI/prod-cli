@@ -55,6 +55,7 @@ func (c *LsCommand) Execute(context.Context) error {
 	type row struct {
 		Name        string `json:"name"`
 		Platform    string `json:"platform"`
+		Shape       string `json:"shape,omitempty"`
 		Status      string `json:"status"`
 		Age         string `json:"age"`
 		URL         string `json:"url,omitempty"`
@@ -69,7 +70,7 @@ func (c *LsCommand) Execute(context.Context) error {
 			continue
 		}
 		t := deploytarget.Resolve(r)
-		rows = append(rows, row{r.ResourceName, t.Platform, r.Status, relAge(r.StartedAt), t.LiveURL, t.CanRollback})
+		rows = append(rows, row{r.ResourceName, t.Platform, t.Shape, r.Status, relAge(r.StartedAt), t.LiveURL, t.CanRollback})
 	}
 
 	if c.flags.JSON {
@@ -87,9 +88,24 @@ func (c *LsCommand) Execute(context.Context) error {
 		if r.CanRollback {
 			rb = " ↩"
 		}
-		fmt.Printf("%-20s %-16s %-9s %-8s %s%s\n", trunc(r.Name, 20), r.Platform, statusGlyph(r.Status), r.Age, r.URL, rb)
+		fmt.Printf("%-20s %-16s %-9s %-8s %s%s\n", trunc(r.Name, 20), r.Platform, statusGlyph(r.Status), r.Age, urlCell(r.URL, r.Shape), rb)
 	}
 	return nil
+}
+
+// urlCell renders the URL column for `prod ls`. A worker/cron has no public URL by design, so
+// show its shape as the marker rather than a blank cell; any other record with no recorded URL
+// shows an em dash. This keeps the column meaningful instead of broken/empty.
+func urlCell(liveURL, shape string) string {
+	if liveURL != "" {
+		return liveURL
+	}
+	switch shape {
+	case "worker", "cron":
+		return shape
+	default:
+		return "—"
+	}
 }
 
 // --- prod open <app> ---------------------------------------------------------
@@ -121,22 +137,58 @@ func (c *OpenCommand) Execute(context.Context) error {
 	if err != nil {
 		return err
 	}
-	target := t.LiveURL
-	if c.flags.Console {
-		target = t.ConsoleURL
+	act, err := openPlan(t, c.flags.Console)
+	if err != nil {
+		return err
 	}
-	if target == "" {
-		which := "live URL"
-		if c.flags.Console {
-			which = "console URL"
+	if act.message != "" {
+		fmt.Println(act.message)
+	}
+	if act.open == "" {
+		return nil
+	}
+	fmt.Printf("Opening %s\n", act.open)
+	return openURL(act.open)
+}
+
+// openAction is what `prod open` should do: a URL to open (empty = open nothing) and a line to
+// print first (empty = say nothing).
+type openAction struct {
+	open    string
+	message string
+}
+
+// openPlan decides how `prod open` handles a resolved target. A worker/cron (or any record with
+// no live URL) has no public URL by design, so instead of erroring we fall back to the platform
+// console and explain why; with no console either, we print a helpful pointer rather than fail.
+func openPlan(t deploytarget.Target, console bool) (openAction, error) {
+	if console {
+		if t.ConsoleURL != "" {
+			return openAction{open: t.ConsoleURL}, nil
 		}
 		if t.Note != "" {
-			return errors.Errorf("no %s for %q — %s", which, c.app, t.Note)
+			return openAction{}, errors.Errorf("no console URL for %q — %s", t.Name, t.Note)
 		}
-		return errors.Errorf("no %s recorded for %q", which, c.app)
+		return openAction{}, errors.Errorf("no console URL recorded for %q", t.Name)
 	}
-	fmt.Printf("Opening %s\n", target)
-	return openURL(target)
+	if t.LiveURL != "" {
+		return openAction{open: t.LiveURL}, nil
+	}
+	// No live URL. Explain (a worker/cron has none by design) and fall back to the console.
+	var lead string
+	if t.IsWorker() {
+		noun := "worker"
+		if t.Shape == "cron" {
+			noun = "cron job"
+		}
+		lead = fmt.Sprintf("%s has no public URL (it's a %s).", t.Name, noun)
+	} else {
+		lead = fmt.Sprintf("%s has no live URL recorded.", t.Name)
+	}
+	if t.ConsoleURL != "" {
+		return openAction{open: t.ConsoleURL, message: lead + " Opening the console instead…"}, nil
+	}
+	return openAction{message: lead + fmt.Sprintf(" No console link either — check its logs with `prod logs %s`.", t.Name)}, nil
 }
 
 // --- prod logs <app> ---------------------------------------------------------

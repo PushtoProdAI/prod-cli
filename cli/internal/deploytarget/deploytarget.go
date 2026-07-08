@@ -19,11 +19,28 @@ import (
 type Target struct {
 	Platform    string `json:"platform"`             // canonical token, e.g. "googlecloudrun"
 	Name        string `json:"name"`                 // the resource/app name
-	LiveURL     string `json:"liveUrl,omitempty"`    // the public URL, if the deploy succeeded
+	Shape       string `json:"shape,omitempty"`      // persisted deploy shape: web | mcp-server | worker | cron (empty for legacy records)
+	LiveURL     string `json:"liveUrl,omitempty"`    // the public URL, if the deploy has one (workers/cron have none by design)
 	ConsoleURL  string `json:"consoleUrl,omitempty"` // deep-link to the platform's dashboard for this service
 	LogsCmd     string `json:"logsCmd,omitempty"`    // the platform CLI command to view logs
 	CanRollback bool   `json:"canRollback"`          // whether prod can roll this platform back
 	Note        string `json:"note,omitempty"`       // e.g. "identifier not recorded — redeploy to enable deep-links"
+}
+
+// IsWorker reports whether this deploy is a non-HTTP shape — a worker or cron job, a process
+// with no public URL by design. It trusts the persisted shape when present (deploys recorded
+// after shape persistence carry it); for older records that predate the shape field it falls
+// back to the only available signal — a successful worker/cron records no live URL, so an empty
+// LiveURL is treated as non-HTTP. Web and mcp-server shapes are HTTP even before a URL resolves.
+func (t Target) IsWorker() bool {
+	switch t.Shape {
+	case "worker", "cron":
+		return true
+	case "web", "mcp-server":
+		return false
+	default:
+		return t.LiveURL == ""
+	}
 }
 
 // Resolve builds a Target from a history record.
@@ -37,7 +54,7 @@ func Resolve(r history.Record) Target {
 	}
 	plat := history.CanonicalPlatform(r.Platform)
 	name := r.ResourceName
-	t := Target{Platform: plat, Name: name, LiveURL: get("url")}
+	t := Target{Platform: plat, Name: name, Shape: get("shape"), LiveURL: get("url")}
 
 	region := get("region")
 	project := get("project")
