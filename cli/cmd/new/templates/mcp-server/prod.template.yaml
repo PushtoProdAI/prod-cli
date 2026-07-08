@@ -1,0 +1,5 @@
+# How prod deploys this project.
+shape: mcp-server        # serves HTTP; marked live after an MCP `initialize` handshake at "/"
+runtime: node
+build: npm run build
+start: npm start

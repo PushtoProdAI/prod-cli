@@ -40,6 +40,12 @@ var templates = []tmpl{
 		shape:       "worker",
 		prompt:      `prod "deploy this worker to fly"`,
 	},
+	{
+		name:        "mcp-server",
+		description: "A Model Context Protocol server (TypeScript, streamable HTTP).",
+		shape:       "mcp-server",
+		prompt:      `prod "deploy this mcp server to fly"`,
+	},
 }
 
 func lookupTemplate(name string) (tmpl, bool) {
@@ -109,15 +115,20 @@ func (c *NewCommand) Execute(context.Context) error {
 		return err
 	}
 
+	// Only mention the .env step if the template actually ships one.
+	envStep := ""
+	if _, err := os.Stat(filepath.Join(name, ".env.example")); err == nil {
+		envStep = "  cp .env.example .env      # fill in any required values\n"
+	}
+
 	fmt.Printf(`Created ./%s/  (%s)
 
 Next steps:
   cd %s
-  cp .env.example .env      # fill in any required values
-  %s
+%s  %s
 
-prod detects this as a %q deploy — no HTTP health check, no URL; it just runs.
-`, name, t.description, name, t.prompt, t.shape)
+prod detects this as a %q deploy.
+`, name, t.description, name, envStep, t.prompt, t.shape)
 	return nil
 }
 
