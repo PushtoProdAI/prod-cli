@@ -106,6 +106,7 @@ type DeployPlan struct {
 	ExistingProjectInfo ExistingProjectInfo
 	Shape               deployment.DeployShape // web (default) | mcp-server | worker | cron
 	Schedule            string                 // 5-field cron expression; set only for a cron shape
+	ExplicitName        bool                   // true when --name pinned the app name (CI/per-PR)
 	// PluginName is set when Platform is an external plugin (IsPlugin). It pins the
 	// plan to a specific plugin by name so a resumed workflow can't deploy to the wrong
 	// cloud if the plugin set changed (a plugin's Platform value is a hash of its name).
@@ -274,8 +275,10 @@ func (a *Agent) applyNameOverride(plan *DeployPlan) {
 		return
 	}
 	plan.Spec.Name = a.nameOverride
+	plan.ExplicitName = true
 	if a.DeployPlan != nil {
 		a.DeployPlan.Spec.Name = a.nameOverride
+		a.DeployPlan.ExplicitName = true
 	}
 }
 

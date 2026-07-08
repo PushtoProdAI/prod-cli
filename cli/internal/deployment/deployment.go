@@ -94,6 +94,10 @@ type DeploymentSpec struct {
 	// Schedule is a 5-field cron expression, set only for ShapeCron on platforms that
 	// support scheduled jobs (e.g. a Render cron_job). Empty otherwise.
 	Schedule string
+	// ExplicitName is true when the user pinned the app name (--name) — for CI/per-PR
+	// deploys. It must be honored exactly: a name collision fails loudly rather than being
+	// silently auto-renamed (which would fork an unmanaged, orphaned app in CI).
+	ExplicitName bool
 }
 
 type CostService struct {

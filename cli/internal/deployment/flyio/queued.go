@@ -167,8 +167,9 @@ func (fqd *FlyioQueuedDeployment) GenerateAPISteps() []FlyioAPIStep {
 			ID:          appStepID,
 			Description: fmt.Sprintf("Creating Fly.io app: %s", appName),
 		},
-		appName: appName,
-		region:  defaultRegion,
+		appName:      appName,
+		region:       defaultRegion,
+		explicitName: fqd.spec.ExplicitName,
 	})
 
 	// Step 3: Attach databases to the app (after app creation)
