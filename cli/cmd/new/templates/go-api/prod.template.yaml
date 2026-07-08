@@ -1,0 +1,5 @@
+# How prod deploys this project.
+shape: web               # serves HTTP; liveness is a URL probe
+runtime: go
+start: ./app
+suggestedPlatforms: [fly, cloudrun, apprunner]

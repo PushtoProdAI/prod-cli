@@ -73,6 +73,55 @@ func TestScaffoldMCPServer(t *testing.T) {
 	}
 }
 
+// Every registered template must scaffold cleanly: no leftover {{ directives and no stray
+// .tmpl files in the output (the suffix is stripped on write).
+func TestAllTemplatesScaffoldClean(t *testing.T) {
+	for _, tpl := range templates {
+		t.Run(tpl.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			if err := scaffold(tpl.name, "proj"); err != nil {
+				t.Fatalf("scaffold %s: %v", tpl.name, err)
+			}
+			_ = filepath.Walk(filepath.Join(dir, "proj"), func(p string, info os.FileInfo, err error) error {
+				if err != nil || info.IsDir() {
+					return err
+				}
+				if strings.HasSuffix(p, ".tmpl") {
+					t.Errorf("%s: scaffolded file still has a .tmpl suffix: %s", tpl.name, p)
+				}
+				b, _ := os.ReadFile(p)
+				if strings.Contains(string(b), "{{") {
+					t.Errorf("%s: %s has an unexpanded template directive", tpl.name, filepath.Base(p))
+				}
+				return nil
+			})
+		})
+	}
+}
+
+// The go-api template's Go files are stored .tmpl-suffixed (so prod's own toolchain ignores
+// them); scaffolding must produce real go.mod + main.go with the module name substituted.
+func TestScaffoldGoAPIRenamesTmpl(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := scaffold("go-api", "my-api"); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"go.mod", "main.go"} {
+		if _, err := os.Stat(filepath.Join(dir, "my-api", f)); err != nil {
+			t.Errorf("expected scaffolded %s: %v", f, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "my-api", "go.mod.tmpl")); err == nil {
+		t.Error("go.mod.tmpl should have been renamed to go.mod, not written verbatim")
+	}
+	gomod, _ := os.ReadFile(filepath.Join(dir, "my-api", "go.mod"))
+	if !strings.Contains(string(gomod), "module my-api") {
+		t.Errorf("go.mod module name not substituted:\n%s", gomod)
+	}
+}
+
 func TestUnknownTemplateListsAvailable(t *testing.T) {
 	msg := availableTemplates("Unknown template \"nope\".")
 	if !strings.Contains(msg, "agent-worker") {
