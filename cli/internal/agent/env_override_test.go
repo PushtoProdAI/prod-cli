@@ -10,12 +10,12 @@ func TestApplyEnvOverrides(t *testing.T) {
 	a := &Agent{}
 	a.SetEnvOverrides(map[string]string{
 		"DATABASE_URL":   "postgres://real", // overrides a detected var
-		"OPENAI_API_KEY": "sk-xyz",          // undetected, secret-looking
-		"LOG_LEVEL":      "debug",           // undetected, not secret
+		"OPENAI_API_KEY": "sk-xyz",          // undetected
+		"LOG_LEVEL":      "debug",           // undetected, not secret-named — still routes safe
 	})
 	in := []deployment.EnvVar{
 		{Name: "DATABASE_URL", Role: deployment.EnvRoleFullURI, Sensitive: true},
-		{Name: "PORT", Value: "8080"},
+		{Name: "PUBLIC_FLAG", Role: deployment.EnvRoleNotDBRelated, Sensitive: false, Value: "keep"}, // detected non-sensitive, not overridden
 	}
 	out, applied := a.applyEnvOverrides(in)
 
@@ -23,35 +23,28 @@ func TestApplyEnvOverrides(t *testing.T) {
 	for _, e := range out {
 		byName[e.Name] = e
 	}
-	if byName["DATABASE_URL"].Value != "postgres://real" || !applied["DATABASE_URL"] {
-		t.Errorf("DATABASE_URL should be overridden + applied: %+v", byName["DATABASE_URL"])
+	// Detected sensitive var: value overridden, Sensitive preserved.
+	if byName["DATABASE_URL"].Value != "postgres://real" || !applied["DATABASE_URL"] || !byName["DATABASE_URL"].Sensitive {
+		t.Errorf("DATABASE_URL should be overridden, applied, and still sensitive: %+v", byName["DATABASE_URL"])
 	}
-	if !byName["DATABASE_URL"].Sensitive {
-		t.Error("overriding a value must not clear the categorized Sensitive flag")
-	}
-	// Undetected secret-looking var → appended + sensitive (routes to secrets).
-	if byName["OPENAI_API_KEY"].Value != "sk-xyz" || !byName["OPENAI_API_KEY"].Sensitive {
+	// Undetected vars are appended and default to sensitive (fail safe) — even a benign name.
+	if !byName["OPENAI_API_KEY"].Sensitive || byName["OPENAI_API_KEY"].Value != "sk-xyz" {
 		t.Errorf("OPENAI_API_KEY should be appended sensitive: %+v", byName["OPENAI_API_KEY"])
 	}
-	// Undetected non-secret var → appended, not sensitive (plaintext ok).
-	if byName["LOG_LEVEL"].Sensitive {
-		t.Error("LOG_LEVEL should not be flagged sensitive")
+	if !byName["LOG_LEVEL"].Sensitive {
+		t.Error("an undetected --env var must default to sensitive so a non-obvious secret can't leak to plaintext")
 	}
-	// Untouched var is not marked applied.
-	if applied["PORT"] || byName["PORT"].Value != "8080" {
-		t.Error("PORT should be untouched")
+	// A detected var that wasn't overridden keeps its (non-sensitive) categorization and is untouched.
+	if applied["PUBLIC_FLAG"] || byName["PUBLIC_FLAG"].Sensitive || byName["PUBLIC_FLAG"].Value != "keep" {
+		t.Errorf("PUBLIC_FLAG should be untouched: %+v", byName["PUBLIC_FLAG"])
 	}
 }
 
-func TestLooksSensitive(t *testing.T) {
-	for _, n := range []string{"OPENAI_API_KEY", "AUTH_SECRET", "DB_PASSWORD", "GITHUB_TOKEN", "AWS_ACCESS_KEY_ID", "APIKEY", "PRIVATE_KEY"} {
-		if !looksSensitive(n) {
-			t.Errorf("%s should look sensitive", n)
-		}
-	}
-	for _, n := range []string{"LOG_LEVEL", "PORT", "NODE_ENV", "REGION", "DEBUG", "TIMEOUT"} {
-		if looksSensitive(n) {
-			t.Errorf("%s should NOT look sensitive", n)
-		}
+func TestApplyEnvOverridesNoop(t *testing.T) {
+	a := &Agent{}
+	in := []deployment.EnvVar{{Name: "PORT", Value: "8080"}}
+	out, applied := a.applyEnvOverrides(in)
+	if len(out) != 1 || applied != nil {
+		t.Errorf("no overrides should be a no-op, got out=%d applied=%v", len(out), applied)
 	}
 }

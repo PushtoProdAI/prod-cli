@@ -23,7 +23,7 @@ type RunFlags struct {
 	DryRun  bool     `long:"dry-run" usage:"show the plan and estimated cost without deploying"`
 	Yes     bool     `long:"yes" short:"y" usage:"skip the approval prompt and deploy (for automation)"`
 	Name    string   `long:"name" usage:"override the deployed app name (for CI / per-PR previews, e.g. myapp-pr-7)"`
-	Env     []string `long:"env" usage:"set an env var value (KEY=VALUE), repeatable — for headless CI; a secret-looking value routes to platform secrets"`
+	Env     []string `long:"env" usage:"set an env var value (KEY=VALUE), repeatable — for headless CI; a value on a var prod didn't detect routes to platform secrets"`
 	EnvFile string   `long:"env-file" usage:"read env var values from a KEY=VALUE file (e.g. .env.ci) for headless CI"`
 }
 
@@ -107,7 +107,11 @@ func buildEnvOverrides(envFile string, envs []string) (map[string]string, error)
 			if !ok {
 				continue
 			}
-			m[strings.TrimSpace(k)] = strings.Trim(strings.TrimSpace(v), `"'`)
+			k = strings.TrimSpace(k)
+			if k == "" {
+				continue // skip a stray "=value" / empty-key line
+			}
+			m[k] = strings.Trim(strings.TrimSpace(v), `"'`)
 		}
 	}
 	for _, kv := range envs {

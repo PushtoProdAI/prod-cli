@@ -287,9 +287,15 @@ func (a *Agent) SetEnvOverrides(m map[string]string) {
 // applyEnvOverrides sets values from --env/--env-file onto the categorized vars (winning over
 // .env), and appends any override var the analyzer didn't detect. It returns the augmented list
 // plus the set of names an override provided, so the caller marks them "collected" — a provided
-// value never prompts, which is what makes --yes deploys headless. An undetected override var
-// whose name looks secret-like is marked Sensitive so it routes to the platform's secret store,
-// never plaintext config.
+// value never prompts, which is what makes --yes deploys headless.
+//
+// Security: for a var prod DID detect, the LLM's Sensitive categorization is preserved (a value
+// on a sensitive var routes to the platform secret store; a non-sensitive one to plaintext env).
+// For a var prod did NOT detect, we can't know its sensitivity, so we default it to Sensitive: a
+// CLI-supplied env value in headless CI is overwhelmingly a credential, and over-flagging is a
+// functional no-op (it's still a runtime env var), whereas under-flagging would leak a secret
+// with a non-obvious name (DATABASE_URL, SENTRY_DSN, REDIS_URL) into committed-looking config
+// (fly.toml [env]).
 func (a *Agent) applyEnvOverrides(envVars []deployment.EnvVar) ([]deployment.EnvVar, map[string]bool) {
 	if len(a.envOverrides) == 0 {
 		return envVars, nil
@@ -303,7 +309,7 @@ func (a *Agent) applyEnvOverrides(envVars []deployment.EnvVar) ([]deployment.Env
 			applied[envVars[i].Name] = true
 		}
 	}
-	// Append override vars the analyzer never detected, in a stable order.
+	// Append override vars the analyzer never detected, in a stable order, as secrets (fail safe).
 	var undetected []string
 	for name := range a.envOverrides {
 		if !seen[name] {
@@ -316,25 +322,11 @@ func (a *Agent) applyEnvOverrides(envVars []deployment.EnvVar) ([]deployment.Env
 			Name:      name,
 			Value:     a.envOverrides[name],
 			Role:      deployment.EnvRoleNotDBRelated,
-			Sensitive: looksSensitive(name),
+			Sensitive: true,
 		})
 		applied[name] = true
 	}
 	return envVars, applied
-}
-
-// looksSensitive is a conservative name-based check for a var prod didn't categorize (a
-// --env var absent from the code). A match routes the value to the platform's secret store
-// rather than plaintext config. It errs toward sensitive — routing a non-secret to secrets is
-// harmless (it's still a runtime env var), while the reverse would leak a key.
-func looksSensitive(name string) bool {
-	u := strings.ToUpper(name)
-	for _, s := range []string{"SECRET", "TOKEN", "PASSWORD", "PASSWD", "PASSPHRASE", "CREDENTIAL", "PRIVATE", "APIKEY", "API_KEY", "ACCESS_KEY", "AUTH", "KEY"} {
-		if strings.Contains(u, s) {
-			return true
-		}
-	}
-	return false
 }
 
 // IsComplete returns true if the state machine has finished (no current state)
