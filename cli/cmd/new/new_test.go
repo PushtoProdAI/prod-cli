@@ -42,6 +42,37 @@ func TestScaffoldAgentWorker(t *testing.T) {
 	}
 }
 
+func TestScaffoldMCPServer(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	if err := scaffold("mcp-server", "my-mcp"); err != nil {
+		t.Fatalf("scaffold: %v", err)
+	}
+
+	// Nested dirs (src/) and {{.Name}} in JSON must both work.
+	for _, f := range []string{"package.json", "tsconfig.json", "src/index.ts", "prod.template.yaml", "README.md"} {
+		if _, err := os.Stat(filepath.Join(dir, "my-mcp", f)); err != nil {
+			t.Errorf("missing scaffolded file %s: %v", f, err)
+		}
+	}
+
+	pkg, err := os.ReadFile(filepath.Join(dir, "my-mcp", "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(pkg), `"name": "my-mcp"`) {
+		t.Errorf("package.json name not substituted:\n%s", pkg)
+	}
+	// The MCP SDK dependency is what makes prod classify this as an mcp-server (mcpDeps).
+	if !strings.Contains(string(pkg), "@modelcontextprotocol/sdk") {
+		t.Errorf("mcp-server package.json should depend on @modelcontextprotocol/sdk")
+	}
+	if strings.Contains(string(pkg), "{{") {
+		t.Errorf("package.json still has an unexpanded template directive")
+	}
+}
+
 func TestUnknownTemplateListsAvailable(t *testing.T) {
 	msg := availableTemplates("Unknown template \"nope\".")
 	if !strings.Contains(msg, "agent-worker") {
