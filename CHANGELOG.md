@@ -3,6 +3,42 @@
 Notable changes to prod. Format based on [Keep a Changelog](https://keepachangelog.com/).
 prod is pre-1.0 — the surface may still change.
 
+## [0.2.9 – 0.2.14] - 2026-07-08
+
+The developer-experience epic — see [docs/dx-roadmap.md](./docs/dx-roadmap.md).
+
+### Added
+- **PR preview deploys.** A `prod-deploy` GitHub Action (`.github/actions/prod-deploy`) + an
+  example workflow deploy an isolated preview per pull request, comment the live URL, update it
+  on each push, and tear it down on close. See [docs/pr-previews.md](./docs/pr-previews.md).
+- **Ruby (Rails/Sinatra) and Rust (Axum/Actix) support** — auto-detected and deployable, joining
+  Node, Python, and Go.
+- **`prod new <template>`** scaffolds deployable starters: `agent-worker` (a LangGraph worker),
+  `mcp-server`, `nextjs`, `fastapi`, `go-api`.
+- **Cron scheduling** — a natural-language schedule ("every night at 2am") deploys a real Render
+  `cron_job`; the resolved cron is shown for confirmation. Modal self-schedules from your code.
+- **Worker / mcp-server / cron deploy shapes** — non-HTTP deploys on Fly and Render run as
+  portless processes (no false health-check rollback); `prod ls`/`open`/`status` handle URL-less
+  deploys; an mcp-server is verified live via the MCP `initialize` handshake.
+- **CI escape hatches on `prod run`:** `--name` (deterministic per-PR naming), `--env` /
+  `--env-file` (headless env — sensitive values route to the platform secret store, never
+  plaintext), headless JSON `--yes`, and a machine-readable `deployment_complete` event carrying
+  id, name, and real duration.
+- prod now **reuses a project's own `Dockerfile`** when present (unblocks Rails 8 / Phoenix).
+- The **agent-native MCP walkthrough** — [docs/agent-deploy.md](./docs/agent-deploy.md).
+
+### Fixed
+- Linux release archives are built + attached via the Docker path (raised-glibc-floor bug fixed).
+- A pinned `--name` collision fails loudly instead of silently orphaning a suffix-renamed app.
+- The env/route analyzer no longer skips a project whose path contains an ignore token (e.g.
+  deploying from `/tmp/...` or `~/code/tmp/app`).
+- Empty env vars are no longer created on the platform (an empty `DATABASE_URL` collided with the
+  Postgres integration).
+
+### Changed
+- OSS hygiene across the three repos: README badges, issue/PR templates, a real plugin-index
+  schema-validation CI check, CI on the plugin SDK, and a LICENSE for prod-plugins.
+
 ## [0.2.8] - 2026-07-08
 
 ### Added
