@@ -162,22 +162,32 @@ func (w *Workflows) planDeploy(ctx workflow.Context, input string) (DeployPlan, 
 		}
 	}
 
-	// A cron deploy needs a schedule. Where prod supplies it (a Render cron_job), require a
-	// valid expression and fail safe to a continuous worker if the LLM couldn't extract one
-	// (so we never ship an unschedulable "cron" or a bad expression). Modal is different: it
-	// deploys the user's own app code, whose schedule lives in the function decorator, so prod
-	// neither supplies nor validates one — the cron shape only tells us to skip HTTP liveness.
+	// A cron deploy only actually runs on a schedule where the platform can express one, and
+	// prod must never SHOW a schedule it won't honor: on Fly/AWS/etc. a cron shape is a
+	// continuous portless process, so claiming "Schedule: 0 2 * * *" and then running 24/7
+	// would be a lie. So gate by platform capability:
+	//   - Render supplies the schedule to a cron_job — require a valid expression, else degrade.
+	//   - Modal deploys the user's own app code, whose schedule lives in the function decorator,
+	//     so prod neither supplies nor validates one (the shape just skips HTTP liveness).
+	//   - Any other platform can't run a scheduled job through prod → degrade to a continuous
+	//     worker with an honest message, and carry no schedule.
 	schedule := ""
 	if shape == deployment.ShapeCron {
 		switch {
 		case platform == Modal:
 			w.uiWriter.SendStatus("planning", "ℹ️ On Modal, set the schedule in your function decorator, e.g. @app.function(schedule=modal.Cron(\"0 2 * * *\")).")
-		case deployment.IsValidCron(intent.Schedule):
-			schedule = intent.Schedule
+		case platform == Render:
+			if deployment.IsValidCron(intent.Schedule) {
+				schedule = intent.Schedule
+			} else {
+				slog.Info("cron requested without a parseable schedule; deploying as a worker", "raw", intent.Schedule)
+				shape = deployment.ShapeWorker
+				w.uiWriter.SendStatus("planning", "ℹ️ No schedule detected — deploying as a continuous worker. To schedule it, say e.g. \"every night at 2am\".")
+			}
 		default:
-			slog.Info("cron requested without a parseable schedule; deploying as a worker", "raw", intent.Schedule)
+			slog.Info("platform can't run scheduled jobs; deploying cron as a continuous worker", "platform", platform.String())
 			shape = deployment.ShapeWorker
-			w.uiWriter.SendStatus("planning", "ℹ️ No schedule detected — deploying as a continuous worker. To schedule it, say e.g. \"every night at 2am\".")
+			w.uiWriter.SendStatus("planning", fmt.Sprintf("ℹ️ %s can't run scheduled jobs through prod — deploying as a continuous worker. (Render supports real cron jobs.)", platform.DisplayName()))
 		}
 	}
 
