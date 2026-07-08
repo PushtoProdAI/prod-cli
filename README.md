@@ -208,8 +208,9 @@ version. (Rollback and managed RDS provisioning are planned — see the [ROADMAP
 
 ## Scope & status
 
-- **Project analysis covers Node, Python, and Go today.** More languages and agent-framework
-  detectors are on the roadmap.
+- **Project analysis covers Node, Python, Go, Ruby (Rails/Sinatra), and Rust (Axum/Actix)
+  today** — plus any project that ships its own `Dockerfile`. More languages (Java, C#, Elixir)
+  and agent-framework detectors are on the roadmap.
 - "Agent" means two things here — the internal deploy orchestrator, and AI agents as a deploy
   target. Both are first-class; see [CLAUDE.md](./CLAUDE.md) for the distinction.
 - This is early, moving fast, and open. The plan, the open-core boundary, and what's done
