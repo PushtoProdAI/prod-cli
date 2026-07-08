@@ -213,6 +213,9 @@ func (w *Workflows) deployRender(ctx workflow.Context, input DeployPlan) (deploy
 				"platform":          "render",
 				"resources_created": createdResources,
 				"resourceId":        svc.ID,
+				// Persist the shape so ls/open/status know this Render record is a URL-less
+				// worker/cron by design (mirrors the Fly worker path).
+				"shape": input.Shape.String(),
 			}).Get(ctx)
 		}
 		return deployResult{Url: ""}, nil
