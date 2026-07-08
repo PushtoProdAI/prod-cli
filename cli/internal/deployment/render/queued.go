@@ -296,13 +296,42 @@ func (qd *QueuedDeployment) createDockerDeploymentSteps(ownerID string, startCou
 	return steps
 }
 
-// createWebServiceStep creates the final web service deployment step
+// renderServiceType maps the deploy shape to a Render service type.
+//
+// Web and mcp-server shapes are HTTP services (web_service). A worker is a
+// portless background_worker: Render runs its start command with no ports and
+// no health check, so a non-listening process isn't failed for not serving HTTP.
+//
+// A cron shape would ideally be a Render cron_job, but Render's cron_job requires
+// a schedule (a cron expression in serviceDetails.schedule) and DeploymentSpec
+// doesn't carry one yet. Inventing a schedule would be wrong, so a cron shape
+// runs as a continuous background_worker until a schedule is plumbed through.
+func (qd *QueuedDeployment) renderServiceType() string {
+	switch qd.spec.Shape {
+	case deployment.ShapeWorker:
+		return "background_worker"
+	case deployment.ShapeCron:
+		// TODO(shapes): create a Render cron_job once DeploymentSpec carries a
+		// schedule (cron expression); fall back to background_worker for now.
+		return "background_worker"
+	default:
+		return "web_service"
+	}
+}
+
+// createWebServiceStep creates the final service deployment step. The Render
+// service type is chosen from the deploy shape (web_service vs background_worker).
 func (qd *QueuedDeployment) createWebServiceStep(ownerID string, envVars []deployment.EnvVar, connectionStepIDs []string, config *deploymentConfig, stepCounter int) RenderAPIStep {
+	serviceType := qd.renderServiceType()
+	description := "Create web service with database connection environment variables"
+	if serviceType != "web_service" {
+		description = fmt.Sprintf("Create %s with database connection environment variables", serviceType)
+	}
 	return NewCreateWebServiceStep(CreateWebServiceStepConfig{
 		ID:                 fmt.Sprintf("step-%d", stepCounter),
-		Description:        "Create web service with database connection environment variables",
+		Description:        description,
 		Name:               fmt.Sprintf("%s-web", qd.spec.Name),
-		Type:               "web_service",
+		Type:               serviceType,
 		OwnerID:            ownerID,
 		BuildCommand:       config.buildCommand,
 		StartCommand:       config.startCommand,
