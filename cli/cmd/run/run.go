@@ -48,9 +48,16 @@ func (c *RunCommand) Execute(ctx context.Context) error {
 	c.Agent.SetDryRun(c.flags.DryRun)
 	c.Agent.SetNameOverride(c.flags.Name)
 
-	// JSON mode is the MCP/automation substrate: the driving client feeds approval
-	// and env-var answers on stdin. Keep this path exactly as-is.
+	// JSON mode is the MCP/automation substrate. With --yes it's fully headless (CI): the
+	// same auto-approve driver as the console path runs the deploy to completion emitting
+	// JSON events, needing no stdin — so a GitHub Action doesn't have to script approval on
+	// stdin. Without --yes it stays the interactive substrate: the driving client feeds
+	// approval and env-var answers on stdin.
 	if os.Getenv("PROD_JSON_MODE") == "true" {
+		if c.flags.Yes {
+			c.Agent.DriveOneShot(ctx, c.args.prompt, c.StatusWriter, os.Stdin, true)
+			return nil
+		}
 		c.Agent.SetInteractive(true)
 		c.Agent.Process(ctx, c.args.prompt, c.StatusWriter)
 		scanner := bufio.NewScanner(os.Stdin)

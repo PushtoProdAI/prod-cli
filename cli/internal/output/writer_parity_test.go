@@ -19,8 +19,8 @@ func exerciseAllEvents(w StatusWriter) {
 	w.SendStatus("building", "Building image")
 	w.SendStatusComplete("building", "Built")
 	w.SendDeploymentStart("aws", "/path/to/project")
-	w.SendDeploymentComplete("aws", "success", "https://x.us-east-1.awsapprunner.com", "", 1234)
-	w.SendDeploymentComplete("aws", "failed", "", "something broke", 100)
+	w.SendDeploymentComplete("aws", "success", "https://x.us-east-1.awsapprunner.com", "", "op-123", "myapp", 1234)
+	w.SendDeploymentComplete("aws", "failed", "", "something broke", "op-124", "myapp", 100)
 	w.SendPlanApprovalRequest(map[string]interface{}{
 		"action": "deploy", "platform": "aws", "summary": "deploy to aws",
 		"shape":   "mcp-server",
@@ -149,5 +149,30 @@ func TestPlanEventCarriesShapeAndCost(t *testing.T) {
 	}
 	if !strings.Contains(cout, "7.00") {
 		t.Errorf("console plan missing cost, got %q", cout)
+	}
+}
+
+// The deployment_complete event must carry the machine-readable fields a CI action needs:
+// id (to reference the deploy) and name, plus duration_ms.
+func TestDeploymentCompleteCarriesIDAndName(t *testing.T) {
+	out := captureStdout(t, func() {
+		w := NewJSONWriter()
+		w.SendDeploymentComplete("fly", "success", "https://x.fly.dev", "", "op-9", "myapp-pr-7", 4200)
+	})
+	var got map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		var e map[string]any
+		if json.Unmarshal([]byte(line), &e) == nil && e["type"] == "deployment_complete" {
+			got = e
+		}
+	}
+	if got == nil {
+		t.Fatalf("no deployment_complete event in output:\n%s", out)
+	}
+	if got["id"] != "op-9" || got["name"] != "myapp-pr-7" {
+		t.Errorf("id=%v name=%v, want op-9 / myapp-pr-7", got["id"], got["name"])
+	}
+	if got["url"] != "https://x.fly.dev" || got["duration_ms"].(float64) != 4200 {
+		t.Errorf("url/duration wrong: %v / %v", got["url"], got["duration_ms"])
 	}
 }

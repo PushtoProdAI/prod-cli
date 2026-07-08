@@ -142,7 +142,7 @@ type StatusWriter interface {
 	SendStatus(status, message string)
 	SendStatusComplete(status, message string)
 	SendDeploymentStart(platform, projectPath string)
-	SendDeploymentComplete(platform, status, url, errorMsg string, durationMs int64)
+	SendDeploymentComplete(platform, status, url, errorMsg, id, name string, durationMs int64)
 	SendPlanApprovalRequest(plan map[string]interface{})
 	SendEnvVarPrompt(varName, defaultValue, message string)
 	// SendDoctorResult reports one `prod doctor` prerequisite check. status is
@@ -185,7 +185,7 @@ func (w *NoOpWriter) SendDeploymentStart(platform, projectPath string) {
 }
 
 // SendDeploymentComplete does nothing
-func (w *NoOpWriter) SendDeploymentComplete(platform, status, url, errorMsg string, durationMs int64) {
+func (w *NoOpWriter) SendDeploymentComplete(platform, status, url, errorMsg, id, name string, durationMs int64) {
 	// Do nothing
 }
 
@@ -259,7 +259,7 @@ func (w *ConsoleWriter) SendDeploymentStart(platform, projectPath string) {
 }
 
 // SendDeploymentComplete prints the final deployment result.
-func (w *ConsoleWriter) SendDeploymentComplete(platform, status, url, errorMsg string, durationMs int64) {
+func (w *ConsoleWriter) SendDeploymentComplete(platform, status, url, errorMsg, id, name string, durationMs int64) {
 	switch status {
 	case "success":
 		if url != "" {
@@ -485,7 +485,7 @@ func (w *JSONWriter) SendDeploymentStart(platform, projectPath string) {
 }
 
 // SendDeploymentComplete emits a deployment_complete event
-func (w *JSONWriter) SendDeploymentComplete(platform, status, url, errorMsg string, durationMs int64) {
+func (w *JSONWriter) SendDeploymentComplete(platform, status, url, errorMsg, id, name string, durationMs int64) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -502,6 +502,14 @@ func (w *JSONWriter) SendDeploymentComplete(platform, status, url, errorMsg stri
 	}
 	if errorMsg != "" {
 		event["error"] = errorMsg
+	}
+	// id + name let a CI action reference the exact deployment (e.g. correlate to
+	// `prod ls` or a later destroy) without re-parsing the app name it passed in.
+	if id != "" {
+		event["id"] = id
+	}
+	if name != "" {
+		event["name"] = name
 	}
 
 	w.encoder.Encode(event)
@@ -620,10 +628,10 @@ func (p *ProxyWriter) SendDeploymentStart(platform, projectPath string) {
 }
 
 // SendDeploymentComplete implements StatusWriter
-func (p *ProxyWriter) SendDeploymentComplete(platform, status, url, errorMsg string, durationMs int64) {
+func (p *ProxyWriter) SendDeploymentComplete(platform, status, url, errorMsg, id, name string, durationMs int64) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	p.target.SendDeploymentComplete(platform, status, url, errorMsg, durationMs)
+	p.target.SendDeploymentComplete(platform, status, url, errorMsg, id, name, durationMs)
 }
 
 // SendPlanApprovalRequest implements StatusWriter

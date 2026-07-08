@@ -89,6 +89,24 @@ func NewStore() (*Store, error) {
 // Open returns a store backed by an explicit path (used in tests).
 func Open(path string) *Store { return &Store{path: path} }
 
+// Get returns the record with the given id (and true), or a zero record and false
+// if it isn't found.
+func (s *Store) Get(id string) (Record, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	records, err := s.load()
+	if err != nil {
+		return Record{}, false, err
+	}
+	for _, r := range records {
+		if r.ID == id {
+			return r, true, nil
+		}
+	}
+	return Record{}, false, nil
+}
+
 // Add appends a record.
 func (s *Store) Add(r Record) error {
 	s.mu.Lock()
