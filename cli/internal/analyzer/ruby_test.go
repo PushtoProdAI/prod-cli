@@ -74,10 +74,18 @@ func TestRubyAnalyzer_CanHandle(t *testing.T) {
 			t.Error("a *.gemspec should be handled")
 		}
 	})
-	t.Run("bare .rb file", func(t *testing.T) {
-		dir := writeRubyFixture(t, map[string]string{"app.rb": "puts 'hi'\n"})
+	t.Run("config.ru present (Rack app)", func(t *testing.T) {
+		dir := writeRubyFixture(t, map[string]string{"config.ru": "run App\n"})
 		if ok, _ := rubyAnalyzer(dir).CanHandle(); !ok {
-			t.Error("a bare .rb file should be handled")
+			t.Error("a config.ru (Rack app) should be handled")
+		}
+	})
+	t.Run("bare .rb file is NOT enough", func(t *testing.T) {
+		// A stray Ruby script isn't a deployable app; requiring a manifest avoids mislabeling
+		// non-Ruby repos that happen to carry an incidental .rb.
+		dir := writeRubyFixture(t, map[string]string{"app.rb": "puts 'hi'\n"})
+		if ok, _ := rubyAnalyzer(dir).CanHandle(); ok {
+			t.Error("a bare .rb file (no Gemfile/config.ru/gemspec) should NOT be handled as Ruby")
 		}
 	})
 	t.Run("no ruby files", func(t *testing.T) {

@@ -52,19 +52,20 @@ func NewRubyAnalyzer(projectFS projectFS) Analyzer {
 // CanHandle reports whether this looks like a Ruby project: a Gemfile at the root, a *.gemspec,
 // or failing those any .rb file at the root.
 func (r *RubyAnalyzer) CanHandle() (bool, error) {
-	if _, err := fs.Stat(r.ProjectFS, "Gemfile"); err == nil {
-		return true, nil
+	// A deployable Ruby app is identified by a manifest, not a stray script: a Gemfile
+	// (definitive), a config.ru (Rack app), or a *.gemspec (a gem). A bare .rb is too weak —
+	// lots of non-Ruby repos carry an incidental Ruby script — so it does NOT signal Ruby.
+	for _, f := range []string{"Gemfile", "config.ru"} {
+		if _, err := fs.Stat(r.ProjectFS, f); err == nil {
+			return true, nil
+		}
 	}
 	entries, err := fs.ReadDir(r.ProjectFS, ".")
 	if err != nil {
 		return false, err
 	}
 	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if strings.HasSuffix(name, ".gemspec") || strings.HasSuffix(name, ".rb") {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".gemspec") {
 			return true, nil
 		}
 	}
