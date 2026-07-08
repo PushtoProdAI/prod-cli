@@ -95,7 +95,7 @@ func (w *TeaWriter) SendDeploymentStart(platform, projectPath string) {
 }
 
 // SendDeploymentComplete is a no-op for TeaWriter
-func (w *TeaWriter) SendDeploymentComplete(platform, status, url, errorMsg string, durationMs int64) {
+func (w *TeaWriter) SendDeploymentComplete(platform, status, url, errorMsg, id, name string, durationMs int64) {
 	// No-op for TUI
 }
 

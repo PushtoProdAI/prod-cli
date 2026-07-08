@@ -465,7 +465,7 @@ func (a *Activities) updateDeploymentStatus(ctx context.Context, operationId str
 				slog.Warn("failed to update local deployment status", "error", err, "operation_id", operationId)
 			}
 		}
-		a.emitDeploymentCompleteIfDone(status, metadata)
+		a.emitDeploymentCompleteIfDone(operationId, status, metadata)
 		slog.Info("Deployment status updated (local)", "operation_id", operationId, "status", status)
 		return nil
 	}
@@ -481,21 +481,39 @@ func (a *Activities) updateDeploymentStatus(ctx context.Context, operationId str
 		return errors.Errorf("failed to update deployment status: %w", err)
 	}
 
-	a.emitDeploymentCompleteIfDone(status, metadata)
+	a.emitDeploymentCompleteIfDone(operationId, status, metadata)
 	slog.Info("Deployment status updated", "operation_id", operationId, "status", status)
 	return nil
 }
 
 // emitDeploymentCompleteIfDone emits the deployment_complete UI event when a
 // deploy reaches a terminal state, so all output modes see the final result.
-func (a *Activities) emitDeploymentCompleteIfDone(status string, metadata map[string]any) {
+func (a *Activities) emitDeploymentCompleteIfDone(operationID, status string, metadata map[string]any) {
 	if status != "success" && status != "failed" {
 		return
 	}
 	platform, _ := metadata["platform"].(string)
 	url, _ := metadata["url"].(string)
 	errorMsg, _ := metadata["error"].(string)
-	a.uiWriter.SendDeploymentComplete(platform, status, url, errorMsg, 0)
+
+	// Enrich the terminal event with the deployment id, the app name, and the real
+	// elapsed time (from the history record) so an automation client gets an actionable,
+	// machine-readable result instead of a bare status+url with duration always 0.
+	var name string
+	var durationMs int64
+	if a.history != nil {
+		if rec, ok, err := a.history.Get(operationID); err == nil && ok {
+			name = rec.ResourceName
+			end := time.Now()
+			if rec.CompletedAt != nil {
+				end = *rec.CompletedAt
+			}
+			if !rec.StartedAt.IsZero() {
+				durationMs = end.Sub(rec.StartedAt).Milliseconds()
+			}
+		}
+	}
+	a.uiWriter.SendDeploymentComplete(platform, status, url, errorMsg, operationID, name, durationMs)
 }
 
 // Helper function to extract framework from spec
