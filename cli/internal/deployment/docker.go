@@ -161,6 +161,11 @@ func (dg *DockerGenerator) initTemplates() {
 		panic(fmt.Sprintf("failed to read java template: %v", err))
 	}
 
+	csharpTemplate, err := templateFS.ReadFile("templates/csharp.dockerfile")
+	if err != nil {
+		panic(fmt.Sprintf("failed to read csharp template: %v", err))
+	}
+
 	// Get base images from backend if client is available
 	if dg.beClient != nil {
 		images, err := dg.beClient.GetBaseDockerImages(context.Background())
@@ -186,6 +191,9 @@ func (dg *DockerGenerator) initTemplates() {
 	dg.templates["ruby"] = template.Must(template.New("ruby").Parse(string(rubyTemplate)))
 	dg.templates["rust"] = template.Must(template.New("rust").Parse(string(rustTemplate)))
 	dg.templates["java"] = template.Must(template.New("java").Parse(string(javaTemplate)))
+	dg.templates["csharp"] = template.Must(template.New("csharp").Parse(string(csharpTemplate)))
+	// Alias in case the language is ever reported as "dotnet" (mirrors the golang→go alias).
+	dg.templates["dotnet"] = dg.templates["csharp"]
 
 	nodeDockerignore, err := templateFS.ReadFile("templates/node.dockerignore")
 	if err != nil {
@@ -225,6 +233,13 @@ func (dg *DockerGenerator) initTemplates() {
 		panic(fmt.Sprintf("failed to read java dockerignore: %v", err))
 	}
 	dg.dockerignoreTemplates["java"] = string(javaDockerignore)
+
+	csharpDockerignore, err := templateFS.ReadFile("templates/csharp.dockerignore")
+	if err != nil {
+		panic(fmt.Sprintf("failed to read csharp dockerignore: %v", err))
+	}
+	dg.dockerignoreTemplates["csharp"] = string(csharpDockerignore)
+	dg.dockerignoreTemplates["dotnet"] = string(csharpDockerignore)
 }
 
 func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArtifacts, error) {

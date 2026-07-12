@@ -74,6 +74,9 @@ var languageConfig = map[string]LanguageConfig{
 	"java": {
 		InternalPort: 8080,
 	},
+	"csharp": {
+		InternalPort: 8080,
+	},
 }
 
 // LanguageConfig holds language-specific deployment configuration

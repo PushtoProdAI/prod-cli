@@ -36,6 +36,9 @@ var migrationToolPatterns = map[string][]string{
 	"java": {
 		"flyway", "liquibase",
 	},
+	"csharp": {
+		"entityframeworkcore", "efcore", "fluentmigrator",
+	},
 }
 
 // Common migration directory patterns
@@ -338,6 +341,18 @@ func FilterConfiguredMigrationTools(detectedTools []string, migrationFiles []str
 			// scripts live under src/main/resources (db/migration, db/changelog) — not a top-level
 			// migrations/ dir that FindMigrationFiles scans — so the default branch would wrongly
 			// drop them. Presence of the dependency is the signal that migrations will run.
+			shouldInclude = true
+
+		// .NET tools
+		case strings.Contains(toolLower, "entityframeworkcore") || strings.Contains(toolLower, "efcore") ||
+			strings.Contains(toolLower, "fluentmigrator"):
+			// EF Core / FluentMigrator keep migrations under a project-level `Migrations/` folder —
+			// capitalized, and often in a subproject — not the top-level `migrations/` dir that
+			// FindMigrationFiles scans (and a case-sensitive FS wouldn't match the casing anyway), so
+			// the default branch would wrongly drop them. Presence of the dependency is the signal
+			// that migrations exist. The runtime image is chiseled (no SDK/EF tools), so the analyzer
+			// reports the tool but sets NO MigrationCommand — migrations run via a separate
+			// `dotnet ef migrations bundle`/SDK step, not inside the runtime image.
 			shouldInclude = true
 
 		// Node.js tools
