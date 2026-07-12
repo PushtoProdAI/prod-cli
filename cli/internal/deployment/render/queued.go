@@ -480,3 +480,49 @@ func (qd *QueuedDeployment) Rollback(ctx context.Context, targetDeploymentID str
 
 	return nil
 }
+
+// Destroy tears down the Render deployment by deleting its main service.
+//
+// It resolves the service id from spec.ExistingProjectID (set by the destroy
+// workflow after detection); if that's empty it falls back to looking the service
+// up by its deployed name ("<name>-web") via the API, so a teardown still works when
+// history lacks the id.
+//
+// Scope (mirrors Fly, which destroys only the main app): only the web/worker/cron
+// service is deleted. Render Postgres and Key-Value (Redis) instances are separate
+// resources with their own ids, and prod doesn't track those backing-service ids in
+// local history yet — so they are NOT cascaded here. They must be removed from the
+// Render dashboard. (Render also does not delete attached databases when a service
+// is deleted.)
+func (qd *QueuedDeployment) Destroy(ctx context.Context) error {
+	serviceID := qd.spec.ExistingProjectID
+
+	if serviceID == "" {
+		// Fall back to resolving the service by its deployed name.
+		name := fmt.Sprintf("%s-web", qd.spec.Name)
+		services, err := qd.client.ListServices(ctx, name)
+		if err != nil {
+			return errors.Errorf("failed to look up Render service %q for teardown: %w", name, err)
+		}
+		for _, svc := range services {
+			if svc.Name == name {
+				serviceID = svc.ID
+				break
+			}
+		}
+	}
+
+	if serviceID == "" {
+		return errors.Errorf("no Render service found to destroy for %q (deploy history or a matching service is required)", qd.spec.Name)
+	}
+
+	slog.Info("Destroying Render service", "service", serviceID)
+
+	if err := qd.client.DeleteService(ctx, serviceID); err != nil {
+		return errors.Errorf("failed to destroy Render service %q: %w", serviceID, err)
+	}
+
+	slog.Info("Render service destroyed", "service", serviceID)
+
+	return nil
+}
