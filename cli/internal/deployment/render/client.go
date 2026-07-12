@@ -512,6 +512,37 @@ func (c *HTTPRenderClient) ListServices(ctx context.Context, name string) ([]Ren
 	return services, nil
 }
 
+// DeleteService deletes a Render service (web service, background worker, or cron
+// job) by id. Deleting a service does not delete any Postgres/Key-Value instances
+// it was connected to — those are separate resources with their own ids.
+// Based on: https://api-docs.render.com/reference/delete-service
+func (c *HTTPRenderClient) DeleteService(ctx context.Context, serviceID string) error {
+	endpoint := fmt.Sprintf("/v1/services/%s", serviceID)
+	slog.Info("Deleting Render service", "serviceID", serviceID, "endpoint", endpoint)
+
+	resp, err := c.makeRequest(ctx, "DELETE", endpoint, nil)
+	if err != nil {
+		return errors.Errorf("failed to make delete request for service %s: %w", serviceID, err)
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		slog.Warn("Failed to read response body", "error", readErr)
+	}
+
+	// Accept 204 No Content, 200 OK, or 404 Not Found (already deleted / idempotent).
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
+		return errors.Errorf("failed to delete service %s: status %d, body: %s", serviceID, resp.StatusCode, string(body))
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		slog.Info("Render service already deleted or not found", "serviceID", serviceID)
+	}
+
+	return nil
+}
+
 func (c *HTTPRenderClient) ListPostgres(ctx context.Context) ([]RenderPostgres, error) {
 	resp, err := c.makeRequest(ctx, "GET", "/v1/postgres", nil)
 	if err != nil {

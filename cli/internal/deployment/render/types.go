@@ -220,6 +220,7 @@ type RenderClient interface {
 	GetPostgres(ctx context.Context, serviceID string) (*RenderPostgres, error)
 	GetKeyValue(ctx context.Context, serviceID string) (*RenderKeyValue, error)
 	ListServices(ctx context.Context, name string) ([]RenderService, error)
+	DeleteService(ctx context.Context, serviceID string) error
 	ListPostgres(ctx context.Context) ([]RenderPostgres, error)
 	ListRedis(ctx context.Context) ([]RenderService, error)
 
