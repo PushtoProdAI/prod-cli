@@ -10,17 +10,18 @@ Don't chase Vercel/Railway feature parity — compound prod's actual moat: **a c
 drive it (MCP) and it deploys the agents you build.** Keep the single-binary/local-first
 simplicity and make every failure actionable. Everything below is filtered through that.
 
-## Status (updated 2026-07-08)
+## Status (updated 2026-07-12)
 **Shipped:** Phase 0 hygiene (all agent-doable items, across all 3 repos); **F1** (Shape on
 DeploymentSpec); **F2** (`--name`, headless JSON `--yes`, `deployment_complete{id,name,duration}`,
 `--env`/`--env-file` with sensitive→secrets routing); **F3** (Docker Linux release, live-validated);
 **F4** (reuse the project's own Dockerfile); **F5** (idempotent-by-name; fail-loud on a pinned
 collision); **F7** (URL-less worker records render in ls/open/status); **2A** (`prod new` + 5
 templates); **2B** (Fly + Render worker/cron artifacts); **2C** (agent-deploy walkthrough); **3B**
-(PR preview deploys — GitHub Action + workflow + docs); **3A** languages **Ruby** + **Rust**.
+(PR preview deploys — GitHub Action + workflow + docs); **3A** — **all five languages: Ruby, Rust,
+Java, C#, Elixir** (with the original Node/Python/Go = 8 total).
 
-**Remaining:** **3A** languages Java, C#, Elixir (same playbook, deferred); **F6** the credentialed
-nightly smoke harness (the long pole — turns hermetically-tested cloud work into *proven*);
+**Remaining:** **F6** the credentialed nightly smoke harness (the long pole — turns
+hermetically-tested cloud work into *proven*, including the 5 new language Dockerfiles);
 **F8 → 2D** shape-aware plugin SDK → Daytona/E2B agent-sandbox plugins; **Phase 4** (maintainer-led:
 demo GIF, Discussions, examples gallery, launch post, logo).
 

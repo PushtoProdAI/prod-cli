@@ -3,6 +3,20 @@
 Notable changes to prod. Format based on [Keep a Changelog](https://keepachangelog.com/).
 prod is pre-1.0 — the surface may still change.
 
+## [0.2.15 – 0.2.16] - 2026-07-12
+
+### Added
+- **Five new languages, auto-detected and deployable** — joining Node, Python, and Go for
+  **eight total**:
+  - **Ruby** — Rails and Sinatra (Gemfile). Assets precompile + `bin/rails db:migrate`.
+  - **Rust** — Axum, Actix, Rocket, Poem (Cargo.toml). Compiled to a distroless image.
+  - **Java** — Spring Boot, Quarkus, Micronaut (Maven `pom.xml` or Gradle). Fat-jar build on a
+    Temurin JRE; Flyway/Liquibase auto-run on startup.
+  - **C# / .NET** — ASP.NET Core (`.csproj`/`.sln`). Chiseled, non-root ASP.NET runtime image.
+  - **Elixir** — Phoenix and Plug (mix.exs). OTP `mix release` on a slim Debian runtime.
+- Each rides prod's existing deploy path; a project that ships its own `Dockerfile` (Rails 8,
+  Phoenix) is built with it as-is, otherwise prod generates a sensible multi-stage build.
+
 ## [0.2.9 – 0.2.14] - 2026-07-08
 
 The developer-experience epic — see [docs/dx-roadmap.md](./docs/dx-roadmap.md).
