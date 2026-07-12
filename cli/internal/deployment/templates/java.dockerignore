@@ -1,0 +1,41 @@
+# Build output (rebuilt inside the image; large and host-specific)
+target/
+build/
+.gradle/
+
+# Dependency caches
+.m2/
+
+# IDEs
+.idea
+.vscode
+*.iml
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+docs/
+README.md
+*.md
+
+# Version control
+.git
+.gitignore
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Platform-specific build outputs
+.vercel
+.netlify
+.render
+.fly
+.railway
+.heroku

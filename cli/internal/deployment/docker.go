@@ -156,6 +156,11 @@ func (dg *DockerGenerator) initTemplates() {
 		panic(fmt.Sprintf("failed to read rust template: %v", err))
 	}
 
+	javaTemplate, err := templateFS.ReadFile("templates/java.dockerfile")
+	if err != nil {
+		panic(fmt.Sprintf("failed to read java template: %v", err))
+	}
+
 	// Get base images from backend if client is available
 	if dg.beClient != nil {
 		images, err := dg.beClient.GetBaseDockerImages(context.Background())
@@ -180,6 +185,7 @@ func (dg *DockerGenerator) initTemplates() {
 	dg.templates["golang"] = dg.templates["go"]
 	dg.templates["ruby"] = template.Must(template.New("ruby").Parse(string(rubyTemplate)))
 	dg.templates["rust"] = template.Must(template.New("rust").Parse(string(rustTemplate)))
+	dg.templates["java"] = template.Must(template.New("java").Parse(string(javaTemplate)))
 
 	nodeDockerignore, err := templateFS.ReadFile("templates/node.dockerignore")
 	if err != nil {
@@ -213,6 +219,12 @@ func (dg *DockerGenerator) initTemplates() {
 		panic(fmt.Sprintf("failed to read rust dockerignore: %v", err))
 	}
 	dg.dockerignoreTemplates["rust"] = string(rustDockerignore)
+
+	javaDockerignore, err := templateFS.ReadFile("templates/java.dockerignore")
+	if err != nil {
+		panic(fmt.Sprintf("failed to read java dockerignore: %v", err))
+	}
+	dg.dockerignoreTemplates["java"] = string(javaDockerignore)
 }
 
 func (dg *DockerGenerator) GenerateDockerfile(spec *DeploymentSpec) (*DockerArtifacts, error) {

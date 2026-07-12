@@ -271,6 +271,49 @@ func TestGenerateDockerfile_Rust(t *testing.T) {
 	}
 }
 
+func TestGenerateDockerfile_Java(t *testing.T) {
+	// Build context is a fresh empty dir so the user-Dockerfile reuse path can't interfere.
+	buildCtx := t.TempDir()
+
+	dg := NewDockerGeneratorWithBackend(io.Discard, []EnvVar{}, nil)
+	spec := &DeploymentSpec{
+		Name:         "widget-service",
+		Language:     "java",
+		BuildCommand: "mvn -q -DskipTests package",
+		StartCommand: "java -jar app.jar",
+		Metadata:     map[string]any{"buildContext": buildCtx},
+	}
+	artifacts, err := dg.GenerateDockerfile(spec)
+	if err != nil {
+		t.Fatalf("GenerateDockerfile: %v", err)
+	}
+	df := artifacts.Dockerfile
+	if !strings.Contains(df, "eclipse-temurin:21-jdk") {
+		t.Errorf("expected the JDK builder image; got:\n%s", df)
+	}
+	if !strings.Contains(df, "eclipse-temurin:21-jre") {
+		t.Errorf("expected the JRE runtime image; got:\n%s", df)
+	}
+	// The detected build command must flow into the builder stage.
+	if !strings.Contains(df, "mvn -q -DskipTests package") {
+		t.Errorf("expected the Maven build command; got:\n%s", df)
+	}
+	// The fat jar must be located robustly, excluding Gradle's -plain.jar.
+	if !strings.Contains(df, "'*-plain.jar'") {
+		t.Errorf("expected the Gradle plain-jar exclusion; got:\n%s", df)
+	}
+	if !strings.Contains(df, `CMD ["java", "-jar", "/app/app.jar"]`) {
+		t.Errorf("expected the runtime CMD to run the copied jar; got:\n%s", df)
+	}
+	// Spring reads SERVER_PORT; set both PORT and SERVER_PORT to the target port.
+	if !strings.Contains(df, "ENV SERVER_PORT=") {
+		t.Errorf("expected SERVER_PORT to be set; got:\n%s", df)
+	}
+	if artifacts.DockerIgnore == "" {
+		t.Error("expected a java .dockerignore to be generated")
+	}
+}
+
 func TestHasUserDockerfile(t *testing.T) {
 	dir := t.TempDir()
 	if hasUserDockerfile(dir) {
