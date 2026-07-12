@@ -1,0 +1,41 @@
+# Build output (rebuilt inside the image; large and host-specific)
+bin/
+obj/
+out/
+publish/
+
+# IDEs
+.vs/
+.idea
+.vscode
+*.user
+*.suo
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+docs/
+README.md
+*.md
+
+# Version control
+.git
+.gitignore
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Platform-specific build outputs
+.vercel
+.netlify
+.render
+.fly
+.railway
+.heroku

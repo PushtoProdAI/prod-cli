@@ -314,6 +314,51 @@ func TestGenerateDockerfile_Java(t *testing.T) {
 	}
 }
 
+func TestGenerateDockerfile_CSharp(t *testing.T) {
+	// Build context is a fresh empty dir so the user-Dockerfile reuse path can't interfere.
+	buildCtx := t.TempDir()
+
+	dg := NewDockerGeneratorWithBackend(io.Discard, []EnvVar{}, nil)
+	spec := &DeploymentSpec{
+		Name:     "WidgetApi",
+		Language: "csharp",
+		// BuildCommand/StartCommand are intentionally empty for C#: the template drives
+		// `dotnet publish` and the ENTRYPOINT.
+		Metadata: map[string]any{"buildContext": buildCtx},
+	}
+	artifacts, err := dg.GenerateDockerfile(spec)
+	if err != nil {
+		t.Fatalf("GenerateDockerfile: %v", err)
+	}
+	df := artifacts.Dockerfile
+	if !strings.Contains(df, "mcr.microsoft.com/dotnet/sdk:9.0") {
+		t.Errorf("expected the .NET SDK builder image; got:\n%s", df)
+	}
+	if !strings.Contains(df, "dotnet publish -c Release -o /app/publish") {
+		t.Errorf("expected the dotnet publish step; got:\n%s", df)
+	}
+	if !strings.Contains(df, "mcr.microsoft.com/dotnet/aspnet:9.0-noble-chiseled") {
+		t.Errorf("expected the chiseled ASP.NET runtime image; got:\n%s", df)
+	}
+	// Chiseled has no shell, so the ENTRYPOINT must reference the derived assembly name directly.
+	if !strings.Contains(df, `ENTRYPOINT ["dotnet", "WidgetApi.dll"]`) {
+		t.Errorf("expected the ENTRYPOINT to reference the derived assembly name; got:\n%s", df)
+	}
+	// .NET 8+ reads ASPNETCORE_HTTP_PORTS for the listen port.
+	if !strings.Contains(df, "ENV ASPNETCORE_HTTP_PORTS=") {
+		t.Errorf("expected ASPNETCORE_HTTP_PORTS to be set; got:\n%s", df)
+	}
+	// The chiseled final stage must NOT use RUN (no shell / no package manager).
+	if idx := strings.Index(df, "9.0-noble-chiseled"); idx >= 0 {
+		if strings.Contains(df[idx:], "RUN ") {
+			t.Errorf("chiseled runtime stage must not contain a RUN instruction; got:\n%s", df)
+		}
+	}
+	if artifacts.DockerIgnore == "" {
+		t.Error("expected a csharp .dockerignore to be generated")
+	}
+}
+
 func TestHasUserDockerfile(t *testing.T) {
 	dir := t.TempDir()
 	if hasUserDockerfile(dir) {
