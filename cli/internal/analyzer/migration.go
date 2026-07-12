@@ -33,6 +33,9 @@ var migrationToolPatterns = map[string][]string{
 	"rust": {
 		"sqlx", "sea-orm", "diesel",
 	},
+	"java": {
+		"flyway", "liquibase",
+	},
 }
 
 // Common migration directory patterns
@@ -328,6 +331,14 @@ func FilterConfiguredMigrationTools(detectedTools []string, migrationFiles []str
 			if hasRailsMigrations || hasMigrationsDir {
 				shouldInclude = true
 			}
+
+		// Java tools
+		case strings.Contains(toolLower, "flyway") || strings.Contains(toolLower, "liquibase"):
+			// Spring Boot auto-runs Flyway/Liquibase from the classpath at startup, and their
+			// scripts live under src/main/resources (db/migration, db/changelog) — not a top-level
+			// migrations/ dir that FindMigrationFiles scans — so the default branch would wrongly
+			// drop them. Presence of the dependency is the signal that migrations will run.
+			shouldInclude = true
 
 		// Node.js tools
 		case strings.Contains(toolLower, "prisma"):

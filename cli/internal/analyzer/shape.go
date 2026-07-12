@@ -20,6 +20,7 @@ var (
 		"tornado", "quart", "express", "fastify", "koa", "next", "@nestjs/core", "hono", "hapi",
 		"rails", "puma", "sinatra", "rack",
 		"axum", "actix-web", "actix", "rocket", "poem",
+		"spring-boot", "quarkus", "micronaut", "tomcat", "netty", "spring-webmvc", "spring-webflux",
 	}
 )
 

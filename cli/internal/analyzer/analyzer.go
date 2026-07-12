@@ -68,6 +68,7 @@ var analyzers = []func(projectFS) Analyzer{
 	NewGoAnalyzer,
 	NewRubyAnalyzer,
 	NewRustAnalyzer,
+	NewJavaAnalyzer,
 	// TODO add more analyzers here
 }
 
