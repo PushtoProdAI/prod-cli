@@ -77,6 +77,9 @@ var languageConfig = map[string]LanguageConfig{
 	"csharp": {
 		InternalPort: 8080,
 	},
+	"elixir": {
+		InternalPort: 4000,
+	},
 }
 
 // LanguageConfig holds language-specific deployment configuration

@@ -39,6 +39,9 @@ var migrationToolPatterns = map[string][]string{
 	"csharp": {
 		"entityframeworkcore", "efcore", "fluentmigrator",
 	},
+	"elixir": {
+		"ecto", "ecto_sql",
+	},
 }
 
 // Common migration directory patterns
@@ -205,6 +208,13 @@ func ExtractMigrationScripts(scripts map[string]string) map[string]string {
 	return migrationScripts
 }
 
+// hasEctoMigrations reports whether the project holds Ecto migrations. Ecto keeps them under
+// priv/<repo>/migrations (default priv/repo/migrations); the glob covers a custom repo dir too.
+func hasEctoMigrations(rootPath string) bool {
+	matches, _ := filepath.Glob(filepath.Join(rootPath, "priv", "*", "migrations"))
+	return len(matches) > 0
+}
+
 // Helper function to check if path exists
 func pathExists(path string) (bool, error) {
 	_, err := os.Stat(path)
@@ -332,6 +342,16 @@ func FilterConfiguredMigrationTools(detectedTools []string, migrationFiles []str
 		case strings.Contains(toolLower, "sequel") || strings.Contains(toolLower, "rom-sql") ||
 			strings.Contains(toolLower, "hanami-model") || strings.Contains(toolLower, "data_mapper"):
 			if hasRailsMigrations || hasMigrationsDir {
+				shouldInclude = true
+			}
+
+		// Elixir tools
+		case strings.Contains(toolLower, "ecto"):
+			// Ecto keeps migrations under priv/repo/migrations (not a top-level migrations/ dir that
+			// FindMigrationFiles scans), so the default branch would wrongly drop it. That directory's
+			// presence is the signal migrations will run — via the release's `bin/migrate` script,
+			// since Mix isn't available in an assembled release, not a plain `mix ecto.migrate`.
+			if hasEctoMigrations(rootPath) {
 				shouldInclude = true
 			}
 

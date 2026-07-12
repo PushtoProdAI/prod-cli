@@ -1,0 +1,41 @@
+# Build artifacts and fetched deps (rebuilt inside the image)
+_build/
+deps/
+.elixir_ls/
+*.ez
+erl_crash.dump
+
+# Asset toolchain state (reinstalled/rebuilt by mix assets.deploy)
+assets/node_modules/
+
+# IDEs
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+README.md
+*.md
+
+# Version control
+.git
+.gitignore
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Platform-specific build outputs
+.vercel
+.netlify
+.render
+.fly
+.railway
+.heroku

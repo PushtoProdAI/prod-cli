@@ -22,6 +22,7 @@ var (
 		"axum", "actix-web", "actix", "rocket", "poem",
 		"spring-boot", "quarkus", "micronaut", "tomcat", "netty", "spring-webmvc", "spring-webflux",
 		"microsoft.aspnetcore", "aspnetcore", "kestrel",
+		"phoenix", "plug", "bandit", "cowboy",
 	}
 )
 

@@ -359,6 +359,85 @@ func TestGenerateDockerfile_CSharp(t *testing.T) {
 	}
 }
 
+func TestGenerateDockerfile_ElixirPhoenix(t *testing.T) {
+	// Build context is a fresh empty dir so the user-Dockerfile reuse path can't interfere.
+	buildCtx := t.TempDir()
+
+	dg := NewDockerGeneratorWithBackend(io.Discard, []EnvVar{}, nil)
+	spec := &DeploymentSpec{
+		Name:         "widget_app",
+		Language:     "elixir",
+		BuildCommand: "mix release",
+		StartCommand: "bin/server",
+		Services:     []Service{{Type: "framework", Provider: "phoenix"}},
+		Metadata:     map[string]any{"buildContext": buildCtx},
+	}
+	artifacts, err := dg.GenerateDockerfile(spec)
+	if err != nil {
+		t.Fatalf("GenerateDockerfile: %v", err)
+	}
+	df := artifacts.Dockerfile
+	if !strings.Contains(df, "hexpm/elixir") {
+		t.Errorf("expected the hexpm/elixir builder image; got:\n%s", df)
+	}
+	if !strings.Contains(df, "debian:bookworm-slim") {
+		t.Errorf("expected the debian-slim runtime image; got:\n%s", df)
+	}
+	if !strings.Contains(df, "mix release") {
+		t.Errorf("expected the `mix release` build step; got:\n%s", df)
+	}
+	// The app name (spec.Name) must flow into the release-copy path, since the release dir is
+	// named after the OTP app.
+	if !strings.Contains(df, "_build/prod/rel/widget_app") {
+		t.Errorf("expected the app name to reach the release copy path; got:\n%s", df)
+	}
+	// Phoenix only starts its endpoint when PHX_SERVER is set.
+	if !strings.Contains(df, "ENV PHX_SERVER=true") {
+		t.Errorf("expected PHX_SERVER to be set for Phoenix; got:\n%s", df)
+	}
+	if !strings.Contains(df, "ENV PORT=") {
+		t.Errorf("expected PORT to be set; got:\n%s", df)
+	}
+	// Phoenix asset pipeline should run for a Phoenix app.
+	if !strings.Contains(df, "mix assets.deploy") {
+		t.Errorf("expected mix assets.deploy for Phoenix; got:\n%s", df)
+	}
+	if !strings.Contains(df, `CMD ["/app/bin/server"]`) {
+		t.Errorf("expected the Phoenix release start CMD; got:\n%s", df)
+	}
+	if artifacts.DockerIgnore == "" {
+		t.Error("expected an elixir .dockerignore to be generated")
+	}
+}
+
+func TestGenerateDockerfile_ElixirPlug(t *testing.T) {
+	// A non-Phoenix Elixir app must skip the asset pipeline / PHX_SERVER and start by release name.
+	buildCtx := t.TempDir()
+
+	dg := NewDockerGeneratorWithBackend(io.Discard, []EnvVar{}, nil)
+	spec := &DeploymentSpec{
+		Name:         "thin",
+		Language:     "elixir",
+		BuildCommand: "mix release",
+		Services:     []Service{{Type: "framework", Provider: "plug"}},
+		Metadata:     map[string]any{"buildContext": buildCtx},
+	}
+	artifacts, err := dg.GenerateDockerfile(spec)
+	if err != nil {
+		t.Fatalf("GenerateDockerfile: %v", err)
+	}
+	df := artifacts.Dockerfile
+	if strings.Contains(df, "mix assets.deploy") {
+		t.Errorf("a non-Phoenix app should skip mix assets.deploy; got:\n%s", df)
+	}
+	if strings.Contains(df, "PHX_SERVER") {
+		t.Errorf("a non-Phoenix app should not set PHX_SERVER; got:\n%s", df)
+	}
+	if !strings.Contains(df, `CMD ["/app/bin/thin", "start"]`) {
+		t.Errorf("expected a plain-release start CMD by app name; got:\n%s", df)
+	}
+}
+
 func TestHasUserDockerfile(t *testing.T) {
 	dir := t.TempDir()
 	if hasUserDockerfile(dir) {
