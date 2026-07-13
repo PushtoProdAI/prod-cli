@@ -37,7 +37,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/pelletier/go-toml/v2 v2.2.3
 	github.com/pmezard/go-difflib v1.0.0
-	github.com/pushtoprodai/prod-plugin-sdk v0.1.0
+	github.com/pushtoprodai/prod-plugin-sdk v0.2.0
 	github.com/render-oss/cli v1.1.2
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.11.1

@@ -52,6 +52,11 @@ type PlatformSpec struct {
 	// service clouds (App Runner, Cloud Run, Azure Container Apps). They share one
 	// generic deploy workflow instead of a per-platform clone.
 	ManagedContainer bool
+	// Shapes are the deploy shapes this platform can serve. Empty ⇒ web-only (the
+	// back-compatible default — every built-in cloud). A provider plugin populates this
+	// from its declared Meta.Shapes so the container workflow knows it may return a
+	// URL-less worker/agent without tripping the "returned no URL" assert.
+	Shapes []deployment.DeployShape
 	// Experimental marks a target that hasn't been validated end-to-end (e.g. Modal).
 	// The menu appends "(experimental)" so the caveat is visible at selection time.
 	Experimental bool
@@ -75,6 +80,26 @@ func RegisterPlatform(s PlatformSpec) {
 func LookupPlatform(p Platform) (PlatformSpec, bool) {
 	s, ok := platformByEnum[p]
 	return s, ok
+}
+
+// SupportsShape reports whether a platform can serve the given deploy shape. An empty
+// Shapes set means web-only (the default for every built-in cloud), so only ShapeWeb —
+// and ShapeMCPServer, which is also HTTP-serving and safe for any web platform — are
+// allowed; a worker/cron shape needs an explicit declaration. An unregistered platform
+// is web-only. This gates the container workflow's URL-less early-return so a web-only
+// cloud that somehow received a worker shape falls through to the existing path rather
+// than silently succeeding with no URL.
+func (p Platform) SupportsShape(s deployment.DeployShape) bool {
+	spec, ok := LookupPlatform(p)
+	if !ok || len(spec.Shapes) == 0 {
+		return s.HTTPShaped() // web-only default
+	}
+	for _, sh := range spec.Shapes {
+		if sh == s {
+			return true
+		}
+	}
+	return false
 }
 
 // RegisteredPlatforms returns the catalog in menu order.

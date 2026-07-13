@@ -60,7 +60,15 @@ func registerPlugin(e pluginhost.Entry) error {
 	if err != nil || len(checksum) == 0 {
 		return errors.Errorf("plugin %q has an invalid checksum", e.Name)
 	}
-	meta := plugin.Meta{Name: e.Name, Aliases: aliases, DomainSuffix: e.DomainSuffix, SupportsRollback: e.SupportsRollback}
+	// Map the manifest's declared shapes (strings) into the core DeployShape enum. An
+	// empty/absent Shapes ⇒ nil ⇒ web-only (SupportsShape's default), so a plugin that
+	// predates the shape field is unchanged. ParseShape defaults unknown strings to web.
+	shapes := parseShapes(e.Shapes)
+	pluginShapes := make([]plugin.DeployShape, len(shapes))
+	for i, s := range shapes {
+		pluginShapes[i] = plugin.DeployShape(s.String())
+	}
+	meta := plugin.Meta{Name: e.Name, Aliases: aliases, DomainSuffix: e.DomainSuffix, SupportsRollback: e.SupportsRollback, Shapes: pluginShapes}
 	launch := func() (plugin.Provider, func(), error) { return pluginhost.Launch(e.Path, checksum) }
 
 	RegisterPlatform(PlatformSpec{
@@ -70,6 +78,7 @@ func registerPlugin(e pluginhost.Entry) error {
 		DomainSuffix:     e.DomainSuffix,
 		SupportsRollback: e.SupportsRollback,
 		ManagedContainer: true, // plugins deploy through the shared container workflow
+		Shapes:           shapes,
 		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
 			dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
 			return pluginhost.NewDeployable(launch, meta, spec, dockerGen, a.uiWriter), nil
@@ -80,6 +89,19 @@ func registerPlugin(e pluginhost.Entry) error {
 		NewDetector: nil, // plugin deploys are create-or-update; no pre-detection
 	})
 	return nil
+}
+
+// parseShapes maps a manifest entry's shape strings into the core DeployShape enum,
+// returning nil for an empty/absent set so SupportsShape falls back to web-only.
+func parseShapes(ss []string) []deployment.DeployShape {
+	if len(ss) == 0 {
+		return nil
+	}
+	out := make([]deployment.DeployShape, 0, len(ss))
+	for _, s := range ss {
+		out = append(out, deployment.ParseShape(s))
+	}
+	return out
 }
 
 func lowerAll(ss []string) []string {

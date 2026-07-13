@@ -37,6 +37,10 @@ func (acme) Metadata(context.Context) (plugin.Meta, error) {
         Aliases:          []string{"acme", "acme-cloud"}, // natural-language + menu names
         DomainSuffix:     ".acme.app",                    // used for framework host allow-lists
         SupportsRollback: true,
+        // Shapes you can serve. Omit for a normal URL-serving web service (the default).
+        // Declare ShapeWorker/ShapeCron if you deploy URL-less agents/workers — see
+        // "Deploy shapes" below.
+        // Shapes: []plugin.DeployShape{plugin.ShapeWeb, plugin.ShapeWorker},
     }, nil
 }
 
@@ -115,6 +119,43 @@ deploy → rollback flow as a built-in cloud.
 
 ---
 
+## Deploy shapes — serving workers & agents (no URL)
+
+By default a plugin is assumed to deploy a **web service**: prod expects `Deploy` to
+return a public `URL` and probes it for liveness, failing (and rolling back) if it never
+comes up. That's wrong for a **worker**, a **cron job**, or an autonomous **agent** that
+runs continuously without listening on a port — there's no URL to return or probe.
+
+Declare the shapes you serve in `Metadata`:
+
+```go
+Shapes: []plugin.DeployShape{plugin.ShapeWeb, plugin.ShapeWorker},
+// plugin.ShapeWeb | plugin.ShapeMCPServer | plugin.ShapeWorker | plugin.ShapeCron
+```
+
+- **Absent / empty ⇒ web-only** — an existing plugin keeps its exact behavior; a URL is
+  required and probed. No migration needed.
+- prod records your declared shapes at install time, so it knows *before* launching you
+  that you may return a URL-less deploy.
+
+At deploy time the contract is:
+
+- `DeployRequest.Shape` tells you the shape prod resolved from the user's intent + project
+  analysis. For a non-HTTP shape (`worker`/`cron`) you may skip allocating a public URL
+  and return `DeployResult{URL: ""}`.
+- `DeployResult.Shape` lets you **echo the shape you actually deployed** — authoritative
+  over the request. A sandbox runtime that runs an analyzer-classified "web" project as a
+  URL-less worker sets this so prod records a URL-less success and **skips** the HTTP
+  liveness probe (instead of failing "returned no URL"). Leave it empty to keep the
+  requested shape.
+
+prod only relaxes the URL requirement for a shape you **declared** — if you return no URL
+for a shape you didn't declare, that's still treated as a failed deploy. URL-less deploys
+show up in `prod ls` / `open` / `status` as running workers with no link, exactly like a
+built-in Fly/Render worker.
+
+---
+
 ## How it fits the architecture
 
 A plugin reuses everything, nothing is rebuilt:
@@ -158,4 +199,9 @@ message rather than misbehaving. The protocol is bumped only on a breaking chang
 `Provider` interface or its request/response types; additive, backward-compatible changes
 don't bump it. Pin the `prod-plugin-sdk` version your plugin builds against, and rebuild when
 the protocol version changes.
+
+The shape fields (`Meta.Shapes`, `DeployRequest.Shape`, `DeployResult.Shape`) are such an
+additive change — they did **not** bump the protocol. A plugin built before them keeps
+working (prod treats it as web-only), and a shape-aware plugin runs against an older prod
+(which ignores the new fields), so you can adopt shapes without forcing a lockstep upgrade.
 

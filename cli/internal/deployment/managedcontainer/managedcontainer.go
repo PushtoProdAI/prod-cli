@@ -20,6 +20,11 @@ type DeployResult struct {
 	ID   string
 	Name string
 	URL  string
+	// Shape is the shape the cloud actually deployed, when it's authoritative (a plugin
+	// runtime that ran an analyzer-classified "web" project as a URL-less worker). Empty
+	// ⇒ the deploy workflow keeps its requested shape. Carried on the primary resource's
+	// metadata so the workflow can honor a URL-less shape before its URL assert.
+	Shape string
 	// Identifiers carries per-cloud identity that isn't encoded in ID and is needed
 	// later to build the platform's console URL and logs command (e.g. Azure's
 	// resourceGroup/subscription/location). Persisted into deploy history. Cloud Run
@@ -74,6 +79,11 @@ func Run(ctx context.Context, p Provider, spec *deployment.DeploymentSpec, build
 // marked Primary with the URL in Metadata.
 func primaryResource(res DeployResult, resourceType string) []deployment.CreatedResource {
 	md := map[string]any{"url": res.URL}
+	// A cloud (a plugin) may echo the authoritative shape it deployed; carry it so the
+	// deploy workflow can honor a URL-less worker/agent before its URL assert.
+	if res.Shape != "" {
+		md["shape"] = res.Shape
+	}
 	// Carry per-cloud identifiers alongside the URL so the deploy workflow can persist
 	// them to history (the console URL / logs command need them).
 	for k, v := range res.Identifiers {
