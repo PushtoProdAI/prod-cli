@@ -4,14 +4,21 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-errors/errors"
 
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
+
+// A NetlifyQueuedDeployment can tear itself down, so the destroy dispatch
+// (agent/deployment.go) recognizes Netlify as supported instead of reporting
+// "Teardown isn't supported for Netlify yet".
+var _ deployment.Destroyer = (*NetlifyQueuedDeployment)(nil)
 
 // NetlifyQueuedDeployment handles step-by-step deployments to Netlify
 // This deployment strategy creates resources one at a time with progress tracking
@@ -267,4 +274,59 @@ func rollbackNetlifySiteDeploy(ctx context.Context, siteID string) error {
 	}
 
 	return nil
+}
+
+// Destroy tears down the Netlify deployment by deleting its site.
+//
+// It resolves the site id from spec.ExistingProjectID (set by the destroy workflow
+// after detection); if that's empty it falls back to looking the site up by its
+// deployed name (spec.Name) via sites:list, so teardown still works when history
+// lacks the id.
+//
+// Netlify provisions no databases or other backing resources in this flow, so
+// deleting the site orphans nothing.
+func (nqd *NetlifyQueuedDeployment) Destroy(ctx context.Context) error {
+	siteID := nqd.spec.ExistingProjectID
+
+	if siteID == "" {
+		// Fall back to resolving the site by its deployed name.
+		sites, err := nqd.client.ListSites()
+		if err != nil {
+			return errors.Errorf("failed to look up Netlify site %q for teardown: %w", nqd.spec.Name, err)
+		}
+		for _, site := range sites {
+			if site.Name == nqd.spec.Name {
+				siteID = site.ID
+				break
+			}
+		}
+	}
+
+	if siteID == "" {
+		return errors.Errorf("no Netlify site found to destroy for %q (deploy history or a matching site is required)", nqd.spec.Name)
+	}
+
+	slog.Info("Destroying Netlify site", "site", siteID)
+
+	if err := nqd.client.DeleteSite(siteID); err != nil {
+		// Idempotent teardown: a site that's already gone is a success, not a
+		// failure (mirrors Render's 404 handling). DeleteSite wraps the CLI
+		// output, so a "not found"/"does not exist" message means it's gone.
+		if isNetlifyNotFound(err) {
+			slog.Info("Netlify site already deleted or not found", "site", siteID)
+			return nil
+		}
+		return errors.Errorf("failed to destroy Netlify site %q: %w", siteID, err)
+	}
+
+	slog.Info("Netlify site destroyed", "site", siteID)
+
+	return nil
+}
+
+// isNetlifyNotFound reports whether a DeleteSite error signals the site is already
+// gone, so destroy can treat it as a no-op.
+func isNetlifyNotFound(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not found") || strings.Contains(msg, "does not exist")
 }

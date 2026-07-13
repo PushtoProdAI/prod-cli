@@ -12,6 +12,7 @@ type VercelClient interface {
 	CreateProject(req CreateProjectRequest) (*VercelProject, error)
 	GetProject(projectID string) (*VercelProject, error)
 	DeleteProject(projectID string) error
+	DeleteProjectByName(name string) error
 	LinkProject(projectID string) error
 
 	// Project configuration

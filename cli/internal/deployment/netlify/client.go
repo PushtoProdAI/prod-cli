@@ -82,6 +82,15 @@ func (c *CLINetlifyClient) CreateSite(req CreateSiteRequest) (*NetlifySite, erro
 	return &site, nil
 }
 
+// ListSites retrieves all sites the authenticated user can see. It's used by the
+// destroy path to resolve a site by name when the site id isn't in local history.
+func (c *CLINetlifyClient) ListSites() ([]NetlifySite, error) {
+	if err := c.ensureNetlifyCLI(); err != nil {
+		return nil, err
+	}
+	return c.listSites()
+}
+
 // listSites retrieves all sites using CLI (helper method)
 func (c *CLINetlifyClient) listSites() ([]NetlifySite, error) {
 	cmd := exec.Command("netlify", "sites:list", "--json")
