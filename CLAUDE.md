@@ -186,7 +186,9 @@ type Deployable interface {
 Copy an existing package (`internal/deployment/flyio/` is the cleanest reference), add the
 platform to the enum in `internal/agent/types.go`, wire dispatch in `internal/agent/workflow.go`,
 add `workflow_<platform>.go`. Deploys use the **user's own credentials** — no central account.
-Every platform must support rollback (native API where available; image-swap for AWS).
+Every platform must support rollback (native API where available; image-swap — redeploy the
+previous recorded image — for Fly.io and AWS App Runner, which have no native rollback API).
+Modal is the exception: it deploys from source, so rollback means redeploying a prior version.
 
 ### Add / change an LLM behavior
 Edit `baml_src/*.baml`, then `make generate`. Never hand-edit `baml_client/`. The Go wrapper is

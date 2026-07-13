@@ -50,19 +50,18 @@ There are three mechanisms. Which one you get depends on the platform, and it af
 | **Google Cloud Run** | **native** — shifts traffic to the previous revision | instant, no rebuild |
 | **Azure Container Apps** | **native** — activates the previous revision | revision-based |
 | **Fly.io** | **image-swap** — redeploys the previous image tag | rolls back to the prior Docker image |
-| **AWS App Runner** | **not supported yet** | redeploy a previous build manually |
-| **Modal** | **not supported yet** | redeploy the previous version of your app |
+| **AWS App Runner** | **image-swap** — redeploys the previous image | prior image is recorded per deploy and survives in ECR |
+| **Modal** | **not applicable** | Modal deploys from source — redeploy your previous version |
 
 > **Native vs image-swap.** Native rollback uses the platform's own "go back to release N-1"
-> primitive — fast and clean. Fly.io doesn't expose that directly, so prod rolls back by
-> **redeploying the previous image** it recorded. Functionally you land on the prior version; the
-> difference is mechanical.
+> primitive — fast and clean. Fly.io and AWS App Runner don't expose that directly, so prod rolls
+> back by **redeploying the previous image** it recorded (the prior image survives in your registry).
+> Functionally you land on the prior version; the difference is mechanical. Note: a rollback
+> redeploys the old image with your *current* env/secrets — it reverts the code, not today's config.
 
-> **AWS App Runner and Modal have no rollback path today.** A `rollback` request there can't
-> succeed — to revert, redeploy the previous version of your app (git checkout the prior commit and
-> `prod "deploy this to …"`). This is tracked in ROADMAP (App Runner rollback is a Phase 2
-> follow-up). Note: despite an older note in `CLAUDE.md`, AWS uses the container clouds' path and
-> **not** image-swap — Fly.io is the image-swap platform.
+> **Modal is the exception.** It deploys from your source (no image prod can re-point to), so
+> "rollback" means redeploying your previous version yourself (git checkout the prior commit and
+> `prod "deploy this to …"`). Modal is also experimental.
 
 ## Automatic rollback on a failed health check
 
@@ -94,7 +93,7 @@ healthy worker. See [Deploy an AI agent or background worker](./deploy-an-agent-
 
 - **"No previous deployment found to roll back to."** This is your first deploy — there's nothing to
   return to. Rollback needs a prior successful version.
-- **You're on AWS App Runner or Modal.** Rollback isn't implemented there; redeploy the previous
+- **You're on Modal.** Rollback isn't applicable there (source-deployed); redeploy the previous
   version of your app instead.
 - **Rolling back doesn't undo a database migration.** A rollback reverts the app version, not your
   data. A migration that changed the schema stays applied — plan destructive migrations carefully.
