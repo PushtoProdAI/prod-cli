@@ -54,12 +54,16 @@ the model name is valid for that provider.
 
 ### OpenAI
 
+Create a key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys), then:
+
 ```bash
 export OPENAI_API_KEY=sk-...
 prod doctor
 ```
 
 ### Anthropic
+
+Create a key at [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys), then:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...

@@ -44,6 +44,14 @@ Read in order for a tour, or jump to the one you need.
    non-HTTP worker with no false health-check rollback; how it appears in `prod ls` / `open` /
    `logs`. **The flagship guide.**
 
+**Tier 3 — pick a target and unstick yourself**
+
+7. [Choosing a cloud](./choosing-a-cloud.md) — a decision guide (static vs PaaS vs
+   managed-container) plus per-cloud setup from zero (obtain → set → verify → deploy). The
+   vibe-coder on-ramp; also the answer to "where do I get this token?".
+8. [Troubleshooting](./troubleshooting.md) — `prod doctor`, the editor env-inheritance gotcha,
+   "can't authenticate," headless stalls, Docker-not-running — the things that actually break.
+
 ### Why this order
 
 Tier 1 is the spine every user walks: you need an LLM (1) before anything runs, almost every real
@@ -104,9 +112,5 @@ Not written yet; recommended order for a follow-up pass:
   `PROD_JSON_MODE` for any pipeline (deploy on merge, not just PR previews).
 - **Trust & credentials** — the local-tool security model: where creds live, what never leaves your
   machine, the `~/.prod` files.
-- **Troubleshooting** — the env-inheritance gotcha, `prod doctor`, "needs interactive input,"
-  common credential errors — consolidated.
-- **Choosing a cloud** — a decision guide (PaaS vs managed-container vs static), plus focused
-  per-cloud setup walkthroughs.
 - **Language/framework guides** — Rails, Next.js, FastAPI, Spring — the top stacks, each a
   zero-to-deployed walkthrough that also surfaces framework-managed env vars and migrations.
