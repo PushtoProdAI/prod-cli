@@ -163,8 +163,8 @@ func (w *Workflows) deployContainer(ctx workflow.Context, input DeployPlan) (dep
 		})
 
 		// Conditional auto-rollback (ACD.2): a container deploy that fails its health check
-		// on a rollback-capable cloud (Cloud Run, Azure — not App Runner) is reverted to the
-		// previous working revision. GetPreviousDeployment returns (nil, nil) for a first-ever
+		// on a rollback-capable cloud (Cloud Run, Azure, and App Runner via image-swap) is
+		// reverted to the previous working revision. GetPreviousDeployment returns (nil, nil) for a first-ever
 		// deploy, so a nil previous means "nothing to roll back to" and we fall through to
 		// failed + remediation. (We deliberately gate on SupportsRollback and the presence of
 		// a previous revision, not spec.IsUpdate: the container clouds have no existing-project

@@ -36,8 +36,8 @@ func TestResolvePerPlatform(t *testing.T) {
 			"console.cloud.google.com/run/detail/us-central1/widget", "gcloud run services logs read widget --region us-central1 --project p", true,
 		},
 		{
-			"app runner (no rollback)", rec("aws", "svc", map[string]any{"url": "https://x", "resourceId": "arn:...", "region": "us-east-1", "account": "123"}),
-			"us-east-1.console.aws.amazon.com/apprunner", "aws logs tail /aws/apprunner/svc --region us-east-1 --follow", false,
+			"app runner (image-swap rollback)", rec("aws", "svc", map[string]any{"url": "https://x", "resourceId": "arn:...", "region": "us-east-1", "account": "123"}),
+			"us-east-1.console.aws.amazon.com/apprunner", "aws logs tail /aws/apprunner/svc --region us-east-1 --follow", true,
 		},
 		{
 			"azure", rec("azure", "app", map[string]any{"url": "https://x", "resourceGroup": "prod-apps", "subscription": "sub-1", "location": "eastus"}),

@@ -1521,8 +1521,8 @@ func (a *Agent) executeDeployment(ctx context.Context, _ string, out io.Writer) 
 		}
 		// Post-deploy checklist for anything the user couldn't fill in before a URL existed.
 		a.printUnsetEnvGuidance(out, result.Url)
-		// Make rollback discoverable. (App Runner rollback isn't supported yet.)
-		if a.DeployPlan.Platform != AWS {
+		// Make rollback discoverable on platforms that support it.
+		if spec, ok := LookupPlatform(a.DeployPlan.Platform); ok && spec.SupportsRollback {
 			io.WriteString(out, "Need to undo this? Run:  prod \"rollback\"\n")
 		}
 	}
@@ -1738,8 +1738,8 @@ func (a *Agent) refuseDeployPlatform(out io.Writer, p Platform) bool {
 }
 
 // refuseUnsupportedPlatform gates the ROLLBACK path for platforms whose rollback
-// isn't available in the single binary (AWS App Runner). Deploy is not gated
-// here — a Render or AWS deploy uses the user's own registry/credentials.
+// isn't available in the single binary (e.g. Modal). Deploy is not gated here — a
+// Render or AWS deploy uses the user's own registry/credentials.
 func (a *Agent) refuseUnsupportedPlatform(out io.Writer, p Platform) bool {
 	if config.BackendConfigured() {
 		return false // managed mode: the backend powers rollback
@@ -1751,12 +1751,10 @@ func (a *Agent) refuseUnsupportedPlatform(out io.Writer, p Platform) bool {
 	return false
 }
 
-// unsupportedLocalPlatform reports platforms whose ROLLBACK isn't supported in
-// the single binary. AWS deploys to App Runner, but App Runner rollback isn't
-// implemented yet — you redeploy to change the service — so rollback is refused.
 // unsupportedLocalPlatform returns a friendly message (and true) when a platform's
-// rollback isn't implemented yet, so the deploy path can refuse cleanly instead of
-// failing mid-workflow. Derived from the catalog's SupportsRollback flag.
+// rollback isn't implemented yet (e.g. Modal), so the deploy path can refuse cleanly
+// instead of failing mid-workflow. Derived from the catalog's SupportsRollback flag —
+// AWS App Runner now supports image-swap rollback, so it's no longer refused.
 func unsupportedLocalPlatform(p Platform) (string, bool) {
 	s, ok := LookupPlatform(p)
 	if !ok || s.SupportsRollback {

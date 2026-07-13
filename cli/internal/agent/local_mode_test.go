@@ -11,13 +11,13 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
-// AWS deploys to App Runner, but its ROLLBACK isn't supported yet, so only AWS
-// is gated here — and only for rollback (deploy is allowed; see below).
+// Modal is experimental and its ROLLBACK isn't supported, so it's gated here. AWS now
+// supports image-swap rollback (via the recorded previous image), so it must NOT be gated.
 func TestUnsupportedLocalPlatform(t *testing.T) {
-	if _, unsupported := unsupportedLocalPlatform(AWS); !unsupported {
-		t.Error("AWS rollback should be refused (App Runner rollback unimplemented)")
+	if _, unsupported := unsupportedLocalPlatform(Modal); !unsupported {
+		t.Error("Modal rollback should be refused (not supported)")
 	}
-	for _, p := range []Platform{Render, FlyIO, Vercel, Netlify, Heroku} {
+	for _, p := range []Platform{AWS, Render, FlyIO, Vercel, Netlify, Heroku} {
 		if msg, unsupported := unsupportedLocalPlatform(p); unsupported {
 			t.Errorf("%v should not be gated, got refusal: %q", p, msg)
 		}
@@ -29,10 +29,16 @@ func TestRefuseUnsupportedPlatformIsModeAware(t *testing.T) {
 	a := &Agent{}
 	var sink discard
 
-	t.Run("local mode refuses AWS rollback", func(t *testing.T) {
+	t.Run("local mode refuses Modal rollback", func(t *testing.T) {
 		setLocalMode(t)
-		if !a.refuseUnsupportedPlatform(&sink, AWS) {
-			t.Error("AWS rollback should be refused in local mode")
+		if !a.refuseUnsupportedPlatform(&sink, Modal) {
+			t.Error("Modal rollback should be refused in local mode")
+		}
+	})
+	t.Run("local mode allows AWS rollback", func(t *testing.T) {
+		setLocalMode(t)
+		if a.refuseUnsupportedPlatform(&sink, AWS) {
+			t.Error("AWS rollback should be allowed in local mode (image-swap)")
 		}
 	})
 	t.Run("local mode allows AWS deploy", func(t *testing.T) {
