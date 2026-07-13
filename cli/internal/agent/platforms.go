@@ -218,10 +218,10 @@ func registerPlatforms() {
 	})
 	RegisterPlatform(PlatformSpec{
 		Platform: AWS, Name: "AWS", Aliases: []string{"aws", "amazon"},
-		DomainSuffix: ".awsapprunner.com", SupportsRollback: false, ManagedContainer: true,
+		DomainSuffix: ".awsapprunner.com", SupportsRollback: true, ManagedContainer: true,
 		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
 			dockerGen := deployment.NewDockerGenerator(a.uiWriter, spec.EnvVars)
-			return aws.NewAppRunnerDeployment(spec, dockerGen, a.uiWriter), nil
+			return aws.NewAppRunnerDeployment(spec, dockerGen, a.history, a.uiWriter), nil
 		},
 		NewAuthProvider: func(out io.Writer) auth.AuthProvider { return auth.NewAWSAuth(out) },
 		NewDetector:     func(a *Activities) ProjectDetector { return NewAWSProjectDetector(a.uiWriter) },

@@ -97,7 +97,7 @@ func Resolve(r history.Record) Target {
 
 	case "aws":
 		// resourceId is the service ARN (encodes region + account).
-		t.CanRollback = false // App Runner rollback isn't supported yet
+		t.CanRollback = true // image-swap rollback via the recorded previous image
 		if region != "" {
 			t.ConsoleURL = fmt.Sprintf("https://%s.console.aws.amazon.com/apprunner/home?region=%s#/services", region, region)
 			t.LogsCmd = fmt.Sprintf("aws logs tail /aws/apprunner/%s --region %s --follow", name, region)
