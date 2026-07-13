@@ -43,6 +43,18 @@ go build -o prod ./cmd/main.go        # → ./prod   (or `make build` for a vers
 On first run, `prod` downloads the BAML engine library (~56 MB, needs network + CA
 certificates); `prod doctor` checks your setup.
 
+**VS Code extension** — prefer your editor? Install
+**[Prod CLI for VS Code](https://marketplace.visualstudio.com/items?itemName=PushToProdAI.prod-cli)**:
+a deployments sidebar plus one-click deploy, open, tail logs, roll back, destroy, and project
+scaffolding — all driving the `prod` binary. From the command line:
+
+```bash
+code --install-extension PushToProdAI.prod-cli
+```
+
+The extension is a companion to the CLI, so install the binary above first. Source and details:
+[prod-cli-vscode](https://github.com/PushtoProdAI/prod-cli-vscode).
+
 ---
 
 ## Quickstart (under 5 minutes)
