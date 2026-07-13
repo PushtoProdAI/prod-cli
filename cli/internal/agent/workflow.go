@@ -37,6 +37,7 @@ const (
 	RollbackDeploymentWorkflowName     = "agent.rollbackDeployment"
 	DestroyDeploymentWorkflowName      = "agent.destroyDeployment"
 	DeployModalWorkflowName            = "agent.deploy.modal"
+	DeployCloudflareWorkflowName       = "agent.deploy.cloudflare"
 )
 
 var ActivityOpts = workflow.ActivityOptions{
@@ -154,6 +155,7 @@ func (w *Workflows) Workflows() []workflowext.Workflow {
 		{Name: DeployHerokuWorkflowName, WorkflowFunc: w.deployHeroku},
 		{Name: DeployContainerWorkflowName, WorkflowFunc: w.deployContainer},
 		{Name: DeployModalWorkflowName, WorkflowFunc: w.deployModal},
+		{Name: DeployCloudflareWorkflowName, WorkflowFunc: w.deployCloudflare},
 		{Name: RollbackDeploymentWorkflowName, WorkflowFunc: w.rollbackDeployment},
 		{Name: DestroyDeploymentWorkflowName, WorkflowFunc: w.destroyDeployment},
 	}
@@ -196,6 +198,8 @@ func (Workflows) Deploy(ctx context.Context, c *client.Client, input DeployPlan)
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployHerokuWorkflowName, time.Now().Unix())}, DeployHerokuWorkflowName, input)
 	case Modal:
 		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployModalWorkflowName, time.Now().Unix())}, DeployModalWorkflowName, input)
+	case CloudflarePages:
+		return c.CreateWorkflowInstance(ctx, client.WorkflowInstanceOptions{InstanceID: fmt.Sprintf("%s.%d", DeployCloudflareWorkflowName, time.Now().Unix())}, DeployCloudflareWorkflowName, input)
 	default:
 		return nil, errors.New("unsupported platform for deployment")
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/aca"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/aws"
+	"github.com/pushtoprodai/prod-cli/internal/deployment/cloudflare"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/flyio"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/gcprun"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/heroku"
@@ -261,5 +262,20 @@ func registerPlatforms() {
 		NewAuthProvider: func(out io.Writer) auth.AuthProvider { return auth.NewModalAuth(out) },
 		// modal deploy is idempotent (create-or-update the app); no pre-detection.
 		NewDetector: nil,
+	})
+	// Cloudflare Pages is registered last so it doesn't shift the menu index of the
+	// existing platforms (parseDeployPlatform accepts a 1-based menu position).
+	RegisterPlatform(PlatformSpec{
+		Platform: CloudflarePages, Name: "Cloudflare Pages",
+		Aliases:      []string{"cloudflare", "cloudflare pages", "cf pages", "cfpages", "pages", "cf"},
+		DomainSuffix: ".pages.dev", SupportsRollback: false, // rollback is a follow-up
+		NewDeployable: func(a *Activities, spec *deployment.DeploymentSpec) (deployment.Deployable, error) {
+			adapter := cloudflare.NewDefaultCloudflareDeploymentAdapter(a.uiWriter, a.llmClient)
+			return adapter.GenerateArtifacts(spec, deployment.StrategyCloudflare)
+		},
+		NewAuthProvider: func(out io.Writer) auth.AuthProvider {
+			return auth.NewCloudflareAuth(out)
+		},
+		NewDetector: func(a *Activities) ProjectDetector { return NewCloudflareProjectDetector(a.uiWriter) },
 	})
 }

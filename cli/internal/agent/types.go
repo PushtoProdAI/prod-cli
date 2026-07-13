@@ -22,6 +22,8 @@ const (
 	// Modal is appended after UnknownPlatform so the serialized (int) values of the
 	// existing platforms stay stable for durable workflows in flight across an upgrade.
 	Modal
+	// CloudflarePages is likewise appended at the end for the same int-stability reason.
+	CloudflarePages
 )
 
 // Action represents the type of deployment action

@@ -95,6 +95,11 @@ func Resolve(r history.Record) Target {
 			t.LogsCmd = "vercel logs " + t.LiveURL
 		}
 
+	case "cloudflarepages":
+		// Rollback isn't implemented yet; the dashboard is per-account (project name in the path).
+		t.CanRollback = false
+		t.ConsoleURL = "https://dash.cloudflare.com/?to=/:account/pages/view/" + name
+
 	case "aws":
 		// resourceId is the service ARN (encodes region + account).
 		t.CanRollback = true // image-swap rollback via the recorded previous image

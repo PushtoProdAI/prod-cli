@@ -359,3 +359,20 @@ func (d *AWSProjectDetector) DetectExistingProject(_ context.Context, _ string, 
 	// redeploys an existing service — so there's no separate detection step.
 	return ExistingProjectInfo{Platform: AWS, ExistingDatabases: []string{}}, nil
 }
+
+// CloudflareProjectDetector detects existing Cloudflare Pages projects. It's a no-op: the
+// deploy is idempotent by project name (the adapter finds-or-creates the project) and destroy
+// resolves the project by name, so there's no separate detection step.
+type CloudflareProjectDetector struct {
+	uiWriter output.StatusWriter
+}
+
+// NewCloudflareProjectDetector creates a Cloudflare Pages project detector.
+func NewCloudflareProjectDetector(uiWriter output.StatusWriter) *CloudflareProjectDetector {
+	return &CloudflareProjectDetector{uiWriter: uiWriter}
+}
+
+// DetectExistingProject is a no-op for Cloudflare Pages (idempotent by project name).
+func (d *CloudflareProjectDetector) DetectExistingProject(_ context.Context, _ string, _ string) (ExistingProjectInfo, error) {
+	return ExistingProjectInfo{Platform: CloudflarePages, ExistingDatabases: []string{}}, nil
+}
