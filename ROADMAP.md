@@ -76,7 +76,10 @@ Clean and simple, because the architecture makes it clean:
 Everything needed to deploy from your own machine:
 - The entire CLI + TUI: intent parsing, planning, the FSM, every platform adapter.
 - **Direct LLM** — OpenAI, Anthropic, or local Ollama with your key. No proxy.
-- **Local state** — deploy history in a local JSON file (`~/.prod/history.json`); resumable workflows.
+- **Local state** — deploy history in a local JSON file (`~/.prod/history.json`). Deploys run on a
+  durable-workflow engine, but state is kept **in-memory** today (each `prod` run is independent);
+  on-disk resume is a deliberate opt-in we haven't turned on, so a crashed deploy is re-run, not
+  resumed.
 - **Direct-to-platform deploys**, including **AWS with your own credentials** (embedded templates).
 - The **MCP server** (same binary, `prod mcp`) and the platform-adapter SDK.
 - Agent-native deploy shapes and scaffolds.

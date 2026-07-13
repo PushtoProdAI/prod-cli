@@ -30,6 +30,27 @@ For per-PR preview environments, teardown is best-effort and idempotent by name 
 `prod run --yes --name myapp-pr-7 "destroy this on fly"` is exactly how the PR-preview workflow
 cleans up on close. See [PR preview deploys](../pr-previews.md).
 
+### Also delete the database (`--delete-data`)
+
+By default, destroy removes the **app/service only** and leaves any backing database in place —
+so you never lose data by accident. To also delete the databases prod created for the deploy,
+pass `--delete-data`:
+
+```bash
+prod run --delete-data "destroy this on fly"
+```
+
+This is **irreversible** and deletes real data. Two guardrails:
+
+- **Opt-in only.** Without `--delete-data`, the database is always kept.
+- **Provenance-safe.** It deletes only databases prod recorded creating for this app (from local
+  history) — never a same-named database it merely found, so it can't drop a database you created
+  yourself.
+
+**Coverage today:** `--delete-data` cascades **Fly.io** Managed Postgres and Redis. On other
+platforms the flag is currently a no-op (the backing database is left) — remove those from the
+platform's dashboard using the cost-hygiene checklist below. Wider cascade is rolling out.
+
 ## What destroy removes — and leaves — per platform
 
 Destroy is implemented for some platforms and not others. When it isn't, prod tells you to remove
@@ -60,9 +81,11 @@ Teardown isn't supported for Modal yet — remove it from the platform's console
 
 ## Cost hygiene checklist
 
-After a destroy, clean up the resources prod left behind:
+After a destroy, clean up the resources prod left behind (or pass `--delete-data` where supported
+to have prod do it):
 
-- **Fly.io** — delete the Postgres/Redis app: `fly apps list` then `fly apps destroy <db-app>`.
+- **Fly.io** — pass `--delete-data` to remove the Managed Postgres + Redis automatically, or delete
+  them by hand: `fly mpg list` / `fly redis list`, then `fly mpg destroy <id>` / `fly redis destroy <name>`.
 - **AWS App Runner** — delete the ECR repository (and any leftover Secrets Manager secrets) in the
   AWS console or `aws ecr delete-repository`.
 - **Google Cloud Run** — delete the Artifact Registry image and Secret Manager entries.
