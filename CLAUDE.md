@@ -28,11 +28,12 @@ A **single Go binary** (`prod`, built from `cli/`). It:
 4. Executes a **durable workflow** (resumable across retries) against the platform, using the
    **user's own credentials**, and records history to a **local store**.
 
-Deploy targets (all in-binary, user's own creds): **Fly.io, Render, Vercel, Netlify, Heroku**
-(direct-API) and **AWS App Runner, Google Cloud Run, Azure Container Apps** (managed container —
-build locally → push to a registry in your account → create the service). Plus **Modal**
-(experimental, via the `modal` CLI) and **out-of-tree provider plugins** (`prod plugin install`).
-Deploy, rollback, and **destroy** are all natural-language actions.
+Deploy targets (all in-binary, user's own creds): **Fly.io, Render, Vercel, Netlify, Heroku,
+Cloudflare Pages** (direct-API; Cloudflare Pages is static-only, via the direct-upload REST API)
+and **AWS App Runner, Google Cloud Run, Azure Container Apps** (managed container — build locally →
+push to a registry in your account → create the service). Plus **Modal** (experimental, via the
+`modal` CLI) and **out-of-tree provider plugins** (`prod plugin install`). Deploy, rollback, and
+**destroy** are all natural-language actions (destroy can cascade backing DBs with `--delete-data`).
 
 **No server is required to deploy.** LLM calls go direct to OpenAI/Anthropic/Ollama with the
 user's key; history lives in a local JSON file; platform tokens live in `~/.prod`. A hosted backend
@@ -97,7 +98,7 @@ cli/
   internal/
     agent/               Orchestrator FSM, per-platform workflows, detectors
     analyzer/            Static project analysis (node.go, python.go, go.go — Node/Python/Go)
-    deployment/          Platform adapters: flyio/ render/ vercel/ netlify/ heroku/ aws(apprunner)/
+    deployment/          Platform adapters: flyio/ render/ vercel/ netlify/ heroku/ cloudflare/ aws(apprunner)/
                          gcprun/ aca(azure)/ modal/ + managedcontainer/ (shared container base)
     deploytarget/        Resolve a history record → {LiveURL, ConsoleURL, LogsCmd, CanRollback}
                          (per-cloud knowledge; used by the MCP tools + prod ls/open/logs)

@@ -138,10 +138,11 @@ in-session.
 
 ## Supported platforms
 
-`prod` deploys directly to eight clouds with **your own credentials** — see
+`prod` deploys directly to nine clouds with **your own credentials** — see
 [docs/clouds.md](docs/clouds.md) for per-cloud setup:
 
 - **Fly.io**, **Render**, **Vercel**, **Netlify**, **Heroku** (PaaS)
+- **Cloudflare Pages** — static sites, uploaded directly via Cloudflare's API (no `wrangler`)
 - **AWS App Runner**, **Google Cloud Run**, **Azure Container Apps** (managed container —
   build locally, push to a registry in your account, deploy)
 - **Modal** (experimental) — serverless, Python-native, GPU-capable agents, deployed via the

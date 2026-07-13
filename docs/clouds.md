@@ -16,6 +16,7 @@ per-cloud credentials.
 | **Render** | `RENDER_API_KEY` | Render pulls from a registry — see "Container registry" below. |
 | **Vercel** | `VERCEL_TOKEN`, or `vercel login` | Static/serverless; no Docker needed. |
 | **Netlify** | `NETLIFY_AUTH_TOKEN`, or `netlify login` | Static/serverless; no Docker needed. |
+| **Cloudflare Pages** | `CLOUDFLARE_API_TOKEN` (scope: Account → Cloudflare Pages → Edit) + `CLOUDFLARE_ACCOUNT_ID` | **Static sites only.** Uploads directly via Cloudflare's API — no `wrangler`, no Docker. |
 | **Heroku** | `HEROKU_API_KEY`, or `heroku login` | — |
 
 ## Managed-container targets (build locally, push, deploy)
