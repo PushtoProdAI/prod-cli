@@ -42,7 +42,7 @@ the app from the platform's console rather than pretending to succeed.
 | **AWS App Runner** | supported | the App Runner service | the **ECR repo + pushed image**, and any Secrets Manager secrets |
 | **Google Cloud Run** | supported | the Cloud Run service | the **Artifact Registry image** and Secret Manager entries |
 | **Azure Container Apps** | supported | the Container App | the **ACR image** and secrets |
-| **Render** | not supported yet | — | prod tells you to delete it in the Render dashboard |
+| **Render** | supported | the Render service (web / worker / cron) | a separately-created **Render Postgres / Key-Value** instance stays — delete it yourself |
 | **Vercel** | not supported yet | — | delete the project in the Vercel dashboard |
 | **Netlify** | not supported yet | — | delete the site in the Netlify dashboard |
 | **Modal** | not supported yet | — | remove the app with the `modal` CLI / dashboard |
@@ -50,7 +50,7 @@ the app from the platform's console rather than pretending to succeed.
 When destroy isn't supported you'll see:
 
 ```
-Teardown isn't supported for Render yet — remove it from the platform's console.
+Teardown isn't supported for Vercel yet — remove it from the platform's console.
 ```
 
 > **The cost-hygiene point.** On every platform *except Heroku*, destroying the app does **not**
@@ -68,8 +68,10 @@ After a destroy, clean up the resources prod left behind:
 - **Google Cloud Run** — delete the Artifact Registry image and Secret Manager entries.
 - **Azure Container Apps** — delete the ACR image; remove the resource group if prod created a
   dedicated one and you're done with it.
-- **Render / Vercel / Netlify / Modal** — remove the service/project/site (and any managed database)
-  from the platform's own console — prod doesn't destroy these yet.
+- **Render** — prod destroys the service, but its backing **Postgres / Key-Value** stays; delete it
+  in the Render dashboard.
+- **Vercel / Netlify / Modal** — remove the project/site/app (and any managed database) from the
+  platform's own console — prod doesn't destroy these yet.
 
 ## What success looks like
 
@@ -84,8 +86,9 @@ After a destroy, clean up the resources prod left behind:
 - **You still get billed after destroy.** Almost always an orphaned backing resource — a Fly
   Postgres, an ECR/Artifact Registry image, a managed database on a bring-your-own platform. Work
   the cost-hygiene checklist above.
-- **Destroy "did nothing" on Render/Vercel/Netlify/Modal.** It's not implemented there — prod told
-  you to use the console. That's expected, not a failure.
+- **Destroy "did nothing" on Vercel/Netlify/Modal.** It's not implemented there — prod told you to
+  use the console. That's expected, not a failure. (Render, Fly, Heroku, AWS, Cloud Run, and Azure
+  are destroyed by prod directly.)
 - **You destroyed the wrong app.** Destroy is irreversible and identifies the app by name — check
   `prod ls` first, and pass the exact `--name` in automation.
 - **Destroy via an agent stalls.** `destroy` is the most destructive verb and is gated — through MCP
