@@ -11,6 +11,7 @@ type NetlifyClient interface {
 	// Site management
 	CreateSite(req CreateSiteRequest) (*NetlifySite, error)
 	GetSite(siteID string) (*NetlifySite, error)
+	ListSites() ([]NetlifySite, error)
 	UpdateSite(siteID string, req UpdateSiteRequest) (*NetlifySite, error)
 	DeleteSite(siteID string) error
 	LinkSite(siteID string) error

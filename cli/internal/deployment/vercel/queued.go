@@ -4,11 +4,18 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
+	"strings"
 
 	"github.com/go-errors/errors"
 
 	"github.com/pushtoprodai/prod-cli/internal/deployment"
 )
+
+// A VercelQueuedDeployment can tear itself down, so the destroy dispatch
+// (agent/deployment.go) recognizes Vercel as supported instead of reporting
+// "Teardown isn't supported for Vercel yet".
+var _ deployment.Destroyer = (*VercelQueuedDeployment)(nil)
 
 // VercelQueuedDeployment handles step-by-step deployments to Vercel
 // This deployment strategy creates resources one at a time with progress tracking
@@ -37,6 +44,48 @@ func (vqd *VercelQueuedDeployment) GetPreviousDeployment(ctx context.Context) (*
 
 func (vqd *VercelQueuedDeployment) Rollback(ctx context.Context, targetDeploymentID string) error {
 	return RollbackVercelDeployment(ctx, vqd.client, targetDeploymentID, vqd.getSourcePath())
+}
+
+// Destroy tears down the Vercel deployment by deleting the whole project.
+//
+// Vercel teardown is keyed by project NAME, not id: `vercel project rm <name>`
+// removes the project and all its deployments. spec.Name comes from the plan and
+// matches the created project. The `prj_…` id from .vercel/project.json is
+// deliberately NOT used here — `vercel remove <prj_id>` targets deployments, not the
+// project, and would misbehave (the semantic trap this adapter avoids).
+//
+// This adapter provisions no databases; any Vercel-managed storage (Postgres/KV) is
+// a separate resource with its own lifecycle, so destroy orphans nothing this
+// adapter created.
+func (vqd *VercelQueuedDeployment) Destroy(ctx context.Context) error {
+	if vqd.spec.Name == "" {
+		return errors.Errorf("no project name available to destroy Vercel deployment")
+	}
+
+	slog.Info("Destroying Vercel project", "project", vqd.spec.Name)
+
+	if err := vqd.client.DeleteProjectByName(vqd.spec.Name); err != nil {
+		// Idempotent teardown: a project that's already gone is a success, not a
+		// failure. `vercel project rm` reports "No such project exists" in that case.
+		if isVercelNotFound(err) {
+			slog.Info("Vercel project already deleted or not found", "project", vqd.spec.Name)
+			return nil
+		}
+		return errors.Errorf("failed to destroy Vercel project %q: %w", vqd.spec.Name, err)
+	}
+
+	slog.Info("Vercel project destroyed", "project", vqd.spec.Name)
+
+	return nil
+}
+
+// isVercelNotFound reports whether a DeleteProjectByName error signals the project is
+// already gone, so destroy can treat it as a no-op.
+func isVercelNotFound(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such project") ||
+		strings.Contains(msg, "not found") ||
+		strings.Contains(msg, "does not exist")
 }
 
 func (vqd *VercelQueuedDeployment) Deploy(ctx context.Context) ([]deployment.CreatedResource, error) {

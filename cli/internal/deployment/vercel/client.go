@@ -105,6 +105,40 @@ func (c *CLIVercelClient) DeleteProject(projectID string) error {
 	return nil
 }
 
+// DeleteProjectByName tears down a whole Vercel project (and all its deployments)
+// by name using `vercel project rm <name>`.
+//
+// This is deliberately NOT DeleteProject: that shells `vercel remove <arg>`, which
+// removes *deployments* by name and only works in the failed-create rollback path
+// because that passes the project name. At destroy time the id from detection is a
+// `prj_…` project id that `vercel remove` would reject, so the correct teardown is
+// the project-scoped verb keyed by the project name.
+//
+// The verb was verified against Vercel CLI 54.20.1: `project rm` (alias of
+// `project remove`) takes a name; `--yes` is rejected and `--non-interactive` does
+// not auto-confirm in a non-TTY, so the confirmation prompt is answered by piping
+// "y" on stdin (the same pattern setEnvVar uses).
+func (c *CLIVercelClient) DeleteProjectByName(name string) error {
+	if err := c.ensureVercelCLI(); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), linkTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "vercel", "project", "rm", name)
+	cmd.Stdin = strings.NewReader("y\n")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return errors.Errorf("project deletion timed out after %v", linkTimeout)
+		}
+		return errors.Errorf("failed to delete project %q: %w\nOutput: %s", name, err, string(output))
+	}
+
+	return nil
+}
+
 // LinkProject links the current directory to a Vercel project using CLI
 func (c *CLIVercelClient) LinkProject(projectID string) error {
 	if err := c.ensureVercelCLI(); err != nil {
