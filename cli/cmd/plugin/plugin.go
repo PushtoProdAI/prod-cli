@@ -146,9 +146,15 @@ func (c *PluginInstallCommand) Execute(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Persist the plugin's declared shapes (stringify plugin.DeployShape) so the host can
+	// relax the URL requirement for a worker/agent plugin without launching it at startup.
+	shapes := make([]string, len(meta.Shapes))
+	for i, s := range meta.Shapes {
+		shapes[i] = string(s)
+	}
 	entry := pluginhost.Entry{
 		Name: meta.Name, Aliases: meta.Aliases, DomainSuffix: meta.DomainSuffix,
-		SupportsRollback: meta.SupportsRollback, Path: path, Checksum: sum,
+		SupportsRollback: meta.SupportsRollback, Shapes: shapes, Path: path, Checksum: sum,
 	}
 	if err := pluginhost.Upsert(mp, entry); err != nil {
 		return err

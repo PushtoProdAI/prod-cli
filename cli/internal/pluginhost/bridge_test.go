@@ -89,6 +89,32 @@ func TestPluginDeployFlow(t *testing.T) {
 	}
 }
 
+// TestPluginDeployShapePropagation proves the shape crosses the bridge in both
+// directions: the host's resolved spec.Shape reaches the plugin as DeployRequest.Shape,
+// and the plugin's echoed DeployResult.Shape (a URL-less worker) lands on the primary
+// resource metadata so the deploy workflow can honor it before its URL assert.
+func TestPluginDeployShapePropagation(t *testing.T) {
+	fp := &fakeProvider{result: plugin.DeployResult{ID: "svc1", Name: "my-app", URL: "", Shape: plugin.ShapeWorker}}
+	pp := &pluginProvider{prov: fp, meta: plugin.Meta{Name: "Acme"}}
+	spec := &deployment.DeploymentSpec{Name: "My-App", Shape: deployment.ShapeWorker}
+
+	res, err := managedcontainer.Run(context.Background(), pp, spec, fakeBuilder{imageRef: "registry.acme.app/team/my-app:1"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// host→plugin: the plugin was told the resolved shape at deploy time.
+	if fp.gotReq.Shape != plugin.ShapeWorker {
+		t.Errorf("plugin got DeployRequest.Shape %q, want worker", fp.gotReq.Shape)
+	}
+	// plugin→host: the echoed shape is carried on the primary resource, no URL.
+	if res[0].Metadata["shape"] != "worker" {
+		t.Errorf("resource shape metadata = %v, want worker", res[0].Metadata["shape"])
+	}
+	if res[0].Metadata["url"] != "" {
+		t.Errorf("a worker deploy should carry no url, got %v", res[0].Metadata["url"])
+	}
+}
+
 func TestPluginRegistry(t *testing.T) {
 	r := &pluginRegistry{name: "Acme", info: plugin.RegistryInfo{Host: "registry.acme.app", Repository: "team/app", Username: "u", Token: "t"}}
 	creds, _ := r.Credentials(context.Background(), "app")

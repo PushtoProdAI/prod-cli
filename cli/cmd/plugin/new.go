@@ -116,6 +116,11 @@ func (%[3]s) Metadata(context.Context) (plugin.Meta, error) {
 		Aliases:          []string{%[1]q},
 		DomainSuffix:     ".%[1]s.example",
 		SupportsRollback: false,
+		// Shapes declares which deploy shapes this provider serves. Omit (or leave as
+		// web) for a normal URL-serving web service. For a worker/agent runtime that may
+		// return no URL, declare it — e.g.:
+		//   Shapes: []plugin.DeployShape{plugin.ShapeWorker, plugin.ShapeMCPServer},
+		Shapes: []plugin.DeployShape{plugin.ShapeWeb},
 	}, nil
 }
 
@@ -142,6 +147,10 @@ func (%[3]s) CheckAuth(context.Context) (plugin.AuthStatus, error) {
 func (%[3]s) Deploy(_ context.Context, req plugin.DeployRequest) (plugin.DeployResult, error) {
 	// TODO: create/update a service from req.ImageRef and wait until it serves. The stub
 	// echoes a placeholder URL so you can install and run the plugin before it's finished.
+	//
+	// req.Shape is the shape the host resolved. For a non-HTTP shape (worker/cron) you may
+	// skip allocating a public URL and return DeployResult{URL:""}; set DeployResult.Shape
+	// to echo the shape you actually deployed (authoritative over req.Shape).
 	return plugin.DeployResult{
 		ID:   %[1]q + "-" + req.Name,
 		Name: req.Name,

@@ -63,16 +63,22 @@ func (p *pluginProvider) Prepare(ctx context.Context, spec *deployment.Deploymen
 	deploy := func(ctx context.Context, imageRef string) (managedcontainer.DeployResult, error) {
 		plain, secret := partitionEnv(spec.EnvVars)
 		res, err := p.prov.Deploy(ctx, plugin.DeployRequest{
-			ImageRef:  imageRef,
-			Name:      project,
-			Port:      defaultPort,
-			PlainEnv:  plain,
+			ImageRef: imageRef,
+			Name:     project,
+			Port:     defaultPort,
+			PlainEnv: plain,
+			// Tell the plugin the resolved shape so it knows at deploy time whether a URL
+			// is wanted; for a worker/cron it may return DeployResult{URL:""}. The SDK's
+			// DeployShape mirrors core's shape strings, so the conversion is value-for-value.
+			Shape:     plugin.DeployShape(spec.Shape.String()),
 			SecretEnv: secret,
 		})
 		if err != nil {
 			return managedcontainer.DeployResult{}, err
 		}
-		return managedcontainer.DeployResult{ID: res.ID, Name: res.Name, URL: res.URL}, nil
+		// Echo the plugin's authoritative shape (if any) so the deploy workflow can honor a
+		// URL-less worker/agent even when the analyzer guessed web.
+		return managedcontainer.DeployResult{ID: res.ID, Name: res.Name, URL: res.URL, Shape: string(res.Shape)}, nil
 	}
 	return reg, deploy, nil
 }

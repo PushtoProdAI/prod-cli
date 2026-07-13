@@ -11,6 +11,16 @@ import (
 	prod_error "github.com/pushtoprodai/prod-cli/internal/error"
 )
 
+// shouldRecordURLLess reports whether a managed-container deploy of the given shape on
+// platform should be recorded as a URL-less success — skipping the URL assert and the HTTP
+// liveness probe — instead of requiring a URL. True only for a non-HTTP shape (worker/cron)
+// that the platform explicitly declares it can serve (a provider plugin via SupportsShape).
+// A web-only cloud (AWS/Cloud Run/Azure) that somehow received a worker shape returns false,
+// so it still falls through to the existing "returned no URL" failure — defense in depth.
+func shouldRecordURLLess(platform Platform, shape deployment.DeployShape) bool {
+	return !shape.HTTPShaped() && platform.SupportsShape(shape)
+}
+
 // deployContainer is the shared deploy workflow for managed-container clouds (App
 // Runner, Cloud Run, Azure Container Apps — any platform with ManagedContainer set).
 // The image build+push to the platform's registry, the service create/update, and
@@ -89,6 +99,43 @@ func (w *Workflows) deployContainer(ctx workflow.Context, input DeployPlan) (dep
 	if svc.ID == "" {
 		return deployResult{}, errors.Errorf("%s deployment returned no primary service", input.Platform.String())
 	}
+
+	// Resolve the effective shape: the platform (a plugin) may echo the shape it actually
+	// deployed on the resource metadata (authoritative — e.g. a sandbox runtime that ran an
+	// analyzer-classified "web" project as a URL-less worker), overriding the requested shape.
+	effectiveShape := input.Shape
+	if s, ok := svc.Metadata["shape"].(string); ok && s != "" {
+		effectiveShape = deployment.ParseShape(s)
+	}
+
+	// A non-HTTP shape (worker/cron) on a platform that declares it can serve that shape has
+	// no URL to probe. Record a URL-less success and return BEFORE the URL assert below —
+	// mirroring the Fly worker early-return (workflow_flyio.go). Gated on SupportsShape too,
+	// so a container cloud (AWS/Cloud Run/Azure — web-only) that somehow received a worker
+	// shape still falls through to the existing "returned no URL" failure rather than
+	// silently succeeding. svc.ID != "" is already asserted above, so a do-nothing deploy is
+	// still a real failure. Liveness (AgentVerifyLiveness) already no-ops for worker/cron.
+	if shouldRecordURLLess(input.Platform, effectiveShape) {
+		if operationId != "" {
+			// Persist the plugin's canonical platform token (not the raw enum String(), which
+			// is "Platform(1048…)") so history.CanonicalPlatform maps the record back, plus the
+			// shape so ls/open/status/logs render a URL-less worker cleanly (F7).
+			successMeta := map[string]any{
+				"platform":   strings.ToLower(input.Platform.DisplayName()),
+				"resourceId": svc.ID,
+				"shape":      effectiveShape.String(),
+			}
+			for k, v := range svc.Metadata {
+				if k == "url" || k == "shape" {
+					continue
+				}
+				successMeta[k] = v
+			}
+			workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentUpdateDeploymentStatus, operationId, "success", successMeta).Get(ctx)
+		}
+		return deployResult{Url: ""}, nil
+	}
+
 	u, _ := svc.Metadata["url"].(string)
 	if u == "" {
 		return deployResult{}, errors.Errorf("%s deployment returned no URL", input.Platform.String())
@@ -108,7 +155,7 @@ func (w *Workflows) deployContainer(ctx workflow.Context, input DeployPlan) (dep
 
 	liveCheckOpts := ActivityOpts
 	liveCheckOpts.RetryOptions.MaxAttempts = 15
-	if _, err := workflow.ExecuteActivity[string](ctx, liveCheckOpts, AgentVerifyLiveness, input.Shape, fullUrl).Get(ctx); err != nil {
+	if _, err := workflow.ExecuteActivity[string](ctx, liveCheckOpts, AgentVerifyLiveness, effectiveShape, fullUrl).Get(ctx); err != nil {
 		prod_error.CaptureErrorWithContext(err, map[string]any{
 			"workflow": DeployContainerWorkflowName, "activity": AgentVerifyLiveness,
 			"component": "deployment", "platform": plat,

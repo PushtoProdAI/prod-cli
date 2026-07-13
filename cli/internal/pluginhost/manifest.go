@@ -15,8 +15,12 @@ type Entry struct {
 	Aliases          []string `json:"aliases,omitempty"`
 	DomainSuffix     string   `json:"domainSuffix,omitempty"`
 	SupportsRollback bool     `json:"supportsRollback,omitempty"`
-	Path             string   `json:"path"`
-	Checksum         string   `json:"checksum"` // hex-encoded sha256 of the binary
+	// Shapes are the plugin's declared deploy shapes (web/mcp-server/worker/cron),
+	// recorded at install so the host knows a plugin may return a URL-less worker/agent
+	// without launching it. Absent ⇒ web-only (an existing manifest needs no migration).
+	Shapes   []string `json:"shapes,omitempty"`
+	Path     string   `json:"path"`
+	Checksum string   `json:"checksum"` // hex-encoded sha256 of the binary
 }
 
 // DefaultManifestPath is ~/.prod/plugins.json.
