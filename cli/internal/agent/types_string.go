@@ -19,20 +19,21 @@ func _() {
 	_ = x[Azure-7]
 	_ = x[UnknownPlatform-8]
 	_ = x[Modal-9]
+	_ = x[CloudflarePages-10]
 }
 
 const (
-	_Platform_name_0 = "RenderFlyIONetlifyVercelHerokuAWSGoogleCloudRunAzureUnknownPlatformModal"
+	_Platform_name_0 = "RenderFlyIONetlifyVercelHerokuAWSGoogleCloudRunAzureUnknownPlatformModalCloudflarePages"
 	_Platform_name_1 = "pluginPlatformBase"
 )
 
 var (
-	_Platform_index_0 = [...]uint8{0, 6, 11, 18, 24, 30, 33, 47, 52, 67, 72}
+	_Platform_index_0 = [...]uint8{0, 6, 11, 18, 24, 30, 33, 47, 52, 67, 72, 87}
 )
 
 func (i Platform) String() string {
 	switch {
-	case 0 <= i && i <= 9:
+	case 0 <= i && i <= 10:
 		return _Platform_name_0[_Platform_index_0[i]:_Platform_index_0[i+1]]
 	case i == 1048576:
 		return _Platform_name_1

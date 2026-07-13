@@ -28,6 +28,8 @@ const (
 	StrategyHeroku DeploymentStrategy = "heroku"
 
 	StrategyAWS DeploymentStrategy = "aws"
+
+	StrategyCloudflare DeploymentStrategy = "cloudflare"
 )
 
 type CreatedResource struct {
