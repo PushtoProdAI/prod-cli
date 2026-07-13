@@ -3,6 +3,35 @@
 Notable changes to prod. Format based on [Keep a Changelog](https://keepachangelog.com/).
 prod is pre-1.0 — the surface may still change.
 
+## [0.2.17] - 2026-07-13
+
+The reversibility + reach release — deploy to more places, and cleanly undo more of what you
+deployed.
+
+### Added
+- **Cloudflare Pages** — deploy static sites with `prod "deploy this to cloudflare pages"`, using
+  your own `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`. Uploads via Cloudflare's direct-upload
+  REST API (no `wrangler`), content-addressed so only changed files upload.
+- **Destroy on Netlify and Vercel** — `prod destroy` now tears down the site/project on both, so
+  destroy works on every cloud except Modal (which prints the `modal app stop` command).
+- **Rollback on AWS App Runner** — image-swap rollback (re-point the service at the previously
+  recorded image, which survives in your ECR). Works for both `prod rollback` and automatic
+  rollback on a failed health check.
+- **`--delete-data`** — an opt-in flag so a destroy also removes the deploy's backing databases.
+  Default keeps your data; it only ever deletes databases prod recorded creating (never one it
+  found by name). Cascades **Fly.io** Managed Postgres/Redis today.
+- **How-to guides** — a new Guides section: Bring your own LLM (incl. Ollama), Environment
+  variables & secrets, Add a database, Roll back a bad deploy, Tear down a deployment, and Deploy
+  an AI agent or worker.
+
+### Changed
+- Local mode no longer attempts a doomed backend request on every deploy (it used to log a
+  misleading "could not fetch base images from backend" line) — the "no backend, your credentials
+  only" model is now clean in the running product and the source. AWS App Runner is confirmed
+  backend-free at runtime; the dead backend-registry code path was removed.
+- The docs site sidebar is reorganized into scannable sections (Getting started · Guides ·
+  Deploying · Automate & extend · Reference), with a collapsible menu on mobile.
+
 ## [0.2.15 – 0.2.16] - 2026-07-12
 
 ### Added
