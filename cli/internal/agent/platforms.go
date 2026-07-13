@@ -224,7 +224,7 @@ func registerPlatforms() {
 			return aws.NewAppRunnerDeployment(spec, dockerGen, a.uiWriter), nil
 		},
 		NewAuthProvider: func(out io.Writer) auth.AuthProvider { return auth.NewAWSAuth(out) },
-		NewDetector:     func(a *Activities) ProjectDetector { return NewAWSProjectDetector(a.beClient, a.uiWriter) },
+		NewDetector:     func(a *Activities) ProjectDetector { return NewAWSProjectDetector(a.uiWriter) },
 	})
 	RegisterPlatform(PlatformSpec{
 		Platform: GoogleCloudRun, Name: "Google Cloud Run", DomainSuffix: ".run.app", SupportsRollback: true, ManagedContainer: true,
