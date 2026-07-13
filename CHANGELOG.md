@@ -3,6 +3,22 @@
 Notable changes to prod. Format based on [Keep a Changelog](https://keepachangelog.com/).
 prod is pre-1.0 — the surface may still change.
 
+## [Unreleased]
+
+### Added
+- **Two new how-to guides** — *Choosing a cloud* (a static-vs-PaaS-vs-managed-container decision
+  guide plus per-cloud obtain → set → verify → deploy setup) and *Troubleshooting* (`prod doctor`,
+  the editor env-inheritance gotcha, "can't authenticate," headless stalls, Docker-not-running).
+
+### Changed
+- **Per-cloud credential docs are now click-path complete** (`docs/clouds.md`) — where to obtain
+  each token (Render, the Cloudflare token scope + Account-ID discovery, Docker Hub), a "Verify
+  your setup" whoami table for every platform, credential precedence (env wins over a CLI session),
+  and the previously-undocumented `PROD_AZURE_ACA_ENV` and `HEROKU_AUTH_TOKEN` alias.
+- **`env.example` rewritten** — replaced stale backend-era variables (Supabase, a central AWS
+  account, a CloudFormation URL) with the real, annotated local-tool configuration: LLM keys with
+  key-console links, every platform credential with its obtain path, and the registry block.
+
 ## [0.2.17] - 2026-07-13
 
 The reversibility + reach release — deploy to more places, and cleanly undo more of what you
