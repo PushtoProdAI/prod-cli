@@ -53,6 +53,7 @@ const (
 	AgentRollbackDeployment         = "agent.rollbackDeployment"
 	AgentDestroyDeployment          = "agent.destroyDeployment"
 	AgentGetPreviousDeployment      = "agent.getPreviousDeployment"
+	AgentGetDeployedResources       = "agent.getDeployedResources"
 )
 
 type Activities struct {
@@ -107,5 +108,6 @@ func (a *Activities) Activities() []workflowext.Activity {
 		{Name: AgentGetPreviousDeployment, ActFunc: a.getPreviousDeployment},
 		{Name: AgentRollbackDeployment, ActFunc: a.rollbackDeployment},
 		{Name: AgentDestroyDeployment, ActFunc: a.destroyDeployment},
+		{Name: AgentGetDeployedResources, ActFunc: a.getDeployedResources},
 	}
 }

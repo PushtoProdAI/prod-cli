@@ -541,11 +541,29 @@ func (fqd *FlyioQueuedDeployment) GetPreviousDeployment(ctx context.Context) (*d
 	return nil, errors.Errorf("no previous release found for app %s", fqd.spec.Name)
 }
 
-// Destroy deletes the Fly.io app, which removes its machines and attached volumes.
+// Destroy deletes the Fly.io app (machines + attached volumes). A separately-created
+// Managed Postgres / Redis is a distinct billed resource and is left in place UNLESS the
+// user opted into DeleteBackingData — in which case prod also deletes the backing databases
+// it recorded creating (never one it merely found by name).
 func (fqd *FlyioQueuedDeployment) Destroy(ctx context.Context) error {
 	appName := NormalizeFlyAppName(fqd.spec.Name)
 	if err := fqd.client.DestroyApp(ctx, appName); err != nil {
 		return errors.Errorf("failed to destroy Fly.io app %q: %w", appName, err)
+	}
+
+	if fqd.spec.DeleteBackingData {
+		for _, r := range fqd.spec.BackingResources {
+			switch r.Type {
+			case "postgres_cluster":
+				if err := fqd.client.DestroyPostgres(ctx, r.ID); err != nil {
+					return errors.Errorf("app destroyed, but failed to delete Postgres %q: %w", r.Name, err)
+				}
+			case "redis":
+				if err := fqd.client.DestroyRedis(ctx, r.Name); err != nil {
+					return errors.Errorf("app destroyed, but failed to delete Redis %q: %w", r.Name, err)
+				}
+			}
+		}
 	}
 	return nil
 }

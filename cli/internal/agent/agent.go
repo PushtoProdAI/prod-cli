@@ -72,6 +72,9 @@ type Agent struct {
 	// for CI and per-PR previews (e.g. myapp-pr-7) — winning over the analyzer's default
 	// and the LLM's inferred name.
 	nameOverride string
+
+	// deleteBackingData (via --delete-data) opts a destroy into removing backing databases.
+	deleteBackingData bool
 	// envOverrides holds values supplied via --env / --env-file (headless CI). They win
 	// over .env files and mark the variable collected so it never prompts. A value on a
 	// sensitive-categorized (or secret-looking) var routes to the platform's secret store,
@@ -107,6 +110,7 @@ type DeployPlan struct {
 	Shape               deployment.DeployShape // web (default) | mcp-server | worker | cron
 	Schedule            string                 // 5-field cron expression; set only for a cron shape
 	ExplicitName        bool                   // true when --name pinned the app name (CI/per-PR)
+	DeleteBackingData   bool                   // true when --delete-data opts a destroy into removing backing DBs
 	// PluginName is set when Platform is an external plugin (IsPlugin). It pins the
 	// plan to a specific plugin by name so a resumed workflow can't deploy to the wrong
 	// cloud if the plugin set changed (a plugin's Platform value is a hash of its name).
@@ -265,6 +269,12 @@ func (a *Agent) SetDryRun(dryRun bool) {
 // per-PR previews. Empty leaves the analyzer/LLM name in place.
 func (a *Agent) SetNameOverride(name string) {
 	a.nameOverride = strings.TrimSpace(name)
+}
+
+// SetDeleteBackingData opts a destroy into also deleting the deploy's backing databases
+// (via --delete-data) — an irreversible action. Default false.
+func (a *Agent) SetDeleteBackingData(v bool) {
+	a.deleteBackingData = v
 }
 
 // applyNameOverride forces the plan's app name to the --name value when one is set, so a
@@ -685,6 +695,13 @@ func (a *Agent) proceedWithPlan(ctx context.Context, plan DeployPlan, input stri
 	// here — the shared gate every deploy/destroy/rollback passes through — so the built
 	// DeploymentSpec.Name and the destroy target both pick it up.
 	a.applyNameOverride(&plan)
+
+	// Carry the --delete-data opt-in onto the plan so a destroy also removes the deploy's
+	// backing databases (irreversible). Default false — data is never deleted by accident.
+	plan.DeleteBackingData = a.deleteBackingData
+	if a.DeployPlan != nil {
+		a.DeployPlan.DeleteBackingData = a.deleteBackingData
+	}
 
 	// Gate the deploy: AWS needs the backend (local-refused), Render needs the
 	// user's registry. Rollback is gated separately (executeRollback) since a

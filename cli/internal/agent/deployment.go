@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/deployment/netlify"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/render"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/vercel"
+	"github.com/pushtoprodai/prod-cli/internal/history"
 	"github.com/pushtoprodai/prod-cli/internal/output"
 )
 
@@ -260,4 +262,42 @@ func (a *Activities) getPreviousDeployment(ctx context.Context, spec deployment.
 	}
 
 	return deployable.GetPreviousDeployment(ctx)
+}
+
+// getDeployedResources returns the backing resources prod recorded creating for an app's
+// latest successful deploy on a platform (from local history's resources_created). Destroy
+// uses this so a --delete-data cascade only ever deletes resources prod created — never a
+// user's same-named database found by guessing. Returns nil (not an error) when there's no
+// record, so destroy of the main service still proceeds.
+func (a *Activities) getDeployedResources(_ context.Context, appName string, platform Platform) ([]deployment.CreatedResource, error) {
+	if a.history == nil {
+		return nil, nil
+	}
+	records, err := a.history.List(0)
+	if err != nil {
+		return nil, nil
+	}
+	app := strings.ToLower(strings.TrimSpace(appName))
+	plat := history.CanonicalPlatform(platform.String())
+	for _, r := range records {
+		if strings.ToLower(strings.TrimSpace(r.ResourceName)) != app || history.CanonicalPlatform(r.Platform) != plat || r.Status != "success" {
+			continue
+		}
+		raw, ok := r.Metadata["resources_created"]
+		if !ok {
+			continue
+		}
+		// resources_created round-trips through JSON in history, so re-marshal it back into
+		// typed CreatedResources rather than hand-walking map[string]any.
+		b, mErr := json.Marshal(raw)
+		if mErr != nil {
+			return nil, nil
+		}
+		var resources []deployment.CreatedResource
+		if uErr := json.Unmarshal(b, &resources); uErr != nil {
+			return nil, nil
+		}
+		return resources, nil
+	}
+	return nil, nil
 }
