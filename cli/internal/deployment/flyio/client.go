@@ -189,6 +189,16 @@ func (c *HTTPFlyioClient) CreatePostgres(ctx context.Context, req CreatePostgres
 	return nil, errors.Errorf("CreatePostgres is not implemented for HTTP client - use flyctl client instead")
 }
 
+// DestroyPostgres is not implemented for the HTTP client - use the flyctl client.
+func (c *HTTPFlyioClient) DestroyPostgres(ctx context.Context, id string) error {
+	return errors.Errorf("DestroyPostgres is not implemented for HTTP client - use flyctl client instead")
+}
+
+// DestroyRedis is not implemented for the HTTP client - use the flyctl client.
+func (c *HTTPFlyioClient) DestroyRedis(ctx context.Context, name string) error {
+	return errors.Errorf("DestroyRedis is not implemented for HTTP client - use flyctl client instead")
+}
+
 // CreateRedis creates a new Redis database
 func (c *HTTPFlyioClient) CreateRedis(ctx context.Context, req CreateRedisRequest) (*FlyioRedis, error) {
 	return nil, errors.Errorf("CreateRedis is not implemented for HTTP client - use flyctl client instead")

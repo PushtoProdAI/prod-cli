@@ -358,6 +358,42 @@ func (c *FlyctlClient) DestroyApp(ctx context.Context, appID string) error {
 	return nil
 }
 
+// DestroyPostgres deletes a managed Postgres cluster by id. Idempotent: a cluster that's
+// already gone is treated as success. This IS the database — deleting it destroys its data.
+func (c *FlyctlClient) DestroyPostgres(ctx context.Context, id string) error {
+	if err := c.ensureFlyctl(ctx); err != nil {
+		return err
+	}
+	if _, err := c.executor.Execute(ctx, "flyctl", "mpg", "destroy", id, "--yes"); err != nil {
+		if isFlyNotFound(err) {
+			return nil
+		}
+		return errors.Errorf("failed to destroy Fly.io Postgres %q: %w", id, err)
+	}
+	return nil
+}
+
+// DestroyRedis deletes an Upstash Redis database by name. Idempotent on not-found.
+func (c *FlyctlClient) DestroyRedis(ctx context.Context, name string) error {
+	if err := c.ensureFlyctl(ctx); err != nil {
+		return err
+	}
+	if _, err := c.executor.Execute(ctx, "flyctl", "redis", "destroy", name, "--yes"); err != nil {
+		if isFlyNotFound(err) {
+			return nil
+		}
+		return errors.Errorf("failed to destroy Fly.io Redis %q: %w", name, err)
+	}
+	return nil
+}
+
+// isFlyNotFound reports whether a flyctl error means the target is already gone, so a
+// destroy can treat it as a no-op rather than a failure.
+func isFlyNotFound(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not found") || strings.Contains(msg, "could not find") || strings.Contains(msg, "does not exist")
+}
+
 // ListPostgres lists all managed PostgreSQL clusters
 func (c *FlyctlClient) ListPostgres(ctx context.Context) ([]FlyioPostgresCluster, error) {
 	if err := c.ensureFlyctl(ctx); err != nil {

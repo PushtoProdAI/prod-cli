@@ -119,6 +119,10 @@ func (m *MockFlyioClient) CreatePostgres(ctx context.Context, req CreatePostgres
 	return &FlyioPostgresCluster{ID: "test-db-id", Name: req.Name}, nil
 }
 
+func (m *MockFlyioClient) DestroyPostgres(ctx context.Context, id string) error { return nil }
+
+func (m *MockFlyioClient) DestroyRedis(ctx context.Context, name string) error { return nil }
+
 func (m *MockFlyioClient) CreateRedis(ctx context.Context, req CreateRedisRequest) (*FlyioRedis, error) {
 	return &FlyioRedis{ID: "test-redis-id", Name: req.Name}, nil
 }

@@ -18,8 +18,10 @@ type FlyioClient interface {
 	// Databases
 	CreatePostgres(ctx context.Context, req CreatePostgresRequest) (*FlyioPostgresCluster, error)
 	ListPostgres(ctx context.Context) ([]FlyioPostgresCluster, error)
+	DestroyPostgres(ctx context.Context, id string) error
 	CreateRedis(ctx context.Context, req CreateRedisRequest) (*FlyioRedis, error)
 	ListRedis(ctx context.Context) ([]FlyioRedis, error)
+	DestroyRedis(ctx context.Context, name string) error
 	GetPostgresConnectionInfo(ctx context.Context, appID string) (*PostgresConnectionInfo, error)
 	GetRedisConnectionInfo(ctx context.Context, redisName string) (*RedisConnectionInfo, error)
 	AttachPostgres(ctx context.Context, req AttachPostgresRequest) error

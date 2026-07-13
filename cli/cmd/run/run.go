@@ -20,11 +20,12 @@ var (
 )
 
 type RunFlags struct {
-	DryRun  bool     `long:"dry-run" usage:"show the plan and estimated cost without deploying"`
-	Yes     bool     `long:"yes" short:"y" usage:"skip the approval prompt and deploy (for automation)"`
-	Name    string   `long:"name" usage:"override the deployed app name (for CI / per-PR previews, e.g. myapp-pr-7)"`
-	Env     []string `long:"env" usage:"set an env var value (KEY=VALUE), repeatable — for headless CI; a value on a var prod didn't detect routes to platform secrets"`
-	EnvFile string   `long:"env-file" usage:"read env var values from a KEY=VALUE file (e.g. .env.ci) for headless CI"`
+	DryRun     bool     `long:"dry-run" usage:"show the plan and estimated cost without deploying"`
+	Yes        bool     `long:"yes" short:"y" usage:"skip the approval prompt and deploy (for automation)"`
+	Name       string   `long:"name" usage:"override the deployed app name (for CI / per-PR previews, e.g. myapp-pr-7)"`
+	Env        []string `long:"env" usage:"set an env var value (KEY=VALUE), repeatable — for headless CI; a value on a var prod didn't detect routes to platform secrets"`
+	EnvFile    string   `long:"env-file" usage:"read env var values from a KEY=VALUE file (e.g. .env.ci) for headless CI"`
+	DeleteData bool     `long:"delete-data" usage:"when destroying, also delete the deploy's backing databases (IRREVERSIBLE; default keeps them)"`
 }
 
 type RunArgs struct {
@@ -50,6 +51,7 @@ func (c *RunCommand) Args(args []string) error {
 func (c *RunCommand) Execute(ctx context.Context) error {
 	c.Agent.SetDryRun(c.flags.DryRun)
 	c.Agent.SetNameOverride(c.flags.Name)
+	c.Agent.SetDeleteBackingData(c.flags.DeleteData)
 
 	overrides, err := buildEnvOverrides(c.flags.EnvFile, c.flags.Env)
 	if err != nil {

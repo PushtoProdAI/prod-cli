@@ -98,6 +98,15 @@ type DeploymentSpec struct {
 	// deploys. It must be honored exactly: a name collision fails loudly rather than being
 	// silently auto-renamed (which would fork an unmanaged, orphaned app in CI).
 	ExplicitName bool
+	// DeleteBackingData opts a destroy into also removing the deploy's backing databases
+	// (Postgres/Key-Value) — an IRREVERSIBLE data deletion. Default false: destroy removes
+	// only the app/service and leaves the database, so a user never loses data by accident.
+	// Set via `--delete-data`.
+	DeleteBackingData bool
+	// BackingResources is the deploy's recorded backing resources (from local history's
+	// resources_created), loaded at destroy time so a cascade only ever deletes resources
+	// prod created — never a user's same-named database found by guessing.
+	BackingResources []CreatedResource
 }
 
 type CostService struct {

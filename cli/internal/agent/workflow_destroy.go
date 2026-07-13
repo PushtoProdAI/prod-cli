@@ -39,6 +39,18 @@ func (w *Workflows) destroyDeployment(ctx workflow.Context, plan DeployPlan) (de
 	}
 	spec.ExistingProjectID = existingProject.ProjectID
 
+	// Carry the --delete-data opt-in and, when set, load the backing resources prod recorded
+	// creating so the platform's Destroy can cascade to them (provenance-safe — only prod's
+	// own recorded resources, never a name-guessed match). A missing record just means no
+	// cascade; the main-service teardown still proceeds.
+	spec.DeleteBackingData = plan.DeleteBackingData
+	if spec.DeleteBackingData {
+		resources, rerr := workflow.ExecuteActivity[[]deployment.CreatedResource](ctx, ActivityOpts, AgentGetDeployedResources, spec.Name, plan.Platform).Get(ctx)
+		if rerr == nil {
+			spec.BackingResources = resources
+		}
+	}
+
 	if _, err := workflow.ExecuteActivity[any](ctx, ActivityOpts, AgentDestroyDeployment, *spec, plan.Platform).Get(ctx); err != nil {
 		workflow.Logger(ctx).Error("failed to destroy deployment", "error", err)
 		prod_error.CaptureErrorWithContext(err, map[string]any{
