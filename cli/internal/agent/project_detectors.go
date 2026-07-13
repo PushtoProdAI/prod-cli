@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/go-errors/errors"
-	"github.com/pushtoprodai/prod-cli/internal/backend"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/flyio"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/heroku"
 	"github.com/pushtoprodai/prod-cli/internal/deployment/netlify"
@@ -340,16 +339,16 @@ func (d *HerokuProjectDetector) DetectExistingProject(ctx context.Context, proje
 	return result, nil
 }
 
-// AWSProjectDetector detects existing projects on AWS
+// AWSProjectDetector detects existing projects on AWS. App Runner deploys are idempotent
+// by service name (the deployer finds-or-redeploys), so this holds no backend/central-account
+// state — it runs entirely on the user's own AWS credentials.
 type AWSProjectDetector struct {
-	beClient *backend.Client
 	uiWriter output.StatusWriter
 }
 
 // NewAWSProjectDetector creates a new AWS project detector
-func NewAWSProjectDetector(beClient *backend.Client, uiWriter output.StatusWriter) *AWSProjectDetector {
+func NewAWSProjectDetector(uiWriter output.StatusWriter) *AWSProjectDetector {
 	return &AWSProjectDetector{
-		beClient: beClient,
 		uiWriter: uiWriter,
 	}
 }

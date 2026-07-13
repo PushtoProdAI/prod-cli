@@ -24,6 +24,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/pushtoprodai/prod-cli/internal/backend"
+	"github.com/pushtoprodai/prod-cli/internal/config"
 	"github.com/pushtoprodai/prod-cli/internal/output"
 	prodreg "github.com/pushtoprodai/prod-cli/internal/registry"
 )
@@ -171,8 +172,11 @@ func (dg *DockerGenerator) initTemplates() {
 		panic(fmt.Sprintf("failed to read elixir template: %v", err))
 	}
 
-	// Get base images from backend if client is available
-	if dg.beClient != nil {
+	// Get optimized base images from the backend — but only in managed mode. In local
+	// mode there is no backend, so skip the fetch entirely rather than attempting a doomed
+	// request (its relative URL fails and used to log a misleading "backend" error on every
+	// deploy). The template defaults are identical to the empty-map fallback.
+	if dg.beClient != nil && config.BackendConfigured() {
 		images, err := dg.beClient.GetBaseDockerImages(context.Background())
 		if err != nil {
 			slog.Info("could not fetch base images from backend, using defaults", "error", err)
@@ -181,7 +185,7 @@ func (dg *DockerGenerator) initTemplates() {
 			dg.baseImages = images
 		}
 	}
-	// If beClient is nil (testing), baseImages remains empty map from constructor
+	// In local mode (no backend), baseImages remains the empty map from the constructor.
 	// Parse and store templates
 	dg.templates["node"] = template.Must(template.New("node").Parse(string(nodeTemplate)))
 	dg.templates["nodejs"] = dg.templates["node"]
