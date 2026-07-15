@@ -50,10 +50,10 @@ map-built `plan_approval_request`, now carries all three, and timestamps are one
 | `env_var_prompt` | `variable_name`, `default_value`, `message`, `timestamp` | prod needs a value for an env var. |
 | `doctor_result` | `check`, `status`, `detail`, `timestamp`, `fix?` | One `prod doctor` check result. |
 
-**Correlation.** `deployment_complete` already carries `id` (the local history record id) and
-`name`. This is the handle to tie a deploy to a later `status`/`rollback`/`destroy`. **Gap (W0):** the
-MCP `deploy` tool output does *not* echo this `id` yet — W0 threads it into `deployOutput` so an
-agent can correlate the loop without re-guessing by app name.
+**Correlation.** `deployment_complete` carries `id` (the local history record id) and `name` — the
+handle to tie a deploy to a later `status`/`rollback`/`destroy`. The MCP `deploy` tool echoes it as
+`deploymentId` on a successful `confirm=true` deploy (added additively in W0.5), so an agent
+correlates the loop without re-guessing by app name.
 
 **What's missing today (filled by later workstreams):**
 - No structured **verify** result — liveness is collapsed into `deployment_complete.status`. (W2)
@@ -88,7 +88,7 @@ tool's shape is a deliberate, reviewed diff in CI. The tool-contract version is 
 
 | Tool | Input | Output |
 |------|-------|--------|
-| `deploy` | `prompt`, `confirm?`, `path?`, `planDigest?` | `deployed`, `status` (`preview`\|`success`\|`failed`\|`preview-required`), `url?`, `error?`, `plan?`, `planDigest?` |
+| `deploy` | `prompt`, `confirm?`, `path?`, `planDigest?` | `deployed`, `status` (`preview`\|`success`\|`failed`\|`preview-required`), `url?`, `error?`, `deploymentId?`, `plan?`, `planDigest?` |
 | `rollback` | `platform` (required), `confirm?`, `path?` | `rolledBack`, `status`, `error?`, `plan?` |
 | `destroy` | `platform` (required), `confirm?`, `path?` | `destroyed`, `status`, `error?`, `plan?` |
 
