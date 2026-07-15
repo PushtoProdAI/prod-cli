@@ -207,19 +207,27 @@ Everything user-visible goes through a `StatusWriter` (`internal/output/`). Do *
 JSON (`PROD_JSON_MODE`) modes. The JSON event protocol is the MCP substrate; keep events
 structured and stable.
 
-> ⚠️ The writers are **not at parity today**: `ConsoleWriter` no-ops `SendPlanApprovalRequest`,
-> `SendEnvVarPrompt`, and `SendDeploymentComplete`, and the confirm path does an unchecked
-> `out.(TUIWriter)` assertion that **panics in console mode** — yet `ConsoleWriter` is the default.
-> When you add an event, implement it in **all** writers and drive them from one canonical event
-> object. A golden cross-writer test is the intended anti-drift guarantee (ROADMAP Phase 1).
+> The old console-mode panic is **fixed**: every `out.(TUIWriter)` call site uses a guarded
+> comma-ok with a plain-text fallback (`agent/agent.go`, `agent/slash_commands.go`), and
+> `ConsoleWriter` fully implements the plan/env/complete events (the real no-ops now live in
+> `TeaWriter`). A cross-writer no-panic parity test exists (`output/writer_parity_test.go`), and
+> `agent/console_fallback_test.go` guards the regression. **Still open** (see the W0 workstream in
+> [docs/agentic-ownership-roadmap.md](./docs/agentic-ownership-roadmap.md)): the JSON event contract
+> is unversioned and some events are hand-built `map[string]interface{}` rather than one canonical
+> typed event object, `TeaWriter` is excluded from the parity test (import cycle), and there's no
+> schema-golden. When you add an event, implement it in **all** writers from one event object.
 
-### Deploy shapes (emerging)
-The success/liveness model is **HTTP-only today**: `isURLLive` (`agent/monitoring.go`) does an
-HTTP GET < 300 and auto-rolls-back otherwise; health routes are LLM-picked from detected HTTP
-routes; adapters hard-code a `web` service with ports. A non-HTTP, portless agent (worker, queue
-consumer) does not fit and is Phase-2 work. The plan adds a `deployShape` field
-(`web` | `mcp-server` | later `worker` | `cron`) on `Intent`/`DeploymentSpec` selecting the
-liveness strategy and artifact generator. Keep health-check auto-rollback **conditional on shape**.
+### Deploy shapes (shipped, with gaps)
+The `deployShape` field (`web` | `mcp-server` | `worker` | `cron`) **exists** on
+`Intent`/`DeploymentSpec` (`deployment/shape.go`) and selects the liveness strategy: `verifyLiveness`
+(`agent/monitoring.go`) is shape-conditional — worker/cron skip the HTTP probe (no false rollback),
+mcp-server requires a JSON-RPC `initialize` handshake, web GETs the URL (live = any response <500,
+so auth walls count as live). Fly and Render deploy worker/cron end-to-end; agent-framework
+detection (langgraph/crewai/…) lives in `analyzer/shape.go`. **Remaining gaps** (W5 in
+[docs/agentic-ownership-roadmap.md](./docs/agentic-ownership-roadmap.md)): `PlatformSpec.Shapes` is
+empty for built-ins so a worker can be mis-targeted at AWS/GCP/Azure and fail late; Go lacks
+agent-shape detection; the scaffolded `prod.yaml` shape is never read at deploy. Keep health-check
+auto-rollback **conditional on shape**.
 
 ---
 
@@ -287,7 +295,8 @@ cd cli && go test ./...
 - Editing `baml_src` without `make generate` → stale behavior. (Switching *client* is call-time via
   `WithClientRegistry` — that does **not** need regen.)
 - Calling `fmt.Print*` in orchestration code → breaks JSON/TUI modes. Use the writer.
-- Adding an event to only one writer → drift + a console-mode panic. Implement it in all writers.
+- Adding an event to only one writer → cross-writer drift. Implement it in all writers from one
+  event object (the old console-mode panic is fixed and guarded by tests; don't reintroduce it).
 - Assuming a backend/account exists → wrong for local mode. The deploy path must work with only
   local state + the user's platform creds.
 - Assuming HTTP liveness for every deploy → breaks worker/non-HTTP shapes. Check `deployShape`.

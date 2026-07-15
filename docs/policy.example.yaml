@@ -1,0 +1,56 @@
+# prod policy — the W1 schema (proposed; see docs/agentic-ownership-roadmap.md).
+#
+# A LOCAL, single-user guardrail file. prod enforces it before any mutation, on every
+# path (interactive, --yes, and MCP/agent). It is the on-ramp to the commercial,
+# org-enforced policy tier — not a replacement for it.
+#
+# Resolution: project `.prod/policy.yaml` overrides `~/.prod/policy.yaml`. Loaded 0600.
+#
+# THE ZERO-CONFIG PATH IS SACRED: with NO policy file, prod behaves exactly as today —
+# no forced staging, no new prompts. Everything below activates only when this file exists.
+# `prod policy init` scaffolds this; `prod policy test` dry-evaluates your project's plan
+# against it without deploying.
+
+# ── Which clouds may be targeted ────────────────────────────────────────────────
+# Omit to allow all built-in clouds. A deploy to a cloud not listed is refused at plan time.
+allowed_clouds: [fly, render, vercel, netlify, cloudflare, heroku, aws, cloud-run, azure]
+
+# ── Stage model (the "conservative by default" control) ─────────────────────────
+# NOTE: this is DeployStage — the *target* environment of your deploy. It is unrelated
+# to prod's own build channel (config.Environment). Don't conflate them.
+#
+# `staging` is a GENUINELY DISTINCT TARGET (separate app/service + separate backing
+# resources), not a name suffix — otherwise "safe by default" is theater.
+default_stage: staging          # the stage a deploy lands on unless escalated
+allowed_stages: [staging, production]
+# Reaching `production` requires an explicit signal: a `--production` flag or
+# "...to production" in the prompt. The resolved target name (e.g. myapp-staging) is
+# shown in the approval summary so the human never gets a surprise target.
+
+# ── Actions ─────────────────────────────────────────────────────────────────────
+# Actions listed here are refused outright (before any mutation), with a clear reason.
+forbidden_actions: [destroy]    # e.g. never let an agent tear things down in this project
+
+# Actions that may NEVER run unattended — they require a real interactive human, even
+# with --yes or MCP confirm=true. Use for irreversible or production-touching actions.
+require_human_for: [destroy, production-deploy]
+
+# ── Cost cap ────────────────────────────────────────────────────────────────────
+# Blocks a plan whose estimated monthly cost exceeds the cap. Omit for no cap.
+max_monthly_cost: 50            # USD/month
+
+# What to do when the platform provides NO estimate (AWS App Runner / Cloud Run / Azure /
+# Modal report cost 0 — a cap must NOT read that as free).
+#   allow  → permit + print a "cost unknown for <platform>" warning  (DEFAULT — least surprising)
+#   block  → refuse, naming the platform and this exact escape hatch
+# Applies ONLY when max_monthly_cost is set.
+on_unknown_cost: allow
+
+# ── Resource guards (optional) ──────────────────────────────────────────────────
+# Coarse allow/deny over the resource kinds a plan may create (databases, caches, etc.).
+resources:
+  allow: [postgres, redis]      # if set, only these kinds may be provisioned
+  deny: []                      # kinds that are always refused
+
+# A malformed policy fails CLOSED — but the error names the file, line, and offending
+# key, and suggests `prod policy test`. A typo blocks deploys; a blind typo must not.
