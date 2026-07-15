@@ -23,6 +23,12 @@ import (
 	"github.com/pushtoprodai/prod-cli/internal/history"
 )
 
+// ContractVersion is the version of the MCP tool contract — the set of tools and
+// their input/output schemas, pinned by the schema golden (schema_golden_test.go).
+// It is distinct from the binary's build version. Bump it on a breaking schema
+// change, in the same PR that updates the golden and docs/protocol.md.
+const ContractVersion = 1
+
 // New builds the prod MCP server with all tools registered.
 func New(version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{
