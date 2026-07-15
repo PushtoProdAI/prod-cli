@@ -1,0 +1,514 @@
+[
+  {
+    "name": "deploy",
+    "input": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "description": "the natural-language deploy request, e.g. 'deploy this to fly with a postgres'"
+        },
+        "confirm": {
+          "type": "boolean",
+          "description": "set true to ACTUALLY deploy (destructive, provisions cloud resources, costs money); false or omitted only PREVIEWS the plan and estimated cost and deploys nothing"
+        },
+        "path": {
+          "type": "string",
+          "description": "the project directory to deploy (defaults to the current directory)"
+        },
+        "planDigest": {
+          "type": "string",
+          "description": "the planDigest returned by a prior confirm=false preview of the SAME prompt and path; REQUIRED when confirm=true — deploy is refused without it, so you must preview and show the human the plan first"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "deployed": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "plan": {
+          "type": [
+            "null",
+            "object"
+          ],
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "shape": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "estimatedMonthlyCostUsd": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false
+        },
+        "planDigest": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deployed",
+        "status"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "list_deploys",
+    "input": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "description": "maximum number of deployments to return, most recent first (0 uses the default of 20)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string"
+        },
+        "deployments": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "operationType": {
+                "type": "string"
+              },
+              "resourceName": {
+                "type": "string"
+              },
+              "platform": {
+                "type": "string"
+              },
+              "language": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "string"
+              },
+              "completedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "operationType",
+              "resourceName",
+              "platform",
+              "language",
+              "status",
+              "startedAt"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "mode",
+        "deployments"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "analyze_project",
+    "input": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "path to the project directory to analyze (defaults to the current directory)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        },
+        "buildCommand": {
+          "type": "string"
+        },
+        "startCommand": {
+          "type": "string"
+        },
+        "services": {
+          "type": [
+            "null",
+            "array"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "provider"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "name",
+        "language",
+        "services"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "rollback",
+    "input": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "the platform to roll back on (required), e.g. 'fly', 'render', 'heroku'"
+        },
+        "confirm": {
+          "type": "boolean",
+          "description": "set true to ACTUALLY roll back (destructive); false or omitted only PREVIEWS and changes nothing"
+        },
+        "path": {
+          "type": "string",
+          "description": "the project directory (defaults to the current directory)"
+        }
+      },
+      "required": [
+        "platform"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "rolledBack": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "plan": {
+          "type": [
+            "null",
+            "object"
+          ],
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "shape": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "estimatedMonthlyCostUsd": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "rolledBack",
+        "status"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "destroy",
+    "input": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "the platform to tear down on (required), e.g. 'fly', 'cloud run', 'azure', 'heroku'"
+        },
+        "confirm": {
+          "type": "boolean",
+          "description": "set true to ACTUALLY destroy (IRREVERSIBLE); false or omitted only PREVIEWS and changes nothing"
+        },
+        "path": {
+          "type": "string",
+          "description": "the project directory (defaults to the current directory)"
+        }
+      },
+      "required": [
+        "platform"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "destroyed": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "plan": {
+          "type": [
+            "null",
+            "object"
+          ],
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "shape": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "estimatedMonthlyCostUsd": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "destroyed",
+        "status"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "status",
+    "input": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string",
+          "description": "the app / resource name, as shown by list_deploys"
+        }
+      },
+      "required": [
+        "app"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "shape": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "liveUrl": {
+          "type": "string"
+        },
+        "live": {
+          "type": "string"
+        },
+        "canRollback": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "found",
+        "canRollback"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "deep_link",
+    "input": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string",
+          "description": "the app / resource name, as shown by list_deploys"
+        }
+      },
+      "required": [
+        "app"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "liveUrl": {
+          "type": "string"
+        },
+        "consoleUrl": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "found"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "logs",
+    "input": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string",
+          "description": "the app / resource name, as shown by list_deploys"
+        }
+      },
+      "required": [
+        "app"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "logsCmd": {
+          "type": "string"
+        },
+        "consoleUrl": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "found"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "doctor",
+    "input": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "llm": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "ready": {
+              "type": "boolean"
+            },
+            "detail": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ready"
+          ],
+          "additionalProperties": false
+        },
+        "dockerAvailable": {
+          "type": "boolean"
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "llm",
+        "dockerAvailable",
+        "ready"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

@@ -1,0 +1,8 @@
+{"event_version":1,"message":"log line\n","timestamp":"\u003cscrubbed\u003e","type":"log"}
+{"event_version":1,"message":"Building","status":"building","timestamp":"\u003cscrubbed\u003e","type":"status"}
+{"event_version":1,"message":"Built","status":"building","timestamp":"\u003cscrubbed\u003e","type":"status_complete"}
+{"event_version":1,"platform":"aws","project_path":"/p","timestamp":"\u003cscrubbed\u003e","type":"deployment_start"}
+{"duration_ms":4200,"event_version":1,"id":"op-9","name":"myapp","platform":"fly","status":"success","timestamp":"\u003cscrubbed\u003e","type":"deployment_complete","url":"https://x.fly.dev"}
+{"action":"deploy","event_version":1,"platform":"fly","timestamp":"\u003cscrubbed\u003e","type":"plan_approval_request"}
+{"default_value":"","event_version":1,"message":"Enter","timestamp":"\u003cscrubbed\u003e","type":"env_var_prompt","variable_name":"KEY"}
+{"check":"LLM","detail":"OpenAI","event_version":1,"status":"ok","timestamp":"\u003cscrubbed\u003e","type":"doctor_result"}

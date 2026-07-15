@@ -65,8 +65,10 @@ agent can correlate the loop without re-guessing by app name.
 ## Surface 2 — the MCP tools
 
 `prod mcp` serves these over stdio. Input/output are typed Go structs (JSON Schema is derived from
-them by the MCP SDK), defined in `internal/mcpserver/{server,status,tools}.go`. All schemas are
-stable structs but **carry no version field yet** — W0 adds a schema-golden so changes are caught.
+them by the MCP SDK), defined in `internal/mcpserver/{server,status,tools}.go`, and **pinned by a
+schema golden** (`schema_golden_test.go` → `testdata/tool_schemas.golden.json`) so any change to a
+tool's shape is a deliberate, reviewed diff in CI. The tool-contract version is `ContractVersion`
+(currently `1`), bumped in the same PR as a breaking schema change.
 
 ### The approval gate (read this before calling a mutating tool)
 
@@ -129,5 +131,8 @@ as safe without a human having seen the `confirm=false` plan.
 - **Breaking** (rename/remove a field, change a type or a documented semantic, change a `status`
   enum value) → bumps `event_version` (JSON stream) and the MCP server version, and updates the
   golden snapshots in the same PR.
-- This document is the human-readable contract; the golden tests (W0) are the machine-enforced one.
-  They must agree.
+- This document is the human-readable contract; the **golden tests are the machine-enforced one**
+  and must agree: the JSON event stream is pinned by
+  `internal/output/testdata/events.golden.jsonl` and the MCP tool schemas by
+  `internal/mcpserver/testdata/tool_schemas.golden.json`. Regenerate either with
+  `go test ./internal/<pkg>/... -update` in the PR that intentionally changes the contract.
