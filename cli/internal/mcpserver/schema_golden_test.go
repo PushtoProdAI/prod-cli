@@ -37,8 +37,9 @@ type toolSchemaSnapshot struct {
 // field, type, or requiredness is a breaking change to the tool contract and must be
 // a deliberate, reviewed diff to the golden.
 //
-// To intentionally change a tool's schema: bump ContractVersion, then `-update` this
-// golden in the same PR.
+// To intentionally change a tool's schema: re-run with `-update`. If the change is
+// breaking (a renamed/removed field or a changed type/semantic — see docs/protocol.md),
+// also bump ContractVersion in the same PR. Additive fields don't bump it.
 func TestToolSchemaGolden(t *testing.T) {
 	// Order matches New()'s registration order; keep them in lockstep.
 	snaps := []toolSchemaSnapshot{
@@ -76,7 +77,7 @@ func TestToolSchemaGolden(t *testing.T) {
 		t.Fatalf("read golden (run with -update to create it): %v", err)
 	}
 	if string(got) != string(want) {
-		t.Errorf("MCP tool schemas drifted from golden. If intentional, bump ContractVersion "+
-			"and re-run with -update.\n--- got ---\n%s", got)
+		t.Errorf("MCP tool schemas drifted from golden. If intentional, re-run with -update "+
+			"(and bump ContractVersion if the change is breaking).\n--- got ---\n%s", got)
 	}
 }

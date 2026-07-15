@@ -19,8 +19,9 @@ var updateGolden = flag.Bool("update", false, "update golden files")
 // a deliberate, reviewed diff to the golden — not a silent break of the machine
 // contract (docs/protocol.md). Timestamps are scrubbed (they're time.Now()).
 //
-// To intentionally change the contract: bump EventVersion, then `-update` this golden
-// in the same PR.
+// To intentionally change the contract: re-run with `-update`. If the change is
+// breaking (a renamed/removed field or a changed type/semantic — see docs/protocol.md),
+// also bump EventVersion in the same PR. Additive fields don't bump it.
 func TestJSONEventStreamGolden(t *testing.T) {
 	raw := captureStdout(t, func() { exerciseJSONEvents(NewJSONWriter()) })
 	got := normalizeEventStream(t, raw)
@@ -43,7 +44,7 @@ func TestJSONEventStreamGolden(t *testing.T) {
 	}
 	if got != string(want) {
 		t.Errorf("JSON event stream drifted from golden.\n--- got ---\n%s\n--- want ---\n%s\n"+
-			"If this change is intentional, bump EventVersion and re-run with -update.", got, want)
+			"If intentional, re-run with -update (and bump EventVersion if the change is breaking).", got, want)
 	}
 }
 

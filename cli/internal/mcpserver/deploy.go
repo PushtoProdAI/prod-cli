@@ -50,8 +50,9 @@ type deployResult struct {
 	Status           string         // "success" | "failed" (deploy only)
 	URL              string
 	Error            string
-	NeedsInteractive bool  // hit a prompt (env var / auth) we can't answer headlessly
-	ScanErr          error // a stdout read error, if any
+	ID               string // the deployment id from deployment_complete, for correlation
+	NeedsInteractive bool   // hit a prompt (env var / auth) we can't answer headlessly
+	ScanErr          error  // a stdout read error, if any
 }
 
 // processEvents reads prod's JSON event stream, drives the human-approval gate,
@@ -89,6 +90,7 @@ func processEvents(events io.Reader, stdin io.Writer, confirm bool) *deployResul
 			res.Status, _ = ev["status"].(string)
 			res.URL, _ = ev["url"].(string)
 			res.Error, _ = ev["error"].(string)
+			res.ID, _ = ev["id"].(string)
 			return res // terminal
 		case "env_var_prompt":
 			res.NeedsInteractive = true

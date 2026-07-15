@@ -59,12 +59,13 @@ type deployInput struct {
 }
 
 type deployOutput struct {
-	Deployed   bool         `json:"deployed"`             // true only if confirm=true and the deploy succeeded
-	Status     string       `json:"status"`               // "preview" | "success" | "failed"
-	URL        string       `json:"url,omitempty"`        // the live URL, on a successful deploy
-	Error      string       `json:"error,omitempty"`      // failure reason, if any
-	Plan       *planSummary `json:"plan,omitempty"`       // what would be / was deployed
-	PlanDigest string       `json:"planDigest,omitempty"` // on a preview: echo this back with confirm=true to deploy
+	Deployed     bool         `json:"deployed"`               // true only if confirm=true and the deploy succeeded
+	Status       string       `json:"status"`                 // "preview" | "success" | "failed"
+	URL          string       `json:"url,omitempty"`          // the live URL, on a successful deploy
+	Error        string       `json:"error,omitempty"`        // failure reason, if any
+	DeploymentID string       `json:"deploymentId,omitempty"` // the id of the deploy, to correlate later status/rollback/destroy
+	Plan         *planSummary `json:"plan,omitempty"`         // what would be / was deployed
+	PlanDigest   string       `json:"planDigest,omitempty"`   // on a preview: echo this back with confirm=true to deploy
 }
 
 func addDeploy(s *mcp.Server) {
@@ -88,8 +89,11 @@ func addDeploy(s *mcp.Server) {
 		// plan) before it can deploy. This is a structural nudge; human approval is still
 		// the real gate.
 		if in.Confirm && in.PlanDigest != digest {
+			// A mismatch is usually a changed prompt/path between preview and confirm
+			// (the digest binds to both), not a missing preview — say so, so the agent
+			// re-previews the current request rather than assuming a bug.
 			return nil, deployOutput{Status: "preview-required"}, errors.Errorf(
-				"preview first: call deploy with confirm=false to get a planDigest, show the human the plan + estimated cost, then call again with confirm=true and that planDigest",
+				"planDigest does not match this prompt+path — they must be identical between the confirm=false preview and the confirm=true deploy. If you changed the prompt or path, re-preview with confirm=false, show the human the new plan + cost, and pass the fresh planDigest",
 			)
 		}
 
@@ -103,6 +107,7 @@ func addDeploy(s *mcp.Server) {
 			out.Status = res.Status
 			out.URL = res.URL
 			out.Error = res.Error
+			out.DeploymentID = res.ID
 			out.Deployed = res.Status == "success"
 		} else {
 			out.Status = "preview"

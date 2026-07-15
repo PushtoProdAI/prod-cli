@@ -45,7 +45,7 @@ func TestProcessEventsConfirmApprovesAndCaptures(t *testing.T) {
 	events := strings.Join([]string{
 		`{"type":"plan_approval_request","action":"deploy","platform":"fly.io"}`,
 		`{"type":"log","message":"deploying..."}`, // a plain log line must be tolerated
-		`{"type":"deployment_complete","platform":"fly.io","status":"success","url":"https://x.fly.dev"}`,
+		`{"type":"deployment_complete","platform":"fly.io","status":"success","url":"https://x.fly.dev","id":"op-42"}`,
 	}, "\n") + "\n"
 	var stdin strings.Builder
 
@@ -56,6 +56,10 @@ func TestProcessEventsConfirmApprovesAndCaptures(t *testing.T) {
 	}
 	if res.Status != "success" || res.URL != "https://x.fly.dev" {
 		t.Errorf("deploy result not captured: %+v", res)
+	}
+	// The deployment id is captured for correlation (surfaced as deployOutput.deploymentId).
+	if res.ID != "op-42" {
+		t.Errorf("deployment id not captured: got %q, want op-42", res.ID)
 	}
 }
 

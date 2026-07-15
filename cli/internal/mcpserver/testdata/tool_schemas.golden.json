@@ -41,6 +41,9 @@
         "error": {
           "type": "string"
         },
+        "deploymentId": {
+          "type": "string"
+        },
         "plan": {
           "type": [
             "null",
