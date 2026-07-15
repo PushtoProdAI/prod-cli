@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -400,12 +401,74 @@ var (
 	_ StatusWriter = (*ConsoleWriter)(nil)
 )
 
-// JSONEvent represents a structured event emitted in JSON mode
-type JSONEvent struct {
-	Type      string    `json:"type"`
-	Status    string    `json:"status,omitempty"`
-	Message   string    `json:"message,omitempty"`
-	Timestamp time.Time `json:"timestamp"`
+// EventVersion is the version of the JSON event contract emitted in JSON mode
+// (PROD_JSON_MODE). It is documented in docs/protocol.md. Additive changes (a new
+// event type, a new optional field) do NOT bump it; a breaking change (a renamed or
+// removed field, a changed type or semantic) does, in the same PR that updates the
+// contract doc and the golden snapshots.
+const EventVersion = 1
+
+// eventMeta is the envelope shared by every structured JSON event. It is embedded
+// (anonymously) so its fields marshal at the top level of each event, giving every
+// event a uniform {type, event_version, timestamp}. Timestamp is a time.Time, which
+// marshals as RFC3339Nano — one format across all events.
+type eventMeta struct {
+	Type         string    `json:"type"`
+	EventVersion int       `json:"event_version"`
+	Timestamp    time.Time `json:"timestamp"`
+}
+
+func newMeta(typ string) eventMeta {
+	return eventMeta{Type: typ, EventVersion: EventVersion, Timestamp: time.Now()}
+}
+
+// The typed events below are the single construction path for JSON output — one
+// object per event, no hand-built map literals. Field tags reproduce the wire
+// contract exactly (see docs/protocol.md); omitempty marks fields that are absent
+// today when empty. The plan_approval_request event is the one exception (its
+// fields are dynamic) and is still assembled as a map in SendPlanApprovalRequest.
+
+type logEvent struct {
+	eventMeta
+	Message string `json:"message,omitempty"`
+}
+
+type statusEvent struct {
+	eventMeta
+	Status  string `json:"status,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+type deploymentStartEvent struct {
+	eventMeta
+	Platform    string `json:"platform"`
+	ProjectPath string `json:"project_path"`
+}
+
+type deploymentCompleteEvent struct {
+	eventMeta
+	Platform   string `json:"platform"`
+	Status     string `json:"status"`
+	DurationMs int64  `json:"duration_ms"`
+	URL        string `json:"url,omitempty"`
+	Error      string `json:"error,omitempty"`
+	ID         string `json:"id,omitempty"`
+	Name       string `json:"name,omitempty"`
+}
+
+type envVarPromptEvent struct {
+	eventMeta
+	VariableName string `json:"variable_name"`
+	DefaultValue string `json:"default_value"`
+	Message      string `json:"message"`
+}
+
+type doctorResultEvent struct {
+	eventMeta
+	Check  string `json:"check"`
+	Status string `json:"status"`
+	Detail string `json:"detail"`
+	Fix    string `json:"fix,omitempty"`
 }
 
 // JSONWriter implements StatusWriter for JSON-structured output
@@ -422,18 +485,23 @@ func NewJSONWriter() *JSONWriter {
 	}
 }
 
+// emit encodes one JSON event under the lock. It is the single output path for
+// every structured event, so the wire format (JSON Lines) and locking live in one
+// place. Encode errors are logged, not returned — a status event can't surface an
+// error to its caller (Write is the exception; it returns the error to io.Writer).
+func (w *JSONWriter) emit(event any) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.encoder.Encode(event); err != nil {
+		slog.Error("failed to encode JSON event", "error", err)
+	}
+}
+
 // Write implements io.Writer - outputs raw logs as JSON events
 func (w *JSONWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-
-	event := JSONEvent{
-		Type:      "log",
-		Message:   string(p),
-		Timestamp: time.Now(),
-	}
-
-	if err := w.encoder.Encode(event); err != nil {
+	if err := w.encoder.Encode(logEvent{eventMeta: newMeta("log"), Message: string(p)}); err != nil {
 		return 0, err
 	}
 	return len(p), nil
@@ -441,131 +509,67 @@ func (w *JSONWriter) Write(p []byte) (int, error) {
 
 // SendStatus outputs status messages as JSON events
 func (w *JSONWriter) SendStatus(status, message string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	event := JSONEvent{
-		Type:      "status",
-		Status:    status,
-		Message:   message,
-		Timestamp: time.Now(),
-	}
-
-	w.encoder.Encode(event)
+	w.emit(statusEvent{eventMeta: newMeta("status"), Status: status, Message: message})
 }
 
 // SendStatusComplete outputs completion messages as JSON events
 func (w *JSONWriter) SendStatusComplete(status, message string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	event := JSONEvent{
-		Type:      "status_complete",
-		Status:    status,
-		Message:   message,
-		Timestamp: time.Now(),
-	}
-
-	w.encoder.Encode(event)
+	w.emit(statusEvent{eventMeta: newMeta("status_complete"), Status: status, Message: message})
 }
 
 // SendDeploymentStart emits a deployment_start event
 func (w *JSONWriter) SendDeploymentStart(platform, projectPath string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	event := map[string]interface{}{
-		"type":         "deployment_start",
-		"platform":     platform,
-		"project_path": projectPath,
-		"timestamp":    time.Now().Format(time.RFC3339),
-	}
-
-	w.encoder.Encode(event)
+	w.emit(deploymentStartEvent{eventMeta: newMeta("deployment_start"), Platform: platform, ProjectPath: projectPath})
 }
 
-// SendDeploymentComplete emits a deployment_complete event
+// SendDeploymentComplete emits a deployment_complete event. id + name let a CI
+// action reference the exact deployment (e.g. correlate to `prod ls` or a later
+// destroy) without re-parsing the app name it passed in.
 func (w *JSONWriter) SendDeploymentComplete(platform, status, url, errorMsg, id, name string, durationMs int64) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	event := map[string]interface{}{
-		"type":        "deployment_complete",
-		"platform":    platform,
-		"status":      status,
-		"duration_ms": durationMs,
-		"timestamp":   time.Now().Format(time.RFC3339),
-	}
-
-	if url != "" {
-		event["url"] = url
-	}
-	if errorMsg != "" {
-		event["error"] = errorMsg
-	}
-	// id + name let a CI action reference the exact deployment (e.g. correlate to
-	// `prod ls` or a later destroy) without re-parsing the app name it passed in.
-	if id != "" {
-		event["id"] = id
-	}
-	if name != "" {
-		event["name"] = name
-	}
-
-	w.encoder.Encode(event)
+	w.emit(deploymentCompleteEvent{
+		eventMeta:  newMeta("deployment_complete"),
+		Platform:   platform,
+		Status:     status,
+		DurationMs: durationMs,
+		URL:        url,
+		Error:      errorMsg,
+		ID:         id,
+		Name:       name,
+	})
 }
 
-// SendPlanApprovalRequest emits a plan_approval_request event
+// SendPlanApprovalRequest emits a plan_approval_request event. The plan's fields are
+// dynamic, so this event is assembled as a map — but from a COPY of the caller's map,
+// never mutating it (a prior version added keys to the caller's map in place). A
+// follow-up nests the plan under a "plan" key; see docs/protocol.md.
 func (w *JSONWriter) SendPlanApprovalRequest(plan map[string]interface{}) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	// Add type and timestamp to the plan data
-	plan["type"] = "plan_approval_request"
-	plan["timestamp"] = time.Now().Format(time.RFC3339)
-
-	if err := w.encoder.Encode(plan); err != nil {
-		slog.Error("Failed to encode plan approval request", "error", err)
-	}
+	event := make(map[string]any, len(plan)+3)
+	maps.Copy(event, plan)
+	event["type"] = "plan_approval_request"
+	event["event_version"] = EventVersion
+	event["timestamp"] = time.Now() // time.Time marshals RFC3339Nano, matching the typed events
+	w.emit(event)
 }
 
 // SendEnvVarPrompt emits an env_var_prompt event
 func (w *JSONWriter) SendEnvVarPrompt(varName, defaultValue, message string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	event := map[string]interface{}{
-		"type":          "env_var_prompt",
-		"variable_name": varName,
-		"default_value": defaultValue,
-		"message":       message,
-		"timestamp":     time.Now().Format(time.RFC3339),
-	}
-
-	if err := w.encoder.Encode(event); err != nil {
-		slog.Error("Failed to encode env var prompt", "error", err)
-	}
+	w.emit(envVarPromptEvent{
+		eventMeta:    newMeta("env_var_prompt"),
+		VariableName: varName,
+		DefaultValue: defaultValue,
+		Message:      message,
+	})
 }
 
 // SendDoctorResult emits a doctor_result event, one per prerequisite check.
 func (w *JSONWriter) SendDoctorResult(check, status, detail, fix string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	event := map[string]interface{}{
-		"type":      "doctor_result",
-		"check":     check,
-		"status":    status,
-		"detail":    detail,
-		"timestamp": time.Now().Format(time.RFC3339),
-	}
-	if fix != "" {
-		event["fix"] = fix
-	}
-
-	if err := w.encoder.Encode(event); err != nil {
-		slog.Error("Failed to encode doctor result", "error", err)
-	}
+	w.emit(doctorResultEvent{
+		eventMeta: newMeta("doctor_result"),
+		Check:     check,
+		Status:    status,
+		Detail:    detail,
+		Fix:       fix,
+	})
 }
 
 // Ensure JSONWriter implements StatusWriter

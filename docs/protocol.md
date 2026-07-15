@@ -25,14 +25,17 @@ prod exposes **two machine surfaces**, and they are layered:
 Enable with `PROD_JSON_MODE=true`. Each line is a JSON object with a `type` discriminator. Emitted
 by `internal/output/writer.go` (`JSONWriter`).
 
-### v1 reality & known inconsistencies (W0 normalizes these)
+### The envelope
 
-- **Timestamps are not uniform yet.** `log`/`status`/`status_complete` serialize a Go `time.Time`
-  (RFC3339**Nano**); the other events emit `time.Now().Format(RFC3339)` **strings**. W0 normalizes to
-  a single RFC3339Nano string field. Until then, parse both.
-- **`plan_approval_request` spreads the plan map at the top level** rather than nesting it under a
-  key. W0 moves plan fields under a `plan` object. Until then, read plan fields off the event root.
-- **No `event_version` field exists yet** — W0 adds it (v1 = today's shapes). Absence ⇒ treat as v1.
+Every event carries a common envelope: **`type`** (discriminator), **`event_version`** (integer,
+currently `1`), and **`timestamp`** (RFC3339Nano). Landed in W0.1 — every event, including the
+map-built `plan_approval_request`, now carries all three, and timestamps are one uniform format.
+
+### Remaining v1 inconsistency (a later W0 sub-task)
+
+- **`plan_approval_request` spreads the plan fields at the top level** rather than nesting them under
+  a `plan` key. Read plan fields off the event root for now; a follow-up nests them (it needs the
+  `SendPlanApprovalRequest` signature to change, so it's sequenced after the golden snapshots).
 
 ### Event catalog
 
