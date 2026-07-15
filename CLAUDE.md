@@ -207,15 +207,15 @@ Everything user-visible goes through a `StatusWriter` (`internal/output/`). Do *
 JSON (`PROD_JSON_MODE`) modes. The JSON event protocol is the MCP substrate; keep events
 structured and stable.
 
-> The old console-mode panic is **fixed**: every `out.(TUIWriter)` call site uses a guarded
-> comma-ok with a plain-text fallback (`agent/agent.go`, `agent/slash_commands.go`), and
-> `ConsoleWriter` fully implements the plan/env/complete events (the real no-ops now live in
-> `TeaWriter`). A cross-writer no-panic parity test exists (`output/writer_parity_test.go`), and
-> `agent/console_fallback_test.go` guards the regression. **Still open** (see the W0 workstream in
-> [docs/agentic-ownership-roadmap.md](./docs/agentic-ownership-roadmap.md)): the JSON event contract
-> is unversioned and some events are hand-built `map[string]interface{}` rather than one canonical
-> typed event object, `TeaWriter` is excluded from the parity test (import cycle), and there's no
-> schema-golden. When you add an event, implement it in **all** writers from one event object.
+> The JSON event contract is **versioned and frozen** (W0). JSON events are built from one typed
+> event family carrying `{type, event_version, timestamp}` (`output/writer.go`); the wire contract is
+> documented in [docs/protocol.md](./docs/protocol.md) and pinned by goldens
+> (`output/testdata/events.golden.jsonl`, `mcpserver/testdata/tool_schemas.golden.json`) — change a
+> field and CI fails until you `-update` the golden (bumping `EventVersion`/`ContractVersion` only if
+> the change is breaking). Cross-writer no-panic parity is guarded for every writer including
+> `TeaWriter` (`output/writer_parity_test.go`, `tui/teawriter_test.go`); the old console-mode panic is
+> fixed and regression-tested (`agent/console_fallback_test.go`). When you add an event, add it to
+> **all** writers from one event object and update the golden.
 
 ### Deploy shapes (shipped, with gaps)
 The `deployShape` field (`web` | `mcp-server` | `worker` | `cron`) **exists** on
