@@ -20,7 +20,8 @@ plugin becomes a first-class target you can deploy to in plain English.
 ([`PushtoProdAI/prod-plugins`](https://github.com/PushtoProdAI/prod-plugins)) — no backend.
 `prod plugin install github.com/org/repo --checksum <sha256>` downloads a plugin's release
 binary and verifies the checksum before it ever runs. First-party plugins today:
-**DigitalOcean App Platform**, **Koyeb**, and **Railway** (in the `prod-plugins` repo).
+**Coolify** (self-hosted), **DigitalOcean App Platform**, **Koyeb**, and **Railway** (in the
+`prod-plugins` repo).
 
 ## 1. Implement the `Provider` interface
 

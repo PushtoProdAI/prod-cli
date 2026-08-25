@@ -6,6 +6,13 @@ prod is pre-1.0 — the surface may still change.
 ## [Unreleased]
 
 ### Added
+- **Coolify provider plugin** (`prod-provider-coolify`) — deploy to your own self-hosted
+  [Coolify](https://coolify.io) instance with `prod "deploy this to coolify"`. prod builds and
+  pushes the image to a registry you own; Coolify runs it on your server as a Docker Image
+  application, with rollback to a previously pulled image tag. Set `COOLIFY_URL` + `COOLIFY_TOKEN`
+  and the registry variables — see [docs/clouds.md](docs/clouds.md#your-own-server-coolify). A
+  private image needs a one-time `docker login` on the Coolify server, because Coolify's API has no
+  registry-credential endpoint.
 - **Two new how-to guides** — *Choosing a cloud* (a static-vs-PaaS-vs-managed-container decision
   guide plus per-cloud obtain → set → verify → deploy setup) and *Troubleshooting* (`prod doctor`,
   the editor env-inheritance gotcha, "can't authenticate," headless stalls, Docker-not-running).
