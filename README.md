@@ -162,6 +162,8 @@ in-session.
 
 …and **anything else via a plugin**: add your own cloud or internal PaaS as a separate
 binary with `prod plugin install`, no fork required — see [docs/plugins.md](docs/plugins.md).
+First-party plugins today: **Coolify** (deploy to a server you own), **DigitalOcean App
+Platform**, **Koyeb**, and **Railway**.
 
 ### Deploying to Render — bring your own registry
 
