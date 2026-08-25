@@ -23,6 +23,7 @@ There's no prod account and nothing is sent to a prod server. The only real deci
 | **An AI agent or MCP server** | **Fly.io**, Render, **Modal** | Fly/Render run long-lived HTTP agents; Modal is Python-native and GPU-capable. |
 | **Into your own cloud account** (compliance, existing infra) | **AWS App Runner**, Google **Cloud Run**, **Azure** Container Apps | prod builds locally, pushes to a registry in *your* account, creates a managed service. |
 | **A background worker / cron** | **Render**, Modal, Fly.io | No URL to health-check — see [Deploy an agent or worker](./deploy-an-agent-or-worker.md). |
+| **Onto a server you own** | **Coolify** (provider plugin) | Self-hosted PaaS. prod pushes the image to your registry; your Coolify server runs it. |
 
 Still unsure? Start with **Fly.io** (full apps) or **Cloudflare Pages** (static). Both are
 fast to set up and easy to tear down.
@@ -40,6 +41,11 @@ prod's clouds fall into three groups; the setup differs by group:
    with that cloud's normal credentials (`~/.aws`, `gcloud`, `az`).
 3. **Modal** (experimental) — serverless and Python-native; prod deploys your Python app
    directly via the `modal` CLI. No image build.
+
+Anything else — including **your own server** — via a [provider plugin](../plugins.md). The
+first-party **Coolify** plugin deploys to your own self-hosted Coolify instance: prod builds
+and pushes the image to a registry you own, and your server runs it. See
+[Your own server (Coolify)](../clouds.md#your-own-server-coolify) for setup.
 
 ## Set up your cloud (obtain → set → verify → deploy)
 
