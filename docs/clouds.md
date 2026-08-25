@@ -159,6 +159,29 @@ Anything not built in can be added as a **provider plugin** — a separate binar
 install with `prod plugin install`. It configures its own credentials as it documents.
 See [plugins.md](./plugins.md).
 
+First-party plugins today: **Coolify**, **DigitalOcean App Platform**, **Koyeb**, and
+**Railway**.
+
+### Your own server (Coolify)
+
+Prefer to deploy to a machine you own? The **Coolify** plugin targets your own
+[Coolify](https://coolify.io) instance — prod builds and pushes the image to a registry you
+own, and Coolify runs it on your server.
+
+```bash
+prod plugin install github.com/PushtoProdAI/prod-plugins@coolify-v0.1.0 --checksum <sha256>
+export COOLIFY_URL=https://coolify.example.com   # your instance
+export COOLIFY_TOKEN=...                         # Keys & Tokens -> API tokens (read+write+deploy)
+export COOLIFY_REGISTRY=ghcr.io/you COOLIFY_REGISTRY_USER=you COOLIFY_REGISTRY_TOKEN=...
+prod "deploy this to coolify"
+```
+
+Two things to know before the first deploy: the API is **off by default** (Settings →
+Advanced → API Settings), and a **private** image needs a one-time `docker login` on the
+Coolify server, because Coolify's API has no endpoint for registry credentials. The
+plugin's [README](https://github.com/PushtoProdAI/prod-plugins/tree/main/providers/prod-provider-coolify)
+has the full variable list.
+
 ## The LLM (required for every deploy)
 
 prod parses your request with an LLM you provide (no proxy): set `OPENAI_API_KEY` or
